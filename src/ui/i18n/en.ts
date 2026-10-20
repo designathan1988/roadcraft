@@ -927,6 +927,7 @@ export const EN: Dictionary = {
   'hint.opened': 'Map opened',
   'hint.worldReadOnly': 'This city is open in another window: here it can be seen, changes are not saved',
   'hint.openFailed': 'That file is not a Roadcraft map, or it is damaged. Nothing was changed',
+  'hint.cityFailed': 'The city could not be generated. Nothing was changed',
   'hint.saveFailed': 'Autosave failed: browser storage is full. Use Save map to keep a copy',
   'hint.exportFailed': 'The map file could not be made: nothing was saved',
   'hint.move.tooShort': 'Not moved: a road there would be too short to build',

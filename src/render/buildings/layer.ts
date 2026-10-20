@@ -918,6 +918,22 @@ export function createBuildingLayer(): BuildingLayer {
       keepToBudget();
       const now = new Set<string>(massCells.nearKeys());
       for (const key of forcedNear) now.add(key);
+      // The cells the eye left behind: their detail let go, their masses standing for them (the town's own boxes), made again on return by `landCells`, which asks every near cell lacking its level. DO NOT keep the whole town's detail in memory because the camera once passed there: the bytes of a large city's cells are its opening's and its roaming's cost, not its size's.
+      if (!hiddenNow && stored) {
+        const away = new Set<string>();
+        for (const key of cells.keys()) if (!now.has(key)) away.add(key);
+        for (const key of facades.keys()) if (!now.has(key)) away.add(key);
+        for (const key of away) {
+          if (pendingCells.has(key)) continue;
+          for (const kind of ['cell', 'facade'] as const) {
+            if (!(kind === 'cell' ? cells : facades).has(key)) continue;
+            shellBatch.remove(kind, key);
+            patchCell(key, null, shownAt(kind));
+            requests.drop(kind, key);
+          }
+          cellEntries.delete(key);
+        }
+      }
       // Those gone far, and every one near: a cell near may have changed between its detail and its facade level.
       for (const key of shownNear) if (!now.has(key)) present(key);
       for (const key of now) present(key);

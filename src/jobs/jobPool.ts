@@ -13,7 +13,7 @@ const PAGE_POOL_CAGE_SHARE = 1 / 5;
 const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 
 /** Services whose one job runs for seconds: kept on workers of their own, never beside another kind's lane or a queued job (a streamed tile is 2-25 s, `cityTile.worker.ts`: the traffic's conflict pairs waited behind tile after tile and the city's clock stood still). */
-const LONG_RUNNING: readonly JobService[] = ['growth'];
+const LONG_RUNNING: readonly JobService[] = ['growth', 'cityGen'];
 
 /** Services whose worker no queued job runs on (where another worker can take it), all on one worker (never one each: the short side has two, the V8 cage's count, `jobWorkers`): the save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22); the store's reads (`tileRead`) beside them, never beside the queue or the rush's tiles - a reopening's tiles waited behind far levels' bakes of seconds (conf37). No bake runs there (`tileStore.ts` upgraded, `TileStore.write`). */
 const KEPT_CLEAR: readonly JobService[] = ['save', 'tileRead'];

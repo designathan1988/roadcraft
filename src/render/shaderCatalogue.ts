@@ -144,8 +144,10 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
       deferred = null;
       void (async () => {
         // Never while the town's buffers go up (`warmPending`): the driver builds the variants and uploads at once, and the first frames
-        // of play waited seconds for both (measured 2026-10-20).
-        for (let waited = 0; waited < 30_000 && warmPending(); waited += 500) await new Promise((done) => setTimeout(done, 500));
+        // of play waited seconds for both (measured 2026-10-20). Waited on the frame's cadence, not a timer, and never for ever.
+        for (let until = performance.now() + 30_000; warmPending() && performance.now() < until;) {
+          await new Promise<void>((done) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => done()) : setTimeout(done, 500)));
+        }
         await job();
       })();
     },

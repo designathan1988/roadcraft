@@ -231,6 +231,8 @@ export interface SceneHandle {
   readonly programsReady: Promise<void>;
   /** A map is being opened (a file, the autosave): nothing is shown until its whole world is in */
   beginLoad(): void;
+  /** The next map opened is large: its first world covers the view alone, the rest filled after the curtain. */
+  scopeOpening(large: boolean): void;
   /** What else the opening waits for besides the town drawn: the tiles round the camera come in (`worldStreamer.ts` settled); null: nothing. */
   holdOpening(until: (() => boolean) | null): void;
   /** The streamed world's active tiles (`worldStreamer.ts` isActive): the buildings and the roads of the kept ring beyond are not put together here, the far levels draw them (`BuildingLayer.setActive`, `SurfaceReuse.within`). */
@@ -822,8 +824,9 @@ export function createSceneRenderer(
     paint: roadPaint,
     // A block of road is made at full detail only near the camera (`mesh/roadLod.ts`).
     near: (x, y) => isNear(x, y, roadFocus.x, roadFocus.y, roadFocus.reach),
-    // The near roads stop at the streamed world's active tiles (by the tile's centre: a tile astride the edge is built; the far roads of the ring cover the strip twice, never a gap).
-    within: (rect) => activeAt === null || activeAt((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2),
+    // The near roads stop at the streamed world's active tiles (by the tile's centre: a tile astride the edge is built; the far roads of the ring cover the strip twice, never a gap), and at the opening's view (`openingBuild`): the rest of a large city's roads is filled after the curtain.
+    within: (rect) => (activeAt === null || activeAt((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2))
+      && (openingWithin === null || openingWithin === undefined || openingWithin(rect)),
     chunks: new Map(),
     inputs: new SurfaceInputs(),
     retired: [],
@@ -891,6 +894,14 @@ export function createSceneRenderer(
   let openingPrograms: 'no' | 'asked' | 'built' = 'no';
   /** The town has been shown once this opening: the light variants the curtain did not wait for are asked now (`shaderCatalogue.ts` `afterReveal`). */
   let revealedPrograms = false;
+  /** The opening's first world: only the roads and the ground round the view, the rest filled after the curtain (`buildWorld(net, true)`) - a large city's whole road network took tens of seconds no pixel of the opening shows. */
+  let openingBuild = false;
+  /** The tiles the opening's build makes; null: every tile. */
+  let openingWithin: SurfaceReuse['within'] | null = null;
+  /** Whether the next map opened is a large one, its first world built round the view and the rest filled after the curtain (`main.ts` `openCity`). */
+  let scopeNextOpening = false;
+  /** Whether the town now shown had a scoped opening, its fill still to come. */
+  let openingFillPending = false;
   /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
   let openingHeld: (() => boolean) | null = null;
   /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
@@ -1820,14 +1831,21 @@ export function createSceneRenderer(
   };
   /** The roads the next solve reads the ground under, worked out once a state of the network and solve (`roadsRead.ts`): with no solve to start from every road is read whatever the ground, with one the land has not moved (`landStill`), and a moved region is never kept. */
   const roadsRead = new RoadsRead<ReturnType<typeof roadsToRead>>();
-  /** @rebuild The roads' heights solved again and the world's rebuild started (`worldSteps`). */
-  const buildWorld = (net: Network): void => {
+  /** @rebuild The roads' heights solved again and the world's rebuild started (`worldSteps`). `full`: the whole map, after a scoped opening (`openingFill`). */
+  const buildWorld = (net: Network, full = false): void => {
     const started = performance.now();
+    const opening = openingBuild && !full;
+    // The opening's first world builds only the tiles and the ground round the view; the rest is filled after the curtain.
+    const centre = rig.viewport.centre;
+    const openingHalf = m(700);
+    openingWithin = opening ? (rect) => rect[0] <= centre.x + openingHalf && rect[2] >= centre.x - openingHalf
+      && rect[1] <= centre.y + openingHalf && rect[3] >= centre.y - openingHalf : null;
+    const openingRegion = opening ? terrainRegion([centre.x - openingHalf, centre.y - openingHalf, centre.x + openingHalf, centre.y + openingHalf]) : null;
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
-    const landStill = terrainRevision === net.doc.terrainRevision && elevation !== null;
+    const landStill = !full && terrainRevision === net.doc.terrainRevision && elevation !== null;
     // Where the land moved (a stroke's region), when it can be said: the solve and the surfaces follow it there only. Kept until the solve
     // runs: cleared before a wait for the roads' stations, the next frame found no region and solved the whole map (TER-01, VIA-01).
-    const land = landDirty;
+    const land = full ? 'all' : landDirty;
     const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
     const groundMoved = landBlocks && land !== null && land !== 'all' ? [land] : null;
     const from = landStill || groundMoved ? elevation : null;
@@ -1858,14 +1876,14 @@ export function createSceneRenderer(
     const elevationMs = performance.now() - started;
     const cause = net.doc.changes.version;
     // DO NOT build it in one go: the roads of a generated city were built in the frame of the change, on the page
-    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true);
+    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true, openingRegion);
     worldJobFresh = true;
     worldJobGround = true;
   };
 
   /** @rebuild What `worldSteps` builds before it is put in place at once. */
   function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
-    started: number, sliced: boolean): Generator<'wait' | void, void, void> {
+    started: number, sliced: boolean, region: TerrainRegion | null): Generator<'wait' | void, void, void> {
     const solve = elevation!;
     // The revision this build is of: what its landing says the near roads are built for (`settleNearTiles`).
     const builtOf = networkRevision;
@@ -1879,10 +1897,12 @@ export function createSceneRenderer(
     // The roads' own heights (the footway, the carriageway) moved where the solve did
     // DO NOT shape the whole map when the blocks are known, however many: past a quarter of the plates loaded it re-floored and re-graded every building of the region at each tile the streamed world put in (5 floors a building in an opening, 2026-10-16); the blocks' work follows what moved.
     const blocks = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
+    performance.mark('world:shape');
     if (blocks === null) {
-      const shaping = shapeGround(net);
+      const shaping = shapeGround(net, region);
       while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
     } else if (blocks.length || gradedFor !== net.doc.buildings.revision) yield* shapeBlocksSteps(net, blocks);
+    performance.mark('world:shaped');
     pendingBlocks = [];
     worldJobGround = false;
     yield;
@@ -1897,8 +1917,10 @@ export function createSceneRenderer(
     surfaceBlocks = blocks !== null && surfaceBlocks !== null ? [...surfaceBlocks, ...blocks] : null;
     // THE STREAMED WORLD'S ROADS ARE THE TILES' (`farRoads.ts` near level: every tile one way, an edited one from the page's records): the region builds none to draw. Two ways of drawing them met at the region's edge, its detail on one side and the far level's flat colour on the other at the same distance (2026-10-16).
     const byTile = activeAt !== null;
+    performance.mark('world:surfaces');
     const freshRoads = byTile ? noRoadSurfaces() : yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
       sliced ? roadTiles : null, surfaceBlocks);
+    performance.mark('world:surfaced');
     surfaceBlocks = [];
     if (!byTile) {
       derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
@@ -1936,6 +1958,7 @@ export function createSceneRenderer(
     triangles -= details?.triangles ?? 0;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
+    performance.mark('world:roads');
     roads.adopt();
     world.add(roads.group);
     freshDetails?.apply();
@@ -2644,7 +2667,14 @@ export function createSceneRenderer(
       openingSince = null;
       openingPrograms = 'no';
       revealedPrograms = false;
+      openingBuild = scopeNextOpening;
+      openingFillPending = openingBuild;
+      scopeNextOpening = false;
       onAssetsReady();
+    },
+    /** The next map opened is large: its first world covers the view alone, the rest filled after the curtain (`openingBuild`). */
+    scopeOpening(large: boolean) {
+      scopeNextOpening = large;
     },
     offerElevation(solved, revision) {
       offeredElevation = { elevation: solved, revision, terrain: terrainRevision };
@@ -3436,6 +3466,13 @@ export function createSceneRenderer(
       if (reveal.opened && qualityCompile && performance.now() - qualityCompileSince < QUALITY_COMPILE_GIVE_UP_MS) { /* drawn again once built: `setQuality` asks for the frame */ }
       else if (reveal.opened) {
         if (!revealedPrograms) { revealedPrograms = true; programs.afterReveal(); }
+        // The rest of a large city's roads and ground, now that its view is shown: built in slices while the game runs (`openingBuild`).
+        if (openingFillPending && worldJob === null) {
+          openingFillPending = false;
+          openingBuild = false;
+          openingWithin = null;
+          buildWorld(net, true);
+        }
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
         // The effects panel's switches: the passes skipped, the layers hidden for this drawing only, the shadows kept as they stand.

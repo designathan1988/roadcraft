@@ -1,0 +1,18 @@
+{
+  "viewport": [1280, 720],
+  "steps": [
+    { "usageStart": { "every": 250 } },
+    { "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large', radius: 2200 }); 'started'" },
+    { "until": "performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0", "name": "city shown", "timeout": 300000, "polling": 250 },
+    { "wait": 3000 },
+    { "eval": "performance.getEntriesByType('mark').filter(m => m.name.startsWith('city:') || m.name.startsWith('reveal:') || m.name.startsWith('world:') || m.name === 'opening:shown').map(m => ({ name: m.name, at: Math.round(m.startTime) }))" },
+    { "shot": "opening-view" },
+    { "usageEnd": true },
+    { "lookAt": [0, 0, 0.17] }, { "wait": 20000 },
+    { "shot": "map" }, { "memory": "exact" },
+    { "lookAt": [0, 0, 2.5] }, { "wait": 6000 },
+    { "shot": "district" }, { "memory": "exact" },
+    { "setView": [150, 90, 8, 20, 12] }, { "wait": 6000 },
+    { "shot": "street" }, { "memory": "exact" }
+  ]
+}

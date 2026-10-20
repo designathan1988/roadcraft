@@ -93,7 +93,6 @@ export class FarLevels extends FarTree<FarMass> {
       // A box level's error is its square's diagonal (`levelDrop`): a square `BOX_PIXELS` wide on the screen at the least.
       levelPixels: (k) => (k >= BOX_LEVEL ? BOX_PIXELS * Math.SQRT2 : 0),
       // Where no tile is made yet, the plan's boxes at every level (`farPlan.ts`): never a hole while the map is made. DO NOT start at the boxes' levels: a node with tiles of the page's document under it is never drawn whole, and its quarters with no tile made, under level 2, were drawn by nothing - a band of blocks with avenues only round the region for 10-30 s on the 20 km map (ring20a, band5, 2026-10-18).
-      planFrom: 0,
     };
     super(kind, asTreeRun(run), prefix, lanes);
     // The bakes of an older build of this code: let go.

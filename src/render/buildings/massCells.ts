@@ -22,6 +22,8 @@ const NEAR_PIXELS = 2;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
 export const HYSTERESIS = 0.85;
 const DETAIL_REACH = m(1_400); // cells within 1.4 km draw the detail level itself, whatever their pixels: the player asks for no LOD there (2026-10-20)
+/** A metre's pixels under which the 1.4 km reach forces no detail: a cell there spans too few pixels for any of it to be seen (the whole map at once, ~0.1 px a metre), and building it held the opening of a large city behind tens of seconds of work no pixel showed. */
+const DETAIL_REACH_VISIBLE = 0.5;
 /** STREET-LEVEL HORIZON VIEWS: with the eye near the ground and looking along the streets */
 const STREET_EYE = m(40);
 const HORIZON_HALF = m(150);
@@ -593,8 +595,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         else {
           measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, cell.x0, cell.y0, cell.x1, cell.y1, cell.top);
           const { perMetre, allowed, across } = seen;
-          // Within reach, with a margin for a cell already near (hysteresis); every cell within `DETAIL_REACH` of the eye is drawn near whatever the pixels say (the player, 2026-10-20: the town keeps its buildings' own facades to 2 km).
-          near = (FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) || across <= DETAIL_REACH)
+          // Within reach, with a margin for a cell already near (hysteresis); every cell within `DETAIL_REACH` of the eye is drawn near while it spans enough pixels to be seen (the player, 2026-10-20: the town keeps its buildings' own facades to 2 km; the whole map at once spans too few).
+          near = (FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) || (across <= DETAIL_REACH && perMetre >= DETAIL_REACH_VISIBLE))
             && across <= reach * (cell.near ? 1.25 : 1)
             && inView(view, cell, cell.near ? VIEW_KEEP : VIEW_COME);
           // The full detail (L0) while a detail it draws, 0.3 m, spans a pixel: the building shows its own windows, frames and balconies at any zoom close enough to tell them apart (the player, 2026-10-20: no LOD within 1.4 km). The frame's own budget still trims it under load.

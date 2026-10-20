@@ -103,10 +103,7 @@ export class ShellBatch {
       batch.indices = Math.max(Math.ceil(usedIndices * 1.25), 1 << 15);
       mesh.setGeometrySize(batch.vertices, batch.indices);
     }
-    if (batch.instances > 64 && mesh.instanceCount * 2 < batch.instances) {
-      batch.instances = Math.max(64, mesh.instanceCount * 2);
-      mesh.setInstanceCount(batch.instances);
-    }
+    // DO NOT shrink the instance count: three's BatchedMesh throws when an id past the new count is still in use, and deleting a cell's geometries leaves holes past `instanceCount` (the active count) until its own trailing holes are popped. The batch keeps its capacity; the instances of a cell let go are deleted above.
   }
 
   /** A cell's level shown or hidden (a cell still on another level is not drawn, and its pieces cost nothing). */

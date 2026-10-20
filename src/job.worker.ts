@@ -33,6 +33,8 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   farRoads: () => import('./render/farRoads.worker'),
   roadStations: () => import('./render/roadStations.worker'),
   nearTiles: () => import('./render/nearTiles.worker'),
+  // The whole finite city built with the game's own generator, off the page (`cityGen.worker.ts`).
+  cityGen: () => import('./cityGen.worker'),
   terrainLight: () => import('./render/terrainLight.worker'),
   // A dab's work on a plate: its levels, its woods, its shore (`render/landStroke.ts`).
   landStroke: () => import('./render/landStroke.worker'),

@@ -1,6 +1,7 @@
 import { measureHitch } from '@core/hitch';
 import { watchDesktopShown } from './desktopShown';
-import { jobChannel, jobLanes, setJobWorkerMaker, setJobWorkerSetup } from './jobs/jobPool';
+import { canQueueJobs, jobChannel, jobLanes, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
+import type { CityGenAsk, CityGenReply } from './cityGen.worker';
 import { desktopJobWorkers } from './desktopJobs';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
@@ -94,7 +95,7 @@ import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
 import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
-import { STUTTER_MS } from '@core/sampleRing';
+import { SampleRing, STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { exportToFile } from '@editor/mapExport';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
@@ -1964,25 +1965,93 @@ function newMap(): void {
 /** A NEW CITY from the menu: the small city of Roadcraft 2.0 (`buildSmallCityMap`: straight blocks, medium size) laid out as ONE map, no tiles - the player, 2026-10-18: the tiles were for a city over the whole map, which never worked. */
 function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
-  openSmallCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
+  void openSmallCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
 }
+/** A city being made off the page (`cityGen.worker.ts`): the curtain over the map while the worker builds it, no frame of it on the page. */
+let generatingCity = false;
+/** The opening asked for while one is made: the same promise, never a second city over the first's answer. */
+let cityOpening: Promise<void> | null = null;
+let cityAskId = 1;
+
+/** The city's document made by the worker (the game's own generator); without a job queue (a test) it is made on the page, as before. */
+function cityData(ask: CityGenAsk): Promise<ReturnType<typeof buildSmallCityMap>> {
+  if (!canQueueJobs()) {
+    return Promise.resolve(ask.kind === 'small'
+      ? buildSmallCityMap(ask.seed ?? 7)
+      : buildCityMap(planCity({ ...DEFAULT_CITY, ...ask.options })));
+  }
+  return new Promise((done, fail) => {
+    submitJob({
+      service: 'cityGen', key: 'cityGen', priority: 0,
+      write: () => ({ data: ask, transfer: [] }),
+      done: (answer) => {
+        const reply = answer as CityGenReply;
+        if (reply.data) done(reply.data);
+        else fail(new Error(reply.error ?? 'the city was not made'));
+      },
+      failed: (message) => fail(new Error(message)),
+    });
+  });
+}
+
+/** A city made off the page and put in place of the map: the curtain over the map while its worker builds it, then the real map opened whole. One at a time, in the order asked. */
+function openCityOffPage(ask: CityGenAsk): Promise<void> {
+  const opened = (cityOpening ?? Promise.resolve()).then(() => openCityNow(ask));
+  cityOpening = opened.catch(() => {});
+  return opened;
+}
+
+async function openCityNow(ask: CityGenAsk): Promise<void> {
+  generatingCity = true;
+  syncLoadingCurtain();
+  requestDraw();
+  performance.mark('city:asked');
+  try {
+    const data = await cityData(ask);
+    performance.mark('city:data');
+    generatingCity = false;
+    openCity(data, (data.buildings?.length ?? 0) > 5_000);
+    performance.mark('city:applied');
+  } catch (error) {
+    console.error('The city could not be made.', error);
+    flashHint('hint.openFailed');
+  } finally {
+    generatingCity = false;
+    syncLoadingCurtain();
+    requestDraw();
+  }
+}
+
 /** The small city of a seed put in place of the map (the menu's, and the probes' with a seed of their own). */
-function openSmallCity(seed: number): void {
-  openCity(buildSmallCityMap(seed));
+function openSmallCity(seed: number): Promise<void> {
+  return openCityOffPage({ id: cityAskId++, kind: 'small', seed });
 }
 
 /** A planned city of any size put in place of the map (the probes' larger cities, `cityGen/plan.ts`). */
-function openGeneratedCity(options: Partial<CityOptions>): void {
-  openCity(buildCityMap(planCity({ ...DEFAULT_CITY, ...options })));
+function openGeneratedCity(options: Partial<CityOptions>): Promise<void> {
+  return openCityOffPage({ id: cityAskId++, kind: 'planned', options });
 }
 
-function openCity(data: ReturnType<typeof buildSmallCityMap>): void {
+function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false): void {
   history.begin(doc);
+  // A large city opens at a district, its first world covering the view alone (`renderer.ts` openingBuild): the whole map's roads took tens of seconds the curtain showed nothing of.
+  if (large) scene.scopeOpening(true);
   applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
   // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).
   history.end(doc);
   roadTool.reset();
-  fitView();
+  if (large) fitOpeningView(); else fitView();
+}
+
+/** The view a large city opens at: a district round its middle, in the detail its roads and buildings are drawn for; the whole map comes as the camera moves, the rest of the world filled after the curtain. */
+function fitOpeningView(): void {
+  const bounds = worldBounds();
+  const across = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+  if (across <= m(1_200)) { fitView(); return; }
+  const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
+  const half = m(300);
+  camera.fit({ minX: cx - half, minY: cy - half, maxX: cx + half, maxY: cy + half }, surface.cssW, surface.cssH);
+  syncViewFromFlatCamera();
 }
 // The sky: always day (the default), always night, or the residents' clock; kept.
 const SKY_KEY = 'roadcraft.sky';
@@ -2357,6 +2426,7 @@ let waitingForTab = false;
 const loadingCurtain = document.createElement('div');
 loadingCurtain.className = 'loading-curtain';
 loadingCurtain.setAttribute('role', 'status');
+loadingCurtain.id = 'loading-curtain';
 loadingCurtain.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;'
   + 'background:rgba(10,16,18,.92);color:#fff;font:600 16px system-ui,sans-serif;letter-spacing:.02em';
 loadingCurtain.textContent = t('map.loading');
@@ -2377,11 +2447,13 @@ function syncLoadingCurtain(): void {
       requestDraw();
     });
   }
-  const show = waitingForTab || scene.opening || !programsCompiled;
+  const show = generatingCity || waitingForTab || scene.opening || !programsCompiled;
   if ((loadingCurtain.style.display !== 'none') !== show) loadingCurtain.style.display = show ? 'flex' : 'none';
 }
 /** A frame has been drawn, and the first world has been put in place (the opening builds it in parts). */
 let drawnOnce = false;
+/** Every frame's whole time, the last 40 s (`sampleRing.ts`): the CPU the process spends a frame, sampled while it runs (`__roadcraft.usage`). */
+const frameTimes = new SampleRing(2400);
 let worldShown = false;
 /** @perFrame One frame: input, the topology catching up, the simulation, the drawing, the panels. */
 function frame(now: number): void {
@@ -2468,6 +2540,7 @@ function frame(now: number): void {
   syncLoadingCurtain();
   frameTimer.mark('panels');
   const timed = frameTimer.end();
+  frameTimes.push(timed.end - timed.start);
   healthWatch.frameEnded(timed.start, timed.end);
   effects.frameEnded(timed.end - timed.start);
   lab.frameEnded(timed);
@@ -3861,6 +3934,22 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
 
 ${JSON.stringify(counts)}`;
     return { ...inv, counts };
+  },
+  /** Every resource the process reaches, cheap enough to sample while it runs (`scripts/look.mjs` usage): the frame's CPU (its whole time), the GPU's own timer, the JS heap, the GPU's geometries, textures and programs, what is drawn, and whether the opening still holds the town. */
+  usage: () => {
+    const heap = (performance as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+    const frames = frameTimes.stats(STUTTER_MS);
+    const gpu = scene.gpu.samples.stats();
+    const stats = scene.stats;
+    const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;
+    return {
+      at: Math.round(performance.now()), opening: scene.opening, worldBusy: scene.worldBusy,
+      cpuP50: frames.p50, cpuP95: frames.p95, cpuP99: frames.p99, cpuMax: frames.max, cpuN: frames.n, hitches: frames.over,
+      gpuP50: gpu.p50, gpuP95: gpu.p95, gpuP99: gpu.p99, gpuMax: gpu.max, gpuN: gpu.n, gpuSupported: scene.gpu.supported,
+      heapMB: heap ? mb(heap.usedJSHeapSize) : null, heapTotalMB: heap ? mb(heap.totalJSHeapSize) : null, heapLimitMB: heap ? mb(heap.jsHeapSizeLimit) : null,
+      geometries: scene.gl.info.memory.geometries, textures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,
+      drawCalls: stats.drawCalls, triangles: stats.drawnTriangles, buildingDetailMB: mb(scene.buildingDetailBytes()), fps: stats.fps,
+    };
   },
   memory: () => {
     const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;

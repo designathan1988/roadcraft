@@ -129,8 +129,11 @@ async function steps(page, report) {
   /** A city generated, and the seconds until it stands. */
   const city = async (options) => {
     const t0 = Date.now();
-    // An earlier opening's mark is not this city's.
-    await page.evaluate((o) => { performance.clearMarks('opening:shown'); window.__roadcraft.generateCity(o === true ? {} : o); }, options);
+    // The city's map is made before its opening begins (`main.ts` openCityOffPage: off the page, seconds for a large city), and the opening before that one may show meanwhile: only the marks after the map is in are this city's.
+    await page.evaluate(async (o) => {
+      await window.__roadcraft.generateCity(o === true ? {} : o);
+      performance.clearMarks('opening:shown');
+    }, options);
     // `?.`: a reload in the wait leaves the page without `__roadcraft` for a moment.
     // Shown: the opening's own mark (`renderer.ts` reveal), read for nothing; the draw calls only every 10th look (`memory` walks the whole scene: 9 s of an opening's page, 2026-10-16), for a town shown without the mark.
     await page.waitForFunction(() => {
@@ -154,6 +157,21 @@ async function steps(page, report) {
   let recording = null;
   let sampling = null;
   let tracing = false;
+  let usageWindow = null;
+  /** Every numeric field of every sample: the peak, the mean and the least each reached (not one final reading). */
+  const summarize = (samples) => {
+    const keys = new Set();
+    for (const sample of samples) for (const key of Object.keys(sample)) if (typeof sample[key] === 'number' && Number.isFinite(sample[key])) keys.add(key);
+    const peak = {}, avg = {}, least = {};
+    for (const key of keys) {
+      const values = samples.map((sample) => sample[key]).filter((value) => typeof value === 'number' && Number.isFinite(value));
+      if (!values.length) continue;
+      peak[key] = Math.max(...values).toFixed(2) * 1;
+      least[key] = Math.min(...values).toFixed(2) * 1;
+      avg[key] = Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100;
+    }
+    return { peak, avg, min: least };
+  };
   const session = async () => (cdp ??= await page.context().newCDPSession(page));
 
   /** Two drawn frames, so a picture shows what the last step did. */
@@ -216,6 +234,66 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
       if (recording.film) line.value.video = await recording.film.stop(join(out, `${String(i).padStart(2, '0')}-${recording.name}.webm`));
       console.log(`frames "${recording.name}": ${line.value.frames} in ${line.value.seconds} s, p50 ${line.value.p50} p95 ${line.value.p95} p99 ${line.value.p99} max ${line.value.max} ms, ${line.value.hitches} over 25 ms, ${line.value.dropped} vsyncs missed; GPU p95 ${line.value.gpu.p95 ?? '—'} ms${line.value.video ? `; video ${line.value.video}` : ''}`);
       recording = null;
+    } else if (step.usage) {
+      // Every value the process reaches over the window, not a last reading: the game's frame time, its GPU timer, its heap and GPU counts, and the page's own CPU (CDP TaskDuration) each sample.
+      const options = step.usage === true ? {} : step.usage;
+      const seconds = options.seconds ?? 4, every = options.every ?? 250;
+      const c = await session();
+      try { await c.send('Performance.enable'); } catch { /* no metrics: the game's own are kept */ }
+      const metrics = async () => {
+        try { const { metrics: list } = await c.send('Performance.getMetrics'); return Object.fromEntries(list.map((m) => [m.name, m.value])); } catch { return {}; }
+      };
+      let previous = await metrics(), previousAt = Date.now();
+      const samples = [];
+      const started = Date.now();
+      while (Date.now() - started < seconds * 1000) {
+        const sample = await page.evaluate(() => window.__roadcraft?.usage?.() ?? null);
+        if (sample) {
+          const now = Date.now();
+          const m = await metrics();
+          const dt = Math.max(1, now - previousAt);
+          const task = (m.TaskDuration ?? 0) - (previous.TaskDuration ?? 0);
+          samples.push({ ...sample, cpuPct: Math.round((task * 1e5) / dt) / 100, cdpHeapMB: Math.round((m.JSHeapUsedSize ?? 0) / 1e5) / 10 });
+          previous = m;
+          previousAt = now;
+        }
+        await new Promise((done) => setTimeout(done, every));
+      }
+      const summary = summarize(samples);
+      line.value = { seconds: (Date.now() - started) / 1000, count: samples.length, samples, ...summary };
+      console.log(`usage: ${samples.length} samples over ${line.value.seconds.toFixed(1)} s; peak CPU ${summary.peak.cpuPct}% (frame ${summary.peak.cpuMax} ms, p95 ${summary.peak.cpuP95}), GPU ${summary.peak.gpuMax} ms (p95 ${summary.peak.gpuP95}), heap ${summary.peak.heapMB} MB, textures ${summary.peak.textures}, draws ${summary.peak.drawCalls}, triangles ${summary.peak.triangles}`);
+    } else if (step.usageStart) {
+      // The sampling starts now and goes on while the steps run (a city built and opened underneath; `usageEnd` returns every sample).
+      const options = step.usageStart === true ? {} : step.usageStart;
+      await page.evaluate((every) => {
+        window.__usageSamples = [];
+        window.__usageTimer = window.setInterval(() => {
+          const usage = window.__roadcraft?.usage?.();
+          if (usage) window.__usageSamples.push(usage);
+        }, every);
+      }, options.every ?? 250);
+      const c = await session();
+      try { await c.send('Performance.enable'); } catch { /* no metrics */ }
+      let previous = {};
+      try { const { metrics: list } = await c.send('Performance.getMetrics'); previous = Object.fromEntries(list.map((m) => [m.name, m.value])); } catch { /* no metrics */ }
+      usageWindow = { started: Date.now(), previous, session: c };
+    } else if (step.usageEnd) {
+      if (!usageWindow) throw new Error('"usageEnd" with no "usageStart" before it');
+      const samples = await page.evaluate(() => {
+        if (window.__usageTimer) window.clearInterval(window.__usageTimer);
+        window.__usageTimer = null;
+        return window.__usageSamples ?? [];
+      });
+      const seconds = (Date.now() - usageWindow.started) / 1000;
+      let metrics = {};
+      try { const { metrics: list } = await usageWindow.session.send('Performance.getMetrics'); metrics = Object.fromEntries(list.map((m) => [m.name, m.value])); } catch { /* no metrics */ }
+      const task = (metrics.TaskDuration ?? 0) - (usageWindow.previous.TaskDuration ?? 0);
+      const summary = summarize(samples);
+      line.value = { seconds, count: samples.length, samples, ...summary,
+        processCpuPct: seconds > 0 ? Math.round((task / seconds) * 10000) / 100 : null,
+        cdpHeapMB: Math.round((metrics.JSHeapUsedSize ?? 0) / 1e5) / 10 };
+      usageWindow = null;
+      console.log(`usage window: ${samples.length} samples over ${seconds.toFixed(1)} s; process CPU ${line.value.processCpuPct}%; peak CPU frame ${summary.peak.cpuMax} ms (p95 ${summary.peak.cpuP95}), GPU ${summary.peak.gpuMax} ms (p95 ${summary.peak.gpuP95}), heap ${summary.peak.heapMB} MB, textures ${summary.peak.textures}, draws ${summary.peak.drawCalls}, triangles ${summary.peak.triangles}`);
     } else if (step.allocations) {
       const c = await session();
       await c.send('HeapProfiler.enable');
