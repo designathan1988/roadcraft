@@ -349,11 +349,12 @@ export const farMassBuffers = (m: FarMass): ArrayBuffer[] => (isBoxMass(m) ? [m.
 /** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
 export function cellBytes(arrays: CellArrays): number {
   let bytes = 0;
-  for (const s of arrays.shells) bytes += s.position.byteLength + s.normal.byteLength + s.paint.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.grid?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
+  // An array let go once on the GPU (`gpuOnly`) counts nothing: the sum is the budget's, never a crash.
+  for (const s of arrays.shells) bytes += (s.position?.byteLength ?? 0) + (s.normal?.byteLength ?? 0) + (s.paint?.byteLength ?? 0) + (s.index?.byteLength ?? 0) + (s.facade?.byteLength ?? 0) + (s.grid?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
-      bytes += p.poses.byteLength;
+      bytes += p.poses?.byteLength ?? 0;
       for (const a of [p.instanceColor, p.litSlot, p.rooms, p.looks]) if (a) bytes += a.byteLength;
     }
   }

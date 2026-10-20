@@ -21,6 +21,7 @@ const FACADE_ERROR = FLAT_DEPTH;
 const NEAR_PIXELS = 2;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
 export const HYSTERESIS = 0.85;
+const DETAIL_REACH = m(1_500); // cells within 1.5 km draw the facade level whatever their pixels: the town keeps its own faces out there (the player, 2026-10-20)
 /** STREET-LEVEL HORIZON VIEWS: with the eye near the ground and looking along the streets */
 const STREET_EYE = m(40);
 const HORIZON_HALF = m(150);
@@ -544,6 +545,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       const coarseWanted = (level: Level): boolean => {
         if (level.empty || allNear === true || forcedLevels.has(level.key)) return false;
         measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, level.x0, level.y0, level.x1, level.y1, level.top);
+        // A tile or plate reaching into `DETAIL_REACH` gives way to its cells: the town keeps its own facades to 2 km, where a painted box is all its masses can be (the player, 2026-10-20).
+        if (seen.across <= DETAIL_REACH) return false;
         // Refined while its error spans the pixels, down to `HYSTERESIS` of them once refined (as a cell near stays near).
         return (level.mesh ? level.error : level.bound) * seen.perMetre < seen.allowed * (level.coarse ? 1 : HYSTERESIS);
       };
@@ -590,8 +593,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         else {
           measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, cell.x0, cell.y0, cell.x1, cell.y1, cell.top);
           const { perMetre, allowed, across } = seen;
-          // Within reach, with a margin for a cell already near (hysteresis).
-          near = FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) && across <= reach * (cell.near ? 1.25 : 1)
+          // Within reach, with a margin for a cell already near (hysteresis); every cell within `DETAIL_REACH` of the eye is drawn near whatever the pixels say (the player, 2026-10-20: the town keeps its buildings' own facades to 2 km).
+          near = (FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) || across <= DETAIL_REACH)
+            && across <= reach * (cell.near ? 1.25 : 1)
             && inView(view, cell, cell.near ? VIEW_KEEP : VIEW_COME);
           // Its facade level once what that leaves out is under the pixels the detail is drawn for.
           fine = !heldCoarse.has(key) && FACADE_ERROR * perMetre >= allowed * (cell.fine ? HYSTERESIS : 1);

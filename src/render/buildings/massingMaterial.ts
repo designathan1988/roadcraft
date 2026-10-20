@@ -1,4 +1,5 @@
 import { Color, MeshDepthMaterial, MeshStandardMaterial } from 'three';
+import { m } from '@world/units';
 import { ROOM_LAMP_GLSL } from './roomLamps';
 import { applyLotOverlay } from '../lotOverlay';
 
@@ -96,7 +97,8 @@ if (vFacade.y > 0.0) {
   float share = vGlazing.x;
   float across = share > 0.99 ? 1.0 : massPulse(cell.x, foot.x, 0.5 - 0.5 * share, 0.5 + 0.5 * share);
   float up = share > 0.99 ? 1.0 : massPulse(cell.y, foot.y, ${SILL.toFixed(2)}, ${HEAD.toFixed(2)});
-  massGlass = across * up * step(0.0, cell.y);
+  // A window under a pixel leaves its mean: kept at full strength the glass the detail shows, not washed into the wall (the town at 1–2 km read as pastel boxes, 2026-10-20).
+  massGlass = clamp(across * up * 1.45, 0.0, 1.0) * step(0.0, cell.y);
   // Which room is lit: its own lot near, the share awake once a window is under a pixel; by day (\`massingNight\` 0, a uniform: one branch for every pixel) none glows, so none is worked out.
   if (massingNight > 0.0) {
     vec2 room = floor(cell);
@@ -111,11 +113,13 @@ if (vFacade.y > 0.0) {
   // A curtain wall is its own colour (its finish's mean, \`finishes.ts\` \`finishAlbedo\`):
   // painted the windows' glass it turned navy blue from afar while the detailed tower is near black
   if (share < 0.99) diffuseColor.rgb = mix(diffuseColor.rgb, ${glass}, massGlass);
+  // The foot of the wall in the street's shade: a block stands on the ground, not on a card (the town from afar, 2026-10-20).
+  diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, ${m(1.4).toFixed(4)}, vHeight - vFacade.w));
 }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, massGlass);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += massLamp * massingNight * massLit * massGlass;`);
   };
-  material.customProgramCacheKey = () => (boxes ? 'building-massing-boxes-v2' : 'building-massing-lamps-v4');
+  material.customProgramCacheKey = () => (boxes ? 'building-massing-boxes-v3' : 'building-massing-lamps-v5');
   // A built lot's yard, coloured from afar as up close (`lotOverlay.ts`).
   applyLotOverlay(material, { building: true });
   return material;

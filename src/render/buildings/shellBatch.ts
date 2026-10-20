@@ -1,4 +1,4 @@
-import { BatchedMesh, BufferAttribute, BufferGeometry, Group, type Material, Matrix4, type Mesh } from 'three';
+import { BatchedMesh, BufferAttribute, BufferGeometry, Group, type InterleavedBufferAttribute, type Material, Matrix4, type Mesh } from 'three';
 
 import { SHELL_MESH } from './cellArrays';
 import type { BuildingKit } from './kit';
@@ -52,7 +52,17 @@ export class ShellBatch {
     for (const child of [...batch.group.children]) {
       const mesh = child as Mesh;
       if (!mesh.isMesh || mesh.name !== SHELL_MESH) continue;
+      // Its arrays may have been let go once on the GPU (`gpuOnly`): the batch copies them, so they are made again first, and a piece whose source is gone (a context lost meanwhile) is left out rather than crashing the draw.
+      (mesh.userData['refillArrays'] as (() => void) | undefined)?.();
       const source = mesh.geometry;
+      const arraysGone = Object.values(source.attributes).some((attribute) => {
+        const array = (attribute as BufferAttribute).array ?? (attribute as InterleavedBufferAttribute).data?.array;
+        return array === null || array === undefined;
+      });
+      if (arraysGone) {
+        console.warn(`[buildings] a shell of ${kind} ${key} has no arrays to copy: left out`);
+        continue;
+      }
       const runs = source.hasAttribute('facadeCell');
       const set: ShellSet = kind === 'cell' ? 'detail' : runs ? 'runs' : 'facade';
       const target = this.batches.find((one) => one.set === set)!;
