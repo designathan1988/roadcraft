@@ -216,6 +216,14 @@ async function simplerLevels(source: BufferGeometry, finest: number): Promise<Pa
   return out;
 }
 
+/** A box's top face alone, its sides left out: a unit square at y = 0.5 facing up, for a thin plate seen from afar. */
+function topFaceGeometry(): BufferGeometry {
+  const g = new PlaneGeometry(1, 1);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0.5, 0);
+  return g;
+}
+
 /** A box of the given size whose centre is at (x, y, z). */
 function box(w: number, h: number, d: number, x: number, y: number, z: number): BufferGeometry {
   const g = new BoxGeometry(w, h, d);
@@ -615,6 +623,11 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   for (const kind of SHELL_PART_KINDS) {
     coarser(kind, shellPartGeometry(SHELL_PART_FACES[kind].filter((f) => f.n[2] > 0)), [0, 0.5, 0]);
   }
+  // A sill, a facade fin, a pool's water: a thin horizontal plate whose sides are centimetres high, under a pixel from afar.
+  // Its top alone draws it (2 triangles, not 12); the error is half its height. A fin standing on edge (a storey tall) keeps
+  // its box: that error is metres, well over a pixel.
+  const topFace = topFaceGeometry();
+  for (const kind of ['concrete', 'fin', 'water'] as const) coarser(kind, topFace, [0, 0.5, 0]);
   const extentOf = (g: BufferGeometry): Axes => {
     if (!g.boundingBox) g.computeBoundingBox();
     const b = g.boundingBox!;

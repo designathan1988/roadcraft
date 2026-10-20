@@ -1,7 +1,7 @@
 import { Box3, type BufferGeometry, Group, InstancedInterleavedBuffer, InstancedMesh, InterleavedBufferAttribute, type InstancedBufferAttribute, type Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { FINISH_ATTRIBUTE } from './cellArrays';
-import { GROUND_ATTRIBUTE, LOOK_FLOATS } from './shellParts';
+import { GROUND_ATTRIBUTE, LOOK_FLOATS, SHELL_PARTS, shellPartError } from './shellParts';
 import type { Axes, BuildingKit, PartKind, PartScreen } from './kit';
 import { partLook } from './fade';
 import { POSE_FLOATS, letGoPosed, partPoseDepth, posedCopy } from './partPose';
@@ -251,10 +251,15 @@ export class PartCell {
   /** A sub-cell's level for the pixels a metre spans there: the coarsest whose error is under a pixel, NONE when an instance is. */
   private levelAt(band: Band, m: number, perMetre: number, held: number): number {
     const { levels, extent } = band.screen;
+    // A shell's part: the sides its top-only level leaves out are as tall as its height or as wide as its thinnest plan
+    // (a post's width, not its metre of height), so that face's smaller side is its error (`shellPartError`).
+    const shell = SHELL_PARTS.has(band.kind);
     let k = 0;
     for (; k < levels.length; k++) {
       const next = k + 1;
-      const metres = next < levels.length ? largest(levels[next]!.error, band.scale, m * 3) : diagonal(extent, band.scale, m * 3);
+      const metres = next < levels.length
+        ? (shell ? shellPartError(band.scale, m * 3) : largest(levels[next]!.error, band.scale, m * 3))
+        : diagonal(extent, band.scale, m * 3);
       if (metres * perMetre >= (next <= held ? 1 : COARSEN)) break;
     }
     // Under a pixel across its diagonal: not drawn, a shell's part too.

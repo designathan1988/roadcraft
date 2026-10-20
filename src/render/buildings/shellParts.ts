@@ -13,6 +13,12 @@ export const SHELL_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind
 
 /** Numbers an instance of a shell part carries besides its matrix and colour: its finish id, its wear and the ground its walls darken towards. */
 export const LOOK_FLOATS = 3;
+
+/** The screen error of a shell part's top-only level, model units, from an instance's scales [x, y, z] at `o`: the smaller side of the largest face its sides lose. A wall (long, tall, thin) leaves out its wall face, so its height; a post (thin across) leaves out a face no wider than the post, so its width. DO NOT use the height alone: a fence's posts are a metre tall and a tenth wide, and stayed at ten triangles each for a face a fraction of a pixel across. */
+export function shellPartError(scale: ArrayLike<number>, o: number): number {
+  const sx = scale[o]!, sy = scale[o + 1]!, sz = scale[o + 2]!;
+  return 0.5 * Math.min(sy, Math.max(sx, sz));
+}
 /** The attribute of the ground a shell part's walls darken towards (`GRIME_REACH`), per instance. */
 export const GROUND_ATTRIBUTE = 'shellGround';
 /** A ground so far down no wall darkens: what a part of a building with no ground floor takes (`Shell.ground` NaN). */

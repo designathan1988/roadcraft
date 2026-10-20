@@ -3,7 +3,7 @@ import { m } from '@world/units';
 import type { CellArrays, PartBanding, PartBandings } from './cellArrays';
 import { PART_KINDS, type PartKind, type PartScreen } from './kit';
 import { POSE_FLOATS } from './partPose';
-import { LOOK_FLOATS } from './shellParts';
+import { LOOK_FLOATS, SHELL_PARTS, shellPartError } from './shellParts';
 
 /** A CELL'S PARTS FILED BY BAND AND SUB-CELL WHERE THE CELL IS MADE (`cellWork.ts`): the page is handed each band's buffers ready, never an instance to read (`partCells.ts` draws them) */
 
@@ -80,7 +80,7 @@ export function fileParts(key: string, details: readonly (readonly [string, Cell
 
 /** Sub-cell `m`'s instances of a kind banded (`bands`), each band's count and largest scales in `perBand`; the band they all are (-1: mixed). */
 /** DO NOT loop over a sub-cell's instances inside `fileKind`'s loop of sub-cells: entered on the stack (OSR) for the inner loop, its code left at each sub-cell's end (119 times a job), the rest run unoptimised. */
-function bandSubCell(e: Float32Array, count: number, m: number, bands: Uint8Array, perBand: Map<number, { counts: Uint32Array; scale: Float32Array }>, screen: PartBanding): number {
+function bandSubCell(e: Float32Array, count: number, m: number, bands: Uint8Array, perBand: Map<number, { counts: Uint32Array; scale: Float32Array }>, screen: PartBanding, shell: boolean): number {
   const first = screen.first;
   let only = -2, lastBand = -1;
   let into: { counts: Uint32Array; scale: Float32Array } | undefined;
@@ -88,7 +88,9 @@ function bandSubCell(e: Float32Array, count: number, m: number, bands: Uint8Arra
     const o = i * POSE_FLOATS;
     // The model's axes as the instance scales them: its pose's scale.
     const sx = e[o + 5]!, sy = e[o + 6]!, sz = e[o + 7]!;
-    const metres = first ? Math.max(first[0] * sx, first[1] * sy, first[2] * sz) : Math.sqrt((screen.extent[0] * sx) ** 2 + (screen.extent[1] * sy) ** 2 + (screen.extent[2] * sz) ** 2);
+    // A shell's part bands by the face its top-only level leaves out (`shellPartError`), as its level is chosen (`partCells.ts`).
+    const metres = shell ? shellPartError(e, o + 5)
+      : first ? Math.max(first[0] * sx, first[1] * sy, first[2] * sz) : Math.sqrt((screen.extent[0] * sx) ** 2 + (screen.extent[1] * sy) ** 2 + (screen.extent[2] * sz) ** 2);
     // A shell's part too, by its size: its small ones a band of their own, left out under a pixel (`partCells.ts` `levelAt`).
     const b = bandOf(metres);
     bands[i] = b;
@@ -134,7 +136,7 @@ function fileKind(kind: PartKind, slots: readonly (CellArrays | undefined)[], sc
     looked ||= p.looks !== undefined;
     const bands = new Uint8Array(p.count);
     bandsOf[m] = bands;
-    whole[m] = bandSubCell(p.poses, p.count, m, bands, perBand, screen);
+    whole[m] = bandSubCell(p.poses, p.count, m, bands, perBand, screen, SHELL_PARTS.has(kind));
   }
   // A band drawing less than a draw's worth joins the next coarser one (or the last the one before): its error only grows.
   const order = [...perBand.keys()].sort((a, b) => a - b);
