@@ -3394,7 +3394,13 @@ export function createSceneRenderer(
         // THE OPENING IN TWO STEPS (CLAUDE.md "Streaming world"): shown once the roads built so far, the masses and the far levels are in; the near cells' detail, the tiles still coming and the world's later builds land after, as they do when the camera moves (DO NOT wait for `buildings.pending`, `worldJob` or every tile of the region: the whole city waited 2.5-4.5 min for them, 2026-10-16).
         const held = openingHeld?.() ?? true;
         // OPEN = WHAT THE VIEW SEES IN ITS FINAL DETAIL (CLAUDE.md; Cesium3DTileset tilesLoaded: every tile meeting the screen's error this frame loaded): the near cells, the near roads and the tiles' near products in the frustum too, not the masses alone - the curtain fell with the district in masses and the street in a smooth mass (conf130/131/133).
-        const whole = roads !== null && !buildings.coarsePending && !buildings.viewPending && farRoads.waiting === 0 && nearTiles.pendingInView() === 0 && natureTreesStarted && !natureTreesPending && held;
+        // A FULL-MAP OPENING (the fit on a rounded city, zoom under 1: a metre under a pixel at every distance): the masses and the far roads
+        // ARE the final detail there. The near levels were still waited for and took seconds of the curtain (2026-10-20); they stream after it,
+        // where a pixel cannot tell them from what stands.
+        const mapView = !rig.perspective && rig.viewport.zoom < 1;
+        const whole = roads !== null && !buildings.coarsePending && farRoads.waiting === 0
+          && (mapView || (!buildings.viewPending && nearTiles.pendingInView() === 0))
+          && natureTreesStarted && !natureTreesPending && held;
         // DO NOT draw the unseen frame before the town's programs are built: drawn first, each program was built at its first use, one after the other, in that one frame (4.5 s of the opening's 62, 2026-10-16); asked together, the driver builds them in parallel (KHR_parallel_shader_compile).
         // The programs are asked once the BUILDINGS are in, not when every road tile and tree is: the town's cells are what bring every
         // material the reveal draws, and the driver builds the shaders while the last tiles stream (the compile was on the critical path
