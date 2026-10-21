@@ -24,6 +24,10 @@ export class MassLevels {
   changed: () => void = () => {};
   /** How far a level is from the eye (`layer.ts`): the plates waiting are asked nearest first. */
   away: (key: string) => number = () => 0;
+  /** Whether nothing stands for a level yet (`layer.ts`: a plate with no masses of its own): asked in the far levels' band (`cellPool.ts` hole), before the view's detail. */
+  hole: (key: string) => boolean = () => false;
+  /** A tile or a plate left waiting for now (`layer.ts`: out of the view while the curtain is up): asked by `pump` once it is not. */
+  deferred: (key: string) => boolean = () => false;
 
   /** `land`: a level's masses come (null: none of its buildings has any); `remove`: a level with no building left; `plan`: a level that has buildings (its place known before its masses);
    *  `wanted`: whether a tile is wanted now (its plate refined for the view) - DO NOT ask every tile of the map: a plate stands for them from afar (Cesium asks a tile's children only when it refines). */
@@ -61,7 +65,7 @@ export class MassLevels {
       }
       this.plan(key);
       // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains. A plate not edited waits its turn (`pump`).
-      if ((key[0] === 'p' || this.wanted(key)) && (this.edited.has(key) || (key[0] !== 'p' && !warmFull()))) this.ask(key, this.listOf(key), env);
+      if ((key[0] === 'p' || this.wanted(key)) && (this.edited.has(key) || (key[0] !== 'p' && !warmFull() && !this.deferred(key)))) this.ask(key, this.listOf(key), env);
       else {
         // Its old masses, if any, are no longer its buildings': asked again once a view wants it.
         const was = this.asked.get(key);
@@ -79,8 +83,8 @@ export class MassLevels {
     for (const key of this.stale) {
       // DO NOT ask masses to upload while the upload queue is full: their arrays waited on the page (conf77, 2026-10-17); asked once it drains.
       if (warmFull() && !this.edited.has(key)) continue;
-      if (key[0] === 'p' && !this.edited.has(key)) { plates.push(key); continue; }
-      if (key[0] !== 'p' && !this.wanted(key)) continue;
+      if (key[0] === 'p' && !this.edited.has(key)) { if (!this.deferred(key)) plates.push(key); continue; }
+      if (key[0] !== 'p' && (!this.wanted(key) || (this.deferred(key) && !this.edited.has(key)))) continue;
       this.stale.delete(key);
       const list = this.listOf(key);
       if (list.length) this.ask(key, list, env);
@@ -101,9 +105,13 @@ export class MassLevels {
     }
   }
 
-  /** A tile whose masses were let go, neither drawn nor wanted (`massCells.ts`): asked again once a view wants it (`pump`). */
+  /** A tile whose masses were let go, neither drawn nor wanted, or a plate's let go out of the view for the budget (`massCells.ts` evictLevels): asked again once a view wants it (`pump`, `deferred`). */
   release(key: string): void {
-    if (key[0] === 't' && this.hasAny(key)) { this.stale.add(key); this.changed(); }
+    if (!this.hasAny(key)) return;
+    const was = this.asked.get(key);
+    if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
+    this.stale.add(key);
+    this.changed();
   }
 
   /** A level's buildings, its cells' in order: entries made now, for the job asked. */
@@ -138,7 +146,7 @@ export class MassLevels {
       if (this.asked.get(key) === id) this.asked.delete(key);
       this.changed();
       this.land(key, result.mass ?? null);
-    }, `${kind}|${key}`, edited);
+    }, `${kind}|${key}`, edited, this.hole(key));
     if (this.pool.isRunning(id)) this.asked.set(key, id);
   }
 

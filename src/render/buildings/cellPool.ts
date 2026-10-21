@@ -196,14 +196,15 @@ export class CellPool {
   }
 
   /** A cell's job: its batches ('cell'), its far level ('facade'), its masses ('mass') or its buildings' summaries; `key`, what a newer job replaces */
-  run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void, key: string | null = null, edited = false): number {
+  /** `hole`: nothing stands where it draws (a plate of the map with no masses yet): in the far levels' band (`FAR_TIER`), before the view's detail - a hole on the screen comes before any refinement of what is drawn. */
+  run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void, key: string | null = null, edited = false, hole = false): number {
     if (key !== null) { const older = this.byKey.get(key); if (older) this.cancel(older.id); }
     const at = squareOf(cell);
     // Its band; its distance to the view is the queue's, as the view moves (`JobSpec.at`). A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
     const place = at ? [(at.i0 + at.n / 2) * BATCH_CELL, (at.j0 + at.n / 2) * BATCH_CELL] as const : null;
     // A cell the player's edit changed (`edited`, `layer.ts` editedCells: a building demolished in a tile next to a road's) goes with the cut-open one: it draws what was just done.
     const first = edited || entries.some((e) => e.key.includes('|'));
-    const priority = cellPriority(kind, 0, first, this.coarse);
+    const priority = hole && !first ? FAR_TIER * TIER_SPAN : cellPriority(kind, 0, first, this.coarse);
     const offPage = this.offPage(env);
     const asked: Asked = {
       id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority, first, sent: false, place,

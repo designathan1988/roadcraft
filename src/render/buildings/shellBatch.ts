@@ -106,15 +106,14 @@ export class ShellBatch {
     for (const batch of new Set(made.map((entry) => entry.batch))) this.squeeze(batch);
   }
 
-  /** A batch with more room than it uses made smaller (two cells on the far side of the town let go leave their vertices reserved for no one): the arrays reallocated to what stands, a quarter more. */
+  /** A batch with more room than it uses made smaller (cells let go leave their ranges reserved for no one, `GpuBatchedMesh.usedCounts`): its live geometries packed into storage of what stands, a quarter more. */
   private squeeze(batch: Batch): void {
     const mesh = batch.mesh;
-    const usedVertices = batch.vertices - mesh.unusedVertexCount;
-    const usedIndices = batch.indices - mesh.unusedIndexCount;
-    if (mesh.unusedVertexCount > Math.max(1 << 15, usedVertices) || mesh.unusedIndexCount > Math.max(1 << 15, usedIndices)) {
-      batch.vertices = Math.max(Math.ceil(usedVertices * 1.25), 1 << 14);
-      batch.indices = Math.max(Math.ceil(usedIndices * 1.25), 1 << 15);
-      mesh.setGeometrySize(batch.vertices, batch.indices);
+    const used = mesh.usedCounts();
+    if (batch.vertices - used.vertices > Math.max(1 << 15, used.vertices) || batch.indices - used.indices > Math.max(1 << 15, used.indices)) {
+      batch.vertices = Math.max(Math.ceil(used.vertices * 1.25), 1 << 14);
+      batch.indices = Math.max(Math.ceil(used.indices * 1.25), 1 << 15);
+      mesh.compact(batch.vertices, batch.indices);
     }
     // DO NOT shrink the instance count: three's BatchedMesh throws when an id past the new count is still in use, and deleting a cell's geometries leaves holes past `instanceCount` (the active count) until its own trailing holes are popped. The batch keeps its capacity; the instances of a cell let go are deleted above.
   }
@@ -205,15 +204,18 @@ export class ShellBatch {
     ];
   }
 
-  /** Room in a batch for a geometry and an instance: its vertex and index buffers grown a quarter more than it holds (the drawn pieces kept; doubling left up to half the reserved space empty, tens of MB of arrays, measured 2026-10-20). */
+  /** Room in a batch for a geometry and an instance: its live geometries packed into storage a quarter more than they and the new one hold (the drawn pieces kept, the holes of cells let go gone: `GpuBatchedMesh.compact`; doubling left up to half the reserved space empty, tens of MB of arrays, measured 2026-10-20). */
   private ensure(batch: Batch, vertices: number, indices: number): void {
     const mesh = batch.mesh;
     if (vertices > mesh.unusedVertexCount || indices > mesh.unusedIndexCount) {
-      const usedVertices = batch.vertices - mesh.unusedVertexCount;
-      const usedIndices = batch.indices - mesh.unusedIndexCount;
-      batch.vertices = Math.max(Math.ceil((usedVertices + vertices) * 1.25), 1 << 14);
-      batch.indices = Math.max(Math.ceil((usedIndices + indices) * 1.25), 1 << 15);
-      mesh.setGeometrySize(batch.vertices, batch.indices);
+      const used = mesh.usedCounts();
+      const storedVertices = batch.vertices - mesh.unusedVertexCount, storedIndices = batch.indices - mesh.unusedIndexCount;
+      // Packed only when the holes are worth it (a quarter of what lives): packing reads the indices back from the GPU, growing does not.
+      const pack = storedVertices - used.vertices > used.vertices / 4 || storedIndices - used.indices > used.indices / 4;
+      batch.vertices = Math.max(Math.ceil(((pack ? used.vertices : storedVertices) + vertices) * 1.25), 1 << 14);
+      batch.indices = Math.max(Math.ceil(((pack ? used.indices : storedIndices) + indices) * 1.25), 1 << 15);
+      if (pack) mesh.compact(batch.vertices, batch.indices);
+      else mesh.setGeometrySize(batch.vertices, batch.indices);
     }
     if (mesh.instanceCount >= batch.instances) {
       batch.instances *= 2;

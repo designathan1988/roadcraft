@@ -93,6 +93,8 @@ export interface CellEye {
 }
 
 export class ViewCells<V> {
+  /** The share of every product's GPU budget (`ViewCellsSpec.gpuBudget`) the quality tier allows (`render/quality.ts` GEOMETRY_BUDGETS, set by the renderer): the far props' and poles' blocks of a weak tier held to a quarter of the ultra tier's. */
+  static gpuShare = 1;
   private readonly held = new Map<CellKey, Held<V>>();
   private readonly side: number;
   private readonly cursor: JournalCursor | null;
@@ -282,7 +284,7 @@ export class ViewCells<V> {
 
   /** Keeps the products to the budgets: the least recently used out first, never a cell the view wants nor one of `keep`. `cpuBudget`: a lower one to rest at (after a build swept the map). */
   trim(keep: ReadonlySet<CellKey> | null, cpuBudget = this.spec.cpuBudget): void {
-    const gpuBudget = this.spec.gpuBudget ?? Infinity;
+    const gpuBudget = (this.spec.gpuBudget ?? Infinity) * ViewCells.gpuShare;
     if (this.gpuBytes > gpuBudget) {
       for (const [key, held] of this.held) {
         if (this.gpuBytes <= gpuBudget) break;

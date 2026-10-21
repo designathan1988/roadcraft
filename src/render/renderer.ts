@@ -35,10 +35,12 @@ import {
   Vector3,
   WebGLRenderer,
   type WebGLRendererParameters,
+  type Camera,
 } from 'three';
 
 import { Digest } from '@core/digest';
 import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
+import { isStreaming } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
@@ -153,7 +155,9 @@ import { gpuBatchContext } from './buildings/gpuBatchedMesh';
 import { wantAllTexels } from './surfaceTextures';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
-import { QUALITY, type QualityLevel, type QualitySettings } from './quality';
+import { GEOMETRY_BUDGETS, type GeometryBudget, QUALITY, type QualityLevel, type QualitySettings } from './quality';
+import { countMemory } from './memoryCounters';
+import { ViewCells } from '@world/viewCells';
 import { type GroundRecord, type Rect, unionRect } from './groundChanges';
 import { FOREST_SPECIES, createGroundCoverKit } from './groundCover';
 import type { PlantedTree } from '@world/trees';
@@ -234,6 +238,12 @@ export interface SceneHandle {
   shadowStats(): ReturnType<SunCascades['takeStats']> | null;
   /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
   buildingLevels(): Readonly<Record<string, number>>;
+  /** The geometry budgets kept (`quality.ts` GEOMETRY_BUDGETS): the tier's (null), or these (the probes' unbounded run: Infinity everywhere). */
+  setGeometryBudget(budget: GeometryBudget | null): void;
+  /** The scene's geometry read against the budget now (`governGeometry`, as every `GOVERN_FRAMES`): the bytes counted. */
+  governGeometry(): number;
+  /** The camera the frame is drawn from (the probes' census of what is in its view). */
+  viewCamera(): Camera;
   /** What the opening still waits for (`draw`'s reveal): asked by the probes, never each frame. */
   openingState(): { readonly roadsIn: boolean; readonly coarsePending: boolean; readonly viewPending: boolean; readonly treesStarted: boolean; readonly treesPending: boolean; readonly programs: string; readonly worked: number; readonly worldBusy: boolean; readonly fillPending: boolean; readonly fillCellsLeft: number };
   /** Which renderer draws the frame (`gpu/backendChoice.ts`): WebGL, or three's WebGPU renderer with `?gpu=webgpu` (`MIGRACAO-WEBGPU.md`). */
@@ -386,6 +396,8 @@ const SURFACE_SETS: readonly ReadonlySet<RoadStructure>[] = [GROUND_ONLY, new Se
 const OPENING_SOLVE_MARGIN = m(320);
 /** The far roads' cells made from the network at a scoped opening (`networkFarRoads.ts`): a road block's side (`roadSurfaces.ts` CHUNK tiles). */
 const FAR_ROAD_CELL = 8 * TILE;
+/** Frames between two reads of the scene's geometry against the tier's budget (`governGeometry`): a walk of the scene's objects, ~1-3 ms. */
+const GOVERN_FRAMES = 60;
 /** The far level's cells the opening's fill takes at a step past those under the view (`fillStep`): a step's build has a fixed cost (every pass walked), a few cells share it. */
 const FILL_CELLS = 2;
 /** The roads the opening's solve left, solved a share a frame once the town is shown (`completeSolve`): ~15-20 ms of a frame on level ground (the 16,708 roads of a city of the largest radius: 1.5 roads solved a road taken, ~0.04 ms each, Node, 2026-10-21). */
@@ -922,6 +934,8 @@ export function createSceneRenderer(
   const fillTaken = new Set<string>();
   /** The cells taken whose blocks have not landed yet: let go of the far level by the first build that lands after they were taken. */
   const fillAwaiting = new Set<string>();
+  /** The player's road edits read by the fill (`takeEditedCells`), from the fill's start on. */
+  const fillEditRead = new JournalCursor(['roads']);
   /** The squares the fill's running step builds (`buildWorld` full); null, the whole network's extent. */
   let fillRects: Rect[] | null = null;
   /** A map was opened since the last world build (`beginLoad`): the solve standing is another map's, nothing of the new one follows from it. */
@@ -1100,6 +1114,45 @@ export function createSceneRenderer(
   const buildings = createBuildingLayer(anisotropy);
   // The tier's memory for the buildings' detail (`quality.ts` detailMemoryMB); the lab's switch over it (`setEffects`).
   buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
+  /** The detail's budget the governor gave last (`governGeometry`); the tier's own when it has not cut it. */
+  let governedDetail = Infinity;
+  /** The budgets given in place of the tier's (`setGeometryBudget`); null: the tier's. */
+  let geometryBudget: GeometryBudget | null = null;
+  const budgetNow = (): GeometryBudget => geometryBudget ?? GEOMETRY_BUDGETS[tier];
+  /** The tier's geometry budgets (`quality.ts` GEOMETRY_BUDGETS): the masses' and the view cells' share, the governor's whole. */
+  const applyGeometryBudget = (): void => {
+    const budget = budgetNow();
+    buildings.setMassBudget(budget.massesMB * 1048576);
+    ViewCells.gpuShare = budget.viewCellsShare;
+    governedDetail = Infinity;
+  };
+  applyGeometryBudget();
+  /**
+   * THE TIER'S GEOMETRY UNDER ITS WHOLE BUDGET (`GEOMETRY_BUDGETS.totalMB`), read off the scene every `GOVERN_FRAMES` (`countMemory`, what
+   * `__roadcraft.memory()` reports): what is out of the view has gone first by its own budgets (the masses' levels, the view cells), and
+   * what is still over comes off the buildings' detail budget, the farthest cells stepping down to their facade level and masses
+   * (`MassCells.cap`) - never a hole. Given back as the rest shrinks, up to the tier's `detailMemoryMB`. The lab's own detail budget
+   * (`buildingChoices.detailMemoryMB`) is left as it is set. Returns the geometry counted, bytes.
+   */
+  const governGeometry = (): number => {
+    const geometry = countMemory(scene).geometryBytes;
+    if (buildingChoices.detailMemoryMB >= 0) return geometry;
+    const total = budgetNow().totalMB * 1048576;
+    const tierDetail = quality.detailMemoryMB * 1048576;
+    const detail = buildings.residentBytes;
+    // Over the whole: the detail's budget cut by what is over (at least a sixteenth of the whole). Under it, the cut held till the
+    // geometry is a tenth under the whole (DO NOT give it back at the first frame under: the cells it let go came back over), then the
+    // tier's. DO NOT cap the detail while the whole is under its budget: a budget given changes the cells the view draws (`MassCells.cap`).
+    let next = governedDetail;
+    if (geometry > total) next = Math.max(total / 16, Math.min(tierDetail, detail - (geometry - total)));
+    else if (geometry < total * 0.9) next = Infinity;
+    if (next !== governedDetail) {
+      governedDetail = next;
+      buildings.setDetailBudget(Number.isFinite(next) ? next : tierDetail);
+    }
+    return geometry;
+  };
+  let governFrames = 0;
   // Buildings are placed once, never moved: a still tree.
   holdStill(buildings.group);
   scene.add(buildings.group);
@@ -1941,10 +1994,45 @@ export function createSceneRenderer(
       fillRects = null;
     }
   };
+  /**
+   * AN EDIT DURING THE FILL GOES FIRST: the far level's cells a road edit reached that the fill has not taken yet are taken now, built in
+   * detail by the edit's own build (their squares put in the scope that moved, `withinMoved`, which every build visits) and their far
+   * level let go when it lands (`fillAwaiting`). DO NOT leave them to their turn: the edited road was drawn in detail where it lay, the
+   * rest of its cell stood in the network's far level made before the edit, the old outline of the road shown beside the new one, until
+   * the fill came round to it (minutes in a city of 25,000 buildings).
+   */
+  const takeEditedCells = (net: Network): void => {
+    const left = fillLeft;
+    if (left === null || left.size === 0) return;
+    // Null: the first read, or a diary that cannot say where (the whole map: left to the fill's own order).
+    const edits = fillEditRead.read(net.doc.changes);
+    if (!edits) return;
+    const pad = SURFACE_READ_REACH;
+    const rects: Rect[] = [];
+    for (const entry of edits) {
+      if (isStreaming(entry)) continue;
+      for (const r of entry.rects ?? []) {
+        const [i0, j0] = farCellOf(r[0] - pad, r[1] - pad).split(',').map(Number) as [number, number];
+        const [i1, j1] = farCellOf(r[2] + pad, r[3] + pad).split(',').map(Number) as [number, number];
+        for (let i = i0; i <= i1; i++) {
+          for (let j = j0; j <= j1; j++) {
+            const key = `${i},${j}`;
+            if (!left.delete(key)) continue;
+            fillTaken.add(key);
+            fillAwaiting.add(key);
+            rects.push(farCellRect(key));
+          }
+        }
+      }
+    }
+    if (rects.length) surfaceReuse.withinMoved?.push(...rects);
+  };
   /** @rebuild The roads' heights solved again and the world's rebuild started (`worldSteps`). `full`: the whole map, after a scoped opening (`openingFill`). */
   const buildWorld = (net: Network, full = false): void => {
     const started = performance.now();
     const opening = openingBuild && !full;
+    // A player's edit while the fill is under way: the cells it reached built by this build, before any other (`takeEditedCells`).
+    if (!full) takeEditedCells(net);
     // The opening's first world builds only the tiles and the ground round the view; the rest is filled after the curtain.
     const centre = rig.viewport.centre;
     const openingHalf = m(700);
@@ -2282,6 +2370,7 @@ export function createSceneRenderer(
     materials.setDetail(quality.surfaceDetail && effectSwitches.surfaceDetail);
     environment.setQuality({ shadows: quality.shadows && effectSwitches.shadows, shadowMapSize: quality.shadowMapSize });
     if (buildingChoices.detailMemoryMB < 0) buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
+    applyGeometryBudget();
     post?.dispose();
     post = createPostChain(renderer, scene, rig.camera, quality, level);
     post.setNight(Math.max(0, lastDark));
@@ -2752,6 +2841,13 @@ export function createSceneRenderer(
     shadowStats() {
       return environment.shadowStats();
     },
+    setGeometryBudget(budget) {
+      geometryBudget = budget;
+      applyGeometryBudget();
+      if (buildingChoices.detailMemoryMB < 0) buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
+    },
+    governGeometry: () => governGeometry(),
+    viewCamera: () => rig.camera,
     buildingLevels() {
       return buildings.levels();
     },
@@ -3590,9 +3686,13 @@ export function createSceneRenderer(
           fillTaken.clear();
           fillAwaiting.clear();
           fillLeft = new Set(networkFar.cellKeys());
+          fillEditRead.reset();
+          fillEditRead.read(net.doc.changes);
           openingWithin = (rect) => (scope?.(rect) ?? false) || fillTaken.has(farCellOf((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2));
         }
         if (fillLeft !== null && fillLeft.size > 0 && worldJob === null && !openingFillPending) fillStep(net);
+        // The tier's geometry budget kept (`governGeometry`), a read of the scene now and then.
+        if (++governFrames >= GOVERN_FRAMES) { governFrames = 0; governGeometry(); }
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
         // The effects panel's switches: the passes skipped, the layers hidden for this drawing only, the shadows kept as they stand.
