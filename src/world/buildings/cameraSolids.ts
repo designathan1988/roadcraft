@@ -1,7 +1,7 @@
 import { m } from '@world/units';
-import { isMass, roofRise, volumeHeight } from './geometry';
+import { isMass, roofRise, volumeElevation, volumeHeight } from './geometry';
 import { BuildingStore } from './store';
-import type { Building, BuildingId } from './types';
+import { type Building, type BuildingId, volumeTop } from './types';
 
 /** THE LOWEST THE CAMERA'S EYE MAY STAND OVER THE BUILDINGS, a continuous function of the map point */
 
@@ -13,8 +13,12 @@ const REACH = m(2);
 const CELL = m(40);
 
 /** DO NOT go back to an object per volume and a set per building: 29 MB of a city of 5 400. */
-const STRIDE = 10;
+const STRIDE = 13;
 const S_BX = 0, S_BY = 1, S_COS = 2, S_SIN = 3, S_X0 = 4, S_Y0 = 5, S_X1 = 6, S_Y1 = 7, S_FOOT = 8, S_TOP = 9;
+/** What the volume surely hides (`forEachOccluder`): the bottom and top of its walls, world height, its plan inset by `S_INSET`; NaN when it hides nothing for sure (a building with voids, a volume of its own outline). */
+const S_WALL0 = 10, S_WALL1 = 11, S_INSET = 12;
+/** How far the occluder's plan is drawn in from the volume's: the reliefs pushed into its faces, and a margin. */
+const OCCLUDER_MARGIN = m(0.6);
 const PAGE_BITS = 12;
 const PAGE = 1 << PAGE_BITS;
 
@@ -79,7 +83,12 @@ export interface CameraSolids {
   forEachIn(x0: number, y0: number, x1: number, y1: number, visit: SolidVisit): void;
   /** Every solid volume filed in the cells over any of the rectangles, once for all of them. */
   forEachInAny(rects: readonly Rect[], visit: SolidVisit): void;
+  /** Every volume over a map rectangle that surely hides what stands behind it (`render/occlusion.ts`): the box of its walls drawn in by its reliefs, never its roof. */
+  forEachOccluder(x0: number, y0: number, x1: number, y1: number, visit: OccluderVisit): void;
 }
+
+/** An occluder as its building's frame: the building's centre and turn, the box in that frame, the walls' bottom and top (world height). */
+export type OccluderVisit = (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, bottom: number, top: number) => void;
 
 /** A solid volume as its building's frame: the building's centre and turn, the volume's box in that frame, its top. */
 export type SolidVisit = (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void;
@@ -187,6 +196,8 @@ class SolidFiling implements CameraSolids {
     const sin = Math.sin(b.rotation);
     const slots: number[] = [];
     const keys: number[] = [];
+    // A building carved by a void or an intersection hides nothing for sure: its masses' union is not its solid.
+    const carved = b.volumes.some((v) => !v.open && !isMass(v));
     for (const v of b.volumes) {
       if (v.open || !isMass(v)) continue;
       const solid = this.pages.take();
@@ -195,6 +206,13 @@ class SolidFiling implements CameraSolids {
       page[o + S_BX] = b.x; page[o + S_BY] = b.y; page[o + S_COS] = cos; page[o + S_SIN] = sin;
       page[o + S_X0] = x0; page[o + S_Y0] = y0; page[o + S_X1] = x1; page[o + S_Y1] = y1;
       page[o + S_FOOT] = foot; page[o + S_TOP] = foot + volumeHeight(b, v) + roofRise(b, v) + CLEARANCE;
+      // Its walls, drawn in by the deepest relief pushed into them: what surely stands (its roof left out, a ridge hides less than its box).
+      let inset = OCCLUDER_MARGIN;
+      for (const r of v.reliefs ?? []) if (r.depth < 0) inset = Math.max(inset, -r.depth + OCCLUDER_MARGIN);
+      const solidWalls = !carved && !v.outline && v.w > 2 * inset && v.d > 2 * inset && v.storeys.length > 0;
+      page[o + S_WALL0] = solidWalls ? foot + Math.max(0, volumeElevation(b, v, v.base)) : NaN;
+      page[o + S_WALL1] = solidWalls ? foot + volumeElevation(b, v, volumeTop(v)) : NaN;
+      page[o + S_INSET] = inset;
       slots.push(solid);
       // The world box of the volume grown by the reach, filed in every cell it touches.
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -259,6 +277,23 @@ class SolidFiling implements CameraSolids {
           if (!this.pages.visitOnce(slot)) continue;
           const p = this.pages.page(slot), o = at(slot);
           visit(p[o + S_BX]!, p[o + S_BY]!, p[o + S_COS]!, p[o + S_SIN]!, p[o + S_X0]!, p[o + S_Y0]!, p[o + S_X1]!, p[o + S_Y1]!, p[o + S_TOP]! - CLEARANCE);
+        }
+      }
+    }
+  }
+
+  forEachOccluder(x0: number, y0: number, x1: number, y1: number, visit: OccluderVisit): void {
+    this.pages.walk();
+    for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) {
+      for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) {
+        const list = this.cells.get(cellKey(cx, cy));
+        if (!list) continue;
+        for (const slot of list) {
+          const p = this.pages.page(slot), o = at(slot);
+          const bottom = p[o + S_WALL0]!;
+          if (Number.isNaN(bottom) || !this.pages.visitOnce(slot)) continue;
+          const inset = p[o + S_INSET]!;
+          visit(p[o + S_BX]!, p[o + S_BY]!, p[o + S_COS]!, p[o + S_SIN]!, p[o + S_X0]! + inset, p[o + S_Y0]! + inset, p[o + S_X1]! - inset, p[o + S_Y1]! - inset, bottom, p[o + S_WALL1]!);
         }
       }
     }

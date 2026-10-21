@@ -8,7 +8,6 @@ import { countMemory } from '@render/memoryCounters';
 const LAYER_BY_NAME: readonly (readonly [RegExp, (typeof LAYER_SWITCHES)[number]])[] = [
   [/^terrain-water|water/, 'water'],
   [/^terrain-|^flat-world/, 'terrain'],
-  [/^roads-far-tiles$/, 'farRoads'],
   [/^road-network$|^road-structure-details$|^road-stand-ins$/, 'roads'],
   [/^buildings-layer$/, 'buildings'],
   [/^ground-cover$|^nature-cards$|^nature-forest$|^painted-forest$|^planted-forest$|^garden-|^far-forest/, 'vegetation'],
@@ -25,7 +24,6 @@ const LAYER_BY_NAME: readonly (readonly [RegExp, (typeof LAYER_SWITCHES)[number]
 /** The buildings layer's roots (`BuildingLayer.roots`, named in `buildings/layer.ts`) and the switch of each. */
 const BUILDING_ROOTS: readonly (readonly [RegExp, (typeof BUILDING_SWITCHES)[number]])[] = [
   [/^buildings-far$/, 'bMasses'],
-  [/^buildings-far-tiles$/, 'bFarTiles'],
   [/^signature-buildings$/, 'bSignatures'],
   [/^building-part-cells$|^building-parts$/, 'bParts'],
   [/^flags$/, 'bFlags'],
@@ -54,15 +52,15 @@ export function switchesOf(object: Object3D): SwitchLink[] {
   for (let o: Object3D | null = object; o && o.parent; o = o.parent) chain.push(o);
   const inBuildings = chain.some((o) => o.name === 'buildings-layer');
   for (const o of chain) {
-    for (const [re, key] of LAYER_BY_NAME) if (o.name && re.test(o.name)) add(key, `camada "${o.name}"`);
+    for (const [re, key] of LAYER_BY_NAME) if (o.name && re.test(o.name)) add(key, `layer "${o.name}"`);
     if (inBuildings) {
-      for (const [re, key] of BUILDING_ROOTS) if (o.name && re.test(o.name)) add(key, `raiz dos prédios "${o.name}"`);
+      for (const [re, key] of BUILDING_ROOTS) if (o.name && re.test(o.name)) add(key, `buildings root "${o.name}"`);
       const kind = buildingKindSwitch(o.name);
-      if (kind) add(kind, `peça "${o.name}"`);
+      if (kind) add(kind, `piece "${o.name}"`);
     }
   }
-  if (inBuildings) add('bShadows', 'sombras dos prédios');
-  if ((object as { isLight?: boolean }).isLight || object.name === 'room-light') add('pointLights', 'luz pontual');
+  if (inBuildings) add('bShadows', 'building shadows');
+  if ((object as { isLight?: boolean }).isLight || object.name === 'room-light') add('pointLights', 'point light');
   return out;
 }
 
@@ -73,7 +71,7 @@ export function optimizationSystemsOf(switches: readonly SwitchLink[], object: O
   if (keys.has('buildings')) systems.add('buildings');
   if (keys.has('terrain')) systems.add('terrain');
   if (keys.has('water')) systems.add('water');
-  if (keys.has('roads') || keys.has('farRoads')) systems.add('roads');
+  if (keys.has('roads')) systems.add('roads');
   if (keys.has('vegetation') || keys.has('furniture')) systems.add('vegetation');
   if (keys.has('people')) { systems.add('people'); if (/car-|bus|truck|vehicle|bicycle|moto|van/.test(object.name)) systems.add('vehicles'); }
   if (keys.has('particles')) systems.add('particles');
@@ -113,15 +111,15 @@ export interface SourceHit {
 
 /** The places in `src/` that make a name (`GET /__lab/source-find`, dev server only); an error's text when the server cannot answer. */
 export async function findSource(name: string): Promise<SourceHit[] | string> {
-  if (!name) return 'sem nome para procurar';
+  if (!name) return 'no name to search for';
   try {
     const response = await fetch(`/__lab/source-find?q=${encodeURIComponent(name)}`);
-    if (!response.ok) return `o servidor respondeu ${response.status} (só no servidor de desenvolvimento)`;
+    if (!response.ok) return `the server answered ${response.status} (dev server only)`;
     const body = await response.json() as { hits?: SourceHit[] };
     return body.hits ?? [];
   } catch (error) {
     console.warn('lab inspector: source search failed', error);
-    return `busca indisponível: ${String(error)}`;
+    return `search unavailable: ${String(error)}`;
   }
 }
 

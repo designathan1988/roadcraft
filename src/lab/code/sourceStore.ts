@@ -54,7 +54,7 @@ export function createSourceStore(): SourceStore {
       imports.set(url, found);
       entry.map = await mapOfModule(text, url);
       if (entry.map) keep(entry.map);
-      else entry.error = 'sem mapa';
+      else entry.error = 'no map';
     } catch (error) {
       console.warn(`lab code: module ${url} not read`, error);
       entry.error = String(error);

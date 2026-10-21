@@ -1,22 +1,10 @@
-import { readStoredTilesWith } from '@core/storedTiles';
-import type { TilePartName } from '@editor/tileStore';
 import { isStoreSetup, takeStoreSetup } from '@editor/workerParts';
 import type { AdoptLane, CloseLane, FromJob, JobScope, JobService, ToJob } from './jobs/jobScope';
-import type { StoredTileReader } from './tileReader';
 
 /** ONE WORKER OF THE JOB SYSTEM (`jobs/jobPool.ts`): at the root with the other entries, since it puts every service together: every service's ports in it, each service's module loaded on its first message */
 
 type Serve = (scope: JobScope) => void;
 
-// The tile store read here by the far levels' bakes (`core/storedTiles.ts`), each its own part of a tile: this worker's store (`editor/workerParts.ts`) opened once per map, on the first read.
-const readers = new Map<string, Promise<StoredTileReader>>();
-readStoredTilesWith(async (map, key, part) => {
-  let reader = readers.get(map);
-  if (!reader) readers.set(map, reader = import('./tileReader').then((m) => m.storeTileReader(map)));
-  // A tile's junctions as baked with it (`sim/tileSections.ts` NETWORK_SECTION): read by the near roads' bakes (`nearRoadTiles.ts`).
-  if (part === 'network') return (await reader).network?.(key) ?? null;
-  return (await reader).part(key, part as TilePartName);
-});
 const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   growth: () => import('./growth.worker'),
   bays: () => import('./bays.worker'),
@@ -32,21 +20,14 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   roadTiles: () => import('./render/roadTile.worker'),
   // The road blocks' far levels (`roadTilePool.ts` coarsen): the same worker, on the page's own workers.
   roadCoarse: () => import('./render/roadTile.worker'),
-  farRoads: () => import('./render/farRoads.worker'),
   roadStations: () => import('./render/roadStations.worker'),
-  nearTiles: () => import('./render/nearTiles.worker'),
   // The whole finite city built with the game's own generator, off the page (`cityGen.worker.ts`).
   cityGen: () => import('./cityGen.worker'),
   terrainLight: () => import('./render/terrainLight.worker'),
   // A dab's work on a plate: its levels, its woods, its shore (`render/landStroke.ts`).
   landStroke: () => import('./render/landStroke.worker'),
   derivedWriter: () => import('./render/derivedWriter.worker'),
-  // A tile written here has its simulation's sections baked with it (`sim/tileSections.ts`): the editor's layer does not import the simulation.
-  save: () => Promise.all([import('./editor/save.worker'), import('./sim/tileSections')])
-    .then(([save, sections]) => ({ serve: (scope: JobScope) => save.serve(scope, sections.bakeTileSections) })),
-  // The tile store's reads on the save's worker, no queued job nor the rush's tiles beside them (`jobPool.ts` KEPT_CLEAR, `tileStore.ts` portTiles).
-  tileRead: () => Promise.all([import('./editor/save.worker'), import('./sim/tileSections')])
-    .then(([save, sections]) => ({ serve: (scope: JobScope) => save.serve(scope, sections.bakeTileSections) })),
+  save: () => import('./editor/save.worker'),
 };
 
 const host = self as unknown as { onmessage: ((e: MessageEvent<ToJob | AdoptLane | CloseLane>) => void) | null; postMessage(message: FromJob, transfer?: Transferable[]): void };

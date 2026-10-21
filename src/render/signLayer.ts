@@ -10,7 +10,6 @@ import { signsAtNode } from '@world/roads/derivedSigns';
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { sectionOf, LAMP_ZONE } from '@world/section';
 import { m } from '@world/units';
-import type { ActiveTiles } from './activeTiles';
 import { createInstanceRuns, RunBuilder, warmMeshes, type Run, type RunStore } from './instanceRuns';
 import { PLATE, POST, QUAD, QUAD_ORDER, SignSheets, cellUv, onTopOfPost, plateFaces, plateMaterial, streetChain, type Placed, type Sheet, type SheetCopier } from './signs';
 
@@ -69,8 +68,6 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
   /** Each key holding signs, by the ground it reads. */
   private readonly filing = new CellFiling<number, SignValue>();
 
-  /** `active`: where a junction or an item must stand for its signs to stand here (`activeTiles.ts`); none, everywhere. */
-  constructor(private readonly active?: ActiveTiles) {}
 
   /** @rebuild Every junction and every sign item of the map: read only when everything changed (a load, the diary forgotten). */
   allKeys(source: SignSource): Iterable<number> {
@@ -114,9 +111,6 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
 
   compute(key: number, source: SignSource): SignValue | undefined {
     const id = Math.floor(key / 2);
-    // A junction or an item of the kept ring round the active tiles is the far levels' (`activeTiles.ts`): no sign stood for it here.
-    const at = key % 2 === 0 ? source.net.doc.node(id as NodeId) : source.net.doc.landscape.get(id);
-    if (!at || (this.active && !this.active.has(at.x, at.y))) return undefined;
     return key % 2 === 0 ? junctionSigns(source, id as NodeId) : itemSigns(source, id);
   }
 
@@ -134,23 +128,9 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
   }
 }
 
-/** A tile's signs as a bake hands them (`signTiles.ts`): every plate its junctions and its sign items stand. */
-export interface SignBake {
-  readonly stands: readonly Stand[];
-}
-
-/** THE SIGNS OF SOME JUNCTIONS AND SIGN ITEMS BAKED, IN A WORKER: each stood as the page's layer stands it (`junctionSigns`, `itemSigns`); none: null */
-export function bakeSigns(net: Network, elevation: RoadElevation, nodes: Iterable<NodeId>, items: Iterable<number>): SignBake | null {
-  const source: SignSource = { changes: net.doc.changes, net, elevation };
-  const stands: Stand[] = [];
-  for (const id of nodes) stands.push(...(junctionSigns(source, id)?.stands ?? []));
-  for (const id of items) stands.push(...(itemSigns(source, id)?.stands ?? []));
-  return stands.length ? { stands } : null;
-}
-
 /** The signs' product, made from nothing at its first refresh. */
-export function signProduct(active?: ActiveTiles): Derived<SignSource, number, SignValue> {
-  return new Derived(new SignProduct(active));
+export function signProduct(): Derived<SignSource, number, SignValue> {
+  return new Derived(new SignProduct());
 }
 
 /** A junction's signs (`signsAtNode`), reading its segments' ground. */
@@ -248,11 +228,6 @@ export interface SignLayerKept {
   refill(): void;
   /** The GPU copy a sheet already sent takes its new plates by (`SignSheets.useCopier`, VIA-04). */
   useCopier(copy: SheetCopier): void;
-  /** The streamed world: the signs are the tiles' (`signTiles.ts`, `put`), the page's own taken away and none stood by `sync`; off, the page's own stood again from the diary. */
-  setTiled(tiled: boolean): void;
-  /** A tile's bake stood (`bakeSigns`); taken away by `take` with the same bake. */
-  put(bake: SignBake): void;
-  take(bake: SignBake): void;
   dispose(): void;
 }
 
@@ -261,8 +236,7 @@ const POST_STORES: RunStore[] = [{
   castShadow: true, receiveShadow: true, tinted: false, cards: false,
 }];
 
-/** `active`: the streamed world's active tiles, the only ones whose signs stand here (`activeTiles.ts`); none, every sign. */
-export function createSignLayer(active?: ActiveTiles): SignLayerKept {
+export function createSignLayer(): SignLayerKept {
   const group = new Group();
   group.name = 'signs';
   const posts = createInstanceRuns('sign-posts', POST_STORES, m(4));
@@ -279,9 +253,7 @@ export function createSignLayer(active?: ActiveTiles): SignLayerKept {
       stores.delete(sheet);
     },
   });
-  let product = signProduct(active);
-  /** Where the active tiles moved since the last sync: the junctions and the items there stood or let go, as a road entry there would. */
-  const moves = active?.reader();
+  const product = signProduct();
   /** The plate the programs are compiled ahead with (`warm`), made with the layer and kept while it is */
   const warmPicture = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   warmPicture.colorSpace = SRGBColorSpace;
@@ -379,7 +351,7 @@ export function createSignLayer(active?: ActiveTiles): SignLayerKept {
     store.free.push(slot);
     touch(store, slot);
   };
-  /** A key's or a tile's plates let go; its posts' run, for the caller to take away. */
+  /** A key's plates let go; its posts' run, for the caller to take away. */
   const letGo = (was: Standing): Run | null => {
     for (const plate of was.plates) {
       if (stores.get(plate.store.sheet) === plate.store) freeQuad(plate.store, plate.slot);
@@ -393,9 +365,6 @@ export function createSignLayer(active?: ActiveTiles): SignLayerKept {
     standing.delete(key);
     return letGo(was);
   };
-  /** The tiles' bakes stood (`put`), each with its plates and posts. */
-  const tiles = new Map<SignBake, Standing>();
-  let tiled = false;
   const stand = (key: number, value: Pick<SignValue, 'stands'>): Run | null => {
     const made = standOf(value);
     standing.set(key, made);
@@ -423,10 +392,10 @@ export function createSignLayer(active?: ActiveTiles): SignLayerKept {
   return {
     group,
     sync(net, elevation) {
-      if (typeof document === 'undefined' || tiled) return 0;
+      if (typeof document === 'undefined') return 0;
       const source: SignSource = { changes: net.doc.changes, net, elevation };
       const removed: Run[] = [], added: Run[] = [];
-      for (const key of product.refresh(source, moves ? moves.entries('roads') : [])) {
+      for (const key of product.refresh(source)) {
         const gone = take(key);
         if (gone) removed.push(gone);
         const value = product.get(key);
@@ -442,31 +411,6 @@ export function createSignLayer(active?: ActiveTiles): SignLayerKept {
     },
     useCopier(copy) {
       sheets.useCopier(copy);
-    },
-    setTiled(on) {
-      if (on === tiled) return;
-      tiled = on;
-      // The page's own signs let go, and its product made from nothing: off again, `sync` stands every sign afresh.
-      const removed: Run[] = [];
-      for (const key of [...standing.keys()]) { const run = take(key); if (run) removed.push(run); }
-      if (removed.length) posts.update({ removed, added: [] });
-      product = signProduct(active);
-      sheets.flush();
-    },
-    put(bake) {
-      if (typeof document === 'undefined' || tiles.has(bake)) return;
-      const made = standOf(bake);
-      tiles.set(bake, made);
-      if (made.run) posts.update({ removed: [], added: [made.run] });
-      sheets.flush();
-    },
-    take(bake) {
-      const was = tiles.get(bake);
-      if (!was) return;
-      tiles.delete(bake);
-      const run = letGo(was);
-      if (run) posts.update({ removed: [run], added: [] });
-      sheets.flush();
     },
     warm() {
       const geometry = new BufferGeometry();
@@ -490,7 +434,6 @@ export function createSignLayer(active?: ActiveTiles): SignLayerKept {
       stores.clear();
       sheets.dispose();
       standing.clear();
-      tiles.clear();
       group.clear();
     },
   };

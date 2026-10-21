@@ -86,7 +86,7 @@ interface RawMap {
 export function decodeMap(raw: RawMap, baseUrl: string): DecodedMap {
   const root = raw.sourceRoot ? (raw.sourceRoot.endsWith('/') ? raw.sourceRoot : `${raw.sourceRoot}/`) : '';
   const sources = (raw.sources ?? []).map((s) => {
-    if (s === null) return '(sem nome)';
+    if (s === null) return '(unnamed)';
     try {
       return decodeURI(new URL(root + s, baseUrl).pathname);
     } catch (error) {

@@ -56,9 +56,9 @@ export interface SurfaceReuse {
   readonly retired?: Mesh[];
   /** Whether a block at (x, y), world units, is near the camera: made at full detail, its far level hidden */
   readonly near?: (x: number, y: number) => boolean;
-  /** Whether a tile of the roads is built here at all (the streamed world's active tiles, `renderer.ts` setActiveTiles): a tile left out is the far roads' to draw (`farRoads.ts`), its blocks let go. None: every tile. */
+  /** Whether a tile of the roads is built here at all (the opening's view, `renderer.ts` openingWithin): a tile left out is built by a later build. None: every tile. */
   within?: (rect: TileRect) => boolean;
-  /** Where `within`'s answer changed since the last build finished (tiles that came into or left the active region); null: it cannot say (every tile visited). */
+  /** Where `within`'s answer changed since the last build finished; null: it cannot say (every tile visited). */
   withinMoved?: (readonly [number, number, number, number])[] | null;
   /** Each pass as the last build left it (`PassState`): a build visits only what changed. None: every tile at every build. */
   readonly passes?: Map<string, PassState>;
@@ -104,8 +104,8 @@ export function disposeSurfaceReuse(reuse: SurfaceReuse): void {
   for (const material of reuse.paint.values()) material.dispose();
 }
 
-/** The blocks a `SurfaceReuse` holds freed, its paint kept (what else draws the roads uses it: `farRoads.ts` near level). */
-export function dropSurfaceBlocks(reuse: SurfaceReuse): void {
+/** The blocks a `SurfaceReuse` holds freed, its paint kept. */
+function dropSurfaceBlocks(reuse: SurfaceReuse): void {
   for (const { mesh } of reuse.chunks?.values() ?? []) disposeMesh(mesh);
   reuse.chunks?.clear();
   // What the passes and tiles stood at goes with the blocks: a later build visits every tile again.
@@ -114,14 +114,6 @@ export function dropSurfaceBlocks(reuse: SurfaceReuse): void {
   reuse.depends?.clear();
   if (reuse.withinMoved !== undefined) reuse.withinMoved = null;
   for (const mesh of reuse.retired?.splice(0) ?? []) disposeMesh(mesh);
-}
-
-/** No road surfaces: what a build of the streamed world's region leaves, its roads drawn by the tiles' near levels (`farRoads.ts`). */
-export function noRoadSurfaces(): RoadSurfaces {
-  const group = new Group();
-  group.name = 'road-network';
-  group.matrixAutoUpdate = false;
-  return { group, meshes: [], triangles: 0, built: 0, reused: 0, remade: 0, rebuilt: [], workMs: 0, adopt() {}, dispose() { group.clear(); } };
 }
 
 /** Every surface of one tile, by mesh name. */

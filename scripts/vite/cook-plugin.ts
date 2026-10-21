@@ -20,12 +20,6 @@ const DERIVED = [
   { entry: 'src/world/conflictPoints.ts', also: [] as string[], define: '__CONFLICT_ZONES_HASH__' },
   // The road surfaces' tiles (`render/roadSurfaces.ts`, kept by `renderer.ts`).
   { entry: 'src/render/roadSurfaces.ts', also: [] as string[], define: '__ROAD_TILES_HASH__' },
-  // The buildings' far levels baked per tile (`render/buildings/farTiles.ts`, kept by `farLevels.ts`).
-  { entry: 'src/render/buildings/farTiles.ts', also: [] as string[], define: '__FAR_MASS_HASH__' },
-  // The roads' far levels baked per tile (`render/farRoadTiles.ts`, kept by `farRoads.ts`).
-  { entry: 'src/render/farRoadTiles.ts', also: [] as string[], define: '__FAR_ROADS_HASH__' },
-  // The near products baked per tile (`render/nearBakers.ts`, kept by `nearTiles.ts`): poles, furniture, signs, barriers, trees, structures, gardens.
-  { entry: 'src/render/nearBakers.ts', also: [] as string[], define: '__NEAR_TILES_HASH__' },
   // A plate's ecosystem and a far plate's woods (`world/ecology.ts`, `render/farWoods.ts`, kept by `ecologyKept.ts`).
   { entry: 'src/world/ecology.ts', also: [] as string[], define: '__ECOLOGY_HASH__' },
   { entry: 'src/render/farWoods.ts', also: [] as string[], define: '__FAR_WOODS_HASH__' },

@@ -259,7 +259,7 @@ if (saved) {
     const asTable = (saved.buildings?.length ?? 0) >= TABLE_RESTORE_BUILDINGS ? (() => { const made = prepareCity(saved); return preparedCity(made.data, made.buildings); })() : null;
     restoreInto(doc, asTable?.data ?? saved, net, asTable !== null);
     performance.mark('boot:restored');
-    doc.changes.causeNext('jogo');
+    doc.changes.causeNext('game');
     // Opened from the map's parts: those parts are this document, the next save writes only what changes.
     persistence.adoptLoaded(doc);
   } catch (error) {
@@ -870,7 +870,7 @@ function mutateBuilt(fn: () => boolean): boolean {
     // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
     clearBulbs(doc, net);
   }
-  doc.changes.causeNext('jogo');
+  doc.changes.causeNext('game');
   // An edit that reports success without changing anything
   const recorded = history.end(doc);
   if (!changed || !recorded) return false;
@@ -1048,7 +1048,7 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 
   window.addEventListener(type, syncGestureSoon, { capture: true, passive: true });
 }
 /** What the diary says a change came from (`world/changes.ts` `causeNext`) */
-const NO_CAUSE = 'jogo';
+const NO_CAUSE = 'game';
 for (const type of ['pointerdown', 'pointerup', 'click', 'dblclick', 'keydown'] as const) {
   window.addEventListener(type, () => {
     if (!booted) return;
@@ -2270,18 +2270,18 @@ function cameraCommand(command: string): void {
 function undo(): void {
   // A drag or stroke in progress ends first
   cancelGestures();
-  doc.changes.causeNext('desfazer');
+  doc.changes.causeNext('undo');
   const done = history.undo(doc);
   if (done) afterRestore();
-  doc.changes.causeNext('jogo');
+  doc.changes.causeNext('game');
   if (done) flashHint('hint.undone');
 }
 function redo(): void {
   cancelGestures();
-  doc.changes.causeNext('refazer');
+  doc.changes.causeNext('redo');
   const done = history.redo(doc);
   if (done) afterRestore();
-  doc.changes.causeNext('jogo');
+  doc.changes.causeNext('game');
   if (done) flashHint('hint.redone');
 }
 /** The game after an undo or a redo put records back (`editor/history.ts`): the network rebuilt only when the roads moved */
@@ -4032,7 +4032,7 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
     requestDraw();
   },
   /** The camera put at a centre, zoom, bearing and tilt (radians) exactly, as `view()` reads them (`scripts/look.mjs`) */
-  /** The small city of Roadcraft 2.0 of a seed, as the menu's "New city" opens it, with no question asked (`scripts/sonda.mjs`, `scripts/lib/measureCity.mjs`). */
+  /** The small city of Roadcraft 2.0 of a seed, as the menu's "New city" opens it, with no question asked (`scripts/probe.mjs`, `scripts/lib/measureCity.mjs`). */
   smallCity: (seed = 7) => openSmallCity(seed),
   /** Probe: the effects, the buildings' choices and the optimisations as the game holds them, each patch over its default (none: the default itself, the very object the game compares by). */
   variant: (fx?: Partial<EffectSwitches> | null, b?: Partial<BuildingChoices> | null, opt?: Partial<Optimizations> | null) => {

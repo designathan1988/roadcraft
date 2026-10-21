@@ -62,7 +62,6 @@ export const ALWAYS = [
   'tests/render/cheapAudit.spec.ts',
   'tests/editor/history.spec.ts',
   'tests/editor/lotProposalPlace.spec.ts',
-  'tests/editor/tileStore.spec.ts',
   'tests/desktop/jobs.spec.ts',
   'tests/render/canyonLight.spec.ts',
   'tests/render/frameBudget.spec.ts',

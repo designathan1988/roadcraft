@@ -66,9 +66,6 @@ export class Persistence {
   /** Called when a write fails (storage full or refused). */
   onSaveFailed: (() => void) | null = null;
 
-  /** A streamed world is open (CLAUDE.md, "Streaming world"): its tiles are its save (`editor/tileStore.ts`), the document (the tiles on the page) is not written whole. */
-  paused = false;
-
   /** The map by tiles (`chunkedSave.ts`): what the diary says changed, written off the page; null without IndexedDB (the whole text). */
   private readonly parted: TiledSaves | null;
   /** How the map the opening read was stored (`loadSessionAsync`), for `adoptLoaded`. */
@@ -110,7 +107,6 @@ export class Persistence {
   private lastWrite: Promise<unknown> = Promise.resolve();
   written(): Promise<void> { return this.lastWrite.then(() => undefined, () => undefined); }
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
-    if (this.paused) { this.writeSettings(settings); return true; }
     const generation = ++this.generation;
     // DO NOT choose by the count of buildings: below it a map of any size of roads, lots and trees was one text an edit.
     if (this.parted) {

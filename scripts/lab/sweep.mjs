@@ -1,10 +1,10 @@
-// THE LAB'S A/B SWEEP WITHOUT A WINDOW: the same sweep as the lab's "Varredura A/B" tab (`src/lab/tests/sweep.ts`, `window.__labTests`), driven
+// THE LAB'S A/B SWEEP WITHOUT A WINDOW: the same sweep as the lab's A/B sweep tab (`src/lab/tests/sweep.ts`, `window.__labTests`), driven
 // in a Chrome of its own by Playwright, the city opened and held as every measure holds it (`scripts/lib/measureCity.mjs`: the small city of a
 // seed, the clock held, the scene settled; REFUSED when another process draws on the GPU or the machine is busy - `--shared-gpu`,
 // `--shared-machine` measure anyway and the report says so). Writes `lab-reports/sweep-<date>.json` and `.md` for a person or an AI to read.
 //
 // Usage (the dev server running: npm run dev):
-//   node scripts/lab/sweep.mjs [--group "interruptor: pós"] [--items switch.bloom,switch.smaa] [--frames 120] [--reps 2] [--view current|map|district|street]
+//   node scripts/lab/sweep.mjs [--group "<group label>"] [--items switch.bloom,switch.smaa] [--frames 120] [--reps 2] [--view current|map|district|street]
 //                              [--zoom 4] [--seed 7] [--settle 20] [--bench views|stress|leak|hitch|longrun] [--seconds 30] [--out lab-reports]
 //   node scripts/lab/sweep.mjs --list     the items the sweep can flip (opens the game)
 //   node scripts/lab/sweep.mjs --specs    the spec files (vitest) by folder, from the disk (no browser)
@@ -24,7 +24,7 @@ if (has('--specs')) {
   const byFolder = new Map();
   for (const f of files) { const folder = f.split('/')[1]; byFolder.set(folder, [...(byFolder.get(folder) ?? []), f]); }
   for (const [folder, specs] of [...byFolder].sort()) console.log(`${folder} (${specs.length}):\n  ${specs.join('\n  ')}`);
-  console.log(`\n${files.length} arquivos. npm test (todos menos perf/scale) · npm run test:scale · npx vitest run tests/<pasta>`);
+  console.log(`\n${files.length} files. npm test (all but perf/scale) · npm run test:scale · npx vitest run tests/<folder>`);
   process.exit(0);
 }
 
@@ -56,7 +56,7 @@ try {
           break;
         } catch (error) {
           if (attempt >= 3 || !/context was destroyed|navigation/i.test(error.message)) throw error;
-          console.warn(`a página recarregou no meio (Vite): tentativa ${attempt + 1} de 3`);
+          console.warn(`the page reloaded midway (Vite): attempt ${attempt + 1} of 3`);
           await page.waitForFunction(() => Boolean(globalThis.__labTests && globalThis.__roadcraft?.measure), null, { timeout: 180000 });
           await page.evaluate((seed) => globalThis.__roadcraft.smallCity(seed), Number(arg('--seed', '7')));
           await page.waitForTimeout(8000);
@@ -71,7 +71,7 @@ try {
     const base = join(outDir, `${bench ? `bench-${bench}` : 'sweep'}-${stamp}`);
     writeFileSync(`${base}.json`, JSON.stringify(report, null, 1));
     writeFileSync(`${base}.md`, markdown(report));
-    console.log(`relatório: ${base}.json\n           ${base}.md`);
+    console.log(`report: ${base}.json\n        ${base}.md`);
   }
 } finally {
   await browser.close();
@@ -79,25 +79,25 @@ try {
 
 function markdown(report) {
   const r = report.result;
-  const lines = [`# ${report.bench ? `Benchmark ${report.bench}` : 'Varredura A/B'} — ${r.startedAt}`, ''];
-  lines.push(`- GPU: ${r.gpuLabel ?? '—'}${r.gpuTimer === false ? ' (sem timer: veredito pelo quadro)' : ''}`);
-  lines.push(`- Duração: ${Math.round(r.ms / 1000)} s${r.cancelled ? ' (interrompido)' : ''}`);
-  if (!report.bench) lines.push(`- Vista: ${r.view} · ${r.frames} quadros por janela · ${r.reps} repetição(ões) · A/B/A com o relógio da simulação parado`);
-  const busy = [...report.machine.gpu.map((g) => `${g.name} GPU ${g.percent}%`), ...report.machine.cpu.busy.map((c) => `${c.name} ${c.cores} núcleos`)];
-  lines.push(`- Máquina no início: ${busy.length ? busy.join(', ') : 'livre'}${report.shared ? ' — MEDIDA COM A MÁQUINA COMPARTILHADA (--shared-*): números não valem como medida' : ''}`);
-  for (const w of r.warnings ?? []) lines.push(`- Aviso: ${w}`);
+  const lines = [`# ${report.bench ? `Benchmark ${report.bench}` : 'A/B sweep'} — ${r.startedAt}`, ''];
+  lines.push(`- GPU: ${r.gpuLabel ?? '—'}${r.gpuTimer === false ? ' (no timer: verdict by the frame)' : ''}`);
+  lines.push(`- Duration: ${Math.round(r.ms / 1000)} s${r.cancelled ? ' (cancelled)' : ''}`);
+  if (!report.bench) lines.push(`- View: ${r.view} · ${r.frames} frames per window · ${r.reps} repetition(s) · A/B/A with the simulation's clock held`);
+  const busy = [...report.machine.gpu.map((g) => `${g.name} GPU ${g.percent}%`), ...report.machine.cpu.busy.map((c) => `${c.name} ${c.cores} cores`)];
+  lines.push(`- Machine at the start: ${busy.length ? busy.join(', ') : 'free'}${report.shared ? ' — MEASURED ON A SHARED MACHINE (--shared-*): the numbers do not count as a measure' : ''}`);
+  for (const w of r.warnings ?? []) lines.push(`- Warning: ${w}`);
   lines.push('');
   if (!report.bench) {
-    lines.push('Δ = B − média das duas janelas A (ms; negativo = mais barato com B). "ruído": |Δ| não passa o ruído (A/A afastadas, erro das medianas, espalhamento das repetições, ≥ 2 % de A).', '');
-    lines.push('| item | grupo | A → B | GPU A | GPU B | Δ GPU | Δ% | Δ CPU | Δ quadro | Δ chamadas | Δ triângulos | ruído | deriva | programas | alertas | veredito |');
+    lines.push('Δ = B − mean of the two A windows (ms; negative = cheaper with B). "noise": |Δ| does not clear the noise (A/A apart, error of the medians, spread of the repetitions, ≥ 2 % of A).', '');
+    lines.push('| item | group | A → B | GPU A | GPU B | Δ GPU | Δ% | Δ CPU | Δ frame | Δ calls | Δ triangles | noise | drift | programs | alerts | verdict |');
     lines.push('|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|');
     const sorted = [...r.rows].sort((a, b) => (a.gpuDelta ?? a.frameDelta ?? 0) - (b.gpuDelta ?? b.frameDelta ?? 0));
     for (const x of sorted) {
-      const flags = [x.sceneChanged && 'cena mudou', x.unsettled && 'não assentou', x.basis === 'frame' && 'sem GPU'].filter(Boolean).join(', ');
+      const flags = [x.sceneChanged && 'scene changed', x.unsettled && 'not settled', x.basis === 'frame' && 'no GPU'].filter(Boolean).join(', ');
       lines.push(`| ${x.item} | ${x.group} | ${x.a} → ${x.b} | ${x.gpuA ?? '—'} | ${x.gpuB ?? '—'} | ${x.gpuDelta ?? '—'} | ${x.gpuDeltaPct ?? '—'} | ${x.cpuDelta ?? '—'} | ${x.frameDelta ?? '—'} | ${x.callsDelta} | ${x.trianglesDelta} | ${x.noise ?? '—'} | ${x.drift ?? '—'} | ${x.newPrograms} | ${flags} | **${x.verdict}** |`);
     }
   } else {
-    lines.push('| caso | medida | valor | unidade | referência | estado |', '|---|---|---:|---|---|---|');
+    lines.push('| case | metric | value | unit | reference | status |', '|---|---|---:|---|---|---|');
     for (const x of r.rows) lines.push(`| ${x.case} | ${x.metric} | ${x.value ?? '—'} | ${x.unit} | ${x.reference} | ${x.status} |`);
   }
   return `${lines.join('\n')}\n`;

@@ -9,7 +9,6 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellGroup, createCoverIndex, dropCell, groundDigest, recordRef } from './layerCells';
-import type { ChangeRect } from '@world/changes';
 import { type PartCell, type PartView, dropParts } from './partCells';
 import { FarPartBatch } from './farParts';
 import { ShellBatch } from './shellBatch';
@@ -20,9 +19,6 @@ import { FAR_ERROR, createMassCells, sameFrustum } from './massCells';
 import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, letBackFitting, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
-import { FarLevels, farRunner } from './farLevels';
-import type { FarGroundEnv } from './farTiles';
-import type { SharedGroundAt } from '../sharedGround';
 import { type BuildingKit, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
 import { type BatchKind, CellRequests } from './cellRequests';
@@ -42,7 +38,7 @@ const DETAIL_CLASSES: readonly GpuClass[] = ['building detail', 'building facade
 const detailClass = (kind: BatchKind): GpuClass => (kind === 'cell' ? 'building detail' : 'building facade');
 
 /** Whether a diary entry is the player's edit (`main.ts` mutateBuilt's `tool …`, undo, redo), not the growth (`zone growth`) nor a tile coming in. */
-export const playerCause = (cause: string): boolean => cause.startsWith('tool ') || cause === 'desfazer' || cause === 'refazer';
+export const playerCause = (cause: string): boolean => cause.startsWith('tool ') || cause === 'undo' || cause === 'redo';
 
 /** The most the cells' detail may hold on the GPU as the game sets it (MB): a large city keeps its far levels and masses for the
  *  whole map, but the detail of the places the camera walked through is bounded (`keepToBudget`), and the road walked does not
@@ -96,14 +92,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
   let ruinedSerial = 0;
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
-  /** The buildings of the tiles not in the document, baked in workers from the tile store (`farLevels.ts`): the ground they read is the one shared with the workers. */
-  const farEnv = (): FarGroundEnv => ({
-    ground: (lastGround?.groundAt as SharedGroundAt | undefined)?.share?.current ?? null,
-    naturalIsGround: !lastGround || lastGround.naturalAt === lastGround.groundAt,
-    tone: kit.finishTone,
-  });
-  const farTiles = new FarLevels(kit, farRunner(farEnv));
-  group.add(farTiles.group);
   /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds what the GPU ledger's cap leaves once every other owner is counted (`room`), and draws no more than that (`MassCells.cap`). */
   let budget = GAME_DETAIL_MEMORY_MB * 1048576;
   const room = (): number => Math.min(budget, gpuLedger.roomFor(DETAIL_CLASSES));
@@ -224,12 +212,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
-  /** The document's revision the town was last put together from (`update`): what `drawnOver` waits for. */
-  let townAt = -1;
-  /** Where a building must stand to be put together here (`setActive`: the streamed world's active tiles), the rectangles whose standing changed since the last update, and how many times it changed (part of the town's key). */
-  let activeAt: ((x: number, y: number) => boolean) | null = null;
-  const activeFlipped: ChangeRect[] = [];
-  let activeSerial = 0;
   /** What the levels chosen draw, triangles: each near cell's level (shown, or as its kind is reckoned until it lands), and every mass resident (the cells', tiles' and plates': those hidden under a cell's detail counted too, so never under what is drawn). */
   const chosenTriangles = (): number => {
     // DO NOT count every mass on the GPU: a cell in detail was counted twice, by its level and by its masses hidden under it (the view over its budget, cells cut that fit, conferencia 40).
@@ -625,22 +607,20 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       return shown + (ghost?.triangles ?? 0);
     },
     get top() {
-      return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop, farTiles.top());
+      return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop);
     },
     get pending() {
-      // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest, the far levels.
+      // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest.
       // And a choice not settled yet (a held cell let back a level, `levelOfDetail`): the frames are drawn on demand, and a still view asked none, the cells let back stood in their masses until the camera moved.
-      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0 || (eye !== null && !lodSettled);
+      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || (eye !== null && !lodSettled);
     },
     get coarsePending() {
-      return requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
+      return requests.massing > 0 || massCells.waiting > 0;
     },
     get viewPending() {
       // The cells the view wants in detail (near, in its frustum, `massCells.nearKeys`) whose detail has not landed.
       return pendingCells.size > 0;
     },
-    far: farTiles,
-    farEnv,
     // DO NOT put the view's detail behind the masses while the curtain is up (`CellPool.coarseFirst`): the curtain waits for it (`viewPending`, CLAUDE.md "abrir"), and behind every mass and far level it held the opening or let it fall with the view in masses (conf130/131, conf133). The cells asked are only those the view wants near (`massCells.nearKeys`).
     get hidden() {
       return hiddenNow;
@@ -656,8 +636,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       return { chunk: emitChunk(b, groundAt, pavedAt, naturalAt), kit };
     },
     update(doc, groundAt, groundKey, pavedAt, naturalAt = groundAt, groundMovedUnder) {
-      // Put together below from the document as it stands now, in this call.
-      townAt = doc.revision;
       // Another ground: what moved since each key is asked again (the sets were up to the ground before).
       if (lastGround?.groundKey !== groundKey) movedSince.clear();
       lastGround = { groundAt, groundKey, pavedAt, naturalAt };
@@ -668,9 +646,9 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
         ? `${cutaway.only ?? ''}:${cutaway.level}@${Math.round(cutaway.x)},${Math.round(cutaway.y)}/${Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4))}`
         : 'whole';
       // DO NOT put them back in this key: every road edit
-      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${groundKey}|${hides}|${ruinedSerial}|${String(dimmed)}|${activeSerial}`;
-      /** A building drawn in its cell: standing on an active tile, not the one the preview stands for, nor a ruin, nor the one left solid while the others fade. */
-      const inCell = (b: Building): boolean => (activeAt === null || activeAt(b.x, b.y)) && b.id !== hides && !ruined.has(b.id) && !(typeof dimmed === 'number' && b.id === dimmed);
+      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${groundKey}|${hides}|${ruinedSerial}|${String(dimmed)}`;
+      /** A building drawn in its cell: not the one the preview stands for, nor a ruin, nor the one left solid while the others fade. */
+      const inCell = (b: Building): boolean => b.id !== hides && !ruined.has(b.id) && !(typeof dimmed === 'number' && b.id === dimmed);
       let rebuilt = false;
       // The masses of the buildings an edit changed
       if (key !== storedKey) {
@@ -683,8 +661,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
           const dirty = new Set<string>(), ids = new Set<BuildingId>();
           const named = changed.flatMap((e) => e.ids!) as BuildingId[];
           for (const b of groundMoved) named.push(b.id);
-          // The tiles that came into the active region or left it: their buildings taken in or let go.
-          for (const r of activeFlipped.splice(0)) for (const b of doc.buildings.near(r[0], r[1], r[2], r[3])) named.push(b.id);
           // The one the preview hid and the one it hides now; the ruins that came and went.
           if (hides !== storedHides) for (const id of [storedHides, hides]) if (id !== null) named.push(id);
           if (ruined !== storedRuined) {
@@ -738,7 +714,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
           // The floors measured by the workers (`cellPool.ts`), of the buildings still in the document only.
           pool.forgetFloors((key) => doc.buildings.has(Number(key.split('|')[0]) as BuildingId));
           const solid = shown.filter(inCell);
-          activeFlipped.length = 0;
           town.reset(solid);
           townCells = town.byCell;
           lodStale = true;
@@ -888,7 +863,7 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       if (view) eyeView.copy(view);
       // The levels chosen at scale 1, over the view's budget of triangles the farthest coarsened first (`capTriangles`); only when the masses alone pass it does the scale rise (`frameBudget.ts`). The building cut open and the one being edited stay in detail whatever the eye says.
       const fitted = (scale: number): number => {
-        massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseRaw();
+        massCells.setErrorScale(scale); chooseRaw();
         capRaw();
         capTriangles();
         return chosenTriangles();
@@ -909,7 +884,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
         lodForced = forcedNear;
         if (view) lodView.copy(view);
       }
-      farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach, view);
       // What the frame's last choice left unexposed or unwanted let go, not what a scale tried on the way did (`MassCells.settle`).
       massCells.settle();
       // The room shrinks when another owner grows (a resize, the far levels): the hidden levels go first.
@@ -941,23 +915,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       budget = bytes;
       keepToBudget();
     },
-    drawnOver(rect, revision = -Infinity) {
-      if (townAt < revision) return false;
-      const i0 = Math.floor(rect[0] / BATCH_CELL), j0 = Math.floor(rect[1] / BATCH_CELL), i1 = Math.ceil(rect[2] / BATCH_CELL), j1 = Math.ceil(rect[3] / BATCH_CELL);
-      // The rectangle's cells looked up when it holds fewer than the town (PRD-30: a tile's rectangle against the 10 km town's every cell, each key parsed); the same answer, whichever cell fails first.
-      const walkRect = (i1 - i0) * (j1 - j0) < townCells.size;
-      const keys: Iterable<string> = walkRect ? cellKeysIn(i0, j0, i1, j1) : townCells.keys();
-      for (const key of keys) {
-        if (walkRect) { if (!townCells.has(key)) continue; } else {
-          const comma = key.indexOf(',');
-          const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-          if (i < i0 || i >= i1 || j < j0 || j >= j1) continue;
-        }
-        // A tile's or plate's mesh made before the tile's buildings came in stands for none of them (the plate of the map's centre: four tiles, the second to come handed to the cells under the first's plate, 2026-10-17).
-        if (levelShown(key) === null && !massCells.drawn(key, (level) => !levels.outdated(level))) return false;
-      }
-      return true;
-    },
     books() {
       return {
         ...massCells.books(), landedTriangles: landedTriangles.size, landedBytes: landedBytes.size, heldFar: heldFar.size, heldCoarse: heldCoarse.size,
@@ -965,15 +922,9 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
         townCells: townCells.size, kept: kept.size, sent: sent.size, groundDigests: groundDigests.size, cellEntries: cellEntries.size, flags: flagsOf.size,
       };
     },
-    setActive(at, rects) {
-      activeAt = at;
-      activeFlipped.push(...rects);
-      if (rects.length || at === null) activeSerial++;
-    },
     frame,
     roots: () => ({
       masses: massCells.group,
-      farTiles: farTiles.group,
       facades: facadeStored.group,
       cells: stored?.group ?? null,
       parts: partRoot,
@@ -1092,7 +1043,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       massEntries.clear();
       massAsked.clear();
       massCells.dispose();
-      farTiles.refill();
       storedKey = '';
       townDoc = null;
     },
@@ -1104,7 +1054,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       pool.dispose();
       flagLayer.dispose();
       massCells.dispose();
-      farTiles.dispose();
       stored?.dispose();
       solo?.dispose();
       for (const bridge of bridges.values()) bridge.meshes.dispose();
@@ -1125,9 +1074,4 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       group.clear();
     },
   };
-}
-
-/** The coarse cells' keys of `[i0, i1) x [j0, j1)`, as `townCells` keys them. */
-function* cellKeysIn(i0: number, j0: number, i1: number, j1: number): Generator<string> {
-  for (let i = i0; i < i1; i++) for (let j = j0; j < j1; j++) yield `${i},${j}`;
 }

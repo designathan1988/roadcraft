@@ -2106,7 +2106,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     if (import.meta.env.DEV) performance.measure('terrain-light/worker', { start: startedAt - result.ms, end: startedAt, detail: `${width}x${rect.y1 - rect.y0 + 1} corners` });
     // Rows run from +y downwards.
     diary?.record('light', [[origin.x - TERRAIN_HALF + rect.x0 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y1 * TERRAIN_CELL, origin.x - TERRAIN_HALF + rect.x1 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y0 * TERRAIN_CELL]],
-      { cause: 'inclinação do terreno refeita', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} cantos, num worker` });
+      { cause: 'terrain slope rebuilt', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} corners, in a worker` });
   };
   /** Called each frame (the sun's direction is not read: the slope does not depend on it); the slope asked for where the land moved, once no stroke is held. */
   const setSun = (): void => {

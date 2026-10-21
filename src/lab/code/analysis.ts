@@ -4,8 +4,8 @@ import type { SourceStore } from './sourceStore';
 
 /** WHAT THE SUMS SAY: each function placed in its TypeScript file and given a category; the recursion, the deep stacks and the suspects read off them. */
 
-/** `lab`: the debugging lab's own code (this sampler among it), apart so it can be filtered out. */
-export type Category = 'jogo' | 'lab' | 'three' | 'deps' | 'vite' | 'wasm' | 'navegador' | 'motor' | 'worker' | 'outro';
+/** `game`: the game; `browser`: a native browser frame; `engine`: an engine-internal frame. `lab`: the debugging lab's own code (this sampler among it), apart so it can be filtered out. */
+export type Category = 'game' | 'lab' | 'three' | 'deps' | 'vite' | 'wasm' | 'browser' | 'engine' | 'worker' | 'other';
 
 export interface FunctionRow {
   readonly stat: FunctionStat;
@@ -30,22 +30,22 @@ export interface Suspect {
   readonly detail: string;
 }
 
-/** A number as the lab shows them (pt-BR). */
-const num = (v: number, digits: number): string => v.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+/** A number as the lab shows them (en-US). */
+const num = (v: number, digits: number): string => v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
 /** The category of a script by its URL (and a native frame by its name). */
 export function categoryOf(id: FunctionId): Category {
-  if (!id.url) return id.name.startsWith('(') ? 'motor' : 'navegador';
+  if (!id.url) return id.name.startsWith('(') ? 'engine' : 'browser';
   if (id.url.startsWith('wasm:')) return 'wasm';
   let path: string;
-  try { path = new URL(id.url).pathname; } catch (error) { console.warn('lab code: bad script url', id.url, error); return 'outro'; }
+  try { path = new URL(id.url).pathname; } catch (error) { console.warn('lab code: bad script url', id.url, error); return 'other'; }
   if (/worker/i.test(path) || id.url.startsWith('blob:')) return 'worker';
   if (path.startsWith('/src/lab/')) return 'lab';
-  if (path.startsWith('/src/')) return 'jogo';
+  if (path.startsWith('/src/')) return 'game';
   if (/\/node_modules\/(\.vite\/deps\/)?three/.test(path)) return 'three';
   if (path.startsWith('/node_modules/')) return 'deps';
   if (path.startsWith('/@')) return 'vite';
-  return 'outro';
+  return 'other';
 }
 
 /** A server path short: no origin, no leading slash, no Vite query. */
@@ -54,7 +54,7 @@ export const shortPath = (url: string): string => url.replace(/^[a-z]+:\/\/[^/]+
 export function whereOf(id: FunctionId, loc: SourceLocation | null): string {
   if (loc) return `${loc.file.replace(/^\//, '')}:${loc.line}`;
   // A script with no map (a prebundled dependency): its name alone, the line generated.
-  return id.url ? `${shortPath(id.url).split('/').pop()}:${id.line} (gerado)` : '(nativo)';
+  return id.url ? `${shortPath(id.url).split('/').pop()}:${id.line} (generated)` : '(native)';
 }
 
 /** Every function of `agg` as a row, placed through `store` (null places until its map is in). */
@@ -85,40 +85,40 @@ export function suspects(agg: Aggregate, rows: readonly FunctionRow[], idleProdu
   const byKey = new Map(rows.map((r) => [r.stat.id.key, r]));
   for (const r of rows) {
     const s = r.stat;
-    if (r.category === 'motor') continue;
+    if (r.category === 'engine') continue;
     if (r.selfPct >= 3 && s.selfMs >= 0.8 * s.totalMs && s.selfSamples >= 5)
-      out.push({ kind: 'folha quente', key: s.id.key, name: s.id.name, where: r.where, value: s.selfMs, detail: `${num(r.selfPct, 1)}% do tempo amostrado no próprio corpo` });
-    if (r.selfPct >= 1 && s.id.name === '(anônima)')
-      out.push({ kind: 'anônima quente', key: s.id.key, name: s.id.name, where: r.where, value: s.selfMs, detail: 'função sem nome com custo: dê um nome para achá-la nos perfis' });
+      out.push({ kind: 'hot leaf', key: s.id.key, name: s.id.name, where: r.where, value: s.selfMs, detail: `${num(r.selfPct, 1)}% of the sampled time in its own body` });
+    if (r.selfPct >= 1 && s.id.name === '(anonymous)')
+      out.push({ kind: 'hot anonymous', key: s.id.key, name: s.id.name, where: r.where, value: s.selfMs, detail: 'costly unnamed function: give it a name to find it in profiles' });
     if (s.recursionDepth > 1)
-      out.push({ kind: s.direct ? 'recursão direta' : 'recursão', key: s.id.key, name: s.id.name, where: r.where, value: s.recursionMs, detail: `até ${s.recursionDepth}× na mesma pilha` });
-    if (agg.windows >= 5 && r.presence >= 0.9 && r.totalPct < 0.5 && r.category === 'jogo')
-      out.push({ kind: 'sempre presente, pouco faz', key: s.id.key, name: s.id.name, where: r.where, value: s.totalMs, detail: `vista em ${Math.round(r.presence * 100)}% das janelas com ${num(r.totalPct, 2)}% do tempo: sondagem a cada quadro?` });
-    if (r.category === 'jogo' && r.msPerFrame >= 2)
-      out.push({ kind: 'caminho quente', key: s.id.key, name: s.id.name, where: r.where, value: s.totalMs, detail: `${num(r.msPerFrame, 2)} ms por quadro (total com chamadas)` });
+      out.push({ kind: s.direct ? 'direct recursion' : 'recursion', key: s.id.key, name: s.id.name, where: r.where, value: s.recursionMs, detail: `up to ${s.recursionDepth}× in the same stack` });
+    if (agg.windows >= 5 && r.presence >= 0.9 && r.totalPct < 0.5 && r.category === 'game')
+      out.push({ kind: 'always present, does little', key: s.id.key, name: s.id.name, where: r.where, value: s.totalMs, detail: `seen in ${Math.round(r.presence * 100)}% of windows with ${num(r.totalPct, 2)}% of the time: polling every frame?` });
+    if (r.category === 'game' && r.msPerFrame >= 2)
+      out.push({ kind: 'hot path', key: s.id.key, name: s.id.name, where: r.where, value: s.totalMs, detail: `${num(r.msPerFrame, 2)} ms per frame (total with callees)` });
   }
   if (agg.maxDepth >= 60) {
     const leaf = agg.deepest[0] ?? '';
     const r = byKey.get(leaf);
-    out.push({ kind: 'pilha profunda', key: leaf, name: r?.stat.id.name ?? leaf, where: r?.where ?? '', value: agg.maxDepth, detail: `${agg.maxDepth} quadros na pilha mais funda` });
+    out.push({ kind: 'deep stack', key: leaf, name: r?.stat.id.name ?? leaf, where: r?.where ?? '', value: agg.maxDepth, detail: `${agg.maxDepth} frames in the deepest stack` });
   }
   if (agg.gcMs > 0)
-    out.push({ kind: 'coleta de lixo', key: '', name: '(garbage collector)', where: '', value: agg.gcMs, detail: `${num((100 * agg.gcMs) / span, 1)}% do tempo amostrado` });
+    out.push({ kind: 'garbage collection', key: '', name: '(garbage collector)', where: '', value: agg.gcMs, detail: `${num((100 * agg.gcMs) / span, 1)}% of the sampled time` });
   // A library's time (three, deps) charged to the nearest game function calling into it.
   const charged = new Map<string, number>();
   for (const e of agg.edges.values()) {
     const callee = byKey.get(e.callee), caller = byKey.get(e.caller);
-    if (!callee || !caller || caller.category !== 'jogo' || (callee.category !== 'three' && callee.category !== 'deps')) continue;
+    if (!callee || !caller || caller.category !== 'game' || (callee.category !== 'three' && callee.category !== 'deps')) continue;
     charged.set(e.caller, (charged.get(e.caller) ?? 0) + e.ms);
   }
   for (const [key, ms] of charged) {
     if ((100 * ms) / span < 2) continue;
     const r = byKey.get(key)!;
-    out.push({ kind: 'chamada cara a biblioteca', key, name: r.stat.id.name, where: r.where, value: ms, detail: `${num((100 * ms) / span, 1)}% do tempo em three/deps chamados daqui` });
+    out.push({ kind: 'costly library call', key, name: r.stat.id.name, where: r.where, value: ms, detail: `${num((100 * ms) / span, 1)}% of the time in three/deps called from here` });
   }
   for (const [name, p] of idleProducts) {
     if (p.refreshes >= 20 && p.idle / p.refreshes >= 0.9)
-      out.push({ kind: 'produto refeito sem mudança', key: '', name, where: 'engine', value: p.ms, detail: `${p.idle} de ${p.refreshes} refeitos ociosos (Engine.onRefresh)` });
+      out.push({ kind: 'product rebuilt without change', key: '', name, where: 'engine', value: p.ms, detail: `${p.idle} of ${p.refreshes} rebuilds idle (Engine.onRefresh)` });
   }
   return out.sort((a, b) => b.value - a.value);
 }

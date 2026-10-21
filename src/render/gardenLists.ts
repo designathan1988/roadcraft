@@ -2,7 +2,6 @@ import { Digest } from '@core/digest';
 import type { BuildingStore } from '@world/buildings/store';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { CellFiling } from '@world/cells';
-import type { ActiveTiles } from './activeTiles';
 import type { GardenChange, GardenPlant } from './gardens';
 import type { GroundRecord, Rect } from './groundChanges';
 
@@ -11,22 +10,17 @@ import type { GroundRecord, Rect } from './groundChanges';
 export interface GardenLists {
   /** The lists to place and to take away since the last call, null when none. */
   update(buildings: BuildingStore, settled: boolean): GardenChange | null;
-  /** The streamed world: the gardens are the tiles' (`gardenTiles.ts`), every list placed here taken away at the next update and none placed; off, every building taken in again. */
-  setTiled(tiled: boolean): void;
 }
 
 /** A planted building: its record, its plants digested, its bank, and its plants on the ground (once placed) with the ground change they follow. */
 interface Site { b: Building; key: number; box: Rect; plants: readonly GardenPlant[] | null; seen: number }
 
-/** `ground`: where and when the drawn ground changed; `active`: the streamed world's active tiles, the only ones whose buildings' gardens are planted here (`activeTiles.ts`; none, every building's) */
+/** `ground`: where and when the drawn ground changed */
 export function gardenLists(
   ground: GroundRecord,
   bankBox: (b: Building) => Rect,
   plantsOf: (b: Building) => readonly GardenPlant[],
-  active?: ActiveTiles,
 ): GardenLists {
-  /** Where the active tiles moved since the last update: the buildings there taken in or let go. */
-  const moves = active?.reader();
   /** DO NOT key it by the JSON text: a string kept for every building with a garden. */
   const plantKey = new WeakMap<Building, number>();
   const plantKeyOf = (b: Building): number => {
@@ -47,11 +41,9 @@ export function gardenLists(
   const gone: (readonly GardenPlant[])[] = [];
   let read = -1;
   let groundRead = -1;
-  let tiled = false;
   /** A building's record taken in. */
   const take = (id: BuildingId, b: Building | undefined): void => {
-    // A building of the kept ring round the active tiles is the far levels' (as its cell's, `BuildingLayer.setActive`): no garden here.
-    const key = b && (!active || active.has(b.x, b.y)) ? plantKeyOf(b) : -1;
+    const key = b ? plantKeyOf(b) : -1;
     const site = sites.get(id);
     if (key < 0) {
       if (!site) return;
@@ -89,13 +81,6 @@ export function gardenLists(
     else takeAll(buildings);
     read = buildings.revision;
   };
-  /** The buildings of the tiles that came into the active region or left it, taken in or let go (every building when it moved everywhere). */
-  const followActive = (buildings: BuildingStore): void => {
-    const rects = moves?.take();
-    if (rects === undefined) return;
-    if (rects === null) { takeAll(buildings); return; }
-    for (const r of rects) for (const b of buildings.near(r[0], r[1], r[2], r[3])) take(b.id, b);
-  };
   /** A placed site the ground moved under since it was placed: placed again. */
   const check = (id: BuildingId, site: Site): void => {
     if (site.plants && ground.touches(site.seen, site.box)) pending.add(id);
@@ -117,18 +102,8 @@ export function gardenLists(
   };
 
   return {
-    setTiled(on) {
-      if (on === tiled) return;
-      tiled = on;
-      if (!on) { read = -1; return; }
-      for (const [id, site] of sites) { if (site.plants) gone.push(site.plants); banks.remove(id); }
-      sites.clear();
-      pending.clear();
-    },
     update(buildings, settled) {
-      if (tiled) return gone.length ? { added: [], removed: gone.splice(0) } : null;
       follow(buildings);
-      followActive(buildings);
       groundMoved();
       if (!settled || (pending.size === 0 && gone.length === 0)) return null;
       const added: (readonly GardenPlant[])[] = [];

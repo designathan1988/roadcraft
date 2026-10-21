@@ -18,16 +18,11 @@ import type { RoadDoc } from '@world/doc';
 import type { PoleId, SpanId } from '@world/ids';
 import type { Network } from '@world/network';
 import { PoleIndex } from '@world/poleIndex';
-import { cellRect } from '@world/cells';
 import { m } from '@world/units';
 import type { PoleArms, UtilityPole, UtilitySpan } from '@world/utilities';
-import type { ActiveTiles } from './activeTiles';
 import {
-  type BakedPart,
-  type BakedWires,
   type PartBounds,
   type PartShape,
-  type PoleBake,
   type PoleSource,
   WIRE_BLOCK,
   type WireBounds,
@@ -64,17 +59,8 @@ export type { PoleSource } from './poleBake';
 /** DO NOT build the whole layer again for a change; DO NOT pace or hold it. */
 
 
-/** The document's poles as a layer's source; `active`, the streamed world's active tiles (`activeTiles.ts`): a wire is strung when a pole of it stands on one, a pole placed when it stands on one or such a wire ties it, so the active tiles keep every wire and pole they had and the kept ring beyond is the far levels'. */
-export const docPoles = (doc: RoadDoc, active?: ActiveTiles): PoleSource => {
-  const source: PoleSource = { poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) };
-  if (!active) return source;
-  const on = (id: PoleId): boolean => { const p = doc.poles.get(id); return !!p && active.has(p.x, p.y); };
-  return {
-    ...source,
-    stands: (pole) => active.has(pole.x, pole.y) || doc.spansAt(pole.id).some((s) => on(s.a === pole.id ? s.b : s.a)),
-    strings: (span) => on(span.a) || on(span.b),
-  };
-};
+/** The document's poles as a layer's source. */
+export const docPoles = (doc: RoadDoc): PoleSource => ({ poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) });
 
 /** How far from a pole a change of the roads or the ground can move it: its kerb (`kerbward`), its lamp's pool. */
 const POLE_REACH = m(12);
@@ -193,21 +179,6 @@ class PartStore {
     return mesh;
   }
 
-  /** A bake's pieces (`bakePoles`) appended: drawn as they came (a baked layer is never edited). */
-  load(baked: BakedPart): void {
-    this.reserve(this.count + baked.count);
-    (this.mesh!.instanceMatrix.array as Float32Array).set(baked.matrices, this.count * 16);
-    this.count += baked.count;
-    this.whole = true;
-    for (let i = 0; i < 6; i++) {
-      this.bounds.box[i] = Math.min(this.bounds.box[i]!, baked.box[i]!);
-      this.bounds.box[i + 3] = Math.max(this.bounds.box[i + 3]!, baked.box[i + 3]!);
-    }
-    this.bounds.scale = Math.max(this.bounds.scale, baked.scale);
-    this.bounds.cover = Math.max(this.bounds.cover, baked.cover);
-    this.boundsMoved = true;
-  }
-
   /** Room for `needed` instances: a mesh at least twice as large when it is full, the drawn ones copied over. */
   reserve(needed: number): void {
     if (needed <= this.capacity) return;
@@ -279,7 +250,7 @@ class PartStore {
     }
   }
 
-  /** Its pieces' box (three's axes): where its block is nearest the eye with no pole of the page to say so (a bake's). */
+  /** Its pieces' box (three's axes): where its block is nearest the eye with no pole of its own to say so (wires only). */
   get box(): ArrayLike<number> {
     return this.bounds.box;
   }
@@ -342,20 +313,6 @@ class WireStore {
       return;
     }
     this.makeMesh();
-  }
-
-  /** A bake's wires (`bakePoles`) appended: drawn as they came (a baked layer is never edited). */
-  load(baked: BakedWires): void {
-    this.reserve(this.count + baked.count);
-    this.data.set(baked.data, this.count * WireStore.BLOCK);
-    this.count += baked.count;
-    this.whole = true;
-    for (let i = 0; i < 6; i++) {
-      this.bounds.box[i] = Math.min(this.bounds.box[i]!, baked.box[i]!);
-      this.bounds.box[i + 3] = Math.max(this.bounds.box[i + 3]!, baked.box[i + 3]!);
-    }
-    this.bounds.sag = Math.max(this.bounds.sag, baked.sag);
-    this.boundsMoved = true;
   }
 
   private makeMesh(): void {
@@ -478,7 +435,7 @@ const blockKey = (x: number, y: number): string => `${Math.floor(x / BLOCK)},${M
 interface Block {
   readonly parts: PartStore[];
   readonly wires: WireStore;
-  /** The poles placed in it here (none for a bake's): where it is nearest the eye. */
+  /** The poles placed in it here (none for a block of wires only): where it is nearest the eye. */
   readonly poles: Set<PoleId>;
 }
 
@@ -531,8 +488,8 @@ export class PoleLayer implements Utilities {
 
   /** Every pole and span of the source, on an empty layer, in the source's order: the layer a full build makes */
   fill(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource): void {
-    for (const pole of source.poles.values()) if (source.stands?.(pole) ?? true) this.place(net, groundAt, source, pole, undefined);
-    for (const span of source.spans.values()) if (source.strings?.(span) ?? true) this.string(span);
+    for (const pole of source.poles.values()) this.place(net, groundAt, source, pole, undefined);
+    for (const span of source.spans.values()) this.string(span);
     this.flush();
   }
 
@@ -550,14 +507,14 @@ export class PoleLayer implements Utilities {
     const wanted = new Map<SpanId, UtilitySpan>();
     for (const id of dirty) {
       for (const sid of this.index.spansAt(id)) strung.add(sid);
-      if (source.poles.has(id)) for (const s of source.spansAt(id)) if (source.strings?.(s) ?? true) wanted.set(s.id, s);
+      if (source.poles.has(id)) for (const s of source.spansAt(id)) wanted.set(s.id, s);
     }
     for (const sid of strung) this.unstring(sid);
     for (const id of dirty) {
       const was = this.poles.get(id);
       if (was) this.unplace(id, was);
       const pole = source.poles.get(id);
-      if (pole && (source.stands?.(pole) ?? true)) this.place(net, groundAt, source, pole, fresh.has(id) || !was || was.x !== pole.x || was.y !== pole.y ? undefined : was.kerb);
+      if (pole) this.place(net, groundAt, source, pole, fresh.has(id) || !was || was.x !== pole.x || was.y !== pole.y ? undefined : was.kerb);
     }
     for (const span of wanted.values()) this.string(span);
     this.flush();
@@ -657,7 +614,7 @@ export class PoleLayer implements Utilities {
           nearest = Math.max(nearest, this.scale.atPoint(pole.x, pole.top / 2, -pole.y, pole.top / 2));
         }
       } else {
-        // A bake's block: the nearest corner of what it holds.
+        // A block of wires only: the nearest corner of what it holds.
         for (const part of block.parts) if (part.count > 0) nearest = Math.max(nearest, this.scale.atBox(part.box));
         if (block.wires.count > 0) nearest = Math.max(nearest, this.scale.atBox(block.wires.box));
       }
@@ -676,19 +633,6 @@ export class PoleLayer implements Utilities {
     this.group.clear();
   }
 
-  /** A TILE'S POLES AS A BAKE HANDS THEM (`bakePoles`, in a worker): its parts and wires appended to the layer's stores, drawn as they came, viewed as a layer filled on the page is (the same levels and shadows); never edited, a new bake replaces it whole */
-  static fromBake(kit: SceneryKit, bake: PoleBake, name = 'utilities'): PoleLayer {
-    const layer = new PoleLayer(kit, name);
-    for (const baked of bake.cells) {
-      // The block holding the cell's middle (a tile's own cell key falls in one too: its pieces kept together).
-      const r = cellRect(baked.key);
-      const block = layer.block(blockKey((r[0] + r[2]) / 2, (r[1] + r[3]) / 2));
-      baked.parts.forEach((part, k) => { if (part) block.parts[k]!.load(part); });
-      if (baked.wires) block.wires.load(baked.wires);
-    }
-    layer.flush();
-    return layer;
-  }
 }
 
 

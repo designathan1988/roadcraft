@@ -1361,7 +1361,7 @@ function hospital(p: Parts, W: number, D: number, g: number, s: number, upper: n
   p.box('white', W * 0.32, W * 0.68, 1.5, front, 4.2, 4.9);
   p.box('glassRail', W * 0.34, W * 0.66, 2, front - 0.2, 4.9, 5.1);
   for (const x of [W * 0.33, W * 0.67]) { p.box('white', x - 0.4, x + 0.4, 1.5, 2.3, 0, 4.2); }
-  p.decal('emergencia', lettering('EMERGÊNCIA', '#d32027', '#ffffff'), W / 2, 1.48, W * 0.3, 0.7, 4.2);
+  p.decal('emergency', lettering('EMERGÊNCIA', '#d32027', '#ffffff'), W / 2, 1.48, W * 0.3, 0.7, 4.2);
   p.box('podiumGlass', W * 0.36, W * 0.64, front - 0.1, front + 0.05, 0.1, 3.8);
   // Roofs: helipad on the centre, plant on the wings.
   p.decal('helipad', helipad, W / 2, D * 0.55, Math.min(W * 0.36, 10), Math.min(W * 0.36, 10), top + 0.42);
@@ -1628,7 +1628,7 @@ const fireStation: Design = (p, W, D, g, s) => {
   p.box('lawn', bay, W - 5, 1, apron - 3, 0, 0.3);
   for (let k = 0; k < 5; k++) p.bush(bay + 0.8 + k * 1.3, 3, 0.3, 0.6, k % 2 === 0);
   p.box('concreteLight', bay + 1, bay + 4.5, 5.5, 5.8, 0.3, 1.8);
-  p.decal('lema', lettering('DISCIPLINA', '#7a1f1f', '#d9d6cf', 'VIDAS MAIS SEGURAS'), bay + 2.75, 5.48, 3.4, 1.4, 0.35);
+  p.decal('motto', lettering('DISCIPLINA', '#7a1f1f', '#d9d6cf', 'VIDAS MAIS SEGURAS'), bay + 2.75, 5.48, 3.4, 1.4, 0.35);
 };
 
 /** 11. A police station: grey concrete, a black central block with the badge and name, louvres, a garage of patrol cars behind a gate. */
@@ -1639,9 +1639,9 @@ const police: Design = (p, W, D, g, s) => {
   roofRing(p, 'concreteLight', W * 0.72, W, 9, D, H - 0.8, H - 0.4);
   p.box('blackSteel', W * 0.24, W * 0.5, 2.2, D * 0.6, 0, H + 1.2);
   p.decal('badge', badge, W * 0.37, 2.18, 2.2, 2.6, H - 2.4);
-  p.decal('policia', lettering('POLÍCIA CIVIL', '#eeeeee', null), W * 0.37, 2.18, W * 0.24, 0.9, H - 3.4);
+  p.decal('police', lettering('POLÍCIA CIVIL', '#eeeeee', null), W * 0.37, 2.18, W * 0.24, 0.9, H - 3.4);
   p.box('blackSteel', W * 0.22, W * 0.52, 0, 2.2, g - 0.5, g - 0.2);
-  p.decal('lema2', lettering('SEGURANÇA · CIDADANIA · JUSTIÇA', '#ffffff', '#1f2124'), W * 0.37, -0.02, W * 0.3, 0.3, g - 0.5);
+  p.decal('motto2', lettering('SEGURANÇA · CIDADANIA · JUSTIÇA', '#ffffff', '#1f2124'), W * 0.37, -0.02, W * 0.3, 0.3, g - 0.5);
   p.windowFront(W * 0.3, W * 0.44, 2.18, 0, g - 0.6, 1);
   for (const x0 of [1.2, W * 0.55]) {
     for (const z of [0.8, g + 0.8]) {
@@ -1652,7 +1652,7 @@ const police: Design = (p, W, D, g, s) => {
   for (const x of [W * 0.24, W * 0.5]) for (const z of [2, g + 2]) p.box('sconce', x - 0.08, x + 0.08, 2.05, 2.15, z, z + 0.3);
   // The garage for the patrol cars and its sliding gate.
   p.box('blackSteel', W * 0.72, W, 5, 9, g - 0.4, g);
-  p.decal('viaturas', lettering('VIATURAS ›››', '#ffffff', '#1f2124'), W * 0.86, 4.98, W * 0.26, 0.4, g - 0.4);
+  p.decal('patrolCars', lettering('VIATURAS ›››', '#ffffff', '#1f2124'), W * 0.86, 4.98, W * 0.26, 0.4, g - 0.4);
   p.box('asphalt', W * 0.72, W, 0, 9, 0, 0.05);
   for (const x of [W * 0.78, W * 0.92]) {
     p.box('blackSteel', x - 0.9, x + 0.9, 6, 10.4, 0.3, 1.3);

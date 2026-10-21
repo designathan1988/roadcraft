@@ -16,12 +16,12 @@ export function button(text: string, title: string, onClick: () => void): HTMLBu
 }
 
 export function bytes(n: number): string {
-  if (n >= 1048576) return `${(n / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`;
-  if (n >= 1024) return `${(n / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`;
+  if (n >= 1048576) return `${(n / 1048576).toLocaleString('en-US', { maximumFractionDigits: 1 })} MB`;
+  if (n >= 1024) return `${(n / 1024).toLocaleString('en-US', { maximumFractionDigits: 1 })} KB`;
   return `${n} B`;
 }
 
-export const ms = (v: number): string => v.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+export const ms = (v: number): string => v.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
 /** One colour per pass, steady across frames. */
 export const PASS_COLOURS: Record<string, string> = {

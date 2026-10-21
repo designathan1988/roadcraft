@@ -6,11 +6,9 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { buildRoadElevation, type RoadElevation } from '@world/elevation';
 import { snapLandscape, GROW_MINUTES, type LandscapeKind } from '@world/landscape';
-import type { ChangeJournal, ChangeRect } from '@world/changes';
-import type { Derived } from '@world/derived';
+import type { ChangeRect } from '@world/changes';
 import type { SegmentId } from '@world/ids';
 import { m } from '@world/units';
-import { ActiveTiles } from '@render/activeTiles';
 import { drawnMatrices, posesOf } from '@render/cellInstances';
 import { createSceneryKit } from '@render/scenery';
 import { createStreetFurniture, furnitureProduct, meadowProduct } from '@render/streetFurnitureLayer';
@@ -174,54 +172,6 @@ describe('the street furniture kept from the diary', () => {
     layer.dispose();
   });
 
-  it('places only the items of the active tiles, taking in and letting go those where the region moved', () => {
-    const town = new Town();
-    const rng = new Rng(0xac71);
-    for (let i = 0; i < 200; i++) edits[0]!(town, rng);
-    // The region as a line across the town: the items west of it are on active tiles.
-    let edge = span / 2;
-    const at = (x: number): boolean => x < edge;
-    const active = new ActiveTiles();
-    active.set(at, []);
-    const moves = active.reader();
-    const kept = furnitureProduct(kit, active);
-    const grass = meadowProduct(kit, active);
-    const refresh = (): void => {
-      const moved = moves.entries('landscape');
-      kept.refresh(town, moved);
-      grass.refresh(town, moved);
-    };
-    /** The products made from nothing for the same region, against the kept ones. */
-    const compare = (label: string): void => {
-      const own = new ActiveTiles();
-      own.set(at, []);
-      const made = furnitureProduct(kit, own), madeGrass = meadowProduct(kit, own);
-      made.refresh(town);
-      madeGrass.refresh(town);
-      sameProduct(kept, made, label);
-      sameProduct(grass, madeGrass, label);
-      for (const [, value] of kept.entries()) expect(at(value.x), label).toBe(true);
-      for (const [, value] of grass.entries()) expect(at(value.x), label).toBe(true);
-    };
-    refresh();
-    compare('first');
-    expect(kept.size).toBeGreaterThan(10);
-    for (const to of [span * 0.2, span * 0.8, span * 0.5, -span]) {
-      const from = edge;
-      edge = to;
-      active.set(at, [[Math.min(from, to) - m(1), -span, Math.max(from, to) + m(1), 2 * span]]);
-      refresh();
-      compare(`edge at ${to}`);
-    }
-    expect(kept.size).toBe(0);
-    // The world closed: every item placed again.
-    active.set(null, []);
-    refresh();
-    const all = furnitureProduct(kit);
-    all.refresh(town);
-    expect(kept.size).toBe(all.size);
-  });
-
   it('places again only the items an edit reached', () => {
     const town = new Town();
     const rng = new Rng(3);
@@ -238,13 +188,3 @@ describe('the street furniture kept from the diary', () => {
     expect(product.work.last).toBe(0);
   });
 });
-
-/** A kept product against one made from nothing: the same keys, each the same value. */
-function sameProduct<D extends { readonly changes: ChangeJournal }, V>(mine: Derived<D, number, V>, made: Derived<D, number, V>, label: string): void {
-  expect(mine.size, label).toBe(made.size);
-  const same = mine.spec.equals ?? ((a: V, b: V): boolean => a === b);
-  for (const [key, value] of made.entries()) {
-    const held = mine.get(key);
-    expect(held !== undefined && same(held, value), `${label}: ${key}`).toBe(true);
-  }
-}

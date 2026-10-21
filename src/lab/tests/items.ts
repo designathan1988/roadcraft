@@ -31,7 +31,7 @@ export const labOpt = (): LabOptApi | null => {
 
 /** The groups of the switches, as the panel shows them (`effectsWiring.ts` GROUPS). */
 const SWITCH_GROUPS: readonly (readonly [string, readonly string[]])[] = [
-  ['pós', POST_SWITCHES], ['luz', LIGHT_SWITCHES], ['camadas', LAYER_SWITCHES], ['prédios', BUILDING_SWITCHES],
+  ['post', POST_SWITCHES], ['light', LIGHT_SWITCHES], ['layers', LAYER_SWITCHES], ['buildings', BUILDING_SWITCHES],
   ['cpu', ['simulation', 'traffic', 'pedestrians', 'growth', 'onDemand']],
 ];
 /** The buildings' settings of several values: B is the cheapest of them (`effectsWiring.ts` BUILDING_CHOICES). */
@@ -56,7 +56,7 @@ export function sweepItems(ctx: LabContext): SweepItem[] {
     for (const key of keys) {
       if (NOT_SWEPT.includes(key)) continue;
       items.push({
-        id: `switch.${key}`, label: key, group: `interruptor: ${group}`,
+        id: `switch.${key}`, label: key, group: `switch: ${group}`,
         get: () => snap()[key],
         flipped: (now) => (typeof now === 'boolean' ? !now : null),
         set: (value) => { if (typeof value === 'boolean') ctx.effects.setMany({ [key]: value }); },
@@ -65,14 +65,14 @@ export function sweepItems(ctx: LabContext): SweepItem[] {
   }
   for (const [key, c] of Object.entries(CHOICE_B)) {
     items.push({
-      id: `switch.${key}`, label: key, group: 'interruptor: prédios',
+      id: `switch.${key}`, label: key, group: 'switch: buildings',
       get: () => snap()[c.snapshotKey],
       flipped: (now) => (now === c.b ? c.a : c.b),
       set: (value) => { if (typeof value === 'string' || typeof value === 'number') ctx.effects.setMany({ [key]: value }); },
     });
   }
   items.push({
-    id: 'switch.resolution', label: 'resolution', group: 'interruptor: resolução',
+    id: 'switch.resolution', label: 'resolution', group: 'switch: resolution',
     get: () => snap()['resolution'],
     flipped: (now) => (now === 0.5 ? 1 : 0.5),
     set: (value) => { if (typeof value === 'number') ctx.effects.setMany({ resolution: value }); },
@@ -87,7 +87,7 @@ export function sweepItems(ctx: LabContext): SweepItem[] {
       const id = entry.id;
       const choices = choiceOf(entry);
       items.push({
-        id: `opt.${id}`, label: entry.label ?? entry.title ?? id, group: `otimização${entry.group ? `: ${entry.group}` : ''}`,
+        id: `opt.${id}`, label: entry.label ?? entry.title ?? id, group: `optimization${entry.group ? `: ${entry.group}` : ''}`,
         get: () => opt.get(id),
         flipped: (now) => {
           if (typeof now === 'boolean') return !now;

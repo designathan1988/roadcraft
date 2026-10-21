@@ -52,13 +52,13 @@ export function createProgramTracker(ctx: LabContext, renderer: WebGLRenderer, p
         if (known) { known.usedTimes = p.usedTimes; known.alive = true; continue; }
         const events = ctx.events();
         const last = events[events.length - 1];
-        const trigger = first ? 'já existia ao abrir' : [last && now - last.t < TRIGGER_MS ? `${last.kind}: ${last.detail}` : '', pass() ? `passe ${pass()}` : ''].filter(Boolean).join(' · ') || '—';
-        const row: ProgramRow = { id: p.id, name: p.name || '(material sem nome)', key: shortHash(p.cacheKey), usedTimes: p.usedTimes, firstSeen: now, trigger, alive: true };
+        const trigger = first ? 'already there at opening' : [last && now - last.t < TRIGGER_MS ? `${last.kind}: ${last.detail}` : '', pass() ? `pass ${pass()}` : ''].filter(Boolean).join(' · ') || '—';
+        const row: ProgramRow = { id: p.id, name: p.name || '(unnamed material)', key: shortHash(p.cacheKey), usedTimes: p.usedTimes, firstSeen: now, trigger, alive: true };
         byId.set(p.id, row);
         rows.push(row);
         if (!first) {
           tracker.made++;
-          ctx.emit('gpu.program', `programa novo: ${row.name} #${p.id} (${list.length} vivos)`, { id: p.id, name: p.name || '(material sem nome)', key: row.key, trigger, live: list.length });
+          ctx.emit('gpu.program', `new program: ${row.name} #${p.id} (${list.length} alive)`, { id: p.id, name: p.name || '(unnamed material)', key: row.key, trigger, live: list.length });
         }
       }
       for (const row of rows) {

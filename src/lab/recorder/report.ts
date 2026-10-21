@@ -32,13 +32,13 @@ function gpuName(ctx: LabContext): string {
     return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
   } catch (error) {
     console.warn('lab recorder: GPU name unreadable', error);
-    return 'desconhecida';
+    return 'unknown';
   }
 }
 
 const s = (ms: number): string => `${fmtNum(ms / 1000, 1)} s`;
 const ms = (v: number | undefined | null): string => (v === undefined || v === null ? '—' : fmtNum(v, 2));
-const int = (v: number | undefined | null): string => (v === undefined || v === null ? '—' : Math.round(v).toLocaleString('pt-BR'));
+const int = (v: number | undefined | null): string => (v === undefined || v === null ? '—' : Math.round(v).toLocaleString('en-US'));
 
 /** The frames before the first of each segment's settled frames: what is left out. */
 function anomaliesOf(rec: Recording, segments: readonly Segment[]): Anomaly[] {
@@ -51,26 +51,26 @@ function anomaliesOf(rec: Recording, segments: readonly Segment[]): Anomaly[] {
   hitches.sort((a, b) => b.v - a.v);
   const before = (t: number): string => {
     const e = [...rec.events].reverse().find((x) => x.t <= t && x.t > t - 2000 && x.kind !== 'rec.stop');
-    return e ? ` (${Math.round(t - e.t)} ms após ${e.kind}: ${e.detail})` : '';
+    return e ? ` (${Math.round(t - e.t)} ms after ${e.kind}: ${e.detail})` : '';
   };
-  for (const h of hitches.slice(0, 12)) out.push({ kind: 'hitch', t: h.t, detail: `quadro de ${fmtNum(h.v, 1)} ms em ${s(h.t)}${before(h.t)}` });
-  if (hitches.length > 12) out.push({ kind: 'hitch', t: hitches[12]!.t, detail: `e mais ${hitches.length - 12} quadros acima de 50 ms` });
+  for (const h of hitches.slice(0, 12)) out.push({ kind: 'hitch', t: h.t, detail: `${fmtNum(h.v, 1)} ms frame at ${s(h.t)}${before(h.t)}` });
+  if (hitches.length > 12) out.push({ kind: 'hitch', t: hitches[12]!.t, detail: `and ${hitches.length - 12} more frames over 50 ms` });
   for (const sg of segments) {
     if (sg.settle && (sg.settle.maxIntervalMs > 50 || sg.settle.maxCpuMs > 33)) {
-      out.push({ kind: 'settle', t: sg.startMs, detail: `pico logo após "${sg.label}": intervalo máx. ${fmtNum(sg.settle.maxIntervalMs, 1)} ms, CPU máx. ${fmtNum(sg.settle.maxCpuMs, 1)} ms nos primeiros ${Math.round(sg.settle.ms)} ms (${sg.settle.frames} quadros)${sg.settle.never ? ' — **não assentou** antes da próxima mudança/20 s: as estatísticas do segmento ficam vazias' : ''} — provável compilação de shader/criação de alvos` });
+      out.push({ kind: 'settle', t: sg.startMs, detail: `spike right after "${sg.label}": max interval ${fmtNum(sg.settle.maxIntervalMs, 1)} ms, max CPU ${fmtNum(sg.settle.maxCpuMs, 1)} ms in the first ${Math.round(sg.settle.ms)} ms (${sg.settle.frames} frames)${sg.settle.never ? ' — **did not settle** before the next change/20 s: the segment\'s statistics stay empty' : ''} — likely shader compilation/target creation` });
     }
     if (sg.heapSlopeMBps !== null && sg.endMs - sg.startMs >= 5000 && sg.heapSlopeMBps > 0.5) {
-      out.push({ kind: 'heap', t: sg.startMs, detail: `heap cresce ${fmtNum(sg.heapSlopeMBps, 2)} MB/s no segmento ${sg.index} ("${sg.label}") — possível vazamento ou lixo acumulando` });
+      out.push({ kind: 'heap', t: sg.startMs, detail: `heap grows ${fmtNum(sg.heapSlopeMBps, 2)} MB/s in segment ${sg.index} ("${sg.label}") — possible leak or garbage piling up` });
     }
   }
   for (let i = 1; i < rec.sim.length; i++) {
     const a = rec.sim[i - 1]!.programs, b = rec.sim[i]!.programs;
-    if (a !== null && b !== null && b > a) out.push({ kind: 'recompile', t: rec.sim[i]!.t, detail: `programas de shader ${a} → ${b} por volta de ${s(rec.sim[i]!.t)}${before(rec.sim[i]!.t)}` });
+    if (a !== null && b !== null && b > a) out.push({ kind: 'recompile', t: rec.sim[i]!.t, detail: `shader programs ${a} → ${b} around ${s(rec.sim[i]!.t)}${before(rec.sim[i]!.t)}` });
   }
   const long = rec.events.filter((e) => e.kind === 'longtask');
   if (long.length) {
     const total = long.reduce((sum, e) => sum + ((e.data as { duration?: number } | undefined)?.duration ?? 0), 0);
-    out.push({ kind: 'longtask', t: long[0]!.t, detail: `${long.length} tarefas longas (>50 ms) somando ${Math.round(total)} ms; a maior: ${Math.round(Math.max(...long.map((e) => (e.data as { duration?: number } | undefined)?.duration ?? 0)))} ms` });
+    out.push({ kind: 'longtask', t: long[0]!.t, detail: `${long.length} long tasks (>50 ms) totalling ${Math.round(total)} ms; the longest: ${Math.round(Math.max(...long.map((e) => (e.data as { duration?: number } | undefined)?.duration ?? 0)))} ms` });
   }
   return out;
 }
@@ -88,7 +88,7 @@ function suspectsOf(sections: Record<string, unknown>): string[] {
       const first = rows[0] as Record<string, unknown>;
       const key = Object.keys(first).find((k) => typeof first[k] === 'number' && COSTLY.test(k)) ?? Object.keys(first).find((k) => typeof first[k] === 'number');
       const sorted = key ? [...rows as Record<string, unknown>[]].sort((a, b) => Number(b[key] ?? 0) - Number(a[key] ?? 0)) : rows as Record<string, unknown>[];
-      lines.push(`- **${name}** (${rows.length} linhas${key ? `, maiores por \`${key}\`` : ''}):`);
+      lines.push(`- **${name}** (${rows.length} rows${key ? `, largest by \`${key}\`` : ''}):`);
       for (const r of sorted.slice(0, 5)) lines.push(`  - ${JSON.stringify(r).slice(0, 240)}`);
       continue;
     }
@@ -143,32 +143,32 @@ export function buildReport(ctx: LabContext, rec: Recording): LabReport {
   const md: string[] = [];
   const previous = new Map(comparisons.filter((c) => c.kind === 'previous').map((c) => [c.segment, c]));
   const baseline = new Map(comparisons.filter((c) => c.kind === 'baseline').map((c) => [c.segment, c]));
-  md.push(`# Gravação de desempenho — Roadcraft`, '');
-  md.push(`Relatório gerado pelo laboratório de depuração (F7, aba Gravação), para ser lido por uma IA ou por uma pessoa. Formato \`${REPORT_FORMAT}\`; o JSON irmão (\`${stamp}.json\`) tem todos os quadros.`, '');
-  md.push('## Contexto', '');
-  md.push(`- Data: ${rec.startedAt} · duração ${s(rec.endMs)} (gravando ${s(rec.activeMs)}) · ${rec.frames.t.length.toLocaleString('pt-BR')} quadros · parada: ${rec.stopReason}`);
-  md.push(`- GPU: ${gpu} · temporizador de GPU: ${ctx.scene.gpu.supported ? 'sim' : 'não (colunas GPU vazias)'}`);
-  md.push(`- Tela: ${screen.width}×${screen.height} @${window.devicePixelRatio} · canvas ${ctx.scene.gl.domElement.width}×${ctx.scene.gl.domElement.height} · crossOriginIsolated: ${String(window.crossOriginIsolated)} · núcleos: ${navigator.hardwareConcurrency}`);
+  md.push(`# Performance recording — Roadcraft`, '');
+  md.push(`Report made by the debug lab (F7, Recording tab), to be read by an AI or a person. Format \`${REPORT_FORMAT}\`; the sibling JSON (\`${stamp}.json\`) has every frame.`, '');
+  md.push('## Context', '');
+  md.push(`- Date: ${rec.startedAt} · duration ${s(rec.endMs)} (recording ${s(rec.activeMs)}) · ${rec.frames.t.length.toLocaleString('en-US')} frames · stopped by: ${rec.stopReason}`);
+  md.push(`- GPU: ${gpu} · GPU timer: ${ctx.scene.gpu.supported ? 'yes' : 'no (GPU columns empty)'}`);
+  md.push(`- Screen: ${screen.width}×${screen.height} @${window.devicePixelRatio} · canvas ${ctx.scene.gl.domElement.width}×${ctx.scene.gl.domElement.height} · crossOriginIsolated: ${String(window.crossOriginIsolated)} · cores: ${navigator.hardwareConcurrency}`);
   md.push(`- Build: ${build} · ${location.href}`);
-  md.push(`- Navegador: ${navigator.userAgent}`);
+  md.push(`- Browser: ${navigator.userAgent}`);
   const lastSim = rec.sim[rec.sim.length - 1];
-  if (lastSim) md.push(`- Simulação (fim): ${int(lastSim.vehicles)} veículos, ${int(lastSim.people)} pessoas, passo ${ms(lastSim.stepMs)} ms, ${int(lastSim.programs)} programas de shader`);
+  if (lastSim) md.push(`- Simulation (end): ${int(lastSim.vehicles)} vehicles, ${int(lastSim.people)} people, step ${ms(lastSim.stepMs)} ms, ${int(lastSim.programs)} shader programs`);
   const v0 = rec.views[0], vN = rec.views[rec.views.length - 1];
-  if (v0 && vN) md.push(`- Câmera: ${v0.kind}, zoom ${v0.zoom} → ${vN.zoom}; ${rec.views.length} posições distintas registradas, ${rec.events.filter((e) => e.kind === 'view.move').length} movimentos`);
-  if (startSettings['onDemand'] === true) md.push(`- **Atenção**: \`onDemand\` ligado — o jogo só desenha quando algo muda; os intervalos incluem espera ociosa. Compare CPU/GPU, não o intervalo.`);
+  if (v0 && vN) md.push(`- Camera: ${v0.kind}, zoom ${v0.zoom} → ${vN.zoom}; ${rec.views.length} distinct positions logged, ${rec.events.filter((e) => e.kind === 'view.move').length} moves`);
+  if (startSettings['onDemand'] === true) md.push(`- **Warning**: \`onDemand\` on — the game only draws when something changes; the intervals include idle waiting. Compare CPU/GPU, not the interval.`);
   const off = Object.entries(startSettings).filter(([, v]) => v === false).map(([k]) => k);
   const valued = Object.entries(startSettings).filter(([, v]) => typeof v !== 'boolean').map(([k, v]) => `${k}=${String(v)}`);
-  md.push(`- Configuração no início: desligados: ${off.length ? off.join(', ') : 'nenhum'}; valores: ${valued.join(', ') || '—'}`, '');
+  md.push(`- Settings at start: off: ${off.length ? off.join(', ') : 'none'}; values: ${valued.join(', ') || '—'}`, '');
 
-  md.push('## O que mudou e quando', '');
+  md.push('## What changed and when', '');
   const changes = rec.events.filter((e) => e.split);
-  if (!changes.length) md.push('Nada mudou durante a gravação: um único segmento.');
+  if (!changes.length) md.push('Nothing changed during the recording: a single segment.');
   for (const e of changes) md.push(`- ${s(e.t)} — \`${e.kind}\`: ${describeChange(e)}`);
   md.push('');
 
-  md.push('## Segmentos', '');
-  md.push(`Cada segmento vai de uma mudança à próxima; o assentamento após cada mudança (≥ ${SETTLE_MS} ms, até o jogo se acalmar) fica fora das estatísticas. Tempos em ms; Δ contra o segmento anterior.`, '');
-  md.push('| # | início | dur. | quadros | mudança | interv. p50/p95/p99 | CPU p50/p95/p99 | GPU p50/p95/p99 | >25/>50 ms | draw calls | triângulos | heap MB/s | Δ vs anterior | Δ vs base |');
+  md.push('## Segments', '');
+  md.push(`Each segment runs from one change to the next; the settling after each change (≥ ${SETTLE_MS} ms, until the game calms down) is left out of the statistics. Times in ms; Δ against the previous segment.`, '');
+  md.push('| # | start | dur. | frames | change | interval p50/p95/p99 | CPU p50/p95/p99 | GPU p50/p95/p99 | >25/>50 ms | draw calls | triangles | heap MB/s | Δ vs previous | Δ vs baseline |');
   md.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const sg of segments) {
     const tri = (d: Dist | null): string => (d ? `${ms(d.p50)} / ${ms(d.p95)} / ${ms(d.p99)}` : '—');
@@ -178,85 +178,85 @@ export function buildReport(ctx: LabContext, rec: Recording): LabReport {
   }
   md.push('');
 
-  md.push('## Efeito de cada mudança', '');
-  if (!comparisons.length) md.push('Sem mudanças: nada a comparar.');
+  md.push('## Effect of each change', '');
+  if (!comparisons.length) md.push('No changes: nothing to compare.');
   for (const c of comparisons.filter((x) => x.kind === 'previous')) {
     const sg = segments[c.segment]!;
-    md.push(`### Segmento ${c.segment}: ${sg.label}`, '');
-    md.push(`- Resumo: **${c.summary}**`);
-    for (const d of c.deltas) md.push(`  - ${describeDelta(d)} — ${fmtNum(d.from, 2)} → ${fmtNum(d.to, 2)}, ruído ±${fmtNum(d.noise, 2)} → ${d.verdict}`);
+    md.push(`### Segment ${c.segment}: ${sg.label}`, '');
+    md.push(`- Summary: **${c.summary}**`);
+    for (const d of c.deltas) md.push(`  - ${describeDelta(d)} — ${fmtNum(d.from, 2)} → ${fmtNum(d.to, 2)}, noise ±${fmtNum(d.noise, 2)} → ${d.verdict}`);
     const bc = baseline.get(c.segment);
-    if (bc) md.push(`- Contra a linha de base: ${bc.effect}`);
+    if (bc) md.push(`- Against the baseline: ${bc.effect}`);
     const before = segments[c.segment - 1];
     if (before && sg.systems.length) {
       const moved = sg.systems.map((x) => ({ name: x.name, d: x.meanMs - (before.systems.find((y) => y.name === x.name)?.meanMs ?? 0) })).filter((x) => Math.abs(x.d) >= 0.05).sort((a, b2) => Math.abs(b2.d) - Math.abs(a.d)).slice(0, 5);
-      if (moved.length) md.push(`- Sistemas da CPU que mais mudaram (média ms/quadro): ${moved.map((x) => `${x.name} ${x.d > 0 ? '+' : ''}${fmtNum(x.d, 2)}`).join(', ')}`);
+      if (moved.length) md.push(`- CPU systems that changed most (mean ms/frame): ${moved.map((x) => `${x.name} ${x.d > 0 ? '+' : ''}${fmtNum(x.d, 2)}`).join(', ')}`);
     }
-    if (sg.settle) md.push(`- Assentamento (${Math.round(sg.settle.ms)} ms${sg.settle.never ? ', não assentou' : ''}, ${sg.settle.frames} quadros descartados): intervalo máx. ${ms(sg.settle.maxIntervalMs)}, CPU máx. ${ms(sg.settle.maxCpuMs)}, GPU máx. ${ms(sg.settle.maxGpuMs)}`);
+    if (sg.settle) md.push(`- Settling (${Math.round(sg.settle.ms)} ms${sg.settle.never ? ', did not settle' : ''}, ${sg.settle.frames} frames discarded): max interval ${ms(sg.settle.maxIntervalMs)}, max CPU ${ms(sg.settle.maxCpuMs)}, max GPU ${ms(sg.settle.maxGpuMs)}`);
     md.push('');
   }
 
   const base = segments[0];
   if (base?.systems.length) {
-    md.push('## Maiores consumidores da CPU (linha de base)', '');
-    for (const x of base.systems.slice(0, 8)) md.push(`- ${x.name}: ${fmtNum(x.meanMs, 2)} ms/quadro`);
+    md.push('## Biggest CPU consumers (baseline)', '');
+    for (const x of base.systems.slice(0, 8)) md.push(`- ${x.name}: ${fmtNum(x.meanMs, 2)} ms/frame`);
     md.push('');
   }
   // The CPU profile recorded with it (`lab/code`): which functions, in which file and line, the main thread spent its time in.
   const code = sections['code'] as { windows?: number; samples?: number; spanMs?: number; busyMs?: number; gcMs?: number;
     top?: { name: string; where: string; category: string; selfMs: number; totalMs: number; selfPct: number }[];
     recursion?: { name: string; where: string; depth: number; ms: number }[]; suspects?: { kind: string; name: string; where: string; value: number; detail: string }[] } | undefined;
-  md.push('## Funções que mais gastaram CPU (perfil gravado junto)', '');
-  if (!code?.top?.length) md.push('O perfil de CPU não teve amostras (JS Self-Profiling indisponível ou gravação curta demais).', '');
+  md.push('## Functions that spent the most CPU (profile recorded alongside)', '');
+  if (!code?.top?.length) md.push('The CPU profile had no samples (JS Self-Profiling unavailable or recording too short).', '');
   else {
-    md.push(`${code.samples ?? 0} amostras em ${code.windows ?? 0} janelas · ocupado ${fmtNum((code.busyMs ?? 0) / 1000, 1)} s de ${fmtNum((code.spanMs ?? 0) / 1000, 1)} s · coleta de lixo ${fmtNum((code.gcMs ?? 0) / 1000, 1)} s. "Próprio": a função no topo da pilha; "total": com o que ela chama.`, '');
-    md.push('| função | onde | categoria | próprio ms | total ms | % próprio |', '|---|---|---|---|---|---|');
-    for (const f of code.top.slice(0, 25)) md.push(`| ${f.name || '(anônima)'} | ${f.where} | ${f.category} | ${fmtNum(f.selfMs, 1)} | ${fmtNum(f.totalMs, 1)} | ${fmtNum(f.selfPct, 1)} |`);
+    md.push(`${code.samples ?? 0} samples in ${code.windows ?? 0} windows · busy ${fmtNum((code.busyMs ?? 0) / 1000, 1)} s of ${fmtNum((code.spanMs ?? 0) / 1000, 1)} s · garbage collection ${fmtNum((code.gcMs ?? 0) / 1000, 1)} s. "Self": the function on top of the stack; "total": with what it calls.`, '');
+    md.push('| function | where | category | self ms | total ms | % self |', '|---|---|---|---|---|---|');
+    for (const f of code.top.slice(0, 25)) md.push(`| ${f.name || '(anonymous)'} | ${f.where} | ${f.category} | ${fmtNum(f.selfMs, 1)} | ${fmtNum(f.totalMs, 1)} | ${fmtNum(f.selfPct, 1)} |`);
     md.push('');
     if (code.suspects?.length) {
-      md.push('Suspeitas do perfil:', '');
-      for (const x of code.suspects.slice(0, 15)) md.push(`- **${x.kind}** — ${x.name || '(anônima)'} em ${x.where}: ${x.detail}`);
+      md.push('Profile suspects:', '');
+      for (const x of code.suspects.slice(0, 15)) md.push(`- **${x.kind}** — ${x.name || '(anonymous)'} in ${x.where}: ${x.detail}`);
       md.push('');
     }
     if (code.recursion?.length) {
-      md.push('Recursão:', '');
-      for (const x of code.recursion.slice(0, 8)) md.push(`- ${x.name || '(anônima)'} em ${x.where}: até ${x.depth}× na mesma pilha, ${fmtNum(x.ms, 1)} ms`);
+      md.push('Recursion:', '');
+      for (const x of code.recursion.slice(0, 8)) md.push(`- ${x.name || '(anonymous)'} in ${x.where}: up to ${x.depth}× on the same stack, ${fmtNum(x.ms, 1)} ms`);
       md.push('');
     }
   }
   const edits = rec.events.filter((e) => e.kind.startsWith('edit.'));
   if (edits.length || sections['inspector'] !== undefined) {
-    md.push('## Edições feitas pelo Inspector', '');
+    md.push('## Edits made through the Inspector', '');
     for (const e of edits) md.push(`- ${s(e.t)} — \`${e.kind}\`: ${e.detail}${e.data === undefined ? '' : ` \`${JSON.stringify(e.data).slice(0, 300)}\``}`);
-    if (!edits.length) md.push('Nenhuma edição durante a gravação.');
-    if (sections['inspector'] !== undefined) md.push('', `Seção \`inspector\` (estado no fim): \`${JSON.stringify(sections['inspector']).slice(0, 1500)}\``);
+    if (!edits.length) md.push('No edits during the recording.');
+    if (sections['inspector'] !== undefined) md.push('', `Section \`inspector\` (state at the end): \`${JSON.stringify(sections['inspector']).slice(0, 1500)}\``);
     md.push('');
   }
   const suspects = suspectsOf(sections);
-  md.push('## Suspeitos das outras áreas do laboratório', '');
-  md.push(...(suspects.length ? suspects : ['Nenhuma outra área registrou seção no relatório.']), '');
+  md.push('## Suspects from the lab\'s other areas', '');
+  md.push(...(suspects.length ? suspects : ['No other area registered a report section.']), '');
 
-  md.push('## Anomalias', '');
-  md.push(...(anomalies.length ? anomalies.map((a) => `- [${a.kind}] ${a.detail}`) : ['Nenhuma: sem quadros acima de 50 ms fora do assentamento, sem crescimento de heap, sem recompilações observadas.']), '');
+  md.push('## Anomalies', '');
+  md.push(...(anomalies.length ? anomalies.map((a) => `- [${a.kind}] ${a.detail}`) : ['None: no frames over 50 ms outside settling, no heap growth, no recompiles observed.']), '');
   const markers = rec.events.filter((e) => e.kind === 'rec.marker');
   if (markers.length) {
-    md.push('## Marcadores', '');
+    md.push('## Markers', '');
     for (const m of markers) md.push(`- ${s(m.t)}: ${m.detail}`);
     md.push('');
   }
 
-  md.push('## Como ler', '');
-  md.push('- **intervalo**: tempo entre o início de um quadro e o do seguinte — o que o jogador espera (16,7 ms = 60 Hz). Inclui a espera do vsync.');
-  md.push('- **CPU**: trabalho do próprio quadro na thread principal (`FrameTimer`). **GPU**: tempo da GPU medido por consulta de temporizador (chega alguns quadros atrasado; repete o último valor até chegar outro).');
-  md.push('- **p50/p95/p99**: mediana e percentis; **>25/>50 ms**: quadros cujo intervalo passou disso (travadas).');
-  md.push(`- **assentamento**: depois de cada mudança, pelo menos ${SETTLE_MS} ms e até 10 quadros calmos seguidos (intervalo e CPU < 50 ms) — compilação de shaders, criação de alvos; fora das estatísticas, o pico relatado à parte. "Não assentou": o jogo não se acalmou antes da próxima mudança.`);
-  md.push('- **ruído**: 2 × erro-padrão da diferença, com a dispersão robusta (MAD×1,4826) de cada segmento e o nº de quadros dividido por 5 (quadros vizinhos não são independentes). p95 usa um erro maior. Uma diferença menor que isso é "dentro do ruído": não conclua nada dela.');
-  md.push('- **Δ vs anterior** atribui a diferença à(s) mudança(s) que abriram o segmento; **Δ vs base** compara com o primeiro segmento (tudo como estava no início).');
-  md.push('- **heap MB/s**: inclinação do heap JS no segmento (mínimos quadrados); positiva e persistente sugere vazamento — mas o GC é serrilhado: só segmentos longos dizem algo.');
-  md.push('- A GPU pode estar compartilhada com outros processos; repita a gravação antes de afirmar um ganho pequeno.');
+  md.push('## How to read', '');
+  md.push('- **interval**: time from the start of one frame to the start of the next — what the player waits (16.7 ms = 60 Hz). Includes the vsync wait.');
+  md.push('- **CPU**: the frame\'s own work on the main thread (`FrameTimer`). **GPU**: GPU time measured by a timer query (arrives a few frames late; repeats the last value until another arrives).');
+  md.push('- **p50/p95/p99**: median and percentiles; **>25/>50 ms**: frames whose interval went past that (hitches).');
+  md.push(`- **settling**: after each change, at least ${SETTLE_MS} ms and until 10 calm frames in a row (interval and CPU < 50 ms) — shader compilation, target creation; left out of the statistics, its spike reported apart. "Did not settle": the game did not calm down before the next change.`);
+  md.push('- **noise**: 2 × the standard error of the difference, with each segment\'s robust spread (MAD×1.4826) and its frame count divided by 5 (neighbouring frames are not independent). p95 uses a larger error. A difference smaller than that is "within noise": conclude nothing from it.');
+  md.push('- **Δ vs previous** attributes the difference to the change(s) that opened the segment; **Δ vs baseline** compares with the first segment (everything as it was at the start).');
+  md.push('- **heap MB/s**: slope of the JS heap over the segment (least squares); positive and persistent suggests a leak — but GC is sawtooth-shaped: only long segments say anything.');
+  md.push('- The GPU may be shared with other processes; repeat the recording before claiming a small gain.');
   md.push('');
 
   const real = comparisons.filter((c) => c.kind === 'previous').map((c) => c.summary);
-  const summary = `${s(rec.endMs)}, ${segments.length} segmentos${real.length ? `: ${real.slice(0, 3).join('; ')}` : ''}`;
+  const summary = `${s(rec.endMs)}, ${segments.length} segments${real.length ? `: ${real.slice(0, 3).join('; ')}` : ''}`;
   return { stamp, json, md: md.join('\n'), segments, comparisons, anomalies, summary };
 }

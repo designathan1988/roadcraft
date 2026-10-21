@@ -6,8 +6,8 @@ import { resolveBlocks } from '@world/buildings/blocks';
 import { floorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
-  type BuildingFrame, type LocalBay, bayLayout, bayWidth, buildingFrame, closedBlocks, frameX, frameY, coveredSpans, exposedParts, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
-  sawtoothRun, shedFall, sideLength, sideStart, volumeElevation, volumeHeight,
+  type BuildingFrame, type LocalBay, bayLayout, bayWidth, buildingFrame, closedBlocks, frameX, frameY, coveredSpans, exposedParts, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
+  sawtoothRun, shedFall, sideLength, sideStart, volumeHeight,
 } from '@world/buildings/geometry';
 import { type Finish, type MaterialSpec, roofMaterial, trimMaterial, wallMaterial } from '@world/buildings/materials';
 import { type BayComponent, type Building, type FaceId, type LotSurface, type Volume, volumeTop } from '@world/buildings/types';
@@ -251,60 +251,6 @@ function massWriter(
   }
   emitLotPlates(w, resolved, floor, groundAt, pavedAt);
   return w;
-}
-
-/** Numbers per far box (`emitBoxes`): centre x, y; half sides along the building's x and y; its turn; the wall's foot, the top, the floor; the wall's and the roof's colour; bay, storey, glass share, seed; the block's plan area. */
-export const BOX_FLOATS = 19;
-
-/** A BUILDING AS BOXES, for the levels past the plates (`farTiles.ts`): each closed block the box of its plan, its roof's rise halved, coloured and glazed as its mass */
-export function emitBoxes(
-  b: Building, pavedAt: PavedAt | undefined, naturalAt: GroundAt, tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined, out: number[],
-  known?: { readonly floor: number | undefined },
-): void {
-  const resolved = resolveBlocks(b);
-  const closed = closedBlocks(resolved.volumes);
-  if (closed.length === 0) return;
-  // The floor as the mass's (`emitMassing`).
-  const floor = known?.floor ?? floorHeight(resolved, naturalAt, pavedAt);
-  const shade = shadeOf(b);
-  const rgb = (spec: MaterialSpec): Rgb => {
-    const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
-    return t ? [c[0] * t[0], c[1] * t[1], c[2] * t[2]] : c;
-  };
-  const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
-  const seed = ((b.id * 2654435761) >>> 0) / 4294967296 + office;
-  const body = { ...resolved, volumes: closed };
-  // The glass share of each block: its bays' mean (`GLASS_SHARE`), as the mass's walls have it.
-  const glass = new Map<number, { sum: number; n: number }>();
-  for (const bay of bayLayout(body)) {
-    const g = glass.get(bay.volume) ?? { sum: 0, n: 0 };
-    g.sum += GLASS_SHARE[bay.component] ?? 0;
-    g.n++;
-    glass.set(bay.volume, g);
-  }
-  for (const v of closed) {
-    const ring = localFootprint(v);
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, twice = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
-      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
-      twice += p.x * q.y - q.x * p.y;
-    }
-    const centre = localToWorld(body, (x0 + x1) / 2, (y0 + y1) / 2);
-    const base = floor + volumeElevation(body, v, v.base);
-    const eaves = floor + volumeHeight(body, v);
-    const pitched = v.roof !== 'flat' && v.roof !== 'terrace';
-    const wall = rgb(wallMaterial(body, v, 0));
-    const roof = v.roof === 'terrace' ? TERRACE_RGB : rgb(roofMaterial(body, v));
-    const g = glass.get(v.id);
-    const share = wallMaterial(body, v, 0).finish === 'glass' ? 1 : g && g.n > 0 ? g.sum / g.n : 0;
-    out.push(
-      centre.x, centre.y, (x1 - x0) / 2, (y1 - y0) / 2, b.rotation,
-      v.base === 0 ? base - BURY : base, eaves + (pitched ? roofRise(body, v) / 2 : 0), base,
-      wall[0], wall[1], wall[2], roof[0], roof[1], roof[2],
-      bayWidth(body, v, 0), b.storeyHeight, share, seed, Math.abs(twice) / 2,
-    );
-  }
 }
 
 /** The colours of a lot's surface (`buildingMesh.ts` draws them in their finishes) */

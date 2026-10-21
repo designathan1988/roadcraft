@@ -16,7 +16,7 @@ import type { PostSwitches } from './effectSwitches';
 import type { SceneEnvironment } from './environment';
 import { DEFAULT_OPTIMIZATIONS, type Optimizations } from './optimizations';
 
-/** THE OPTIMISATIONS IN THE RENDERER (`optimizations.ts`, the lab's "Otimizações"): what `renderer.ts` asks of them each frame, and what they change in three's renderer, its materials and textures. Every one at its default: nothing here touches the drawing. */
+/** THE OPTIMISATIONS IN THE RENDERER (`optimizations.ts`, the lab's "Optimisations"): what `renderer.ts` asks of them each frame, and what they change in three's renderer, its materials and textures. Every one at its default: nothing here touches the drawing. */
 
 /** A render list's item as three's sort functions read it (r186 `WebGLRenderLists` painterSortStable). */
 interface SortItem {
@@ -48,9 +48,8 @@ export interface Optimizer {
   readonly values: Optimizations;
   /** The options taken: whether the lit programs must be built again, and the shadows drawn again. */
   set(next: Optimizations): { readonly programs: boolean; readonly shadows: boolean };
-  /** The pixels a metre spans, as the buildings' and the roads' levels are chosen by (`buildingLod`, `roadLod`). */
+  /** The pixels a metre spans, as the buildings' levels are chosen by (`buildingLod`). */
   readonly buildingPx: number;
-  readonly roadPx: number;
   /** The screen's height the terrain's levels are chosen by, times this (`terrainLod`). */
   readonly terrainPixels: number;
   /** A shadow texel, as the buildings' parts are cast by (`castTexel`). */
@@ -223,7 +222,6 @@ export function createOptimizer(deps: OptimizerDeps): Optimizer {
       return { programs, shadows };
     },
     get buildingPx() { return 1 / num(values.buildingLod, 1); },
-    get roadPx() { return 1 / num(values.roadLod, 1); },
     get terrainPixels() { return 1 / num(values.terrainLod, 1); },
     get castTexel() { return values.castTexel === 'none' ? Infinity : num(values.castTexel, 1); },
     get coarseFrom() { return values.castMasses === 'all' ? 0 : values.castMasses === 'none' ? Infinity : 1; },

@@ -50,7 +50,7 @@ type Attribute = BufferAttribute & { readonly isInterleavedBufferAttribute?: boo
 const FORMATS: Record<number, string> = { 1021: 'Alpha', 1023: 'RGBA', 1024: 'Luminance', 1025: 'LuminanceAlpha', 1026: 'Depth', 1027: 'DepthStencil', 1028: 'Red', 1029: 'RedInteger', 1030: 'RG', 1031: 'RGInteger', 1033: 'RGBAInteger' };
 const TYPES: Record<number, string> = { 1009: 'u8', 1010: 'i8', 1011: 'i16', 1012: 'u16', 1013: 'i32', 1014: 'u32', 1015: 'f32', 1016: 'f16', 1017: 'u4444', 1018: 'u5551', 1020: 'u24_8', 35902: 'u5999', 35899: 'u10f11f11f' };
 
-const formatOf = (t: Texture): string => `${FORMATS[t.format] ?? `fmt${t.format}`}${(t as { isCompressedTexture?: boolean }).isCompressedTexture ? ' (comprimida)' : ` ${TYPES[t.type] ?? t.type}`}`;
+const formatOf = (t: Texture): string => `${FORMATS[t.format] ?? `fmt${t.format}`}${(t as { isCompressedTexture?: boolean }).isCompressedTexture ? ' (compressed)' : ` ${TYPES[t.type] ?? t.type}`}`;
 const sizeOf = (t: Texture): string => {
   const image = t.image as { width?: number; height?: number; depth?: number } | null;
   const w = image?.width ?? 0, h = image?.height ?? 0, d = image?.depth;
@@ -90,11 +90,11 @@ export function scanGpuObjects(renderer: WebGLRenderer, scene: Scene, seenTarget
   });
 
   const textureRows: TextureRow[] = [...textures].map(([t, users]) => ({
-    name: t.name || '(sem nome)',
+    name: t.name || '(unnamed)',
     kind: t.constructor.name || 'Texture',
     size: sizeOf(t),
     format: formatOf(t),
-    mipmaps: t.mipmaps?.length ? `${t.mipmaps.length} dados` : t.generateMipmaps ? 'geradas' : 'não',
+    mipmaps: t.mipmaps?.length ? `${t.mipmaps.length} given` : t.generateMipmaps ? 'generated' : 'no',
     anisotropy: t.anisotropy,
     bytes: textureGpuBytes(t),
     users,
@@ -104,15 +104,15 @@ export function scanGpuObjects(renderer: WebGLRenderer, scene: Scene, seenTarget
   const targets = new Map<RenderTarget, string>();
   for (const light of lights) {
     const map = (light as Light & { shadow?: { map: RenderTarget | null } }).shadow?.map;
-    if (map) targets.set(map, `sombra: ${light.name || light.type}`);
+    if (map) targets.set(map, `shadow: ${light.name || light.type}`);
   }
-  for (const t of seenTargets) if (!targets.has(t)) targets.set(t, t.texture?.name || 'alvo do quadro');
+  for (const t of seenTargets) if (!targets.has(t)) targets.set(t, t.texture?.name || 'frame target');
   const targetRows: TargetRow[] = [...targets].map(([t, name]) => ({
     name,
     size: `${t.width}×${t.height}`,
     samples: t.samples,
     textures: t.textures.length,
-    depth: t.depthTexture ? `textura ${TYPES[t.depthTexture.type] ?? t.depthTexture.type}` : t.depthBuffer ? 'renderbuffer' : 'não',
+    depth: t.depthTexture ? `texture ${TYPES[t.depthTexture.type] ?? t.depthTexture.type}` : t.depthBuffer ? 'renderbuffer' : 'no',
     bytes: renderTargetBytes(t),
     live: (props.get(t) as { __webglFramebuffer?: unknown }).__webglFramebuffer !== undefined,
   }));
@@ -135,7 +135,7 @@ export function scanGpuObjects(renderer: WebGLRenderer, scene: Scene, seenTarget
     add(geometry.index);
     for (const list of Object.values(geometry.morphAttributes)) for (const a of list) add(a);
     return {
-      name: geometry.name || '(sem nome)',
+      name: geometry.name || '(unnamed)',
       holder,
       attributes: attributes.length,
       vertices: geometry.attributes['position']?.count ?? 0,

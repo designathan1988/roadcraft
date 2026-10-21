@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { ActiveTiles } from '@render/activeTiles';
 import { gardenLists } from '@render/gardenLists';
 import type { GardenChange, GardenPlant } from '@render/gardens';
 import type { GroundRecord, Rect } from '@render/groundChanges';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building, BuildingElement, BuildingId } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
-import { tileKey, tileKeyAt, tileRect } from '@world/tiles';
 import { m } from '@world/units';
 
 /** The gardens' lists taken in a change at a time, by the ids the diary gives (`BuildingStore.changedSince`, AUDITORIA C2) */
@@ -87,50 +85,5 @@ describe('the gardens when the ground moves', () => {
     expect(change.removed).toHaveLength(1);
     // DO NOT ask every planted building whether the ground moved under it.
     expect(g.asked).toBe(0);
-  });
-});
-
-describe('the gardens of the streamed world\'s active tiles only', () => {
-  it('plant the buildings of the active tiles, taking in and letting go those of the tiles that come and go', () => {
-    const doc = new RoadDoc();
-    // Over tiles -2 to 0 across and -1 to 0 down.
-    for (let i = 0; i < 40; i++) doc.buildings.add(body(i, (i % 8) * m(300) - m(1100), Math.floor(i / 8) * m(300) - m(700), true));
-    const shown = new Set([tileKey(0, 0)]);
-    const at = (x: number, y: number): boolean => shown.has(tileKeyAt(x, y));
-    const active = new ActiveTiles();
-    active.set(at, []);
-    const live = gardenLists(still, bank, plantsOf, active);
-    const held = new Set<readonly GardenPlant[]>();
-    const apply = (change: GardenChange | null): void => {
-      if (!change) return;
-      for (const list of change.removed) { expect(held.has(list)).toBe(true); held.delete(list); }
-      for (const list of change.added) held.add(list);
-    };
-    const texts = (lists: Iterable<readonly GardenPlant[]>): string[] => [...lists].map((list) => JSON.stringify(list)).sort();
-    /** The lists made from nothing for the same tiles, and how many buildings stand on them. */
-    const fresh = (): string[] => {
-      const own = new ActiveTiles();
-      own.set(at, []);
-      return texts(gardenLists(still, bank, plantsOf, own).update(doc.buildings, true)?.added ?? []);
-    };
-    const standing = (): number => [...doc.buildings.all()].filter((b) => at(b.x, b.y)).length;
-    apply(live.update(doc.buildings, true));
-    expect(held.size).toBe(standing());
-    expect(texts(held)).toEqual(fresh());
-    for (const [i, j] of [[-1, 0], [0, 0], [-1, -1], [-2, -1], [0, 0], [-1, 0]] as const) {
-      const key = tileKey(i, j);
-      if (shown.has(key)) shown.delete(key); else shown.add(key);
-      active.set(at, [tileRect(i, j)]);
-      apply(live.update(doc.buildings, true));
-      expect(held.size, `${i},${j}`).toBe(standing());
-      expect(texts(held), `${i},${j}`).toEqual(fresh());
-    }
-    // A building put on a tile not active: no garden for it.
-    doc.buildings.add(body(41, m(1500), m(100), true));
-    expect(live.update(doc.buildings, true)).toBeNull();
-    // The world closed: every building's garden.
-    active.set(null, []);
-    apply(live.update(doc.buildings, true));
-    expect(held.size).toBe(41);
   });
 });

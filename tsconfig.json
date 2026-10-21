@@ -22,17 +22,16 @@
     "forceConsistentCasingInFileNames": true,
     "useDefineForClassFields": true,
 
-    "baseUrl": ".",
     "paths": {
-      "@core/*": ["src/core/*"],
-      "@world/*": ["src/world/*"],
-      "@sim/*": ["src/sim/*"],
-      "@render/*": ["src/render/*"],
-      "@view/*": ["src/view/*"],
-      "@editor/*": ["src/editor/*"],
-      "@ui/*": ["src/ui/*"],
-      "@people/*": ["src/people/*"],
-      "@/*": ["src/*"]
+      "@core/*": ["./src/core/*"],
+      "@world/*": ["./src/world/*"],
+      "@sim/*": ["./src/sim/*"],
+      "@render/*": ["./src/render/*"],
+      "@view/*": ["./src/view/*"],
+      "@editor/*": ["./src/editor/*"],
+      "@ui/*": ["./src/ui/*"],
+      "@people/*": ["./src/people/*"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "tests", "vite.config.ts", "vitest.config.ts", "scripts/vite/*.ts"],

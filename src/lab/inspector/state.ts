@@ -93,7 +93,7 @@ export function shown(v: unknown): string {
     const o = v as { isColor?: boolean; getHexString?: () => string; isVector2?: boolean; isVector3?: boolean; isVector4?: boolean; toArray?: () => number[]; isTexture?: boolean; name?: string; uuid?: string };
     if (o.isColor && o.getHexString) return `#${o.getHexString()}`;
     if ((o.isVector2 || o.isVector3 || o.isVector4) && o.toArray) return `(${o.toArray().map((n) => Math.round(n * 1000) / 1000).join(', ')})`;
-    if (o.isTexture) return `textura "${o.name ?? ''}" ${o.uuid?.slice(0, 8) ?? ''}`;
+    if (o.isTexture) return `texture "${o.name ?? ''}" ${o.uuid?.slice(0, 8) ?? ''}`;
   }
   if (typeof v === 'number') return String(Math.round(v * 10000) / 10000);
   return String(v);
@@ -132,7 +132,7 @@ export function createEditLog(ctx: LabContext): EditLog {
             if (copyable(held) && copyable(original)) held.copy(original);
             else record[key] = original;
             options.after?.();
-            ctx.emit(`edit.undo`, `${options.target}.${key} = ${shown(original)} (desfeito)`, { target: options.target, key });
+            ctx.emit(`edit.undo`, `${options.target}.${key} = ${shown(original)} (undone)`, { target: options.target, key });
           },
         };
         keys.set(k, entry);
@@ -169,7 +169,7 @@ export function createEditLog(ctx: LabContext): EditLog {
       }
       entries.length = 0;
       keys.clear();
-      ctx.emit('edit.restore', 'todas as edições do inspetor desfeitas');
+      ctx.emit('edit.restore', 'all inspector edits undone');
       told();
     },
     onChange(listener) {
@@ -189,8 +189,8 @@ export function createInspectorState(ctx: LabContext): InspectorState {
     get selection() { return selection; },
     select(next) {
       selection = next;
-      const name = next?.object ? `${next.object.type} "${next.object.name}"` : 'nada';
-      ctx.emit('inspector.select', `inspetor: ${name}${next?.entity ? ` (${next.entity.kind})` : ''}`);
+      const name = next?.object ? `${next.object.type} "${next.object.name}"` : 'nothing';
+      ctx.emit('inspector.select', `inspector: ${name}${next?.entity ? ` (${next.entity.kind})` : ''}`);
       for (const l of [...listeners]) {
         try {
           l(next);

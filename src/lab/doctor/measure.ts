@@ -68,12 +68,12 @@ export async function snapshot(ctx: LabContext, progress: (text: string) => void
   const wasRunning = code?.status().running ?? false;
   // The frame measured first, with nothing of the lab's measuring running (the CPU profile and the per-pass queries cost time themselves).
   gpu?.passTiming(false);
-  progress('medindo os quadros…');
+  progress('measuring the frames…');
   const plain = await framesFor(ctx, 2000);
   if (code && !wasRunning) code.start(true);
   let passes: PassTime[] = [];
   if (gpu && ctx.scene.gpu.supported) {
-    progress('medindo cada passe da GPU…');
+    progress('measuring every GPU pass…');
     gpu.passTiming(true);
     await framesFor(ctx, 2500);
     passes = gpu.passes().filter((p) => p.avg > 0);
@@ -81,13 +81,13 @@ export async function snapshot(ctx: LabContext, progress: (text: string) => void
   }
   let draws: readonly Draw[] = [];
   if (gpu) {
-    progress('capturando um quadro…');
+    progress('capturing a frame…');
     try { draws = (await gpu.capture()).records; } catch (error) { console.warn('lab doctor: capture failed', error); }
   }
   // The profile's window closes a few seconds after it began: its functions read once it has.
   if (code) {
-    for (let t = 0; t < 5000 && !code.functions('session').some((f) => f.category === 'jogo'); t += 500) {
-      progress('lendo o perfil de CPU…');
+    for (let t = 0; t < 5000 && !code.functions('session').some((f) => f.category === 'game'); t += 500) {
+      progress('reading the CPU profile…');
       await framesFor(ctx, 500);
     }
   }
@@ -104,7 +104,7 @@ export async function snapshot(ctx: LabContext, progress: (text: string) => void
     passes,
     draws,
     systems: [...systems].map(([k, v]) => [k, v.reduce((a, b) => a + b, 0) / v.length] as const).sort((a, b) => b[1] - a[1]),
-    functions: code ? code.functions('session').filter((f) => f.category === 'jogo').sort((a, b) => b.selfMs - a.selfMs).slice(0, 12) : [],
+    functions: code ? code.functions('session').filter((f) => f.category === 'game').sort((a, b) => b.selfMs - a.selfMs).slice(0, 12) : [],
     drawCalls: median(plain.samples.map((s) => s.drawCalls)),
     triangles: median(plain.samples.map((s) => s.triangles)),
     hitches: plain.samples.filter((s) => s.intervalMs > 50).length,
@@ -141,19 +141,19 @@ export async function quickAb(ctx: LabContext, change: () => void, back: () => v
     const f = await framesFor(ctx, ms);
     return { gpu: f.gpu.length ? median(f.gpu) : null, cpu: median(f.samples.map((s) => s.cpuMs)), draws: median(f.samples.map((s) => s.drawCalls)), tris: median(f.samples.map((s) => s.triangles)) };
   };
-  progress('assentando…');
+  progress('settling…');
   await framesFor(ctx, 700);
-  progress('medindo antes…');
+  progress('measuring before…');
   const a1 = await read(1500);
   change();
-  progress('aplicado: compilando e assentando…');
+  progress('applied: compiling and settling…');
   await settled(ctx);
-  progress('medindo depois…');
+  progress('measuring after…');
   const b = await read(1500);
   back();
-  progress('desfeito: compilando e assentando…');
+  progress('undone: compiling and settling…');
   await settled(ctx);
-  progress('medindo de novo…');
+  progress('measuring again…');
   const a2 = await read(1500);
   const mean = (x: number | null, y: number | null): number | null => (x === null || y === null ? x ?? y : (x + y) / 2);
   return {

@@ -25,7 +25,7 @@ export interface DrawRecord {
   readonly points: number;
   readonly vertices: number;
   readonly calls: number;
-  /** The composer pass it was drawn in ('fora da cadeia': after or before the chain). */
+  /** The composer pass it was drawn in ('outside chain': after or before the chain). */
   readonly pass: string;
   readonly target: string;
   readonly transparent: boolean;
@@ -54,8 +54,8 @@ export interface GpuProbe {
   dispose(): void;
 }
 
-const SIDES = ['frente', 'verso', 'dupla'];
-const PASS_NAMES: Record<string, string> = { scene: 'cena', gtao: 'GTAO', canyon: 'cânion', bloom: 'bloom', clouds: 'nuvens', smaa: 'SMAA', output: 'saída' };
+const SIDES = ['front', 'back', 'double'];
+const PASS_NAMES: Record<string, string> = { scene: 'scene', gtao: 'GTAO', canyon: 'canyon', bloom: 'bloom', clouds: 'clouds', smaa: 'SMAA', output: 'output' };
 
 /** FNV-1a of a string, 8 hex digits: a program's cache key shown short. */
 export function shortHash(text: string): string {
@@ -94,7 +94,7 @@ export function createGpuProbe(renderer: WebGLRenderer, scene: Scene): GpuProbe 
     const drawn = shadowMap.enabled && (shadowMap.autoUpdate || shadowMap.needsUpdate) && passes.length > 0;
     if (!drawn) { shadowBase.call(shadowMap, lights, s, camera); return; }
     probe.timer?.push('shadows');
-    shadowLight = lights.filter((l) => l.castShadow).map((l) => l.name || l.type).join(', ') || 'sombra';
+    shadowLight = lights.filter((l) => l.castShadow).map((l) => l.name || l.type).join(', ') || 'shadow';
     try { shadowBase.call(shadowMap, lights, s, camera); } finally { shadowLight = null; probe.timer?.pop(); }
   };
 
@@ -128,7 +128,7 @@ export function createGpuProbe(renderer: WebGLRenderer, scene: Scene): GpuProbe 
     let at: Object3D | null = object;
     for (; at && !(at as Scene).isScene; at = at.parent) chain.unshift(at);
     const named = (o: Object3D): string => o.name || o.type;
-    const layer = !at ? `quad: ${object.name || PASS_NAMES[passes[passes.length - 1] ?? ''] || 'fora da cena'}`
+    const layer = !at ? `quad: ${object.name || PASS_NAMES[passes[passes.length - 1] ?? ''] || 'outside scene'}`
       : chain.length >= 3 ? `${named(chain[0]!)} / ${named(chain[1]!)}` : named(chain[0]!);
     layerOf.set(object, layer);
     return layer;
@@ -143,9 +143,9 @@ export function createGpuProbe(renderer: WebGLRenderer, scene: Scene): GpuProbe 
     return path;
   }
   function targetName(): string {
-    if (shadowLight !== null) return `sombra: ${shadowLight}`;
+    if (shadowLight !== null) return `shadow: ${shadowLight}`;
     const target = renderer.getRenderTarget() as RenderTarget | null;
-    if (!target) return 'tela';
+    if (!target) return 'screen';
     probe.targets.add(target);
     let id = targetIds.get(target);
     if (id === undefined) { id = nextTarget++; targetIds.set(target, id); }
@@ -163,7 +163,7 @@ export function createGpuProbe(renderer: WebGLRenderer, scene: Scene): GpuProbe 
       index: drawIndex++,
       object,
       uuid: object.uuid,
-      name: object.name || '(sem nome)',
+      name: object.name || '(unnamed)',
       path: pathFor(object),
       layer,
       kind,
@@ -178,7 +178,7 @@ export function createGpuProbe(renderer: WebGLRenderer, scene: Scene): GpuProbe 
       points,
       vertices: vertices * instances,
       calls,
-      pass: shadowLight !== null ? 'shadows' : passes[passes.length - 1] ?? 'fora da cadeia',
+      pass: shadowLight !== null ? 'shadows' : passes[passes.length - 1] ?? 'outside chain',
       target: targetName(),
       transparent: material.transparent,
       depthWrite: material.depthWrite,

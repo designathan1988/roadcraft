@@ -158,9 +158,6 @@ export interface GardenChange {
 export interface Gardens extends Scenery {
   /** DO NOT hand it the town's lists to find what changed: that was a pass over the town per building grown. */
   update(change: GardenChange): { readonly removed: readonly InstancedMesh[]; readonly added: readonly InstancedMesh[] };
-  /** Plants packed elsewhere (a tile's, baked in a worker: `gardenTiles.ts`) placed with the others; taken away by `take` with the same packs. The meshes made for kinds that had none. */
-  put(packs: ReadonlyMap<number, Pack>): readonly InstancedMesh[];
-  take(packs: ReadonlyMap<number, Pack>): void;
 }
 
 export function createGardens(kit: SceneryKit): Gardens {
@@ -192,12 +189,6 @@ export function createGardens(kit: SceneryKit): Gardens {
       // Only the gardens that came and went are read; each new one placed once for this update and let go after (the kinds hold them).
       const added = cells.update({ removed: change.removed, added: change.added.map((list) => ({ key: list, packs: gardenPack(list) })) });
       return { removed: [], added };
-    },
-    put(packs) {
-      return cells.update({ removed: [], added: [{ key: packs, packs }] });
-    },
-    take(packs) {
-      cells.update({ removed: [packs], added: [] });
     },
     // A plant's level follows its size on the screen (`cellInstances.ts`).
     setNear() {},

@@ -7,10 +7,10 @@ export const POST_SWITCHES = ['ambientOcclusion', 'canyonLight', 'bloom', 'cloud
 /** The light: shadows, the sky's reflection and each light. */
 export const LIGHT_SWITCHES = ['shadows', 'shadowUpdate', 'environmentMap', 'skyFill', 'ambient', 'fillLight', 'pointLights', 'surfaceDetail'] as const;
 /** What is drawn, layer by layer: hidden only while the frame is drawn (what the game sets each frame stands). */
-export const LAYER_SWITCHES = ['terrain', 'water', 'roads', 'farRoads', 'buildings', 'vegetation', 'furniture', 'props', 'transit', 'people', 'farTraffic', 'signals', 'particles', 'weather'] as const;
+export const LAYER_SWITCHES = ['terrain', 'water', 'roads', 'buildings', 'vegetation', 'furniture', 'props', 'transit', 'people', 'farTraffic', 'signals', 'particles', 'weather'] as const;
 
 /** The buildings, part by part and piece by piece (`buildingSwitches.ts`), their shadows and their lit windows. */
-export const BUILDING_SWITCHES = ['bMasses', 'bFarTiles', 'bFacadeLevel', 'bDetail', 'bParts', 'bSignatures', 'bFlags',
+export const BUILDING_SWITCHES = ['bMasses', 'bFacadeLevel', 'bDetail', 'bParts', 'bSignatures', 'bFlags',
   'bShell', 'bGlass', 'bFrames', 'bFacadeDetails', 'bProps', 'bLots', 'bFurniture', 'bShadows', 'bNightWindows'] as const;
 
 export type PostSwitch = (typeof POST_SWITCHES)[number];

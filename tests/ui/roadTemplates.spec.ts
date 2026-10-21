@@ -23,7 +23,7 @@ describe("the player's road templates", () => {
   });
 
   it('never writes over a list whose text it cannot parse: the text is kept aside, whole', () => {
-    const cut = '[{"id":"user:1","name":"Minha","type":0,"profile":{"elements":[';
+    const cut = '[{"id":"user:1","name":"Mine","type":0,"profile":{"elements":[';
     localStorage.setItem(STORE, cut);
     expect(saveTemplate('New', base.type, base.profile)).not.toBeNull();
     expect(keys().filter((k) => k !== STORE).map((k) => localStorage.getItem(k))).toContain(cut);

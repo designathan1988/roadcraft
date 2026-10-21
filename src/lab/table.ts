@@ -39,7 +39,7 @@ export interface LabTable {
   setFilter(filter: { readonly text?: string; readonly category?: string }): void;
 }
 
-const fmt = (v: number): string => (Number.isInteger(v) ? v.toLocaleString('pt-BR') : v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }));
+const fmt = (v: number): string => (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { maximumFractionDigits: 2 }));
 
 export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
   const root = document.createElement('div');
@@ -48,18 +48,18 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
   bar.className = 'lab-table-bar';
   const search = document.createElement('input');
   search.type = 'search';
-  search.placeholder = 'Filtrar…';
+  search.placeholder = 'Filter…';
   const category = document.createElement('select');
   const count = document.createElement('span');
   count.className = 'lab-muted';
   const copyCsv = document.createElement('button');
   copyCsv.type = 'button';
   copyCsv.textContent = 'CSV';
-  copyCsv.title = 'Copiar as linhas filtradas como CSV';
+  copyCsv.title = 'Copy the filtered rows as CSV';
   const copyJson = document.createElement('button');
   copyJson.type = 'button';
   copyJson.textContent = 'JSON';
-  copyJson.title = 'Copiar as linhas filtradas como JSON';
+  copyJson.title = 'Copy the filtered rows as JSON';
   bar.append(search, ...(options.categoryKey ? [category] : []), count, copyCsv, copyJson);
   const scroller = document.createElement('div');
   scroller.className = 'lab-table-scroll';
@@ -105,7 +105,7 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
     const c = column(sortKey);
     rows.sort((a, b) => {
       const va = c.value(a), vb = c.value(b);
-      const order = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va ?? '').localeCompare(String(vb ?? ''), 'pt-BR');
+      const order = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va ?? '').localeCompare(String(vb ?? ''), 'en-US');
       return desc ? -order : order;
     });
     return rows;
@@ -118,7 +118,7 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
     const now = category.value;
     const known = [...category.options].map((o) => o.value).slice(1);
     if (known.length === values.length && known.every((v, i) => v === values[i])) return;
-    const all = new Option(`Todas (${c.label})`, '');
+    const all = new Option(`All (${c.label})`, '');
     category.replaceChildren(all, ...values.map((v) => new Option(v, v)));
     category.value = values.includes(now) ? now : '';
   };
@@ -157,7 +157,7 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
       look.className = 'lab-look';
       const lookButton = document.createElement('button');
       lookButton.type = 'button';
-      lookButton.title = 'Investigar: o que é, onde está no código, o que está ligado';
+      lookButton.title = 'Investigate: what it is, where it is in the code, what is tied to it';
       lookButton.appendChild(icon('search', 13));
       lookButton.onclick = (e) => { e.stopPropagation(); investigate(row, tr); };
       look.appendChild(lookButton);
@@ -170,7 +170,7 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
       rows.push(tr);
     }
     body.replaceChildren(...rows);
-    count.textContent = shown.length > limit ? `${limit} de ${shown.length}` : `${shown.length} linhas`;
+    count.textContent = shown.length > limit ? `${limit} of ${shown.length}` : `${shown.length} rows`;
   }
 
   /** The row as a subject: its first text its name, its category and origin columns, every column as a field. */
@@ -182,10 +182,10 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
       const text = v === null || v === undefined ? '' : typeof v === 'number' ? (c.format ? c.format(v, row) : fmt(v)) : v;
       fields.push([c.label, text]);
       if (!name && typeof v === 'string' && v) name = v;
-      if (/^(categoria|category|cat)$/i.test(c.key) || /^categoria$/i.test(c.label)) category = text;
-      if (/^(origin|origem|source)$/i.test(c.key) || /^origem$/i.test(c.label)) origin = text;
+      if (/^(category|cat)$/i.test(c.key) || /^category$/i.test(c.label)) category = text;
+      if (/^(origin|source)$/i.test(c.key) || /^(origin|source)$/i.test(c.label)) origin = text;
     }
-    sendInvestigate(from, { name: name || fields[0]?.[1] || '(sem nome)', ...(category ? { category } : {}), ...(origin ? { origin } : {}), ...(options.from ? { from: options.from } : {}), fields });
+    sendInvestigate(from, { name: name || fields[0]?.[1] || '(unnamed)', ...(category ? { category } : {}), ...(origin ? { origin } : {}), ...(options.from ? { from: options.from } : {}), fields });
   }
 
   const copy = (text: string): void => {

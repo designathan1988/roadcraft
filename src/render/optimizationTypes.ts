@@ -6,22 +6,22 @@ export type OptSystem = 'renderer' | 'culling' | 'shadows' | 'post' | 'textures'
   | 'vegetation' | 'people' | 'vehicles' | 'particles' | 'simulation' | 'uploads';
 
 export const OPT_SYSTEM_TITLES: Readonly<Record<OptSystem, string>> = {
-  renderer: 'Renderizador',
-  culling: 'Recorte (culling)',
-  shadows: 'Sombras',
-  post: 'Pós-processamento',
-  textures: 'Texturas',
-  materials: 'Materiais e shaders',
-  buildings: 'Prédios',
-  terrain: 'Terreno',
-  water: 'Água',
-  roads: 'Ruas',
-  vegetation: 'Vegetação e mobiliário',
-  people: 'Pessoas',
-  vehicles: 'Veículos',
-  particles: 'Partículas',
-  simulation: 'Simulação (CPU)',
-  uploads: 'Envios à GPU e ritmo',
+  renderer: 'Renderer',
+  culling: 'Culling',
+  shadows: 'Shadows',
+  post: 'Post-processing',
+  textures: 'Textures',
+  materials: 'Materials and shaders',
+  buildings: 'Buildings',
+  terrain: 'Terrain',
+  water: 'Water',
+  roads: 'Roads',
+  vegetation: 'Vegetation and street furniture',
+  people: 'People',
+  vehicles: 'Vehicles',
+  particles: 'Particles',
+  simulation: 'Simulation (CPU)',
+  uploads: 'GPU uploads and pacing',
 };
 
 export interface OptChoice {

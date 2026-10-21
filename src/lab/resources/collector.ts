@@ -146,24 +146,24 @@ export function createCollector(ctx: LabContext): Collector {
     if (firstKept > 1024) { kept.splice(0, firstKept); firstKept = 0; }
 
     // The interval is a wait, not work: a level (no total, no ms/s).
-    if (sample.intervalMs > 0) event('frame.interval', 'quadro: intervalo', 'CPU-main', 'quadro', 'ms', sample.intervalMs, t, 'gauge');
-    event('frame.cpu', 'quadro: CPU (trabalho do quadro)', 'CPU-main', 'FrameTimer', 'ms', sample.cpuMs, t);
-    for (const [system, ms] of sample.systems) event(`system.${system}`, `sistema: ${system}`, 'CPU-main', 'FrameTimer', 'ms', ms, t);
-    if (freshGpu !== null) event('frame.gpu', 'quadro: GPU', 'GPU', 'gpuTimer (EXT_disjoint_timer_query)', 'ms', freshGpu, t);
-    event('frame.draws', 'quadro: chamadas de desenho', 'GPU', 'renderer.stats', 'chamadas', sample.drawCalls, t);
-    event('frame.triangles', 'quadro: triângulos desenhados', 'GPU', 'renderer.stats', 'triângulos', sample.triangles, t);
+    if (sample.intervalMs > 0) event('frame.interval', 'frame: interval', 'CPU-main', 'frame', 'ms', sample.intervalMs, t, 'gauge');
+    event('frame.cpu', 'frame: CPU (frame work)', 'CPU-main', 'FrameTimer', 'ms', sample.cpuMs, t);
+    for (const [system, ms] of sample.systems) event(`system.${system}`, `system: ${system}`, 'CPU-main', 'FrameTimer', 'ms', ms, t);
+    if (freshGpu !== null) event('frame.gpu', 'frame: GPU', 'GPU', 'gpuTimer (EXT_disjoint_timer_query)', 'ms', freshGpu, t);
+    event('frame.draws', 'frame: draw calls', 'GPU', 'renderer.stats', 'calls', sample.drawCalls, t);
+    event('frame.triangles', 'frame: triangles drawn', 'GPU', 'renderer.stats', 'triangles', sample.triangles, t);
     if (sample.heapMB !== null) {
-      gauge('heap.used', 'heap JS usado (página)', 'RAM', 'performance.memory', 'MB', sample.heapMB, t);
+      gauge('heap.used', 'JS heap used (page)', 'RAM', 'performance.memory', 'MB', sample.heapMB, t);
       // A drop of the heap between two frames: a collection ran (its size, MB).
-      if (lastHeap !== null && sample.heapMB < lastHeap - 0.5) event('heap.gc', 'coleta de lixo (queda do heap)', 'RAM', 'performance.memory', 'MB', lastHeap - sample.heapMB, t);
+      if (lastHeap !== null && sample.heapMB < lastHeap - 0.5) event('heap.gc', 'garbage collection (heap drop)', 'RAM', 'performance.memory', 'MB', lastHeap - sample.heapMB, t);
       lastHeap = sample.heapMB;
     }
     // The simulation's worker: its step, each new tick it sent.
     const sim = ctx.sim;
     if (sim.tick !== lastTick) {
       lastTick = sim.tick;
-      if (sim.lastStepMs > 0) event('sim.step', 'simulação: passo (worker)', 'CPU-worker', 'simClient.lastStepMs', 'ms', sim.lastStepMs, t);
-      if (sim.lastSteps > 0) event('sim.steps', 'simulação: passos por tique', 'CPU-worker', 'simClient.lastSteps', 'passos', sim.lastSteps, t);
+      if (sim.lastStepMs > 0) event('sim.step', 'simulation: step (worker)', 'CPU-worker', 'simClient.lastStepMs', 'ms', sim.lastStepMs, t);
+      if (sim.lastSteps > 0) event('sim.steps', 'simulation: steps per tick', 'CPU-worker', 'simClient.lastSteps', 'steps', sim.lastSteps, t);
     }
   });
 
@@ -171,11 +171,11 @@ export function createCollector(ctx: LabContext): Collector {
   const idleRuns = new Map<string, number>();
   ctx.onProduct((name, phase, ms, keys, idle) => {
     const key = `product.${name}.${phase}`;
-    const m = book.meter(key, `produto: ${name} (${phase})`, 'CPU-main', 'Engine.onRefresh', 'ms', 'event');
+    const m = book.meter(key, `product: ${name} (${phase})`, 'CPU-main', 'Engine.onRefresh', 'ms', 'event');
     m.add(ms, performance.now());
     if (idle) idleRuns.set(key, (idleRuns.get(key) ?? 0) + 1);
     const idles = idleRuns.get(key) ?? 0;
-    m.note = `${keys} chaves${idles ? ` · OCIOSO ${idles}× (calculou sem entrada mudada)` : ''}`;
+    m.note = `${keys} keys${idles ? ` · IDLE ${idles}× (computed with no input changed)` : ''}`;
   });
 
   // ---- the platform's timeline (W3C Performance Timeline: PerformanceObserver)
@@ -192,12 +192,12 @@ export function createCollector(ctx: LabContext): Collector {
     for (const m of entries) {
       const hitch = m.name.startsWith('hitch:');
       const name = hitch ? m.name.slice(6) : m.name;
-      event(`measure.${m.name}`, `medida: ${name}`, 'CPU-main', hitch ? 'measureHitch (hitch:)' : 'performance.measure', 'ms', m.duration, m.startTime + m.duration);
+      event(`measure.${m.name}`, `measure: ${name}`, 'CPU-main', hitch ? 'measureHitch (hitch:)' : 'performance.measure', 'ms', m.duration, m.startTime + m.duration);
     }
   });
   observe('longtask', false, (entries) => {
     for (const e of entries) {
-      event('longtask', 'tarefa longa (> 50 ms)', 'CPU-main', 'PerformanceObserver longtask', 'ms', e.duration, e.startTime);
+      event('longtask', 'long task (> 50 ms)', 'CPU-main', 'PerformanceObserver longtask', 'ms', e.duration, e.startTime);
       longTasks.push(e.startTime);
       if (longTasks.length > 500) longTasks.splice(0, longTasks.length - 500);
     }
@@ -209,28 +209,28 @@ export function createCollector(ctx: LabContext): Collector {
       const t = e.startTime + e.duration;
       // Buffered frames from before collecting began (or before a reset) are kept as frames but not metered: a window's ms/s would count them on seconds it never had.
       const metered = t >= resetAt;
-      if (metered) event('loaf', 'quadro de animação longo (LoAF)', 'CPU-main', 'PerformanceObserver long-animation-frame', 'ms', e.duration, t);
-      if (metered && e.blockingDuration) event('loaf.blocking', 'LoAF: bloqueio (blockingDuration)', 'CPU-main', 'PerformanceObserver long-animation-frame', 'ms', e.blockingDuration, t);
+      if (metered) event('loaf', 'long animation frame (LoAF)', 'CPU-main', 'PerformanceObserver long-animation-frame', 'ms', e.duration, t);
+      if (metered && e.blockingDuration) event('loaf.blocking', 'LoAF: blocking (blockingDuration)', 'CPU-main', 'PerformanceObserver long-animation-frame', 'ms', e.blockingDuration, t);
       const scripts: LongFrame['scripts'][number][] = [];
       for (const s of e.scripts ?? []) {
         const url = shortUrl(s.sourceURL ?? '');
-        const fn = s.sourceFunctionName || '(anônima)';
+        const fn = s.sourceFunctionName || '(anonymous)';
         const what = `${s.invokerType ?? '?'} ${s.invoker ?? ''} → ${fn}`;
         const where = `${url}${s.sourceCharPosition !== undefined && s.sourceCharPosition >= 0 ? `@${s.sourceCharPosition}` : ''}`;
         const forced = s.forcedStyleAndLayoutDuration ?? 0;
         scripts.push({ what, url: where, duration: s.duration, forced });
         if (!metered) continue;
         const key = `loaf.script.${s.invokerType}.${s.invoker}.${fn}.${url}`;
-        const m = book.meter(key, `script de LoAF: ${what}`, 'CPU-main', where || 'LoAF scripts', 'ms', 'event');
+        const m = book.meter(key, `LoAF script: ${what}`, 'CPU-main', where || 'LoAF scripts', 'ms', 'event');
         m.add(s.duration, t);
         if (forced > 0) {
-          const f = book.meter(`${key}.forced`, `layout/estilo forçado: ${fn}`, 'CPU-main', where || 'LoAF scripts', 'ms', 'event');
+          const f = book.meter(`${key}.forced`, `forced layout/style: ${fn}`, 'CPU-main', where || 'LoAF scripts', 'ms', 'event');
           f.add(forced, t);
         }
       }
       longFrames.push({ t: e.startTime, duration: e.duration, blocking: e.blockingDuration ?? 0, scripts });
       if (longFrames.length > 300) longFrames.splice(0, longFrames.length - 300);
-      if (e.duration >= LONG_FRAME_MS) ctx.emit('resources.loaf', `quadro longo ${Math.round(e.duration)} ms`, { blocking: e.blockingDuration ?? 0 });
+      if (e.duration >= LONG_FRAME_MS) ctx.emit('resources.loaf', `long frame ${Math.round(e.duration)} ms`, { blocking: e.blockingDuration ?? 0 });
     }
   });
   // The network: every resource the page fetched (W3C Resource Timing), buffered ones too; sizes 0 when cached or cross-origin without Timing-Allow-Origin (MDN).
@@ -239,17 +239,17 @@ export function createCollector(ctx: LabContext): Collector {
       const e = raw as ResourceEntry;
       const url = shortUrl(e.name);
       const t = e.responseEnd || e.startTime + e.duration;
-      const m = book.meter(`net.${url}`, `recurso: ${url}`, 'Rede', e.initiatorType, 'ms', 'event');
+      const m = book.meter(`net.${url}`, `resource: ${url}`, 'Network', e.initiatorType, 'ms', 'event');
       m.add(e.duration, t);
       const cached = e.transferSize === 0 && e.decodedBodySize > 0;
-      m.note = `${(e.transferSize / 1024).toFixed(1)} KB transferidos · ${(e.decodedBodySize / 1024).toFixed(1)} KB decodificados${cached ? ' · cache' : ''}${e.responseStatus ? ` · HTTP ${e.responseStatus}` : ''}`;
-      event(`net.bytes.${e.initiatorType}`, `rede: bytes transferidos (${e.initiatorType})`, 'Rede', 'Resource Timing', 'bytes', e.transferSize, t);
+      m.note = `${(e.transferSize / 1024).toFixed(1)} KB transferred · ${(e.decodedBodySize / 1024).toFixed(1)} KB decoded${cached ? ' · cache' : ''}${e.responseStatus ? ` · HTTP ${e.responseStatus}` : ''}`;
+      event(`net.bytes.${e.initiatorType}`, `network: bytes transferred (${e.initiatorType})`, 'Network', 'Resource Timing', 'bytes', e.transferSize, t);
     }
   });
   document.addEventListener('visibilitychange', () => {
     visibility.push({ t: performance.now(), hidden: document.hidden });
     if (visibility.length > 50) visibility.shift();
-    ctx.emit('resources.visibility', document.hidden ? 'página oculta' : 'página visível');
+    ctx.emit('resources.visibility', document.hidden ? 'page hidden' : 'page visible');
   });
 
   // ---- the slow readings
@@ -260,8 +260,8 @@ export function createCollector(ctx: LabContext): Collector {
     polls++;
     const heap = (performance as Performance & { memory?: Heap }).memory;
     if (heap) {
-      gauge('heap.total', 'heap JS reservado (página)', 'RAM', 'performance.memory', 'MB', heap.totalJSHeapSize / 1048576, now);
-      gauge('heap.limit', 'heap JS: limite', 'RAM', 'performance.memory', 'MB', heap.jsHeapSizeLimit / 1048576, now);
+      gauge('heap.total', 'JS heap reserved (page)', 'RAM', 'performance.memory', 'MB', heap.totalJSHeapSize / 1048576, now);
+      gauge('heap.limit', 'JS heap: limit', 'RAM', 'performance.memory', 'MB', heap.jsHeapSizeLimit / 1048576, now);
     }
     // Video memory: the ledger's classes and its largest owners, the targets, the buildings' detail, three's own counts.
     const byClass = new Map<string, { bytes: number; triangles: number; owners: number }>();
@@ -281,43 +281,43 @@ export function createCollector(ctx: LabContext): Collector {
     for (const m of book.all()) {
       if (!(m.key.startsWith('vram.class.') || m.key.startsWith('vram.owner.')) || present.has(m.key)) continue;
       if (m.read('5s', now).last !== 0) m.add(0, now);
-      m.note = 'nada no livro agora';
+      m.note = 'nothing in the ledger now';
     }
-    for (const [cls, c] of byClass) gauge(`vram.class.${cls}`, `VRAM classe: ${cls}`, 'VRAM', 'gpuLedger (classe)', 'MB', c.bytes / 1048576, now, `${c.owners} donos · ${c.triangles.toLocaleString('pt-BR')} triângulos`);
+    for (const [cls, c] of byClass) gauge(`vram.class.${cls}`, `VRAM class: ${cls}`, 'VRAM', 'gpuLedger (class)', 'MB', c.bytes / 1048576, now, `${c.owners} owners · ${c.triangles.toLocaleString('en-US')} triangles`);
     for (const [label, o] of owners) {
-      gauge(`vram.owner.${label}`, `VRAM dono: ${label}`, 'VRAM', 'gpuLedger (dono)', 'MB', o.bytes / 1048576, now, `${o.owners} entradas`);
+      gauge(`vram.owner.${label}`, `VRAM owner: ${label}`, 'VRAM', 'gpuLedger (owner)', 'MB', o.bytes / 1048576, now, `${o.owners} entries`);
     }
     const cap = gpuLedger.cap;
-    gauge('vram.ledger', 'VRAM: total do livro (gpuLedger)', 'VRAM', 'gpuLedger', 'MB', gpuLedger.bytes() / 1048576, now, Number.isFinite(cap) ? `teto ${(cap / 1048576).toFixed(0)} MB (${((gpuLedger.bytes() / cap) * 100).toFixed(0)}%)` : 'sem teto');
-    gauge('vram.targets', 'VRAM: render targets e sombras', 'VRAM', 'scene.targetBytes', 'MB', ctx.scene.targetBytes() / 1048576, now);
-    gauge('vram.buildingDetail', 'VRAM: detalhe dos prédios', 'VRAM', 'scene.buildingDetailBytes', 'MB', ctx.scene.buildingDetailBytes() / 1048576, now);
+    gauge('vram.ledger', 'VRAM: ledger total (gpuLedger)', 'VRAM', 'gpuLedger', 'MB', gpuLedger.bytes() / 1048576, now, Number.isFinite(cap) ? `cap ${(cap / 1048576).toFixed(0)} MB (${((gpuLedger.bytes() / cap) * 100).toFixed(0)}%)` : 'no cap');
+    gauge('vram.targets', 'VRAM: render targets and shadows', 'VRAM', 'scene.targetBytes', 'MB', ctx.scene.targetBytes() / 1048576, now);
+    gauge('vram.buildingDetail', 'VRAM: building detail', 'VRAM', 'scene.buildingDetailBytes', 'MB', ctx.scene.buildingDetailBytes() / 1048576, now);
     const info = ctx.scene.gl.info;
     const programs = info.programs?.length ?? 0;
-    gauge('gl.geometries', 'GPU: geometrias vivas (three)', 'VRAM', 'renderer.info.memory', 'objetos', info.memory.geometries, now);
-    gauge('gl.textures', 'GPU: texturas vivas (three)', 'VRAM', 'renderer.info.memory', 'objetos', info.memory.textures, now);
-    gauge('gl.programs', 'GPU: programas de shader', 'GPU', 'renderer.info.programs', 'programas', programs, now);
+    gauge('gl.geometries', 'GPU: live geometries (three)', 'VRAM', 'renderer.info.memory', 'objects', info.memory.geometries, now);
+    gauge('gl.textures', 'GPU: live textures (three)', 'VRAM', 'renderer.info.memory', 'objects', info.memory.textures, now);
+    gauge('gl.programs', 'GPU: shader programs', 'GPU', 'renderer.info.programs', 'programs', programs, now);
     glPoints.push({ t: now, geometries: info.memory.geometries, textures: info.memory.textures, programs, heap: heap ? heap.usedJSHeapSize / 1048576 : null });
     if (glPoints.length > GL_POINTS_KEPT) glPoints.shift();
 
     // The job pool.
     const pool = jobPoolStats();
     const busy = pool.workers.filter((w) => w.running !== null || w.laneWork > 0).length;
-    gauge('pool.workers', 'pool de jobs: workers vivos', 'CPU-worker', 'jobPool', 'workers', pool.workers.length, now, `máx. ${pool.most} (${pool.longMost} longos, ${pool.shortMost} curtos) · ${pool.ports} portas`);
-    gauge('pool.busy', 'pool de jobs: workers ocupados', 'CPU-worker', 'jobPool', 'workers', busy, now);
-    gauge('pool.waiting', 'pool de jobs: fila (esperando)', 'CPU-worker', 'jobPool', 'jobs', pool.waiting, now);
-    if (lastSubmitted >= 0) gauge('pool.rate', 'pool de jobs: pedidos por segundo', 'CPU-worker', 'jobPool', 'jobs/s', (pool.submitted - lastSubmitted) / seconds, now);
+    gauge('pool.workers', 'job pool: live workers', 'CPU-worker', 'jobPool', 'workers', pool.workers.length, now, `max ${pool.most} (${pool.longMost} long, ${pool.shortMost} short) · ${pool.ports} ports`);
+    gauge('pool.busy', 'job pool: busy workers', 'CPU-worker', 'jobPool', 'workers', busy, now);
+    gauge('pool.waiting', 'job pool: queue (waiting)', 'CPU-worker', 'jobPool', 'jobs', pool.waiting, now);
+    if (lastSubmitted >= 0) gauge('pool.rate', 'job pool: requests per second', 'CPU-worker', 'jobPool', 'jobs/s', (pool.submitted - lastSubmitted) / seconds, now);
     lastSubmitted = pool.submitted;
     pool.workers.forEach((w, i) => {
       const lanes = w.lanes.map(([s, n]) => `${s}×${n}`).join(', ');
-      gauge(`pool.worker.${i}`, `worker ${i + 1} (${w.long ? 'longo' : 'curto'}${w.inPage ? '' : ', processo do desktop'})`, 'CPU-worker', 'jobPool', 'ocupado', w.running !== null || w.laneWork > 0 ? 1 : 0, now,
-        `${w.failed ? 'FALHOU · ' : ''}${w.running ? `rodando ${w.running} · ` : ''}${lanes ? `faixas ${lanes} · ` : ''}${w.laneWork} msgs pendentes${w.idleMs !== null ? ` · ocioso ${(w.idleMs / 1000).toFixed(0)} s` : ''}`);
+      gauge(`pool.worker.${i}`, `worker ${i + 1} (${w.long ? 'long' : 'short'}${w.inPage ? '' : ', desktop process'})`, 'CPU-worker', 'jobPool', 'busy', w.running !== null || w.laneWork > 0 ? 1 : 0, now,
+        `${w.failed ? 'FAILED · ' : ''}${w.running ? `running ${w.running} · ` : ''}${lanes ? `lanes ${lanes} · ` : ''}${w.laneWork} pending msgs${w.idleMs !== null ? ` · idle ${(w.idleMs / 1000).toFixed(0)} s` : ''}`);
     });
     // The simulation's worker.
     const stats = ctx.sim.stats;
     if (stats) {
-      gauge('sim.vehicles', 'simulação: veículos', 'CPU-worker', 'simClient.stats', 'veículos', stats.vehicles, now);
-      gauge('sim.people', 'simulação: pessoas', 'CPU-worker', 'simClient.stats', 'pessoas', stats.people, now);
-      gauge('sim.stepMs', 'simulação: passo (stats do worker)', 'CPU-worker', 'simClient.stats.stepMs', 'ms', stats.stepMs, now);
+      gauge('sim.vehicles', 'simulation: vehicles', 'CPU-worker', 'simClient.stats', 'vehicles', stats.vehicles, now);
+      gauge('sim.people', 'simulation: people', 'CPU-worker', 'simClient.stats', 'people', stats.people, now);
+      gauge('sim.stepMs', 'simulation: step (worker stats)', 'CPU-worker', 'simClient.stats.stepMs', 'ms', stats.stepMs, now);
     }
     if (polls % STORAGE_EVERY === 1) void readStorage();
   };
@@ -330,10 +330,10 @@ export function createCollector(ctx: LabContext): Collector {
         const e = await storage.estimate() as StorageEstimate & { usageDetails?: Record<string, number> };
         const persisted = storage.persisted ? await storage.persisted() : null;
         platform.storage = { usage: e.usage ?? 0, quota: e.quota ?? 0, details: { ...(e.usageDetails ?? {}) }, persisted, at: now };
-        gauge('disk.usage', 'armazenamento: uso da origem', 'Disco', 'navigator.storage.estimate', 'MB', (e.usage ?? 0) / 1048576, now,
-          `cota ${((e.quota ?? 0) / 1048576).toFixed(0)} MB (${e.quota ? (((e.usage ?? 0) / e.quota) * 100).toFixed(1) : '?'}%)${persisted === null ? '' : persisted ? ' · persistente' : ' · pode ser despejado'}`);
+        gauge('disk.usage', 'storage: origin usage', 'Disk', 'navigator.storage.estimate', 'MB', (e.usage ?? 0) / 1048576, now,
+          `quota ${((e.quota ?? 0) / 1048576).toFixed(0)} MB (${e.quota ? (((e.usage ?? 0) / e.quota) * 100).toFixed(1) : '?'}%)${persisted === null ? '' : persisted ? ' · persistent' : ' · may be evicted'}`);
         // `usageDetails` (Chromium): each storage system with use above 0; a missing key is 0 (MDN).
-        for (const [kind, bytes] of Object.entries(e.usageDetails ?? {})) gauge(`disk.detail.${kind}`, `armazenamento: ${kind}`, 'Disco', 'storage.estimate usageDetails', 'MB', bytes / 1048576, now);
+        for (const [kind, bytes] of Object.entries(e.usageDetails ?? {})) gauge(`disk.detail.${kind}`, `storage: ${kind}`, 'Disk', 'storage.estimate usageDetails', 'MB', bytes / 1048576, now);
       }
     } catch (error) {
       console.warn('lab: storage estimate failed', error);
@@ -342,7 +342,7 @@ export function createCollector(ctx: LabContext): Collector {
       if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
         const dbs = await indexedDB.databases();
         platform.idbNames = dbs.map((d) => `${d.name ?? '?'} v${d.version ?? '?'}`);
-        gauge('disk.idb', 'IndexedDB: bancos', 'Disco', 'indexedDB.databases', 'bancos', dbs.length, now, platform.idbNames.join(', '));
+        gauge('disk.idb', 'IndexedDB: databases', 'Disk', 'indexedDB.databases', 'databases', dbs.length, now, platform.idbNames.join(', '));
       }
     } catch (error) {
       console.warn('lab: indexedDB.databases failed', error);
@@ -359,13 +359,13 @@ export function createCollector(ctx: LabContext): Collector {
         };
         await walk(root);
         platform.opfs = { files, bytes, truncated: seen > OPFS_MOST };
-        gauge('disk.opfs', 'OPFS: sistema de arquivos privado', 'Disco', 'navigator.storage.getDirectory', 'MB', bytes / 1048576, now, `${files} arquivos${seen > OPFS_MOST ? ' (lista cortada)' : ''}`);
+        gauge('disk.opfs', 'OPFS: origin private file system', 'Disk', 'navigator.storage.getDirectory', 'MB', bytes / 1048576, now, `${files} files${seen > OPFS_MOST ? ' (list truncated)' : ''}`);
       }
     } catch (error) {
       console.warn('lab: OPFS walk failed', error);
     }
     const desktop = (window as unknown as { roadcraftDesktop?: unknown }).roadcraftDesktop;
-    if (desktop) gauge('disk.desktop', 'salvamentos do desktop', 'Disco', 'roadcraftDesktop (processo de salvamento)', 'ligado', 1, now, 'gravados pelo processo do desktop: tamanho não exposto à página');
+    if (desktop) gauge('disk.desktop', 'desktop saves', 'Disk', 'roadcraftDesktop (save process)', 'on', 1, now, 'written by the desktop process: size not exposed to the page');
     try {
       const getBattery = (navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean; level: number }> }).getBattery;
       if (getBattery) {
@@ -380,7 +380,7 @@ export function createCollector(ctx: LabContext): Collector {
   // The user agent's memory (MDN `measureUserAgentSpecificMemory`: cross-origin isolated pages only; the page, its workers, its frames).
   async function measureMemory(): Promise<void> {
     const measure = (performance as Performance & { measureUserAgentSpecificMemory?: () => Promise<{ bytes: number; breakdown: { bytes: number; types: string[]; attribution: { url: string; scope: string }[] }[] }> }).measureUserAgentSpecificMemory;
-    if (!measure || !globalThis.crossOriginIsolated) { platform.uaMemoryError = !measure ? 'API ausente neste navegador' : 'página não está isolada (crossOriginIsolated falso)'; return; }
+    if (!measure || !globalThis.crossOriginIsolated) { platform.uaMemoryError = !measure ? 'API missing in this browser' : 'page not isolated (crossOriginIsolated false)'; return; }
     if (platform.uaMemoryRunning) return;
     platform.uaMemoryRunning = true;
     const begun = performance.now();
@@ -390,7 +390,7 @@ export function createCollector(ctx: LabContext): Collector {
       const groups = new Map<string, { scope: string; url: string; bytes: number; types: Set<string> }>();
       for (const b of result.breakdown) {
         const a = b.attribution[0];
-        const scope = a?.scope ?? '(sem atribuição)';
+        const scope = a?.scope ?? '(no attribution)';
         const url = a ? shortUrl(a.url) : '';
         const key = `${scope}|${url}`;
         const g = groups.get(key) ?? { scope, url, bytes: 0, types: new Set<string>() };
@@ -401,10 +401,10 @@ export function createCollector(ctx: LabContext): Collector {
       const breakdown = [...groups.values()].map((g) => ({ scope: g.scope, url: g.url, bytes: g.bytes, types: [...g.types].join('/') })).sort((x, y) => y.bytes - x.bytes);
       platform.uaMemory = { bytes: result.bytes, at: now, ms: now - begun, breakdown };
       platform.uaMemoryError = null;
-      gauge('ua.total', 'memória do agente (página + workers)', 'RAM', 'measureUserAgentSpecificMemory', 'MB', result.bytes / 1048576, now, `medida em ${((now - begun) / 1000).toFixed(1)} s`);
+      gauge('ua.total', 'user agent memory (page + workers)', 'RAM', 'measureUserAgentSpecificMemory', 'MB', result.bytes / 1048576, now, `measured in ${((now - begun) / 1000).toFixed(1)} s`);
       for (const g of breakdown) {
         const category: ResourceCategory = 'RAM';
-        gauge(`ua.${g.scope}|${g.url}`, `memória: ${g.scope === 'Window' ? 'página' : g.scope === 'DedicatedWorkerGlobalScope' ? 'worker' : g.scope} ${g.url}`, category, 'measureUserAgentSpecificMemory', 'MB', g.bytes / 1048576, now, g.types);
+        gauge(`ua.${g.scope}|${g.url}`, `memory: ${g.scope === 'Window' ? 'page' : g.scope === 'DedicatedWorkerGlobalScope' ? 'worker' : g.scope} ${g.url}`, category, 'measureUserAgentSpecificMemory', 'MB', g.bytes / 1048576, now, g.types);
       }
     } catch (error) {
       platform.uaMemoryError = String(error);
@@ -439,7 +439,7 @@ export function createCollector(ctx: LabContext): Collector {
       longFrames.length = 0;
       longTasks.length = 0;
       resetAt = performance.now();
-      ctx.emit('resources.reset', 'medidas de consumo zeradas');
+      ctx.emit('resources.reset', 'consumer measures reset');
     },
     measureMemory,
     readStorage,

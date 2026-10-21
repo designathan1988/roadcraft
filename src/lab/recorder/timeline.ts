@@ -3,7 +3,7 @@ import type { Recording } from './recording';
 /** THE RECORDING DRAWN: frame interval, CPU and GPU over time (each pixel column the worst of its frames), a line at every change and marker. */
 
 const SERIES = [
-  { key: 'interval', color: '#d8e2e6', label: 'intervalo' },
+  { key: 'interval', color: '#d8e2e6', label: 'interval' },
   { key: 'cpu', color: '#2fc2ab', label: 'CPU' },
   { key: 'gpu', color: '#ff9f43', label: 'GPU' },
 ] as const;
@@ -17,7 +17,7 @@ export function timelineLegend(): HTMLElement {
     legend.appendChild(item);
   }
   const marks = document.createElement('span');
-  marks.innerHTML = '<span style="color:#ffd84a">┃</span> mudança <span style="color:#e86bff">┃</span> marcador <span style="color:#ff5d5d">▴</span> tarefa longa';
+  marks.innerHTML = '<span style="color:#ffd84a">┃</span> change <span style="color:#e86bff">┃</span> marker <span style="color:#ff5d5d">▴</span> long task';
   legend.appendChild(marks);
   return legend;
 }
@@ -36,7 +36,7 @@ export function drawTimeline(canvas: HTMLCanvasElement, rec: Recording | null): 
   g.font = '10px ui-monospace, Consolas, monospace';
   if (!rec || !rec.frames.t.length) {
     g.fillStyle = '#8a9ba3';
-    g.fillText('Sem gravação', 8, h / 2);
+    g.fillText('No recording', 8, h / 2);
     return;
   }
   const f = rec.frames;
