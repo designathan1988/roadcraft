@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Box3, MeshBasicMaterial, Vector3, type BufferGeometry, type Object3D } from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
@@ -228,6 +228,9 @@ describe('road surface inputs kept between builds', () => {
 
 describe('the road tiles kept for a later session by their workers', () => {
   it('keeps every tile, waiting under a full ceiling rather than dropping one', async () => {
+    // A store where the worker runs (a browser's IndexedDB; none in node).
+    vi.resetModules();
+    vi.doMock('@core/derivedCache', async (actual) => ({ ...(await actual<typeof import('@core/derivedCache')>()), derivedCacheOpen: async () => true }));
     const { keepTiles } = await import('@render/roadTile.worker');
     const { WriteBudget } = await import('@core/derivedCache');
     const budget = new WriteBudget(1024);
@@ -241,6 +244,14 @@ describe('the road tiles kept for a later session by their workers', () => {
     held();
     for (let k = 0; k < 20 && kept === null; k++) await new Promise((done) => setTimeout(done, 0));
     expect(kept).toEqual([0, 2]);
+    vi.doUnmock('@core/derivedCache');
+    vi.resetModules();
+  });
+
+  it('says none kept where there is no store (a desktop job process): the page keeps them', async () => {
+    const { keepTiles } = await import('@render/roadTile.worker');
+    const tile: TileMeshes = [['asphalt', { positions: new Float32Array(3) } as unknown as TileMeshes[number][1]]];
+    expect(await keepTiles([tile, tile], { prefix: 'p:', keys: ['a', 'b'] })).toEqual([]);
   });
 
   it('leaves the page nothing to keep of a tile its worker kept: the key marked, no arrays held', async () => {

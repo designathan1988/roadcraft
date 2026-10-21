@@ -1,7 +1,7 @@
 import { type MeshAsk, TileMesher, type TileMeshes, tileBuffers } from './roadTileMesh';
 import { type BlockArrays, blockBuffers, coarseArrays } from './mesh/roadLodPure';
 import type { JobScope } from '../jobs/jobScope';
-import { WriteBudget, keepDerivedQueuedMany } from '../core/derivedCache';
+import { WriteBudget, derivedCacheOpen, keepDerivedQueuedMany } from '../core/derivedCache';
 import { MeshoptSimplifier } from 'meshoptimizer';
 
 /** One worker of the roads' surface tiles (`roadTilePool.ts`): each tile of a share shaped and meshed whole */
@@ -21,6 +21,8 @@ const writes = new WriteBudget(WRITES_MOST);
 /** Each tile of `tiles` with a key kept in the store before its arrays leave (IndexedDB clones the value at `put`); the places of those kept. */
 export async function keepTiles(tiles: readonly TileMeshes[], keep: { readonly prefix: string; readonly keys: readonly (string | null)[] }, budget: WriteBudget = writes): Promise<number[]> {
   const kept: number[] = [];
+  // No store where this worker runs (a desktop job process has no IndexedDB, `jobPool.ts` PROCESS_LANES): none kept, the page keeps them. DO NOT say them kept: the write found no database and did nothing, and every tile was made again next session.
+  if (!(await derivedCacheOpen())) return kept;
   for (let i = 0; i < tiles.length; i++) {
     const key = keep.keys[i];
     if (!key) continue;

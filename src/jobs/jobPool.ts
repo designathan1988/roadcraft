@@ -17,6 +17,10 @@ const LONG_RUNNING: readonly JobService[] = ['growth', 'cityGen'];
 
 /** Services whose worker no queued job runs on (where another worker can take it), all on one worker (never one each: the short side has two, the V8 cage's count, `jobWorkers`): the save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22); the store's reads (`tileRead`) beside them, never beside the queue or the rush's tiles - a reopening's tiles waited behind far levels' bakes of seconds (conf37). No bake runs there (`tileStore.ts` upgraded, `TileStore.write`). */
 const KEPT_CLEAR: readonly JobService[] = ['save', 'tileRead'];
+/** Lanes whose messages hold all they read (no shared buffer the job keeps reading: `roadTilePool.ts` hands each share its roads, the ground asked back by `need`), served on the desktop by the long workers of the job processes, outside the page's cage. DO NOT keep the road tiles to the page's short workers there: the lanes were `laneWorkers` of them, ONE on the desktop, and a large city's opening waited 5.6 s on that one worker for its road surfaces while six job processes stood idle (2026-10-21). */
+const PROCESS_LANES: readonly JobService[] = ['roadTiles'];
+/** Whether `service`'s lanes go to the job processes' workers (`PROCESS_LANES`): on the desktop, with a long side of more than one. */
+const inProcesses = (service: JobService): boolean => PROCESS_LANES.includes(service) && system.makeWorker !== null && longWorkers() > 1;
 const keptClear = (host: Host): boolean => KEPT_CLEAR.some((service) => host.services.has(service));
 /** How many kinds a worker hosts lanes of besides the kept-clear ones. */
 const otherKinds = (host: Host): number => { let n = 0; for (const service of host.services.keys()) if (!KEPT_CLEAR.includes(service)) n++; return n; };
@@ -274,7 +278,9 @@ function pageRoomWorkers(): number {
 }
 
 /** How many lanes a kind of work may have: never more than the workers its side has (a lane per worker, `jobPort`; the long-running services' are `tileLanes`). */
-export const jobLanes = (most: number): number => Math.max(1, Math.min(most, laneWorkers()));
+/** `service`'s lanes in the job processes (`PROCESS_LANES`): half the long side. DO NOT give them every job process: the building cells of the view run on the idle ones (`hostFor` crosses), and with six tile lanes the surfaces were 1.6 s sooner and the buildings in view 2.7 s later, the opening later by 2.3 s (2026-10-21). */
+export const jobLanes = (most: number, service?: JobService): number =>
+  Math.max(1, Math.min(most, service && inProcesses(service) ? Math.floor(longWorkers() / 2) : laneWorkers()));
 
 /** The short side's workers a kind's lanes may take: all but one while it has more than one, that one left for the kept-clear lanes (the save's writes, `KEPT_CLEAR`) - DO NOT let the traffic's lanes take every worker at the boot: the save made later shared one with them, and waited behind each batch (JOB-02). */
 const laneWorkers = (): number => { const n = shortWorkers(); return n > 1 ? n - 1 : 1; };
@@ -515,7 +521,7 @@ export const focusDistance = (x: number, y: number): number => Math.hypot(x - sy
 
 /** DO NOT pin a lane by a hash of its service, nor put a long-running service's lane on a worker of the other kinds (or the other way round): the traffic's conflict pairs waited behind tile after tile and the city's clock stood still (the long lanes were placed last, on the workers the traffic's lanes already held) */
 function place(service: JobService): Host {
-  const long = LONG_RUNNING.includes(service);
+  const long = LONG_RUNNING.includes(service) || inProcesses(service);
   let best: Host | null = null;
   let bestScore = Infinity;
   for (const w of system.workers) {

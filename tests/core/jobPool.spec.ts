@@ -198,7 +198,7 @@ describe('the job system', () => {
     setJobWorkerMaker((long) => { made.push(long); return long ? new FakeWorker() as unknown as Worker : null; });
     const before = FakeWorker.made.length;
     jobPort('growth');
-    jobPort('roadTiles');
+    jobPort('farRoads');
     expect(made).toEqual([true, false]);
     expect(FakeWorker.made.length).toBe(before + 2);
     setJobWorkerMaker(null);

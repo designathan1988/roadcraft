@@ -20,8 +20,8 @@ interface Lane {
 
 /** Silence past which a worker with tiles waiting is reported (it beats every 500 ms while it works, when it runs). */
 const SILENCE_MS = 10_000;
-/** Most workers the pool opens. */
-const MOST_LANES = 4;
+/** Most workers the pool opens: on the desktop, workers of the job processes (`jobPool.ts` PROCESS_LANES). */
+const MOST_LANES = 6;
 
 /** Tiles of a road pass to make off the page, and what the page answers for them. */
 export interface TileJob {
@@ -101,7 +101,7 @@ export class RoadTilePool implements RoadTiler {
   private start(): Lane[] | null {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const count = jobLanes(MOST_LANES);
+    const count = jobLanes(MOST_LANES, 'roadTiles');
     const lanes: Lane[] = [];
     try {
       for (let k = 0; k < count; k++) {
