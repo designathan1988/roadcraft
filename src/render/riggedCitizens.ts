@@ -3,7 +3,7 @@ import { fitInstances } from './instanceBounds';
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, DynamicDrawUsage, FloatType, Group, InstancedBufferAttribute, InstancedMesh,
   Matrix4, MeshDepthMaterial, MeshStandardMaterial, Object3D, Quaternion, RGBAFormat,
-  RGBADepthPacking, SkinnedMesh, Texture, Vector3, type WebGLRenderer, Sphere } from 'three';
+  RGBADepthPacking, SkinnedMesh, Texture, Vector3, type WebGLRenderer, Sphere, type OrthographicCamera } from 'three';
 import { PIXAR, REALISTIC, type CartoonStyle } from './people/cartoon';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { personHash, type PartyView, type PedView } from '@sim/people/view';
@@ -205,6 +205,45 @@ export function dropFaceShapesOnceDrawn(mesh: InstancedMesh): void {
     for (const shape of shapes) (shape as { array: ArrayLike<number> }).array = NO_SHAPE;
     mesh.onAfterRender = drop;
     drop.apply(this, args);
+  };
+}
+
+/**
+ * A level's figures cast into a cascade by the coarsest level its texel hides (`coarseFor`, the level's error against the texel): for the draw alone, its index swapped for that level's and each garment's range for that level's own (the same material), put back after it. The levels share every vertex attribute (`variants`: the source's attributes, an index of their own) and the figures' rows are the mesh's, so the coarse level is drawn over the same instances.
+ * DO NOT cast a near figure's whole body: ~0.25 M triangles a rigged citizen a frame went into the shadow maps, drawn over the stores at every frame as a mover (2026-10-20), for a silhouette a texel of 5 to 20 cm blurs.
+ */
+export function castCoarse(mesh: InstancedMesh, coarseFor: (texel: number) => BufferGeometry | null): void {
+  const own = mesh.geometry;
+  let index: BufferGeometry['index'] = null, start = 0, count = 0, swapped = false;
+  // three hands the geometry's group (r186 `WebGLShadowMap.renderObject`: { start, count, materialIndex }), which its typings call an Object3D group.
+  type Range = { start: number; count: number; materialIndex?: number };
+  mesh.onBeforeShadow = (renderer, _object, _camera, shadowCamera, _geometry, _depth, handed) => {
+    const group = handed as unknown as Range | null;
+    swapped = false;
+    const map = renderer.getRenderTarget();
+    const cascade = shadowCamera as OrthographicCamera;
+    if (!map || !cascade.isOrthographicCamera) return;
+    const coarse = coarseFor((cascade.right - cascade.left) / cascade.zoom / map.width);
+    if (!coarse || coarse === own || !coarse.index) return;
+    index = own.index;
+    own.index = coarse.index;
+    swapped = true;
+    if (!group) return;
+    start = group.start;
+    count = group.count;
+    const same = coarse.groups.find((g) => g.materialIndex === group.materialIndex);
+    if (same) { group.start = same.start; group.count = same.count; }
+    // A coarse level with no garments of its own: the whole of it with the first garment, none with the others.
+    else if (coarse.groups.length === 0 && group === own.groups[0]) { group.start = 0; group.count = coarse.index.count; }
+    // A garment the coarse level has not (the face): not cast.
+    else group.count = 0;
+  };
+  mesh.onAfterShadow = (_renderer, _object, _camera, _shadowCamera, _geometry, _depth, handed) => {
+    const group = handed as unknown as Range | null;
+    if (!swapped) return;
+    own.index = index;
+    swapped = false;
+    if (group) { group.start = start; group.count = count; }
   };
 }
 
@@ -627,6 +666,13 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           group.add(mesh);
           added.push(mesh);
         }
+        // Each level casts by the coarsest level the cascade's texel hides (`castCoarse`): a level's error is a share of the body's height.
+        part.levels.forEach((level, own) => castCoarse(level.mesh, (texel) => {
+          let k = CITIZEN_LEVEL_ERROR.length - 1;
+          while (k > 0 && CITIZEN_LEVEL_ERROR[k]! * BODY_EXTENT > texel) k--;
+          const coarse = part.at[k]!;
+          return coarse > own ? distinct[coarse]! : null;
+        }));
         // A roster person is read back from its cook (or built in a worker) whenever it is wanted again: its arrays go once on the GPU.
         const model = CROWD[index];
         if (model?.person) {
