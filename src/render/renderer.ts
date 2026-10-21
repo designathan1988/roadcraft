@@ -2908,16 +2908,16 @@ export function createSceneRenderer(
       const groundSettled = !stroking && !worldJob;
       // The street furniture, the signs, the barriers and the transport on the world as it stands (the engine's 'draw' products)
       if (groundSettled) { placedOn = net; engine.refresh('draw'); }
-      // The buildings follow the ground once a stroke is over, not on every dab of it
-      if (groundSettled && groundChanges.version !== buildingGroundSeen) {
+      // On level land the ground is in once this network's roads are solved and the job is past its ground (`worldJobGround`): what the buildings stand on (the land, the pavements' heights of the solve, `pavedHeightAt`) is final, the road surfaces still building change none of it. DO NOT hold them for the surfaces: the view's cells started only once every road tile was in, 4.7 s after it on the critical path of a large city's opening (2026-10-21).
+      // DO NOT let them start on the last map's solve either: before this network's solve the pavements were the previous city's.
+      const groundIn = !worldJob || (levelLand && !worldJobGround && networkRevision === net.revision);
+      // The buildings follow the ground once a stroke is over, not on every dab of it - and once it is in (`groundIn`), not when the road surfaces end: DO NOT tell them of the solve's whole-map entry only then (`worldSteps` diary): every building's digest changed and every cell of a reopened city was made again, ~0.6 s of the page and the view's cells asked anew (2026-10-21).
+      if ((groundSettled || (!stroking && groundIn)) && groundChanges.version !== buildingGroundSeen) {
         const moved = buildingGroundSeen < 0 ? null : buildingsOnGroundSince(net.doc, buildingGroundSeen);
         if (moved === null || moved.length > 0) buildingGround = String(groundChanges.version);
         buildingGroundSeen = groundChanges.version;
       }
       // At the opening the buildings come once the first world (the roads, the ground cut and filled to them) is in
-      // On level land the ground is in once this network's roads are solved and the job is past its ground (`worldJobGround`): what the buildings stand on (the land, the pavements' heights of the solve, `pavedHeightAt`) is final, the road surfaces still building change none of it. DO NOT hold them for the surfaces: the view's cells started only once every road tile was in, 4.7 s after it on the critical path of a large city's opening (2026-10-21).
-      // DO NOT let them start on the last map's solve either: before this network's solve the pavements were the previous city's.
-      const groundIn = !worldJob || (levelLand && !worldJobGround && networkRevision === net.revision);
       if (roads !== null && (reveal.opened || (groundIn && networkRevision === net.revision))) {
         buildings.hidden = !reveal.opened;
         buildingsGrounded = true;
