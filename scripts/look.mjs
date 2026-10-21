@@ -449,6 +449,7 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
       // each into a linear target, through the same film curve (`src/render/gpu/imageCompare.ts`). Writes `<i>-<name>-webgl.png`, `-webgpu.png`
       // and `-diff.png` (red the larger the difference, white over 8 times the threshold); `threshold` 8-bit steps (8), `timingFrames` the draws
       // of each timed on the GPU (20), `faithfulOnly` what only a simple twin draws left out of both (the same things drawn the same way).
+      // Run it without the key (`gpu`): under WebGPU the WebGL renderer has drawn nothing of the scene, and layers it never drew are not set up for it.
       await page.evaluate(() => window.__roadcraft.measure(true));
       try {
         await frames(30);

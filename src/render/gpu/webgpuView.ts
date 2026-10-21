@@ -1,6 +1,6 @@
 import {
   ACESFilmicToneMapping, Color, HalfFloatType, Mesh, SphereGeometry, SRGBColorSpace, Scene, Vector2, WebGLRenderTarget,
-  type Camera, type Material, type Object3D, type Texture, type WebGLRenderer,
+  type Camera, type Light, type Material, type Object3D, type Texture, type WebGLRenderer,
 } from 'three';
 import { PMREMGenerator, RenderTarget, WebGPURenderer, type NodeMaterial } from 'three/webgpu';
 import { createCompatibility, isDrawable } from './compatibility';
@@ -220,8 +220,12 @@ export async function createWebGpuView(canvas: HTMLCanvasElement): Promise<WebGp
       // neither yet): the materials alone compared.
       const glTarget = new WebGLRenderTarget(width, height, { type: HalfFloatType, depthBuffer: true });
       const gpuTarget = new RenderTarget(width, height, { type: HalfFloatType, depthBuffer: true });
-      const shadows = gl.shadowMap.enabled;
       const kept = gl.getRenderTarget();
+      // DO NOT take `shadowMap.enabled = false` for no shadows: three's WebGL programs are not built again for it (their key follows the
+      // lights that cast), and the WebGL picture came out with the sun's stored cascades - the shadows of the very buildings left out of it.
+      // Its lights cast nothing while it draws: its programs without shadows, built for the comparison (a moment's compile, once each way).
+      const casters: Light[] = [];
+      scene.traverse((o) => { const light = o as Light; if (light.isLight && light.castShadow) casters.push(light); });
       const glHalf = new Uint16Array(width * height * 4);
       const glDraw = (): void => {
         gl.setRenderTarget(glTarget);
@@ -235,14 +239,14 @@ export async function createWebGpuView(canvas: HTMLCanvasElement): Promise<WebGp
       };
       /** Each renderer's draws issued in one go, the scene given back before anything waits: the game's own frames meanwhile see it whole. */
       const withView = <T>(twins: boolean, draw: () => T): T => {
-        gl.shadowMap.enabled = false;
+        for (const light of casters) light.castShadow = false;
         prepare(scene, twins, faithfulOnly);
         try { return draw(); } finally {
           restoreTwins(scene);
           restoreHidden();
           gl.setRenderTarget(kept);
           renderer.setRenderTarget(null);
-          gl.shadowMap.enabled = shadows;
+          for (const light of casters) light.castShadow = true;
         }
       };
       // The same instant for both: drawn one after the other in this task, no frame of the game between (the wind's clock moves only in a frame).
