@@ -4,7 +4,7 @@ import { measureHitch } from '@core/hitch';
 import { watchDesktopShown } from './desktopShown';
 import { canQueueJobs, jobChannel, jobLanes, jobPoolStats, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
 import type { CityGenAsk, CityGenReply } from './cityGen.worker';
-import { type OpenedCity, prepareCity, preparedCity } from './editor/preparedCity';
+import { type OpenedCity, openedBuildings, prepareCity, preparedCity } from './editor/preparedCity';
 import { COOKED_CITY_SEEDS, readCookedCity } from './editor/cookedCities';
 import { tableBytes, tableIn } from '@world/buildings/recordTable';
 import { desktopJobWorkers } from './desktopJobs';
@@ -257,7 +257,7 @@ if (saved) {
     performance.mark('boot:restore');
     // A large map's buildings made one table, as a generated city's are (`prepareCity`), and filed from it: DO NOT load them one object at a time - each was migrated and interned again (0.83 s of the large city's boot), and each written to a row of its own for the traffic's worker after (`refOf`, 0.5 s more).
     const asTable = (saved.buildings?.length ?? 0) >= TABLE_RESTORE_BUILDINGS ? (() => { const made = prepareCity(saved); return preparedCity(made.data, made.buildings); })() : null;
-    restoreInto(doc, asTable?.data ?? saved, net, asTable !== null);
+    restoreInto(doc, asTable?.data ?? saved, net, asTable?.table ?? null);
     performance.mark('boot:restored');
     doc.changes.causeNext('game');
     // Opened from the map's parts: those parts are this document, the next save writes only what changes.
@@ -887,12 +887,12 @@ function mutateBuilt(fn: () => boolean): boolean {
 }
 
 /** `snapshot`: the model's own undo/redo state, restored exactly. */
-/** `prepared`: an imported map's buildings prepared by the city's worker (`editor/preparedCity.ts`). */
-function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot', prepared = false): void {
+/** `table`: an imported map's buildings' table, prepared by the city's worker (`editor/preparedCity.ts`). */
+function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot', table: ArrayBufferLike | null = null): void {
   if (!data) return;
   roadTool.cancel();
   if (source === 'import') {
-    caused('map opened', () => restoreInto(doc, data, net, prepared));
+    caused('map opened', () => restoreInto(doc, data, net, table));
     // A different map: nothing of the old simulation may carry over.
     sim.load();
   } else {
@@ -2021,7 +2021,7 @@ interface KeptCity { readonly data: OpenedCity['data']; readonly buildings: Arra
 /** The city's document made by the worker (the game's own generator), or read as an earlier session kept it (`CITY_PREFIX`); without a job queue (a test) it is made on the page, as before. */
 async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
   if (!canQueueJobs()) {
-    return { data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7), prepared: false };
+    return { data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7), table: null };
   }
   // DO NOT grow the city again each time it is opened: the large city's generation was 6.4 s of the desktop's 7.4 s opening (2026-10-21), for a city the same seed and the same code make byte for byte.
   const key = CITY_PREFIX ? `${CITY_PREFIX}${ask.kind}:${ask.seed ?? 7}` : null;
@@ -2045,7 +2045,7 @@ async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
 function openedOf(reply: CityGenReply): OpenedCity {
   if (!reply.data) throw new Error(reply.error ?? 'the city was not made');
   // Made in a job process (the desktop's), its table came as a plain copy: back in shared memory, as the page's workers read it (`tableIn`).
-  return reply.buildings ? preparedCity(reply.data, reply.buildings instanceof ArrayBuffer ? tableIn(reply.buildings) : reply.buildings) : { data: reply.data, prepared: false };
+  return reply.buildings ? preparedCity(reply.data, reply.buildings instanceof ArrayBuffer ? tableIn(reply.buildings) : reply.buildings) : { data: reply.data, table: null };
 }
 
 /** The city's worker asked for a city (`priority`: the queue's, 0 first), its answer kept under `key` for the next opening of this seed. */
@@ -2121,10 +2121,10 @@ async function openCityNow(ask: CityGenAsk): Promise<void> {
   requestDraw();
   performance.mark('city:asked');
   try {
-    const { data, prepared } = await cityData(ask);
+    const city = await cityData(ask);
     performance.mark('city:data');
     generatingCity = false;
-    openCity(data, (data.buildings?.length ?? 0) > 5_000, prepared);
+    openCity(city.data, openedBuildings(city) > 5_000, city.table);
     performance.mark('city:applied');
   } catch (error) {
     console.error('The city could not be made.', error);
@@ -2148,13 +2148,13 @@ function openLargeCity(seed: number): Promise<void> {
   return openCityOffPage({ id: cityAskId++, kind: 'large', seed });
 }
 
-/** `prepared`: its buildings prepared by the city's worker (`editor/preparedCity.ts`). */
-function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, prepared = false): void {
+/** `table`: its buildings' table, prepared by the city's worker (`editor/preparedCity.ts`). */
+function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, table: ArrayBufferLike | null = null): void {
   history.begin(doc);
   // A large city opens at a district, its first world covering the view alone (`renderer.ts` openingBuild): the whole map's roads took tens of seconds the curtain showed nothing of.
   deferSessionSave = large;
   if (large) scene.scopeOpening(true);
-  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import', prepared);
+  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import', table);
   // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).
   history.end(doc);
   roadTool.reset();

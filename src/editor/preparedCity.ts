@@ -1,6 +1,6 @@
 import type { SerializedDoc } from '@world/doc';
-import { encodeRecords, tableRecords } from '@world/buildings/recordTable';
-import { type SerializedBuilding, migrateBuilding } from '@world/buildings/serialize';
+import { RecordTable, encodeRecords } from '@world/buildings/recordTable';
+import { migrateBuilding } from '@world/buildings/serialize';
 import { type Building, settleBuilding } from '@world/buildings/types';
 
 /** A WHOLE CITY MADE OFF THE PAGE (`cityGen.worker.ts`), ITS BUILDINGS ONE SHARED TABLE AS A TILE'S (`tileStore.ts` prepareTile): each migrated and settled where it is made (`settleBuilding`: made plain, its members interned), the page reading them from the table, each knowing its row */
@@ -19,13 +19,18 @@ export function prepareCity(data: SerializedDoc): { readonly data: SerializedDoc
   return { data: { ...data, buildings: [] }, buildings: encodeRecords(buildings).buffer };
 }
 
-/** A city as the page opens it; `prepared`: its buildings read from their table (`preparedCity`), filed as they are (`RoadDoc.fromJSON` preparedBuildings). */
+/** A city as the page opens it; `table`: its buildings' table (`prepareCity`), the document's source of truth as it is (`BuildingStore.loadSections`), null: its buildings are in `data`. */
 export interface OpenedCity {
   readonly data: SerializedDoc;
-  readonly prepared: boolean;
+  readonly table: ArrayBufferLike | null;
 }
 
-/** A prepared city as the page opens it: its buildings read from their table, each knowing its row (`tableRecords`). */
+/** A prepared city as the page opens it: DO NOT decode its table here (every record an object, ~8 KB of heap a building): the document reads a row when asked. */
 export function preparedCity(data: SerializedDoc, table: ArrayBufferLike): OpenedCity {
-  return { data: { ...data, buildings: tableRecords(table) as unknown as readonly SerializedBuilding[] }, prepared: true };
+  return { data: { ...data, buildings: [] }, table };
+}
+
+/** How many buildings an opened city has, in its data or its table. */
+export function openedBuildings(city: OpenedCity): number {
+  return (city.data.buildings?.length ?? 0) + (city.table ? new RecordTable(city.table).rows : 0);
 }

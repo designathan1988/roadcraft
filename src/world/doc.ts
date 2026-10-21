@@ -38,11 +38,14 @@ import { isNatureSettings, type NatureSettings } from './ecology';
 import { type TransitData, emptyTransit, hasTransit, normalizeTransit } from './transit';
 import { type SegmentDirection, casingHalf, roadProfile } from './roadTypes';
 import { BuildingStore } from './buildings/store';
+import type { BuildingSections } from './buildings/sections';
+import { type DocImage, dataOf, imageBytes, imageOf, packImage, unpackImage } from './docBinary';
+import { allocate } from './buildings/recordTable';
 import type { SerializedBuilding } from './buildings/serialize';
 import type { Building, BuildingId } from './buildings/types';
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
-import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, isStreaming, rectAround, type ChangeRect, type DocChangeKind } from './changes';
+import { ChangeJournal, DOC_CHANGE_KINDS, TILE_LOADED, TILE_UNLOADED, isStreaming, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { OWNER, TILE, TILE_COUNTED, tileIdBase, tileKey, tileOfKey, tileRect } from './tiles';
 import { JournalCursor } from './derived';
 import { type GrownRows, selectRows } from './growth/rows';
@@ -2042,10 +2045,24 @@ export class RoadDoc {
   }
 
   /** Replaces this instance in place while restoring allocator invariants. */
-  /** `preparedBuildings`: its buildings prepared by a worker (`editor/preparedCity.ts`), filed as they are. */
-  replaceFromJSON(data: SerializedDoc, options: { readonly repair?: boolean; readonly preparedBuildings?: boolean } = {}): void {
-    const restored = RoadDoc.fromJSON(data, options);
-    this.replaceWith(restored);
+  /** `preparedBuildings`: its buildings prepared by a worker (`editor/preparedCity.ts`), filed as they are; `buildingTable`: its buildings' table (`prepareCity`), the store's source of truth as it is; `whole`: another map opened, replacing this one whole (`replaceWhole`), never compared with it record by record. */
+  replaceFromJSON(data: SerializedDoc, options: { readonly repair?: boolean; readonly preparedBuildings?: boolean; readonly buildingTable?: ArrayBufferLike; readonly whole?: boolean } = {}): void {
+    const { buildingTable, whole, ...rest } = options;
+    const restored = RoadDoc.fromJSON(data, { ...rest, ...(buildingTable ? { buildingSections: { base: buildingTable, gone: new Float64Array(0), replaced: null, added: null } } : {}) });
+    if (whole) this.replaceWhole(restored); else this.replaceWith(restored);
+  }
+
+  /** ANOTHER MAP IN PLACE OF THIS ONE (a map opened, a city generated, a whole map put back by undo): its contents taken as they are and one change of the whole map written for every kind - DO NOT compare the two maps record by record (every road, item and building of both walked, decoded and compared to find that all of it changed). */
+  replaceWhole(source: RoadDoc): void {
+    // The map before, for the edit's undo: its image, the buildings' table shared (`image`), never its text.
+    if (this.recorder && !this.recorder.whole) this.recorder.whole = this.image();
+    this.replaceContents(source, () => true, null, null, true, true);
+    this.roadsChanged(null, true, { detail: 'map replaced whole' });
+    for (const kind of DOC_CHANGE_KINDS) {
+      // Written by their own stores (the buildings, the lots), or just above (the roads).
+      if (kind === 'roads' || kind === 'traffic' || kind === 'buildings' || kind === 'lots' || kind === 'lotKeys') continue;
+      this.changes.record(kind, null, { detail: 'map replaced whole' });
+    }
   }
 
   /** Replaces this instance from another valid document - every road drawn (an edited clone, `commitDraft`) and every undo */
@@ -2056,8 +2073,8 @@ export class RoadDoc {
       return;
     }
     // The whole map replaced during an edit (a map opened, a city generated): the edit's undo puts back the map as it was.
-    // As its text (`toText`, the buildings' text kept per record): a third of the objects' memory, and its bytes the budget's own.
-    if (this.recorder && !this.recorder.whole) this.recorder.whole = this.toText();
+    // As its image (`image`): each part's text on its own, the buildings' table shared, never one text of the whole map.
+    if (this.recorder && !this.recorder.whole) this.recorder.whole = this.image();
     const moved = this.movedIn(source);
     // Read before anything here is written: it holds while this diary stands where the copy was made.
     const buildingIds = this.buildingsMovedIn(source);
@@ -2131,6 +2148,12 @@ export class RoadDoc {
       for (const [id, before] of kept) {
         const after = copyRecord(part, this.recordOf(part, id));
         if (before === after || (before !== undefined && after !== undefined && samePlain(before, after))) continue;
+        // A building changed, not made or removed: only its members that changed, on both sides (`MemberDiff`) - DO NOT keep its whole record before and after (1,000 edits of one building held 1,000 records).
+        if (part === 'buildings' && before !== undefined && after !== undefined) {
+          const [was, now] = memberDiffs(before as Record<string, unknown>, after as Record<string, unknown>);
+          records.push({ part, id, before: was, after: now });
+          continue;
+        }
         records.push({ part, id, before, after });
       }
     }
@@ -2204,7 +2227,7 @@ export class RoadDoc {
   }
 
   restore(r: Restoration): void {
-    if (r.whole) { this.replaceFromJSON(JSON.parse(r.whole) as SerializedDoc, { repair: false }); return; }
+    if (r.whole) { this.replaceWhole(RoadDoc.fromImage(r.whole)); return; }
     const roads: ChangeRect[] = [], utilities: ChangeRect[] = [], landscape: ChangeRect[] = [], barriers: ChangeRect[] = [];
     // The kinds changed as a whole (a value: the relief, the weather...)
     const kinds = new Set<DocChangeKind>();
@@ -2258,7 +2281,12 @@ export class RoadDoc {
         case 'barriers':
           if (value === undefined) this.deleteBarrierRecord(id); else this.putBarrierRecord(structuredClone(value) as Barrier);
           kinds.add('barriers'); barrierIds.push(id); break;
-        case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
+        case 'buildings': {
+          // A member diff put back over the record as it stands (the other side of the step).
+          const record = value instanceof MemberDiff ? value.over(this.buildings.get(id as BuildingId) as Record<string, unknown> | undefined) : value;
+          this.buildings.restore(id as BuildingId, record as Building | undefined);
+          break;
+        }
         // Kept by reference, as the buildings (`LotStore` OWNERSHIP); all of them in one entry, below.
         case 'lots': lotRecords.push({ id, value: value as Lot | undefined }); break;
       }
@@ -2368,13 +2396,14 @@ export class RoadDoc {
   }
 
   /** Takes `source`'s contents and says what differed: the roads, the land, the poles and the barriers */
-  private replaceContents(source: RoadDoc, moved: MovedKinds, buildingIds: readonly BuildingId[] | null, lotIds: readonly number[] | null, roadsDiffer: boolean): {
+  /** `whole`: another map (`replaceWhole`): everything taken, nothing compared, the changes written by the caller. */
+  private replaceContents(source: RoadDoc, moved: MovedKinds, buildingIds: readonly BuildingId[] | null, lotIds: readonly number[] | null, roadsDiffer: boolean, whole = false): {
     roads: boolean; land: boolean; barriers: boolean; others: DocChangeKind[];
   } {
     const others: DocChangeKind[] = [];
     let barriersChanged = false;
     // The land moves only when its stamps do.
-    const landMoved = moved('terrain') && (!sameStamps(this.terrainStamps, source.terrainStamps) || this.terrainRelief !== source.terrainRelief);
+    const landMoved = moved('terrain') && (whole || !sameStamps(this.terrainStamps, source.terrainStamps) || this.terrainRelief !== source.terrainRelief);
     // Likewise the roads and the utility network
     const roadsMoved = moved('roads', 'traffic');
     const roadsChanged = roadsMoved && roadsDiffer;
@@ -2398,16 +2427,17 @@ export class RoadDoc {
       this.clearLandscapeRecords();
       for (const item of source.landscape.values()) this.putLandscapeRecord({ ...item });
     }
-    if (moved('barriers') && !sameBarriers(this, source)) {
+    if (moved('barriers') && (whole || !sameBarriers(this, source))) {
       this.clearBarrierRecords();
       for (const barrier of source.barriers.values()) this.putBarrierRecord({ ...barrier, points: barrier.points.map((p) => ({ ...p })) });
       barriersChanged = true;
     }
-    // Writes a change only of the buildings that differ; of a working copy, reads only those its diary names
-    this.buildings.replaceWith(source.buildings, buildingIds);
+    // Writes a change only of the buildings that differ; of a working copy, reads only those its diary names. Another map: taken whole.
+    if (whole) this.buildings.takeWhole(source.buildings);
+    else this.buildings.replaceWith(source.buildings, buildingIds);
     // The zones and the lots moved only when their content did
     this.nextZoneId = source.nextZoneId;
-    if (moved('zones') && (!sameText(this.zones, source.zones) || !sameText(this.zoneMarks, source.zoneMarks))) {
+    if (moved('zones') && (whole || !sameText(this.zones, source.zones) || !sameText(this.zoneMarks, source.zoneMarks))) {
       this.ownList('zones');
       this.ownList('zoneMarks');
       this.zones.length = 0;
@@ -2417,19 +2447,20 @@ export class RoadDoc {
       others.push('zones');
     }
     // The lots write their own, by id (`LotStore.replaceWith`); of a working copy, only those its diary names.
-    if (moved('lots', 'lotKeys')) this.lotStore.replaceWith(source.lotStore, lotIds, 'replaced by an edit or an undo');
-    if (moved('transit') && !sameText(this.transit, source.transit)) {
+    if (whole) this.lotStore.takeWhole(source.lotStore, 'map replaced whole');
+    else if (moved('lots', 'lotKeys')) this.lotStore.replaceWith(source.lotStore, lotIds, 'replaced by an edit or an undo');
+    if (moved('transit') && (whole || !sameText(this.transit, source.transit))) {
       this.transit = JSON.parse(JSON.stringify(source.transit)) as TransitData;
       others.push('transit');
     }
-    if (moved('people') && !sameText(this.people, source.people)) {
+    if (moved('people') && (whole || !sameText(this.people, source.people))) {
       this.ownList('people');
       this.people.length = 0;
       pushAll(this.people, source.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec));
       others.push('people');
     }
 
-    if (moved('nature') && !sameText(this.nature, source.nature)) {
+    if (moved('nature') && (whole || !sameText(this.nature, source.nature))) {
       this.nature = source.nature ? { ...source.nature } : null;
       others.push('nature');
     }
@@ -2438,25 +2469,25 @@ export class RoadDoc {
       this.economy = { ...source.economy };
       others.push('economy');
     }
-    if (moved('weather') && !sameText(this.weather, source.weather)) {
+    if (moved('weather') && (whole || !sameText(this.weather, source.weather))) {
       this.weather = { ...source.weather };
       others.push('weather');
     }
-    if (moved('trees') && !sameText(this.trees, source.trees)) {
+    if (moved('trees') && (whole || !sameText(this.trees, source.trees))) {
       this.ownList('trees');
       this.trees.length = 0;
       this.treeGrid = null;
       pushAll(this.trees, source.trees.map((t) => ({ ...t })));
       others.push('trees');
     }
-    if (moved('clearings') && !sameText(this.treeClearings, source.treeClearings)) {
+    if (moved('clearings') && (whole || !sameText(this.treeClearings, source.treeClearings))) {
       this.ownList('treeClearings');
       this.treeClearings.length = 0;
       pushAll(this.treeClearings, source.treeClearings.map((c) => ({ ...c })));
       others.push('clearings');
     }
 
-    if (moved('elements') && (this.elements.length !== source.elements.length || !sameText(this.elements, source.elements))) {
+    if (moved('elements') && (whole || this.elements.length !== source.elements.length || !sameText(this.elements, source.elements))) {
       this.ownList('elements');
       this.elements.length = 0;
       this.elementGrid = null;
@@ -2464,14 +2495,14 @@ export class RoadDoc {
       others.push('elements');
     }
 
-    if (moved('clouds') && !sameText(this.clouds, source.clouds)) {
+    if (moved('clouds') && (whole || !sameText(this.clouds, source.clouds))) {
       this.ownList('clouds');
       this.clouds.length = 0;
       pushAll(this.clouds, source.clouds.map((c) => ({ ...c })));
       others.push('clouds');
     }
 
-    if (moved('gullies') && (this.gullyAuto !== source.gullyAuto || !sameText(this.gullyDabs, source.gullyDabs))) {
+    if (moved('gullies') && (whole || this.gullyAuto !== source.gullyAuto || !sameText(this.gullyDabs, source.gullyDabs))) {
       this.ownList('gullyDabs');
       this.gullyDabs.length = 0;
       pushAll(this.gullyDabs, source.gullyDabs.map((dab) => ({ ...dab })));
@@ -2479,7 +2510,7 @@ export class RoadDoc {
       others.push('gullies');
     }
 
-    if (moved('fog') && (!sameText(this.fogDabs, source.fogDabs) || !sameText(this.fogSettings, source.fogSettings))) {
+    if (moved('fog') && (whole || !sameText(this.fogDabs, source.fogDabs) || !sameText(this.fogSettings, source.fogSettings))) {
       this.ownList('fogDabs');
       this.fogDabs.length = 0;
       pushAll(this.fogDabs, source.fogDabs.map((dab) => ({ ...dab })));
@@ -2487,7 +2518,7 @@ export class RoadDoc {
       others.push('fog');
     }
 
-    if (moved('paint') && !samePaint(this.terrainPaint, source.terrainPaint)) {
+    if (moved('paint') && (whole || !samePaint(this.terrainPaint, source.terrainPaint))) {
       this.ownList('terrainPaint');
       this.terrainPaint.length = 0;
       pushAll(this.terrainPaint, source.terrainPaint.map((dab) => ({ ...dab })));
@@ -2520,6 +2551,26 @@ export class RoadDoc {
 
   toJSON(): SerializedDoc {
     return this.serialized(true);
+  }
+
+  /** The map as an image (`docBinary.ts`): each part's JSON on its own (a long list in runs), the buildings as their table and what was written over it - no text of the whole map, the table shared, never copied. */
+  image(): DocImage {
+    return imageOf(this.serialized(false), this.buildings.sections());
+  }
+
+  /** A map read back from its image (`image`), exactly as it was: its buildings read from their table when asked. */
+  static fromImage(image: DocImage): RoadDoc {
+    return RoadDoc.fromJSON(dataOf(image) as unknown as SerializedDoc, { repair: false, buildingSections: image.buildings });
+  }
+
+  /** The map saved as binary sections (`docBinary.ts` packImage): deterministic, a map loaded from it saves to the very same bytes. */
+  toBinary(): ArrayBuffer {
+    return packImage(this.image());
+  }
+
+  /** A map read from its binary sections (`toBinary`): the buildings' tables in shared memory where the page is isolated, as the workers read them. */
+  static fromBinary(bytes: ArrayBufferLike): RoadDoc {
+    return RoadDoc.fromImage(unpackImage(bytes, (b) => { const out = allocate(b.byteLength); new Uint8Array(out).set(b); return out; }));
   }
 
   /** `JSON.stringify(this.toJSON())`, the same text, with the buildings' text kept per record */
@@ -2638,7 +2689,7 @@ export class RoadDoc {
   }
 
   /** Builds a document from its serialized form. */
-  static fromJSON(saved: SerializedDoc, options: { readonly repair?: boolean; readonly shareBuildings?: BuildingStore; readonly preparedBuildings?: boolean } = {}): RoadDoc {
+  static fromJSON(saved: SerializedDoc, options: { readonly repair?: boolean; readonly shareBuildings?: BuildingStore; readonly preparedBuildings?: boolean; readonly buildingSections?: BuildingSections } = {}): RoadDoc {
     // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's.
     const data = rescaleSerializedDoc(saved);
     const repair = options.repair ?? true;
@@ -2785,6 +2836,7 @@ export class RoadDoc {
     }
     // Buildings, if the map has any; each one through `migrateBuilding`.
     if (options.shareBuildings) doc.buildings.shareFrom(options.shareBuildings);
+    else if (options.buildingSections) doc.buildings.loadSections(options.buildingSections);
     else if (data.buildings && options.preparedBuildings) doc.buildings.loadPrepared(data.buildings as unknown as readonly Building[]);
     else if (data.buildings) doc.buildings.load(data.buildings);
     // The ids already read by a set, NOT `doc.lots.some(...)` per record
@@ -3080,21 +3132,22 @@ export interface DocPatch {
   readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly before: unknown; readonly after: unknown }[];
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly before: readonly unknown[]; readonly after: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly before: unknown; readonly after: unknown }[];
-  /** The whole map before and after as its text (`RoadDoc.toText`), when the edit replaced it whole (a map opened, a city generated). */
-  readonly whole?: { readonly before: string; readonly after: string | null };
+  /** The whole map before and after as its image (`RoadDoc.image`), when the edit replaced it whole (a map opened, a city generated). */
+  readonly whole?: { readonly before: DocImage; readonly after: DocImage | null };
   /** Roughly what it holds, UTF-16 bytes of its text. */
   readonly bytes: number;
 }
 
 const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSON.stringify(value).length);
 
-/** What a step that replaced the whole map holds: its texts, UTF-16 bytes, read off their lengths. */
-export const wholeBytes = (before: string, after: string | null): number => 2 * (before.length + (after?.length ?? 0));
+/** What a step that replaced the whole map holds: its images' bytes (`imageBytes`). */
+export const wholeBytes = (before: DocImage, after: DocImage | null): number => imageBytes(before) + (after ? imageBytes(after) : 0);
 
 /** What a patch holds, UTF-16 bytes of its text (`editor/history.ts` keeps the steps under a budget). */
 function patchBytes(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values']): number {
   let bytes = 0;
-  for (const r of records) bytes += textBytes(r.before) + (r.part === 'buildings' || r.part === 'lots' ? 0 : textBytes(r.after));
+  // A building's or a lot's record after is the document's own (by reference); a building's member diff is the step's own.
+  for (const r of records) bytes += textBytes(r.before) + ((r.part === 'buildings' && !(r.after instanceof MemberDiff)) || r.part === 'lots' ? 0 : textBytes(r.after));
   for (const l of lists) bytes += textBytes(l.before) + textBytes(l.after);
   for (const v of values) bytes += textBytes(v.before) + textBytes(v.after);
   return bytes;
@@ -3102,8 +3155,8 @@ function patchBytes(records: DocPatch['records'], lists: DocPatch['lists'], valu
 
 export interface Restoration {
   readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly value: unknown }[];
-  /** The whole map as its text, when the edit replaced it whole (`RoadDoc.replaceWith`): put back as it is, nothing else. */
-  readonly whole?: string;
+  /** The whole map as its image, when the edit replaced it whole (`RoadDoc.replaceWith`): put back as it is, nothing else. */
+  readonly whole?: DocImage;
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly remove: number; readonly items: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly value: unknown }[];
 }
@@ -3497,11 +3550,55 @@ interface EditRecorder {
   readonly records: Map<RecordPart, Map<number, unknown>>;
   readonly lists: Map<ListPart, unknown[]>;
   readonly values: Map<ValuePart, unknown>;
-  /** The map before, as its text (`toText`). */
-  whole: string | null;
+  /** The map before, as its image (`image`). */
+  whole: DocImage | null;
 }
 
 const VALUE_PARTS: readonly ValuePart[] = ['terrainRelief', 'markingStyle', 'nature', 'fogSettings', 'gullyAuto', 'weather', 'economy', 'transit', 'nextZoneId', 'nextLotId', 'allocators'];
+
+/** ONE SIDE OF A BUILDING'S CHANGE AS ITS MEMBERS THAT CHANGED (tldraw's history of record diffs; report "Arquitetura para cidades grandes", "A conta de memória": undo memory proportional to the change, not to the records): the record's keys in their order, and the values of those that differ from the other side. Put back over the record as it stands on the other side (`over`), its keys in their order: the record undone is the record it was, text for text. */
+export class MemberDiff {
+  constructor(readonly order: readonly string[], readonly changed: Readonly<Record<string, unknown>>) {}
+
+  /** The key orders met, each one list for every record of that shape: a building's ~25 keys kept once, not twice an edit. At most `ORDERS_KEPT`: past it, a record's own list (a map of odd records cannot grow it without bound). */
+  private static readonly orders = new Map<string, readonly string[]>();
+  private static readonly ORDERS_KEPT = 4096;
+
+  /** A record's keys in their order, one list for every record of that shape. */
+  static keyOrder(record: Record<string, unknown>): readonly string[] {
+    const keys = Object.keys(record);
+    const name = keys.join('\u0000');
+    const known = MemberDiff.orders.get(name);
+    if (known) return known;
+    if (MemberDiff.orders.size < MemberDiff.ORDERS_KEPT) MemberDiff.orders.set(name, keys);
+    return keys;
+  }
+
+  /** What the step holds of its own (`patchBytes`): the values that changed; the key orders are one list for every record of that shape (`keyOrder`). */
+  toJSON(): unknown {
+    return this.changed;
+  }
+
+  /** The record of this side, made from the other side's (`current`): its own values where they changed, the other's shared elsewhere (records are never changed in place). */
+  over(current: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+    if (!current) return undefined;
+    const out: Record<string, unknown> = {};
+    for (const key of this.order) out[key] = Object.hasOwn(this.changed, key) ? this.changed[key] : current[key];
+    return out;
+  }
+}
+
+/** The members of two records that differ, as each side's `MemberDiff`. */
+function memberDiffs(before: Record<string, unknown>, after: Record<string, unknown>): [MemberDiff, MemberDiff] {
+  const was: Record<string, unknown> = {}, now: Record<string, unknown> = {};
+  for (const key of Object.keys(before)) {
+    if (Object.hasOwn(after, key) && samePlain(before[key], after[key])) continue;
+    was[key] = before[key];
+    if (Object.hasOwn(after, key)) now[key] = after[key];
+  }
+  for (const key of Object.keys(after)) if (!Object.hasOwn(before, key)) now[key] = after[key];
+  return [new MemberDiff(MemberDiff.keyOrder(before), was), new MemberDiff(MemberDiff.keyOrder(after), now)];
+}
 
 /** A record kept apart from the one that goes on being written: the roads' copied as the fork copies them, the stores' by reference */
 function copyRecord(part: RecordPart, value: unknown): unknown {

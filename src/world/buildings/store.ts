@@ -1,5 +1,4 @@
 import { internMembers } from './intern';
-import { RecordMap } from '@core/recordMap';
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect, rectsAround } from '../changes';
 import { JournalCursor } from '../derived';
@@ -7,6 +6,8 @@ import { samePlain } from '@core/plain';
 import { ForkMap } from '@core/forkMap';
 import { inheritStoredBounds, storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
+import { BuildingItems } from './items';
+import { type BuildingSections, itemsOfSections, sectionsOf } from './sections';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
 import { type Building, type BuildingId, asBuildingId, settleBuilding } from './types';
 
@@ -26,8 +27,8 @@ function rectOf(b: Building): ChangeRect {
 
 /** DO NOT copy a record on the way in again "to be safe": the deep copy of every record added or replaced */
 export class BuildingStore {
-  /** @mapWide Every building of the map. A working copy's lies over the original's (`forkFrom`). */
-  private items: Map<BuildingId, Building> = new RecordMap();
+  /** @mapWide Every building of the map: the table the map was opened from, read when asked, and the records written over it (`BuildingItems`). A working copy's lies over the original's (`forkFrom`). */
+  private items: Map<BuildingId, Building> = new BuildingItems();
   /** The store a working copy lies over (`forkFrom`) while it has written nothing: its questions by place are that store's. */
   private below: BuildingStore | null = null;
   private ids = new IdAllocator(1);
@@ -44,7 +45,7 @@ export class BuildingStore {
 
   /** Told each building's record before it is written (an edit being recorded, `RoadDoc.beginEdit`); null: nobody listens. */
   watch(before: ((id: BuildingId, was: Building | undefined) => void) | null): void {
-    if (this.items instanceof RecordMap) this.items.before = before;
+    if (this.items instanceof BuildingItems) this.items.before = before;
   }
 
   /** The serial of the latest change of the buildings in the diary (their shape, place or use; not their wear). */
@@ -256,6 +257,46 @@ export class BuildingStore {
     this.changed(null, 'loaded');
   }
 
+  /** Loads a map's buildings from their table (`editor/preparedCity.ts`, the binary save `world/docBinary.ts`): DO NOT decode them - the table is the store's source of truth, a record decoded when it is read (`TableRows`). */
+  loadSections(sections: BuildingSections): void {
+    this.leaveBelow();
+    const settled = this.settled;
+    // Plain and interned where the table was made (`prepareCity`, `encodeRecords` of settled records): each read one settled already.
+    this.items = this.withWatch(itemsOfSections(sections, (b) => { settled.add(b); }));
+    this.grid = null;
+    let top = 0;
+    for (const id of this.items.keys()) if (id > top) top = id;
+    if (top > 0) this.ids.reserve(top);
+    this.changed(null, 'loaded');
+  }
+
+  /** The buildings as buffers (`BuildingSections`): the table shared, the records written encoded - the save's, the simulation's, a whole map's undo. */
+  sections(): BuildingSections {
+    return sectionsOf(this.items);
+  }
+
+  /** New items told of their writes as the ones they replace were (an edit being recorded, `watch`). */
+  private withWatch(items: BuildingItems): BuildingItems {
+    if (this.items instanceof BuildingItems) items.before = this.items.before;
+    return items;
+  }
+
+  /** A map opened, or a whole map put back by undo (`RoadDoc.replaceWhole`): the other store's buildings taken as they are, one change of the whole map - DO NOT compare them record by record. */
+  takeWhole(source: BuildingStore): void {
+    this.below = null;
+    if (source.items instanceof BuildingItems) {
+      this.items = this.withWatch(source.items.copy());
+    } else {
+      const items = this.withWatch(new BuildingItems());
+      for (const [id, b] of source.items) items.set(id, b);
+      this.items = items;
+    }
+    this.settled = source.settled;
+    this.grid = null;
+    this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
+    this.changed(null, 'loaded');
+  }
+
   /** Loads stored buildings, repairing or dropping what cannot be read. */
   load(data: readonly unknown[] | undefined): void {
     this.leaveBelow();
@@ -274,9 +315,15 @@ export class BuildingStore {
   /** The same records as another store (they are never changed in place) */
   shareFrom(source: BuildingStore): void {
     this.leaveBelow();
-    this.items.clear();
     this.grid = null;
-    for (const [id, b] of source.items) this.items.set(id, b);
+    // The same table and records written: a copy of what was written, never of the table (`BuildingItems.copy`).
+    if (source.items instanceof BuildingItems) {
+      this.items.clear();
+      this.items = this.withWatch(source.items.copy());
+    } else {
+      this.items.clear();
+      for (const [id, b] of source.items) this.items.set(id, b);
+    }
     // The same records, known plain to both (`settleBuilding`).
     this.settled = source.settled;
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
@@ -323,7 +370,11 @@ export class BuildingStore {
     const touched: Building[] = [];
     /** Records that differ in their wear alone (`wear`): written as `buildingWear`, never as a change of shape. */
     const worn: Building[] = [];
+    const mine = this.items, theirs = source.items;
+    const shared = mine instanceof BuildingItems && theirs instanceof BuildingItems && mine.table !== null && mine.table === theirs.table;
     const take = (id: BuildingId): void => {
+      // One table under both, the record written by neither: the very same, known without decoding it.
+      if (shared && mine.sameUnwritten(theirs, id)) return;
       const was = this.items.get(id);
       const now = source.items.get(id);
       if (was === now) return;

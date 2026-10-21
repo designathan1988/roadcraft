@@ -292,6 +292,14 @@ export class LotStore {
     this.listed = null;
   }
 
+  /** Another map's lots in place of these (`RoadDoc.replaceWhole`): its records taken as they are, the whole map written changed - DO NOT compare them lot by lot. */
+  takeWhole(source: LotStore, cause: string): void {
+    this.shareFrom(source);
+    this.keysRewritten++;
+    this.journal.record('lots', null, { cause });
+    this.journal.record('lotKeys', null, { cause });
+  }
+
   /** DO NOT compare the lots as text (`JSON.stringify` of the whole list) */
   replaceWith(source: LotStore, changed: readonly number[] | null, cause: string): boolean {
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
