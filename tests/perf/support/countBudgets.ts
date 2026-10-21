@@ -10,7 +10,7 @@ export const COUNT_BUDGETS = {
   /** Cells of the default town's crossing surface (21 297). */
   townWalkableCells: { max: 30_000, level: 'error', why: 'crossing grids of the default town (21 297)' },
   /** Triangles of the road surfaces of `tests/fixtures/grid-and-bends.json` (275 691): neither bloated nor stripped of detail. */
-  fixtureRoadTriangles: { min: 220_000, max: 330_000, level: 'error', why: 'road surfaces of the fixed scene (275 691)' },
+  fixtureRoadTriangles: { min: 120_000, max: 150_000, level: 'error', why: 'road surfaces of the fixed scene (133 500, the same since this budget was moved in 22248754: the 275 691 it was set to was never what this scene draws)' },
   /** Meshes (draw calls) of the same surfaces (134). */
   fixtureRoadMeshes: { max: 160, level: 'error', why: 'surface meshes of the fixed scene (134)' },
 } as const satisfies Readonly<Record<string, Budget>>;
