@@ -380,6 +380,9 @@ function failHost(host: Host, message: string, dead: boolean): void {
   dispatch();
 }
 
+/** Lane messages in flight on a worker past which no queued job is given it (`hostFor`). */
+const LANE_BACKLOG_MOST = 8;
+
 /** The port a worker runs a service's queued jobs on, one per service and worker. */
 function queuePort(host: Host, service: JobService): number {
   let port = host.queuePorts.get(service);
@@ -403,15 +406,25 @@ function hostFor(service: JobService, crosses: boolean): Host | null {
     }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
-      if (warm) warmBusy ??= host; else coldBusy ??= host;
+      // DO NOT queue a job behind a backlog of lane messages (`LANE_BACKLOG_MOST`): it waits for a free worker instead. The last mass of a new city stood 3 s behind a lane worker's 344 writes of road tiles while six workers were idle, the curtain waiting for it (2026-10-21).
+      if (host.laneWork <= LANE_BACKLOG_MOST) { if (warm) warmBusy ??= host; else coldBusy ??= host; }
       continue;
     }
     if (warm) return host;
     cold ??= host;
   }
   // A long-running job fit to cross (the city's generation) to a job process first: DO NOT hold a page worker for seconds with it while one stands idle there (the building cells queue on the page's).
-  if (crosses && system.makeWorker && LONG_RUNNING.includes(service)) { const away = idleLong && !idleLong.inPage ? idleLong : growSpareLong(); if (away) return away; }
+  // DO NOT put it on a worker that hosts lanes (`PROCESS_LANES`, the road tiles): a lane's next message waited behind the whole job there, a city's growth of seconds.
+  if (crosses && system.makeWorker && LONG_RUNNING.includes(service)) {
+    const away = idleLong && !idleLong.inPage && idleLong.services.size === 0 ? idleLong : growSpareLong() ?? laneFreeLong();
+    if (away) return away;
+  }
   return grow(false) ?? cold ?? idleLong ?? (system.makeWorker ? (crosses ? growSpareLong() : null) : grow(true)) ?? warmBusy ?? coldBusy;
+}
+
+/** A long worker in a job process with no lanes and no job: a long-running job's, when none can be made. */
+function laneFreeLong(): Host | null {
+  return system.workers.find((h) => h.long && !h.inPage && !h.job && !h.failed && h.services.size === 0) ?? null;
 }
 
 /** A long worker made for queued jobs (`hostFor`) while the long side keeps room for one more: a tile's or the growth's lane asked later still gets a worker of its own (`place`). */
@@ -587,7 +600,8 @@ export class JobPort {
     if (this.inFlight === 0) return false;
     this.inFlight--;
     this.host.laneWork--;
-    return this.host.laneWork === 0;
+    // Free, or back under the backlog a queued job may wait behind (`LANE_BACKLOG_MOST`): the queue is given out again.
+    return this.host.laneWork === 0 || this.host.laneWork === LANE_BACKLOG_MOST;
   }
 
   /** The lane let go (its service's state stays in the worker for the next lane of the kind). */

@@ -11,7 +11,7 @@ import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkR
 import { levelCells } from './levelKeys';
 import { groundAround } from '../sharedGround';
 import { Digest } from '../../core/digest';
-import { forgetOtherDerived, keepDerivedNow, readDerived } from '../derivedCache';
+import { forgetOtherDerived, keepDerivedNow, readDerived, readDerivedKeys } from '../derivedCache';
 
 declare const __CELL_WORK_HASH__: string | undefined;
 /** The cells' jobs kept from one session to the next, by this build's fingerprint of their code (`cook-plugin.ts` DERIVED). */
@@ -20,6 +20,12 @@ const CELL_PREFIX = CELL_HASH ? `cellWork:${CELL_HASH}:` : null;
 /** The kinds kept: the masses and the far level, what the opening waits for (`layer.ts` coarsePending, viewPending). DO NOT make them again at every launch: the same buildings on the same ground made the same masses, 117 jobs and ~3 s of every worker before a reopened city showed (2026-10-21). The detail ('cell') is the largest and lands after the curtain. */
 const KEPT_KINDS: ReadonlySet<JobKind> = new Set(['facade', 'mass', 'massTile', 'massPlate']);
 let forgotOthers = false;
+/** The keys kept, read once at the start (a keys-only read) and added to as results are kept: a job not in it is asked at once. DO NOT read the store before every job: a read waits for every write on the store before it (IndexedDB transactions), the road tiles' and the cells' own, and a city not kept yet opened 4 s later (2026-10-21). */
+let keptKeys: Promise<Set<string>> | null = null;
+// Whole keys: `readDerivedKeys` gives them without their prefix.
+const keptCellKeys = (): Promise<Set<string>> => (keptKeys ??= CELL_PREFIX
+  ? readDerivedKeys(CELL_PREFIX).then((keys) => new Set([...keys].map((k) => CELL_PREFIX + k)), () => new Set<string>())
+  : Promise.resolve(new Set<string>()));
 
 /** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`), through the job system's one queue (`jobPool.ts` `submitJob`) */
 
@@ -128,7 +134,10 @@ export class CellPool {
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
   /** `text`: where an entry's record is read (`recordTable.ts`), taken when the job is sent. */
   constructor(private readonly boxes: () => KitBoxes, private readonly text: (entry: CellEntry) => () => RecordRef, private readonly workers = true,
-    private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
+    private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {
+    // The kept keys read now, at the start, before the town's writes come (`keptCellKeys`).
+    if (workers && canQueueJobs()) void keptCellKeys();
+  }
 
   /** Jobs asked and not answered. */
   get running(): number {
@@ -154,11 +163,16 @@ export class CellPool {
     if (key !== null) this.byKey.set(key, asked);
     if (asked.stored === null) { this.submit(asked); return asked.id; }
     // Kept by an earlier session: taken as its job would answer it, the job never asked.
-    readDerived<CellResult>(asked.stored).catch(() => undefined).then((kept) => {
-      if (this.asked.get(asked.id) !== asked) return;
-      if (kept && typeof kept === 'object' && 'summaries' in kept) { this.forget(asked); this.learn(asked, kept); asked.done(kept); return; }
-      this.submit(asked);
-    }, () => {});
+    const stored = asked.stored;
+    void keptCellKeys().then((keys) => {
+      if (this.asked.get(asked.id) !== asked) return undefined;
+      if (!keys.has(stored)) { this.submit(asked); return undefined; }
+      return readDerived<CellResult>(stored).catch(() => undefined).then((kept) => {
+        if (this.asked.get(asked.id) !== asked) return;
+        if (kept && typeof kept === 'object' && 'summaries' in kept) { this.forget(asked); this.learn(asked, kept); asked.done(kept); return; }
+        this.submit(asked);
+      });
+    }, () => this.submit(asked));
     return asked.id;
   }
 
@@ -252,7 +266,8 @@ export class CellPool {
     this.forget(asked);
     if (reply.kind === 'done') {
       // Kept before it is handed on: the store clones it now, its arrays are the layer's after (`keepDerivedNow`).
-      if (asked.stored !== null) keepDerivedNow(asked.stored, reply.result);
+      const stored = asked.stored;
+      if (stored !== null && keepDerivedNow(stored, reply.result)) void keptCellKeys().then((keys) => keys.add(stored));
       this.learn(asked, reply.result);
       asked.done(reply.result);
       return;

@@ -2072,11 +2072,14 @@ function nextCitySeed(kind: CityGenAsk['kind'], take = false): number {
 }
 async function cityAhead(kind: CityGenAsk['kind']): Promise<void> {
   if (!desktopJobs || !CITY_PREFIX || !canQueueJobs()) return;
+  // DO NOT grow it while a city opens or its world is built (the fill after the curtain included): it took the job processes the road tiles' lanes are on, and the first large city's surfaces waited ~7 s behind it (2026-10-21).
+  while (generatingCity || scene.opening || scene.worldBusy) await new Promise((wake) => setTimeout(wake, 3000));
   const seed = nextCitySeed(kind);
   const key = `${CITY_PREFIX}${kind}:${seed}`;
   if (citiesAhead.has(key)) return;
   const kept = await readDerivedKeys(CITY_PREFIX).catch(() => new Set<string>());
-  if (kept.has(key) || citiesAhead.has(key)) return;
+  // `readDerivedKeys` gives the keys without their prefix: DO NOT ask for the whole key, every kept city was grown again.
+  if (kept.has(key.slice(CITY_PREFIX.length)) || citiesAhead.has(key)) return;
   const made = cityJob({ id: cityAskId++, kind, seed }, key, 1_000_000);
   citiesAhead.set(key, made);
   void made.catch(() => {}).finally(() => { if (citiesAhead.get(key) === made) citiesAhead.delete(key); });
