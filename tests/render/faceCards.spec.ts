@@ -54,7 +54,54 @@ function compile(atlas: PersonLayers, skin: SkinAppearance): Record<string, { va
   return shader.uniforms as Record<string, { value: unknown }>;
 }
 
+/** A card of its own bytes at the layer's size (a padded garment's), every byte `value`. */
+function bytesCard(value: number): Texture {
+  const texture = new Texture({ data: new Uint8Array(SIZE * SIZE * 4).fill(value), width: SIZE, height: SIZE } as unknown as HTMLImageElement);
+  texture.flipY = false;
+  return texture;
+}
+
+/** What three r186 does at a send (`WebGLTextures.uploadTexture`): reads `image.data`, then calls `onUpdate`. */
+function send(array: { image: { data: unknown }; onUpdate: ((t: never) => void) | null }): Uint8Array {
+  const data = array.image.data as Uint8Array;
+  array.onUpdate?.(array as never);
+  return data;
+}
+
 describe('face cards', () => {
+  it('keeps no texels of the array but while three sends them, each layer made from its card', () => {
+    const atlas = createPersonLayers();
+    const bytes = SIZE * SIZE * 4;
+    const cards = [bytesCard(10), bytesCard(20)];
+    expect(cards.map((c) => atlas.small.layerOf(c))).toEqual([0, 1]);
+    const array = atlas.small.uniform.value!;
+    // The first send is whole: every layer written so far.
+    const whole = send(array);
+    expect(whole.length).toBe(bytes * 24);
+    expect([whole[0], whole[bytes], whole[2 * bytes]]).toEqual([10, 20, 0]);
+    // A send again (a context restored): a new array, the layers made again from their cards.
+    const again = send(array);
+    expect(again === whole).toBe(false);
+    expect([again[5], again[bytes + 5]]).toEqual([10, 20]);
+    // A card written after: only its layer listed and filled.
+    const third = bytesCard(30);
+    cards.push(third);
+    expect(atlas.small.layerOf(third)).toBe(2);
+    expect([...array.layerUpdates]).toEqual([2]);
+    const layer = send(array);
+    expect([layer[0], layer[2 * bytes]]).toEqual([0, 30]);
+    // Grown past its 24 layers: the bigger array's first send holds every card.
+    for (let i = 3; i < 25; i++) { const c = bytesCard(i); cards.push(c); atlas.small.layerOf(c); }
+    const grown = atlas.small.uniform.value!;
+    expect(grown === array).toBe(false);
+    const all = send(grown);
+    expect(all.length).toBe(bytes * 48);
+    expect([all[0], all[bytes], all[2 * bytes], all[24 * bytes]]).toEqual([10, 20, 30, 24]);
+    for (const c of cards) c.dispose();
+    atlas.dispose();
+  });
+
+
   it('gives a released card layer back: a long session of people coming and going never runs out', () => {
     // Each person's brow and lash textures are released when the person leaves (`releaseSkinAppearance` disposes them)
     const atlas = createPersonLayers();

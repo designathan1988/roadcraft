@@ -3,6 +3,7 @@ import { EYE_COLOURS, type PersonSpec } from '@people/spec';
 import { loadProxyItem, proxyUrl, type ProxyItem } from '@people/body/proxy';
 import { MAX_TEXTURED, texturedGarments } from './garmentSlots';
 import { padGarmentFileInWorker, padGarmentInWorker } from './garmentPaddingPool';
+import { stageTexels, type TexelPart } from '../stagedTexels';
 import { cancelUploads, queueUpload } from '../uploads';
 import index from '../../../public/models/people/skins/index.json';
 // The skin textures' URLs by file name, one module for the folder (`model-urls-plugin.ts`)
@@ -57,7 +58,7 @@ export function createPersonLayers(): PersonLayers {
 }
 
 function newLayerArray(size: number, depth: number): DataArrayTexture {
-  const array = new DataArrayTexture(new Uint8Array(size * size * 4 * depth), size, size, depth);
+  const array = new DataArrayTexture(null, size, size, depth);
   // As each texture it holds was sampled on its own: sRGB, trilinear, edges clamped, no flip
   array.colorSpace = SRGBColorSpace;
   array.magFilter = LinearFilter;
@@ -85,14 +86,35 @@ function createCardAtlas(size: number, layers: number): CardAtlas {
   const free: number[] = [];
   /** Layers ever handed out: the next new one. */
   let used = 0;
+  /** The texture each layer is copied from, by layer: what a send makes the layer from again. */
+  const sourceOf: (Texture | undefined)[] = [];
+  /** Layers' pixels written and not sent yet, by layer: copied once, kept only until three sends them. */
+  const pending = new Map<number, ArrayLike<number>>();
   let canvas: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
   /** DO NOT list a layer on an array not yet uploaded */
   let whole = true;
-  const array = (): DataArrayTexture => uniform.value ??= fresh(newLayerArray(size, layers));
+  const array = (): DataArrayTexture => uniform.value ??= fresh(layers);
+  /** The layers three sends, made from their pixels written or their textures again (a grown array, a context restored). */
+  const fill = (into: Uint8Array, part: TexelPart): void => {
+    const each = part.layers ?? sourceOf.keys();
+    for (const layer of each) {
+      const source = sourceOf[layer];
+      const pixels = pending.get(layer) ?? (source ? ownBytes(source, size) ?? drawn(source) : null);
+      if (pixels) into.set(pixels, layer * bytes);
+    }
+  };
   /** A new array: sent whole on its first upload (three calls `onUpdate` once it has been). */
-  const fresh = (texture: DataArrayTexture): DataArrayTexture => {
+  const fresh = (depth: number): DataArrayTexture => {
+    const texture = newLayerArray(size, depth);
     whole = true;
-    texture.onUpdate = () => { if (uniform.value === texture) whole = false; };
+    texture.onUpdate = () => {
+      if (uniform.value !== texture) return;
+      whole = false;
+      // Every pending layer went with this send: a whole one, or the layers listed as each was written.
+      pending.clear();
+    };
+    // DO NOT keep the array's texels on the page (the arrays of a crowd, tens of MB): each send's own array, made from the layers' pictures.
+    stageTexels(texture, Uint8Array, bytes * depth, 4, fill, { shared: false });
     return texture;
   };
   /** DO NOT cap the layers or hand out -1 when full: a brow without a layer is drawn as an opaque grey card */
@@ -101,8 +123,8 @@ function createCardAtlas(size: number, layers: number): CardAtlas {
     if (reused !== undefined) return reused;
     const current = array();
     if (used >= current.image.depth) {
-      const grown = fresh(newLayerArray(size, current.image.depth * 2));
-      (grown.image.data as Uint8Array).set(current.image.data as Uint8Array);
+      // Sent whole on its first upload: every layer made again from its texture.
+      const grown = fresh(current.image.depth * 2);
       cancelUploads([current]);
       current.dispose();
       uniform.value = grown;
@@ -148,12 +170,15 @@ function createCardAtlas(size: number, layers: number): CardAtlas {
       if (!pixels) return -1;
       const layer = take();
       const target = array();
-      (target.image.data as Uint8Array).set(pixels, layer * bytes);
+      sourceOf[layer] = texture;
+      pending.set(layer, pixels);
       if (!whole) target.addLayerUpdate(layer);
       target.needsUpdate = true;
       const release = (): void => {
         texture.removeEventListener('dispose', release);
         held.delete(texture);
+        sourceOf[layer] = undefined;
+        pending.delete(layer);
         free.push(layer);
       };
       held.set(texture, { layer, release });
@@ -163,6 +188,8 @@ function createCardAtlas(size: number, layers: number): CardAtlas {
     dispose() {
       for (const [texture, { release }] of held) texture.removeEventListener('dispose', release);
       held.clear();
+      sourceOf.length = 0;
+      pending.clear();
       free.length = 0;
       used = 0;
       if (uniform.value) cancelUploads([uniform.value]);

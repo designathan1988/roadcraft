@@ -78,6 +78,25 @@ describe('texels staged for a send', () => {
     expect((send(texture) as Float32Array)[0]).toBe(7);
   });
 
+  it('makes an array of its own for each send, unshared, and lets it go once sent', () => {
+    const a = new DataTexture(null, 8, 8, RGBAFormat, FloatType), b = new DataTexture(null, 8, 8, RGBAFormat, FloatType);
+    let fills = 0;
+    stageTexels(a, Float32Array, 256, 4, (into) => { fills++; into.fill(1); }, { shared: false });
+    stageTexels(b, Float32Array, 256, 4, (into) => into.fill(2), { shared: false });
+    a.needsUpdate = true;
+    b.needsUpdate = true;
+    const sentA = send(a) as Float32Array;
+    const sentB = send(b) as Float32Array;
+    expect(sentB).not.toBe(sentA);
+    expect(sentA[0]).toBe(1);
+    expect(fills).toBe(1);
+    // Sent: the next read (a context restored) is a new array, filled again.
+    const again = send(a) as Float32Array;
+    expect(again).not.toBe(sentA);
+    expect(again[255]).toBe(1);
+    expect(fills).toBe(2);
+  });
+
   it('keeps an onUpdate given before it', () => {
     const texture = new DataTexture(null, 2, 2, RGBAFormat, FloatType);
     let calls = 0;

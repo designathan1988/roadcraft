@@ -1,12 +1,30 @@
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, UnsignedByteType } from 'three';
+import { stageTexels } from '../stagedTexels';
 
 /** The strand atlas a procedural hair card samples (`people/hair/procedural.ts`), as DATA, not colour */
 const CACHE = new Map<string, DataTexture>();
+const W = 512, H = 1024;
 
 export function hairStrandTexture(kind: 'straight' | 'wavy'): DataTexture {
   const known = CACHE.get(kind);
   if (known) return known;
-  const W = 512, H = 1024, strips = 4, sw = W / strips;
+  const texture = new DataTexture(null, W, H, RGBAFormat, UnsignedByteType);
+  // DO NOT keep the texels on the page: drawn again at each send (once, and at a context restored), in an array of the send's own.
+  stageTexels(texture, Uint8Array, W * H * 4, 4, (into) => strandsInto(kind, into), { shared: false });
+  texture.colorSpace = NoColorSpace;
+  texture.flipY = false;
+  texture.generateMipmaps = true;
+  texture.minFilter = LinearMipmapLinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  CACHE.set(kind, texture);
+  return texture;
+}
+
+/** The strands of `kind`, the same at every call: coverage, how far along, and a seed a strand (RGB). */
+function strandsInto(kind: 'straight' | 'wavy', data: Uint8Array): void {
+  const strips = 4, sw = W / strips;
   const cover = new Float32Array(W * H), along = new Float32Array(W * H), seeds = new Float32Array(W * H).fill(0.5);
   let s = kind === 'wavy' ? 7 : 3;
   const rnd = (): number => { s = (s * 16807) % 2147483647; return s / 2147483647; };
@@ -39,21 +57,10 @@ export function hairStrandTexture(kind: 'straight' | 'wavy'): DataTexture {
     }
     for (let y = 0; y < H; y++) for (let x = x0; x < x0 + sw; x++) along[y * W + x] = y < band ? 0 : y / H;
   }
-  const data = new Uint8Array(W * H * 4);
   for (let i = 0; i < W * H; i++) {
     data[i * 4] = Math.round(cover[i]! * 255);
     data[i * 4 + 1] = Math.round(along[i]! * 255);
     data[i * 4 + 2] = Math.round(seeds[i]! * 255);
     data[i * 4 + 3] = 255;
   }
-  const texture = new DataTexture(data, W, H, RGBAFormat, UnsignedByteType);
-  texture.colorSpace = NoColorSpace;
-  texture.flipY = false;
-  texture.generateMipmaps = true;
-  texture.minFilter = LinearMipmapLinearFilter;
-  texture.magFilter = LinearFilter;
-  texture.anisotropy = 4;
-  texture.needsUpdate = true;
-  CACHE.set(kind, texture);
-  return texture;
 }

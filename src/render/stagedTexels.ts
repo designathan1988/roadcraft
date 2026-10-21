@@ -58,10 +58,19 @@ export interface StagedTexels<T extends Texels> {
   letGoWhenSent(): void;
 }
 
-/** Makes `texture` read its texels from `fill` at each send, into an array shared by the page, unless it holds its own (`hold`). */
+/** How a texture is staged. */
+export interface StageOptions {
+  /** false: an array of the texture's own made at each send and let go once sent, for a texture of a size few share (a page-wide one would keep its whole size for good). */
+  readonly shared?: boolean;
+}
+
+/** Makes `texture` read its texels from `fill` at each send, into an array shared by the page (one of its own for the send, `shared` false), unless it holds its own (`hold`). */
 export function stageTexels<T extends Texels>(texture: DataTexture | DataArrayTexture, type: TexelsOf<T>, length: number, channels: number,
-  fill: (into: T, part: TexelPart) => void): StagedTexels<T> {
+  fill: (into: T, part: TexelPart) => void, { shared = true }: StageOptions = {}): StagedTexels<T> {
   let held: T | null = null;
+  /** The array of the send under way (`shared` false), and the version it was filled for. */
+  let sending: T | null = null;
+  let sendingVersion = -1;
   let letGo = false;
   let sentVersion = -1;
   Object.defineProperty(texture.image, 'data', {
@@ -69,6 +78,13 @@ export function stageTexels<T extends Texels>(texture: DataTexture | DataArrayTe
     enumerable: true,
     get(): T {
       if (held) return held;
+      if (!shared) {
+        if (sending && sendingVersion === texture.version) return sending;
+        sending = new type(length);
+        sendingVersion = texture.version;
+        fill(sending, partOf(texture, channels));
+        return sending;
+      }
       const into = stagingOf(type, length);
       if (filledFor === texture && filledVersion === texture.version && filledArray === into) return into;
       fill(into, partOf(texture, channels));
@@ -85,6 +101,7 @@ export function stageTexels<T extends Texels>(texture: DataTexture | DataArrayTe
     sentVersion = texture.version;
     // The next send (a context restored) fills again: what three read here may have been a part.
     if (filledFor === texture) filledFor = null;
+    sending = null;
     if (letGo) { held = null; letGo = false; }
   };
   return {
