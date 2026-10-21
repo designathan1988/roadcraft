@@ -121,6 +121,7 @@ export class MesoModel {
 
   /** A link made or changed: its vehicles kept (spread along it again when its length or speed changed). */
   setLink(slot: number, spec: MesoLinkSpec): void {
+    this.finish();
     this.reserve(slot + 1);
     const had = this.has(slot);
     const keep = had ? this.count(slot) : 0;
@@ -140,6 +141,7 @@ export class MesoModel {
 
   /** A link gone: what was on it and waiting for it leaves the model (counted as arrived); its blocks given back. */
   dropLink(slot: number): void {
+    this.finish();
     if (!this.has(slot)) return;
     this.sunk += this.count(slot) + this.origin[slot]!;
     if (this.insideOf[slot]) this.sunk -= this.microOf[slot]!;
@@ -155,6 +157,7 @@ export class MesoModel {
 
   /** The links `slot` feeds, each with its weight (normalised here); none: everything reaching its end leaves the network. */
   setTurns(slot: number, to: readonly number[], weights: readonly number[]): void {
+    this.finish();
     if (!this.has(slot)) return;
     let sum = 0;
     for (const w of weights) sum += Math.max(0, w);
@@ -170,13 +173,15 @@ export class MesoModel {
   }
 
   setGeneration(slot: number, perSecond: number): void {
+    this.finish();
     if (this.has(slot)) this.genOf[slot] = Math.max(0, perSecond);
   }
 
   /** Every link's generation and sink share from its cell's demand (`meso.ts` rates), read from the arrays here: DO NOT ask a link's length, lanes and speed by calls, each double handed back a new heap number a link a step.
-   *  `entry`: each slot's trips from off the world; `cars`, `weight`: its cell's cars per 100 m and the share of trips ending there. */
-  setRates(entry: Float64Array, cars: Float64Array, weight: Float64Array, per100m: number, tripLength: number, scale: number): void {
-    for (let slot = 0; slot < this.size; slot++) {
+   *  `entry`: each slot's trips from off the world; `cars`, `weight`: its cell's cars per 100 m and the share of trips ending there; the slots in [`from`, `to`) only (the meso's step spread over ticks, `meso.ts`). */
+  setRates(entry: Float64Array, cars: Float64Array, weight: Float64Array, per100m: number, tripLength: number, scale: number, from = 0, to = this.size): void {
+    this.finish();
+    for (let slot = from, end = Math.min(to, this.size); slot < end; slot++) {
       if (this.present[slot] !== 1) continue;
       const L = this.lengthOf[slot]!;
       // As `setGeneration` and `setSinkShare` clamp them.
@@ -186,6 +191,7 @@ export class MesoModel {
   }
 
   setSinkShare(slot: number, share: number): void {
+    this.finish();
     if (this.has(slot)) this.sinkOf[slot] = Math.min(1, Math.max(0, share));
   }
 
@@ -236,6 +242,7 @@ export class MesoModel {
 
   /** `n` vehicles put on a link outside the window, spread along it in free flow (counted as generated). */
   seed(slot: number, n: number): void {
+    this.finish();
     if (!this.has(slot) || this.insideOf[slot] || n <= 0) return;
     this.generated += n;
     this.spread(slot, this.count(slot) + n);
@@ -296,6 +303,7 @@ export class MesoModel {
 
   /** The link comes into the micro window: its vehicles are handed over (`pending`), its own counts set aside. */
   enterWindow(slot: number): number {
+    this.finish();
     if (!this.has(slot) || this.insideOf[slot]) return 0;
     const n = this.count(slot);
     this.insideOf[slot] = 1;
@@ -307,6 +315,7 @@ export class MesoModel {
 
   /** The link leaves the micro window with `micro` vehicles of the micro simulation on it (taken off there): they and the pending are the model's again. */
   leaveWindow(slot: number, micro: number): void {
+    this.finish();
     if (!this.has(slot) || !this.insideOf[slot]) return;
     const n = micro + this.pendingOf[slot]!;
     this.handedIn += micro;
@@ -331,6 +340,7 @@ export class MesoModel {
 
   /** A vehicle of the micro simulation drove out of the window onto `slot`: it enters the link now. */
   microExit(slot: number): void {
+    this.finish();
     if (!this.has(slot) || this.insideOf[slot]) return;
     const at = this.upAt[slot]! + this.ringAt(this.upLen[slot]!, 0), d = this.rings.data;
     d[at] = d[at]! + 1;
@@ -340,13 +350,78 @@ export class MesoModel {
   /** The links of the micro window handed a whole vehicle or more by the last step (`pending`): the micro simulation is to make them (`meso.ts` admit). */
   readonly handed: number[] = [];
 
-  /** One step of `dt`: origins fed, sending and receiving flows, each node's transfers, the cumulative counts moved on. */
+  /** Where the step under way stands (`stepSome`): -1 none; 0 the links' sending and receiving flows; 1 the nodes; 2 the origins; 3 the counts moved on. */
+  private phase = -1;
+  private cursor = 0;
+
+  /** Whether a step is under way (begun by `stepSome`, not finished). */
+  get stepping(): boolean {
+    return this.phase >= 0;
+  }
+
+  /** One whole step of `dt`: origins fed, sending and receiving flows, each node's transfers, the cumulative counts moved on. */
   step(): void {
-    const dt = this.dt;
+    this.stepSome(Infinity);
+  }
+
+  /**
+   * Up to `budget` links and nodes of a step (one begun when none is under way); the budget left (the step is done when `stepping` is false).
+   * DO NOT step the whole map in one tick: the step is spread over the ticks of its `dt` (`meso.ts`), each phase resumed where it
+   * stopped. Spread or whole, a step gives the same numbers: anything that changes the links finishes the step under way first
+   * (`finish`), so a step never sees a link change half way.
+   */
+  stepSome(budget: number): number {
+    if (this.phase < 0) this.beginStep();
+    let left = budget;
+    while (left > 0) {
+      if (this.phase === 0) {
+        const end = Math.min(this.size, this.cursor + left);
+        this.linkFlows(this.cursor, end);
+        left -= end - this.cursor;
+        this.cursor = end;
+        if (end >= this.size) { this.phase = 1; this.cursor = 0; }
+      } else if (this.phase === 1) {
+        const limit = this.into.groupLimit, end = Math.min(limit, this.cursor + left);
+        for (let g = this.cursor; g < end; g++) this.node(g);
+        left -= end - this.cursor;
+        this.cursor = end;
+        if (end >= limit) { this.sunk = this.tally[0]!; this.phase = 2; this.cursor = 0; }
+      } else if (this.phase === 2) {
+        const end = Math.min(this.size, this.cursor + left);
+        this.originsIn(this.cursor, end);
+        left -= end - this.cursor;
+        this.cursor = end;
+        if (end >= this.size) { this.phase = 3; this.cursor = 0; }
+      } else {
+        const end = Math.min(this.size, this.cursor + left);
+        this.moveCounts(this.cursor, end);
+        left -= end - this.cursor;
+        this.cursor = end;
+        if (end >= this.size) { this.tick++; this.phase = -1; this.cursor = 0; return left; }
+      }
+    }
+    return left;
+  }
+
+  /** The step under way finished now (a link about to change). */
+  private finish(): void {
+    if (this.phase >= 0) this.stepSome(Infinity);
+  }
+
+  private beginStep(): void {
     this.handed.length = 0;
-    // The tallies summed here and stored once a step, in the same order: DO NOT add to a field a link at a time, a double stored in a field being a new heap number each time (the 20 km's garbage between collections, sim20a).
+    // What the nodes sink, added in `tally` in their order and stored once (`stepSome`).
+    this.tally[0] = this.sunk;
+    this.phase = 0;
+    this.cursor = 0;
+  }
+
+  /** The sending and receiving flows of the links in [`from`, `to`), and their origins fed. */
+  private linkFlows(from: number, to: number): void {
+    const dt = this.dt;
+    // The tallies summed here and stored once a run, in the same order: DO NOT add to a field a link at a time, a double stored in a field being a new heap number each time (the 20 km's garbage between collections, sim20a).
     let generated = this.generated, lost = this.lost;
-    for (let s = 0; s < this.size; s++) {
+    for (let s = from; s < to; s++) {
       this.inflow[s] = 0;
       this.outflow[s] = 0;
       this.sending[s] = 0;
@@ -383,12 +458,11 @@ export class MesoModel {
     }
     this.generated = generated;
     this.lost = lost;
-    // What the nodes sink, added in `tally` in their order and stored once.
-    this.tally[0] = this.sunk;
-    this.into.eachGroup(this.visitNode);
-    this.sunk = this.tally[0]!;
-    // Starting from the street (a driveway, the map's edge) gives way to the through traffic: what room is left.
-    for (let s = 0; s < this.size; s++) {
+  }
+
+  /** Starting from the street (a driveway, the map's edge) gives way to the through traffic: what room is left, for the links in [`from`, `to`). */
+  private originsIn(from: number, to: number): void {
+    for (let s = from; s < to; s++) {
       if (!this.present[s] || this.origin[s]! <= 0) continue;
       const go = Math.min(this.origin[s]!, this.room[s]!);
       if (go <= 0) continue;
@@ -396,8 +470,12 @@ export class MesoModel {
       this.room[s] = this.room[s]! - go;
       this.inflow[s] = this.inflow[s]! + go;
     }
+  }
+
+  /** The cumulative counts of the links in [`from`, `to`) moved on by the step's flows; the window's links handed what came in. */
+  private moveCounts(from: number, to: number): void {
     const d = this.rings.data;
-    for (let s = 0; s < this.size; s++) {
+    for (let s = from; s < to; s++) {
       if (!this.present[s]) continue;
       if (this.insideOf[s]) {
         this.pendingOf[s] = this.pendingOf[s]! + this.inflow[s]!;
@@ -410,7 +488,6 @@ export class MesoModel {
       d[ua + this.ringAt(ul, -1)] = up0 + this.inflow[s]!;
       d[da + this.ringAt(dl, -1)] = down0 + this.outflow[s]!;
     }
-    this.tick++;
   }
 
   /** One node (its group of links in): the approaches' sending flows to their turns, by equal-priority movements, up to each exit's room. */
@@ -518,8 +595,6 @@ export class MesoModel {
     const a = ring[at + this.ringAt(h, k0)]!;
     return f > 0 ? a + (ring[at + this.ringAt(h, k1)]! - a) * f : a;
   }
-  /** `node`, made once for `eachGroup`. */
-  private readonly visitNode = (g: number): void => this.node(g);
   /** What a step's nodes sink, summed in place (`step`). */
   private readonly tally = new Float64Array(1);
 

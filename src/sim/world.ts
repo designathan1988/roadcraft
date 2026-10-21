@@ -146,6 +146,8 @@ export interface MesoTraffic {
   reset(): void;
   /** Whether a point is inside its micro window (the flows at a junction are counted there). */
   insideWindow(x: number, y: number): boolean;
+  /** The micro window as it stands (null before it stands anywhere): the parked cars stand only inside it (`ambient.ts`). */
+  microWindow(): { readonly x: number; readonly y: number; readonly r: number } | null;
 }
 
 export class SimWorld {

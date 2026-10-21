@@ -42,7 +42,7 @@ afterEach(() => { vi.unstubAllGlobals(); KeptWorker.last = null; });
 async function opened(doc: RoadDoc, bake: NetworkBake | null): Promise<{ net: Network; solved: number }> {
   const host = new SimHost(() => {});
   const before = networkWork.built;
-  await host.handle({ type: 'init', map: trafficMapOf(doc), live: [], seed: 7, zones: new Map(), frames: makeSharedFrames(), zonesPrefix: null, ambient: 'edges', bake } as ToSim);
+  await host.handle({ type: 'init', map: trafficMapOf(doc), seed: 7, zones: new Map(), frames: makeSharedFrames(), zonesPrefix: null, ambient: 'edges', bake } as ToSim);
   return { net: (host as unknown as { net: Network }).net, solved: networkWork.built - before };
 }
 

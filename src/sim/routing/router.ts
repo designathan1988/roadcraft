@@ -6,6 +6,7 @@ import { routeToDestination } from './destination';
 import { planTrip } from '../drive/tactical';
 import { m } from '@world/units';
 import { rebuildWork } from '@world/rebuildWork';
+import { mayRequestSearch } from './searchScratch';
 
 /** Horizon for a vehicle with no reachable boundary destination. */
 const HORIZON = 24;
@@ -310,6 +311,8 @@ function routeCost(
 /** Lets a driver who has been held up look for another way round. */
 export function reconsiderRoute(w: SimWorld, v: Vehicle): void {
   if (v.heldUp < v.driver.patience) return;
+  // A new trip search can wait: past the tick's budget the driver asks again next tick (`SEARCHES_PER_TICK`).
+  if (v.destination && !mayRequestSearch(w)) return;
   v.heldUp = 0;
 
   // A granted movement is a transaction in progress; a rear still inside a junction is the same.
