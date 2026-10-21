@@ -4050,6 +4050,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     mesh.updateMatrix();
     group.add(mesh);
   }
+  // The group holds them now: the list let go. DO NOT keep it filled: V8 kept it in this function's context though no closure reads it (a heap snapshot of 2026-10-20: context vars refill, kit, group, meshes, triangles), and every shell taken into the multi-draw batch stayed alive in it with its arrays.
+  meshes.length = 0;
 
   return {
     group,
