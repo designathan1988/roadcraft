@@ -32,6 +32,9 @@ const HORIZON_HALF = m(150);
 /** A cell comes near only when its box, grown by this share of a cell, meets the view's frustum; a near cell stays near while its box grown by `VIEW_KEEP` does (hysteresis, so a pan does not let go what it just made). */
 const VIEW_COME = 0.125;
 const VIEW_KEEP = 0.5;
+/** The vertical extent a tile's or a plate's box is tested against the view with (`levelInView`): below any ground, and as tall as a tower before its masses say how tall it is. */
+const LEVEL_FLOOR = m(-500);
+const LEVEL_CEILING = m(400);
 
 /** A cell's key from its column and row (`layer.ts` `cellOf`). */
 const keyOf = (i: number, j: number): string => `${i},${j}`;
@@ -416,6 +419,15 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     tested.set(cell, { serial: viewSerial, grow, x0: cell.x0, y0: cell.y0, x1: cell.x1, y1: cell.y1, bottom: cell.bottom, top: cell.top, inside });
     return inside;
   };
+  /** A level's box (as tall as its masses, or as a tower before they come) meets the view's frustum grown by `grow` cells. */
+  const levelBox = new Box3();
+  const levelInView = (view: Frustum | null | undefined, level: Level, grow: number): boolean => {
+    if (!view) return true;
+    const g = grow * cellSize;
+    levelBox.min.set(level.x0 - g, LEVEL_FLOOR, -(level.y1 + g));
+    levelBox.max.set(level.x1 + g, Math.max(level.top, LEVEL_CEILING), -(level.y0 - g));
+    return view.intersectsBox(levelBox);
+  };
   const measure = (eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void =>
     measureSeen(seen, eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, x0, y0, x1, y1, top);
   /** A metre's pixels at a box from the last eye (1 before any). */
@@ -551,6 +563,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, level.x0, level.y0, level.x1, level.y1, level.top);
         // A tile or plate reaching into `DETAIL_REACH` gives way to its cells: the town keeps its own facades to 2 km, where a painted box is all its masses can be (the player, 2026-10-20).
         // As the cells' reach (`decide`): only where a metre still spans enough pixels to be seen and at the frame's own scale - DO NOT hold the whole map's cells with the camera above it, nor stop the budget's coarsening.
+        // OUT OF THE VIEW, NOT REFINED (Cesium's traversal visits only the tiles in the frustum): its masses stand whole, its cells' not asked. DO NOT refine the whole map by the pixels a metre spans: in the view from above a metre spans the same pixels everywhere, and a district view of a city of 25,000 buildings held every cell's masses of the map (200 MB, three times the large city's for the same view), the room left for the view's detail went under nothing and the district was drawn in masses (step-25k, 2026-10-21).
+        if (!levelInView(view, level, level.coarse ? VIEW_COME : VIEW_KEEP)) return true;
         if (seen.across <= DETAIL_REACH && seen.perMetre >= DETAIL_REACH_VISIBLE && (seen.scale ?? 1) <= 1) return false;
         // Refined while its error spans the pixels, down to `HYSTERESIS` of them once refined (as a cell near stays near).
         return (level.mesh ? level.error : level.bound) * seen.perMetre < seen.allowed * (level.coarse ? 1 : HYSTERESIS);

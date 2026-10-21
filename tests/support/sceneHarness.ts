@@ -6,7 +6,7 @@ import { buildSmallCityMap } from '@editor/smallCityMap';
 import type { QualityLevel } from '@render/quality';
 import { createSceneRenderer, type SceneHandle } from '@render/renderer';
 import { SimClient } from '@sim/host/simClient';
-import { RoadDoc } from '@world/doc';
+import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { RELIEF_FLAT } from '@world/terrain';
 import { NullCanvas, nullRenderer } from './nullGpu';
@@ -108,23 +108,39 @@ export async function settle(city: City): Promise<Settled> {
 
 /** The small city of seed 7 opened as the menu opens it on tier `quality`, the camera at the district view, frames until the curtain comes down. */
 export async function openSmallCity(quality: QualityLevel = 'ultra'): Promise<City> {
+  return (await openCityMap(buildSmallCityMap(7), null, { quality })).city;
+}
+
+/** One frame of an opening as the probes see it: the frame's number, and what the reveal still waited for (`SceneHandle.openingState`). */
+export type OpeningFrame = { readonly frame: number } & ReturnType<SceneHandle['openingState']>;
+
+/**
+ * A city opened as the menu opens it (`main.ts` openCity): `table`, its buildings' table as the city's worker prepares it (`prepareCity`);
+ * `large`, scoped to its opening view (`scopeOpening`, a city of over 5,000 buildings). Frames until the curtain comes down, each frame's
+ * wait given to `onFrame`; `frames`, how many it took.
+ */
+export async function openCityMap(data: SerializedDoc, table: ArrayBufferLike | null, options: { quality?: QualityLevel; large?: boolean; view?: View; onFrame?: (state: OpeningFrame, scene: SceneHandle) => void } = {}): Promise<{ city: City; frames: number }> {
   const doc = new RoadDoc();
   doc.terrainRelief = RELIEF_FLAT;
   const net = new Network(doc);
   const sim = new SimClient(doc, net);
   const canvas = new NullCanvas(WIDTH, HEIGHT);
-  const scene = createSceneRenderer(canvas as unknown as HTMLCanvasElement, { x: 0, y: 0 }, DISTRICT[2], quality, () => {}, new Engine(), undefined, nullRenderer);
+  const view = options.view ?? DISTRICT;
+  const scene = createSceneRenderer(canvas as unknown as HTMLCanvasElement, { x: 0, y: 0 }, view[2], options.quality ?? 'ultra', () => {}, new Engine(), undefined, nullRenderer);
   scene.setSkyMode('day');
   const city = { scene, doc, net, sim };
   // The empty map the game starts on, drawn once.
   await frame(city);
-  restoreInto(doc, { ...buildSmallCityMap(7), relief: RELIEF_FLAT, markingStyle: 'br' }, net);
+  if (options.large) scene.scopeOpening(true);
+  restoreInto(doc, { ...data, relief: RELIEF_FLAT, markingStyle: 'br' }, net, table);
   sim.load();
   scene.beginLoad();
-  setView(scene, DISTRICT);
-  for (let frames = 0; scene.opening; frames++) {
+  setView(scene, view);
+  let frames = 0;
+  for (; scene.opening; frames++) {
     if (frames >= MOST_FRAMES) throw new Error(`the opening was not shown in ${MOST_FRAMES} frames`);
     await frame(city);
+    options.onFrame?.({ frame: frames, ...scene.openingState() }, scene);
   }
-  return city;
+  return { city, frames };
 }
