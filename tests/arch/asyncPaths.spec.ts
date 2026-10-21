@@ -227,7 +227,9 @@ describe('the ground and the paving a building cell reads', () => {
     const pool = read('src/render/buildings/cellPool.ts');
     // One queue for the pool's workers, the job written when a worker takes it, the roads near the cell packed with it.
     expect(pool).toMatch(/asked\.ticket = submitJob\(\{/);
-    expect(pool).toMatch(/write: \(\) => \{ asked\.sent = true; return this\.write\(asked\); \}/);
+    // To a job process (`to.sharesMemory` false) the ground goes cut to the plates around the cell (`groundAround`).
+    expect(pool).toMatch(/write: \(to\) => \{ asked\.sent = true; return this\.write\(asked, to\.sharesMemory\); \}/);
+    expect(pool).toMatch(/const ground = around \? groundAround\(whole, around\) : whole;/);
     expect(pool).toMatch(/asked\.env\.pavedAt\.pack!\(asked\.rect\)/);
     expect(pool).not.toMatch(/readings|'need'/);
     expect(read('src/render/buildings/cell.worker.ts')).toMatch(/runCellJob\(job, workerReads\(job(, \w+)?\)\)/);

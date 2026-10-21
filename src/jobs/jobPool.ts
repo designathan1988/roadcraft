@@ -41,12 +41,17 @@ interface JobSpec {
   readonly priority: number;
   /** Where on the map the job's work stands: its rank is `priority` plus its distance to where the view looks NOW, re-ranked as the view moves (`setJobFocus`), not where it looked when the job was asked. */
   readonly at?: readonly [number, number];
-  /** The message, written only when a worker takes the job (a job waiting its turn holds no copy of it). */
-  readonly write: () => { readonly data: unknown; readonly transfer: Transferable[] };
+  /** The message, written only when a worker takes the job (a job waiting its turn holds no copy of it); `to`, the worker taking it. */
+  readonly write: (to: JobTaker) => { readonly data: unknown; readonly transfer: Transferable[] };
+  /** Fit for a worker in a desktop job process (`processWorker.ts`): its message holds only what the job reads (`cellPool.ts` the ground's plates around it), copied there. Without it the job waits for the page's own workers. */
+  readonly crosses?: boolean;
   readonly done: (answer: unknown) => void;
   /** Its worker failed, or none can run it: the asker does it another way. */
   readonly failed: (message: string) => void;
 }
+
+/** The worker a job's message is written for: whether it shares the page's memory (a worker of the page), or every shared buffer of the message is copied to it (a desktop job process's, `processWorker.ts` unshared). */
+export interface JobTaker { readonly sharesMemory: boolean }
 
 /** A job of the queue as its asker holds it. */
 export interface JobTicket {
@@ -378,14 +383,18 @@ function queuePort(host: Host, service: JobService): number {
 
 /** The worker a queued job of `service` goes to: a free one already running the kind, else a new one while the pool has room, else any free one
  *  - a long-running service's worker only while its lanes have nothing in flight: a tile asked after it waits one job, never a job behind a tile (only a pool of one worker shares it otherwise).
- *  - DO NOT give it to a long worker in a desktop job process (`inPage` false), nor make one for it: the message went there copied whole, every ground plate of the page's shared memory with it (`processWorker.ts` unshared, ~33 MB a cell job, JOB-03); it waits for the page's own.
+ *  - a long worker in a desktop job process (`inPage` false) only for a job fit to cross (`JobSpec.crosses`), and one made for it while the long side keeps room for one more: DO NOT send another there - its message went copied whole, every ground plate of the page's shared memory with it (`processWorker.ts` unshared, ~33 MB a cell job, JOB-03). With the cells kept to the page's two short workers, the large city's first opening waited ~6 s for the buildings in view while six job processes stood idle (2026-10-21).
  *  - DO NOT give it to a worker whose lanes have messages in flight while one with none is free: it waited behind a tile read or a batch of road tiles (`JobPort` posts straight to its worker); such a worker only when no other is free. */
-function hostFor(service: JobService): Host | null {
+function hostFor(service: JobService, crosses: boolean): Host | null {
   let cold: Host | null = null, idleLong: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
   for (const host of system.workers) {
     if (host.job || host.failed) continue;
     if (keptClear(host) && system.workers.length > 1) continue;
-    if (host.long && system.workers.length > 1) { if (host.laneWork === 0 && host.inPage) idleLong ??= host; continue; }
+    if (host.long && system.workers.length > 1) {
+      // Of the idle long workers, one already running the kind first.
+      if (host.laneWork === 0 && (host.inPage || crosses) && (idleLong === null || (!idleLong.queuePorts.has(service) && host.queuePorts.has(service)))) idleLong = host;
+      continue;
+    }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
       if (warm) warmBusy ??= host; else coldBusy ??= host;
@@ -394,7 +403,13 @@ function hostFor(service: JobService): Host | null {
     if (warm) return host;
     cold ??= host;
   }
-  return grow(false) ?? cold ?? idleLong ?? (system.makeWorker ? null : grow(true)) ?? warmBusy ?? coldBusy;
+  return grow(false) ?? cold ?? idleLong ?? (system.makeWorker ? (crosses ? growSpareLong() : null) : grow(true)) ?? warmBusy ?? coldBusy;
+}
+
+/** A long worker made for queued jobs (`hostFor`) while the long side keeps room for one more: a tile's or the growth's lane asked later still gets a worker of its own (`place`). */
+function growSpareLong(): Host | null {
+  if (system.workers.filter((h) => h.long).length >= longWorkers() - 1) return null;
+  return grow(true);
 }
 
 /** Each waiting job, nearest first, to a worker free for it (Cidade's `pump`): one queued job at a time on a worker. */
@@ -402,7 +417,7 @@ function dispatch(): void {
   for (let job = system.queue.peek(); job; job = system.queue.peek()) {
     let host: Host | null;
     try {
-      host = hostFor(job.spec.service);
+      host = hostFor(job.spec.service, job.spec.crosses === true);
     } catch (error) {
       system.queue.failAll(`no job workers: ${String(error)}`);
       return;
@@ -414,7 +429,7 @@ function dispatch(): void {
     }
     system.queue.take();
     try {
-      const { data, transfer } = job.spec.write();
+      const { data, transfer } = job.spec.write({ sharesMemory: host.inPage });
       const message: ToJob = { port: queuePort(host, job.spec.service), service: job.spec.service, data, seq: job.seq };
       host.worker.postMessage(message, transfer);
       host.job = job;

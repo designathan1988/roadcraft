@@ -1,4 +1,5 @@
 import { parentPort } from 'node:worker_threads';
+import { isForgetKept, restoreKept } from './processWorker';
 
 /** A JOB WORKER AS A THREAD OF THE DESKTOP'S JOB PROCESS (`desktop/jobs.cjs`): the page's `job.worker.ts` as it is, its `self` the thread's port (Node `worker_threads` parentPort), built for Node (`scripts/vite/desktop-jobs.config.ts`) */
 
@@ -8,10 +9,13 @@ type Listener = ((event: MessageEvent) => void) | null;
 class ThreadSelf {
   private listener: Listener = null;
   private readonly early: MessageEvent[] = [];
+  /** The buffers the page sent once and names since (`processWorker.ts` KeptBuffer): its record tables. */
+  private readonly kept = new Map<number, ArrayBuffer>();
 
   constructor(private readonly port: NonNullable<typeof parentPort>) {
     port.on('message', (data: unknown) => {
-      const event = new MessageEvent('message', { data });
+      if (isForgetKept(data)) { for (const id of data.forgetKept) this.kept.delete(id); return; }
+      const event = new MessageEvent('message', { data: restoreKept(data, this.kept) });
       if (this.listener) this.listener(event);
       else this.early.push(event);
     });

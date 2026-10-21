@@ -183,6 +183,13 @@ export function encodeRecords(rows: readonly Building[]): RecordTable {
   return new RecordTable(buffer);
 }
 
+/** Whether a buffer holds a record table of this format: written once when encoded (`encodeRecords`), never again - a job process's thread keeps the copy it is sent (`jobs/processWorker.ts` KeptBuffer). */
+export function isRecordTable(buffer: ArrayBufferLike): boolean {
+  if (buffer.byteLength < HEAD * 4) return false;
+  const head = new Uint32Array(buffer, 0, 2);
+  return head[0] === MAGIC && head[1] === FORMAT;
+}
+
 /** A table read back from its buffer (posted or shared): its columns are views on it; its records are decoded by a `TableReader`. */
 export class RecordTable {
   readonly rows: number;
