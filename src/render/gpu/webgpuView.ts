@@ -125,7 +125,7 @@ export async function createWebGpuView(canvas: HTMLCanvasElement): Promise<WebGp
   };
   /** Walks what is visible: hides what cannot be drawn and (`twins`) puts the node twins in, or (`faithfulOnly`) hides what only a simple twin draws. */
   const prepare = (scene: Scene, twins: boolean, faithfulOnly = false): void => {
-    // The sky's light from the dome's twin, made once (the dome itself is hidden over the map: `renderer.ts` MAP_BACKGROUND).
+    // The sky's light from the dome's twin, made once: what reflects it lit by the same sky as the dome drawn.
     if (environment === null) {
       const sky = scene.getObjectByName('sky') as Mesh | undefined;
       const twin = sky && !Array.isArray(sky.material) ? twinOf(sky, sky.material) : null;
