@@ -2448,7 +2448,14 @@ export function createSceneRenderer(
     // DO NOT draw the next frame with the new settings' programs not built: shadows switched off or on change every lit material's program,
     // and the frame built them all in the draw (the probe, 2026-10-19: one frame of 6.9 s, 6.8 s waiting on the driver in `getProgramInfoLog`).
     // Built off the draw (`compileAsync`, the driver's parallel compile); the last picture stays on screen until they are, the page answering.
-    const compiling: Promise<void> = renderer.compileAsync(scene, rig.camera, scene).then(() => undefined, () => undefined).then(() => {
+    // DO NOT compile for whatever target the last pass left bound (the screen, after the output pass): the scene's programs carry the tone mapping and colour space of the target
+    // it is really drawn into (r186 WebGLPrograms reads `getRenderTarget()`), and the chain's target has none - built for the screen, every lit program was linked again in the first frame.
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(post.target);
+    const scenePrograms = renderer.compileAsync(scene, rig.camera, scene);
+    renderer.setRenderTarget(previous);
+    // And the chain's own passes, made again by a tier change (`createPostChain` builds them ahead).
+    const compiling: Promise<void> = Promise.all([scenePrograms, post.ready]).then(() => undefined, () => undefined).then(() => {
       if (qualityCompile === compiling) qualityCompile = null;
       askDraw();
     });
