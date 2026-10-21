@@ -73,7 +73,7 @@ import { countMemory } from '@render/memoryCounters';
 import { formatInventory, sceneInventory } from '@render/inventory';
 import { cityBudgetTable, VIEW_BUDGETS, type CityView } from '@core/perfBudget';
 import { primeSurfaceBake, startSurfaceBake } from '@render/surfaceBakeClient';
-import { forgetOtherDerived, keepDerivedDurably, readDerived, writeDerivedMany } from '@render/derivedCache';
+import { forgetOtherDerived, keepDerivedDurably, readDerived, readDerivedKeys, writeDerivedMany } from '@render/derivedCache';
 
 declare const __CONFLICT_ZONES_HASH__: string | undefined;
 declare const __CITY_GEN_HASH__: string | undefined;
@@ -1976,12 +1976,14 @@ function newMap(): void {
 /** A NEW CITY from the menu: the small city of Roadcraft 2.0 (`buildSmallCityMap`: straight blocks, medium size) laid out as ONE map, no tiles - the player, 2026-10-18: the tiles were for a city over the whole map, which never worked. */
 function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
-  void openSmallCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
+  // The next small city's seed, made ahead (`cityAhead`).
+  void openSmallCity(nextCitySeed('small', true));
 }
 /** A LARGE CITY: the small city's generator over a larger radius (`largeCity.ts`), every block built, opened at a district while the rest of the world fills in behind the curtain. */
 function newLargeWorld(): void {
   if (!window.confirm(t('confirm.newLargeWorld'))) return;
-  void openLargeCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
+  // The next large city's seed, made ahead (`cityAhead`).
+  void openLargeCity(nextCitySeed('large', true));
 }
 /** A city being made off the page (`cityGen.worker.ts`): the curtain over the map while the worker builds it, no frame of it on the page. */
 let generatingCity = false;
@@ -1992,6 +1994,8 @@ let cityAskId = 1;
 /** The generated cities kept from earlier sessions, by the generator's code (`cook-plugin.ts` DERIVED: its whole import closure): the same seed makes the same city with the same code, so one made before is read, not made again. */
 const CITY_PREFIX = typeof __CITY_GEN_HASH__ !== 'undefined' && __CITY_GEN_HASH__ ? `city:${__CITY_GEN_HASH__}:` : null;
 if (CITY_PREFIX) forgetOtherDerived('city', CITY_PREFIX.slice('city:'.length, -1));
+// The next new cities made ahead from the start (`cityAhead`), once the boot's work is behind.
+queueMicrotask(() => citiesAheadLater());
 /** A kept city: its document without buildings and its buildings' table (`prepareCity`), as the worker answered them. */
 interface KeptCity { readonly data: OpenedCity['data']; readonly buildings: ArrayBuffer }
 
@@ -2002,12 +2006,26 @@ async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
   }
   // DO NOT grow the city again each time it is opened: the large city's generation was 6.4 s of the desktop's 7.4 s opening (2026-10-21), for a city the same seed and the same code make byte for byte.
   const key = CITY_PREFIX ? `${CITY_PREFIX}${ask.kind}:${ask.seed ?? 7}` : null;
+  // Being made ahead (`cityAhead`): that job's answer, never a second one for the same city.
+  const making = key ? citiesAhead.get(key) : undefined;
+  if (making) { performance.mark('city:ahead'); return openedOf(await making); }
   const kept = key ? await readDerived<KeptCity>(key).catch(() => undefined) : undefined;
   if (kept?.data && kept.buildings instanceof ArrayBuffer) { performance.mark('city:kept'); return preparedCity(kept.data, tableIn(kept.buildings)); }
   if (key) performance.mark('city:made');
+  return openedOf(await cityJob(ask, key, 0));
+}
+
+/** A city's reply as the page opens it. */
+function openedOf(reply: CityGenReply): OpenedCity {
+  if (!reply.data) throw new Error(reply.error ?? 'the city was not made');
+  return reply.buildings ? preparedCity(reply.data, reply.buildings) : { data: reply.data, prepared: false };
+}
+
+/** The city's worker asked for a city (`priority`: the queue's, 0 first), its answer kept under `key` for the next opening of this seed. */
+function cityJob(ask: CityGenAsk, key: string | null, priority: number): Promise<CityGenReply> {
   return new Promise((done, fail) => {
     submitJob({
-      service: 'cityGen', key: 'cityGen', priority: 0,
+      service: 'cityGen', key: priority === 0 ? 'cityGen' : `cityGen:ahead:${key}`, priority,
       write: () => ({ data: ask, transfer: [] }),
       done: (answer) => {
         const reply = answer as CityGenReply;
@@ -2015,11 +2033,43 @@ async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
         // Kept as it came (the store copies it now), for the next opening of this seed: committed to the disk (one write of some 12 MB, rare). DO NOT keep it relaxed: a game closed soon after lost it, and the city was grown again at the next opening.
         // The table is in shared memory where the page is isolated (`recordTable.ts` allocate), which no store keeps: a plain copy of it (`tableBytes`). DO NOT keep only a plain buffer as it came: the desktop's never was one, and no city was ever kept (2026-10-21).
         if (key && reply.buildings) void keepDerivedDurably(key, { data: reply.data, buildings: tableBytes(reply.buildings) } satisfies KeptCity);
-        done(reply.buildings ? preparedCity(reply.data, reply.buildings) : { data: reply.data, prepared: false });
+        done(reply);
       },
       failed: (message) => fail(new Error(message)),
     });
   });
+}
+
+/**
+ * THE NEXT NEW CITY MADE AHEAD: each size's next seed chosen and kept (`NEXT_CITY_KEY`), its city grown in the background once the game stands idle and kept (`cityJob`), so the menu's new city opens as a kept one (`newWorld`, `newLargeWorld` take that seed).
+ * Only where the city's worker is a job process of its own (the desktop's, `desktopJobs.ts`): DO NOT grow it ahead in a browser, where the long side is one worker and a tile or the growth would wait behind it.
+ * DO NOT make the player wait for the growth of a city nobody has seen yet: a new large city spent 6.2 s of its 18 s first opening growing (2026-10-21).
+ */
+const NEXT_CITY_KEY = 'roadcraft.nextCitySeed';
+const citiesAhead = new Map<string, Promise<CityGenReply>>();
+function nextCitySeed(kind: CityGenAsk['kind'], take = false): number {
+  let seeds: Partial<Record<CityGenAsk['kind'], number>> = {};
+  try { seeds = JSON.parse(localStorage.getItem(NEXT_CITY_KEY) ?? '{}') as typeof seeds; } catch { /* none kept */ }
+  const fresh = (): number => Math.floor(Math.random() * 0x7fff_ffff) || 1;
+  const seed = Number.isInteger(seeds[kind]) && seeds[kind]! > 0 ? seeds[kind]! : fresh();
+  seeds[kind] = take ? fresh() : seed;
+  try { localStorage.setItem(NEXT_CITY_KEY, JSON.stringify(seeds)); } catch { /* not kept: a seed of its own next time */ }
+  return seed;
+}
+async function cityAhead(kind: CityGenAsk['kind']): Promise<void> {
+  if (!desktopJobs || !CITY_PREFIX || !canQueueJobs()) return;
+  const seed = nextCitySeed(kind);
+  const key = `${CITY_PREFIX}${kind}:${seed}`;
+  if (citiesAhead.has(key)) return;
+  const kept = await readDerivedKeys(CITY_PREFIX).catch(() => new Set<string>());
+  if (kept.has(key) || citiesAhead.has(key)) return;
+  const made = cityJob({ id: cityAskId++, kind, seed }, key, 1_000_000);
+  citiesAhead.set(key, made);
+  void made.catch(() => {}).finally(() => { if (citiesAhead.get(key) === made) citiesAhead.delete(key); });
+}
+/** Both sizes' next cities made ahead, the large first, once the opening's work is behind: some seconds after the game stands. */
+function citiesAheadLater(): void {
+  setTimeout(() => { void cityAhead('large').then(() => cityAhead('small')); }, 15_000);
 }
 
 /** A city made off the page and put in place of the map: the curtain over the map while its worker builds it, then the real map opened whole. One at a time, in the order asked. */
@@ -2047,6 +2097,8 @@ async function openCityNow(ask: CityGenAsk): Promise<void> {
     generatingCity = false;
     syncLoadingCurtain();
     requestDraw();
+    // The next new cities made ahead while this one is played.
+    citiesAheadLater();
   }
 }
 
