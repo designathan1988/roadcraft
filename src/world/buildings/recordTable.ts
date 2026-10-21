@@ -354,16 +354,19 @@ export interface RecordRef {
 /** Each record's place in a table: its tile's (`tableRecords`) or its own, written once when first asked (a record is replaced, never edited). */
 const refs = new WeakMap<object, RecordRef>();
 
-/** A tile's buildings read from its table on the page, each knowing its row: a job is handed the row, never the record. */
+/** A row's record read on the page, knowing its row: a job is handed the row, never the record (`refOf`). */
+export function readRow(reader: TableReader, row: number): Building {
+  const b = reader.record(row);
+  refs.set(b, { buffer: reader.table.buffer, row });
+  return b;
+}
+
+/** DO NOT read a whole city's table this way on the page (`world/buildings/tableRows.ts` reads a row when asked): every record decoded and kept is ~8 KB of heap a building. A tile's buildings read from its table, each knowing its row. */
 export function tableRecords(buffer: ArrayBufferLike): Building[] {
   const table = new RecordTable(buffer);
   const reader = table.reader();
   const out: Building[] = [];
-  for (let row = 0; row < table.rows; row++) {
-    const b = reader.record(row);
-    refs.set(b, { buffer, row });
-    out.push(b);
-  }
+  for (let row = 0; row < table.rows; row++) out.push(readRow(reader, row));
   return out;
 }
 

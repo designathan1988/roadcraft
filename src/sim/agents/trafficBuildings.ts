@@ -11,6 +11,7 @@ import { lorryDocks, type LorryDock } from '@world/buildings/docks';
 import { entrancesOf } from '@world/buildingGates';
 import type { Building, BuildingElement, BuildingFunction, BuildingId, BuildingUse, Volume } from '@world/buildings/types';
 import { type RecordRef, eachRecord, refOf } from '@world/buildings/recordTable';
+import { type BuildingSections, eachSectionRecord } from '@world/buildings/sections';
 import type { LotPart } from './lotNav';
 import { LANE_REACH } from './lotBays';
 
@@ -223,15 +224,15 @@ export interface BuildingSent {
   readonly ref: RecordRef | null;
 }
 
-/** What the worker's copy of the map is made of: the roads and the transit, the lots and their keys, where each building's record is read. */
+/** What the worker's copy of the map is made of: the roads and the transit, the lots and their keys, the buildings as the document's own buffers (`BuildingSections`: its table, shared, and the records written over it). */
 export interface TrafficMap {
   readonly doc: SerializedDoc;
   readonly lots: readonly Lot[];
   readonly lotKeys: readonly string[];
-  readonly buildings: readonly RecordRef[];
+  readonly buildings: BuildingSections;
 }
 
-/** The page's map as the worker is sent it whole (a map opened, generated, new): no terrain, paint or scenery, no building's record. */
+/** The page's map as the worker is sent it whole (a map opened, generated, new): no terrain, paint or scenery, no building's record - the buildings' table posted as a handle (shared memory), never copied record by record. */
 export function trafficMapOf(doc: RoadDoc): TrafficMap {
   return {
     doc: {
@@ -242,7 +243,8 @@ export function trafficMapOf(doc: RoadDoc): TrafficMap {
     },
     lots: doc.lotStore.toJSON(),
     lotKeys: [...doc.lotStore.keys],
-    buildings: Array.from(doc.buildings.all(), (b) => refOf(b, false)),
+    // DO NOT decode every building to send where it is read (`refOf` of each record): the table itself, and the few records written over it.
+    buildings: doc.buildings.sections(),
   };
 }
 
@@ -270,5 +272,5 @@ export function takeTrafficMap(doc: RoadDoc, buildings: TrafficBuildingTable, ma
   doc.replaceFromJSON(map.doc, { repair: false });
   // DO NOT leave the lots to `fromJSON`: it keeps a lot's building only when the document holds it, and this one holds none.
   doc.lotStore.load(map.lots, map.lotKeys);
-  buildings.load(Array.from(eachRecord(map.buildings), project));
+  buildings.load(Array.from(eachSectionRecord(map.buildings), project));
 }
