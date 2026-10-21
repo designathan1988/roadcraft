@@ -2,7 +2,7 @@ import {
   ACESFilmicToneMapping, DirectionalLight, HemisphereLight, PMREMGenerator, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer, type Mesh, type Object3D, type Texture,
 } from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { releaseSkinAppearance, type PersonLayers } from '@render/people/skinAppearance';
+import { createPersonLayers, type PersonLayers } from '@render/people/skinAppearance';
 import type { LabBuilder } from './build';
 import { dressPerson } from './dress';
 import type { LabPerson } from './record';
@@ -21,7 +21,12 @@ export class Thumbs {
   private readonly waiting = new Map<string, { person: LabPerson; framing: Framing; img: HTMLImageElement[] }>();
   private busy = false;
 
-  constructor(private readonly builder: LabBuilder, private readonly layers: PersonLayers, private readonly painted: WeakMap<Texture, Texture>) {
+  /** Its own texture arrays (`createPersonLayers`): the main view's are bound to the main renderer and must never be shared across WebGL contexts. */
+  private readonly layers: PersonLayers = createPersonLayers();
+  /** True while the person is being shaped or built: pictures wait, the page stays smooth. */
+  paused = false;
+
+  constructor(private readonly builder: LabBuilder, private readonly painted: WeakMap<Texture, Texture>) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = SIZE * 2;
     this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -44,9 +49,17 @@ export class Thumbs {
     const known = this.done.get(key);
     if (known) { img.src = known; return img; }
     img.className = 'pending';
-    const job = this.waiting.get(key);
-    if (job) job.img.push(img); else this.waiting.set(key, { person, framing, img: [img] });
-    void this.pump();
+    // Built only once it scrolls into view: a panel of forty choices costs only the ones seen.
+    const seen = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      seen.disconnect();
+      const done = this.done.get(key);
+      if (done !== undefined) { img.src = done; img.classList.remove('pending'); return; }
+      const job = this.waiting.get(key);
+      if (job) job.img.push(img); else this.waiting.set(key, { person, framing, img: [img] });
+      void this.pump();
+    });
+    seen.observe(img);
     return img;
   }
 
@@ -65,8 +78,9 @@ export class Thumbs {
         const src = await this.shoot(job.person, job.framing).catch((error: unknown) => { console.warn('[people-lab] a thumbnail failed', key, error); return ''; });
         this.done.set(key, src);
         for (const img of job.img) { img.src = src; img.classList.remove('pending'); }
-        // A breath between builds: the page stays responsive.
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        // A breath between builds, longer while the person is being worked on: the page stays responsive.
+        // Frames, not a timer: ~8 frames between pictures, and none while paused.
+        for (let f = 0; f < 8 || this.paused; f++) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
     } finally { this.busy = false; }
   }
@@ -88,7 +102,8 @@ export class Thumbs {
     const src = this.renderer.domElement.toDataURL('image/webp', 0.85);
     this.scene.remove(built.scene);
     dispose(built.scene);
-    releaseSkinAppearance(skin);
+    // The skin's textures are NOT released: they are leased by name and shared with the person on screen (releasing them blanked the main view, 2026-10-21).
+    void skin;
     return src;
   }
 }

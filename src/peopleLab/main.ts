@@ -204,7 +204,7 @@ function startLab(): void {
   const paintedSkins = new WeakMap<Texture, Texture>();
   /** The region lit under the pointer (`regionGlow`). */
   const glow = { hover: { value: 0 }, time: { value: 0 } };
-  const pictures = new Thumbs(builder, layers, paintedSkins);
+  const pictures = new Thumbs(builder, paintedSkins);
   let generation = 0;
   /** When the waiting rebuild starts (ms, `performance.now`), or 0: sliders dragged are built once they rest, in the frame loop. */
   let buildAt = 0;
@@ -223,6 +223,7 @@ function startLab(): void {
 
   async function runBuild(): Promise<void> {
     const mine = ++generation;
+    pictures.paused = true;
     const started = performance.now();
     try {
       const next = await builder.build(effective(person));
@@ -265,7 +266,7 @@ function startLab(): void {
       console.error('[people-lab] the person could not be built', error);
       stats.textContent = `Erro ao montar: ${String(error).slice(0, 120)}`;
     } finally {
-      if (mine === generation) busy.classList.remove('on');
+      if (mine === generation) { busy.classList.remove('on'); pictures.paused = !!shaping; }
     }
   }
 
@@ -556,6 +557,9 @@ function startLab(): void {
   // ---------------------------------------------------------------- the loop
 
   const clock0 = performance.now();
+  /** How much stronger the lab draws a feeling than the street. */
+  const EXPRESSIVE = 1.6;
+  const CALM = new Set(['faceBlink', 'lookLeft', 'lookRight']);
   function loop(): void {
     const now = performance.now();
     const t = (now - clock0) / 1000;
@@ -569,10 +573,13 @@ function startLab(): void {
         // Under the pelvis wherever the clip puts it, its top just below the seat.
         built.scene.traverse((o) => { if (o.name === 'Bip01_Pelvis') { o.updateWorldMatrix(true, false); const at = o.getWorldPosition(new Vector3()); stool.scale.y = Math.max(0.2, (at.y - 0.1) / 0.44); stool.position.set(at.x, stool.scale.y * 0.22, at.z - 0.04); } });
       }
+      // Close up the street's faces read faint: the lab shows each feeling half as strong again (blinks and gaze as they are).
       const face = faceAt(person.spec.id, t, activity, person.spec.mood ?? 0);
       for (const m of built.meshes as SkinnedMesh[]) {
         if (m.morphTargetInfluences && m.morphTargetDictionary) {
           applyFace(m.morphTargetInfluences, m.morphTargetDictionary, face);
+          // Past the game's cap of 1 (three.js blends any weight): blinks and gaze kept as they are.
+          if (activity) for (const [name, i] of Object.entries(m.morphTargetDictionary)) if (!CALM.has(name) && !name.startsWith('drag:')) m.morphTargetInfluences[i] = m.morphTargetInfluences[i]! * EXPRESSIVE;
           if (dragWeights) for (const [name, w] of Object.entries(dragWeights)) {
             const i = m.morphTargetDictionary[name];
             if (i !== undefined) m.morphTargetInfluences[i] = w;
