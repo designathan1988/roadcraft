@@ -1,3 +1,5 @@
+import { gzipBytes } from './saveBinary';
+
 /** THE SAVES' STORE (IndexedDB) AND ITS BATCHES: what the save worker runs (`save.worker.ts`) and what the map by tiles and the tile store write through (`chunkedSave.ts`, `tileStore.ts`) - apart from the worker, so neither imports the other */
 
 /** Where a map's blobs are kept: blobs by key, written and removed in one go. */
@@ -11,14 +13,16 @@ export interface PartStore {
   readonly writer?: SaveWriter;
 }
 
-/** One blob of a save: its key and its value as plain data, compressed (`packed`) or plain JSON. */
-export interface SaveEntry { readonly key: string; readonly value: unknown; readonly packed: boolean }
-/** What one save writes and removes, in one transaction: the records of what changed, never the map. */
+/** One blob of a save: its key and its binary frame (`saveBinary.ts`), compressed by the writer when `packed`. A plain ArrayBuffer, transferred to the writer, never copied (MDN "Transferable objects"). */
+export interface SaveEntry { readonly key: string; readonly bytes: ArrayBuffer; readonly packed: boolean }
+/** What one save writes and removes, in one transaction: the frames of what changed, never the map. */
 export interface SaveBatch { readonly put: readonly SaveEntry[]; readonly remove: readonly string[] }
+/** The buffers a batch carries: the transfer list of its message. */
+export const batchBuffers = (batch: SaveBatch): ArrayBuffer[] => batch.put.map((entry) => entry.bytes);
 /** Writes a save's batch, true once it is stored. */
 export interface SaveWriter { write(batch: SaveBatch): Promise<boolean> }
 
-/** gzip streams (MDN, `CompressionStream`); a browser without them keeps the save's tiles plain, never the whole map in one text. */
+/** gzip streams (MDN, `CompressionStream`): the texts of the saves before the binary frames (read, never written now). */
 export const gzip = (text: string): Promise<Blob> =>
   typeof CompressionStream === 'undefined'
     ? Promise.resolve(new Blob([text]))
@@ -28,12 +32,16 @@ export const gunzip = (blob: Blob): Promise<string> =>
     ? blob.text()
     : new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
 
-/** The batch made text and blobs and written to `store` in one transaction. */
+/** How many frames are compressed at once. */
+const GZIP_BATCH = 32;
+
+/** The batch's frames compressed (`packed`) and written to `store` in one transaction: no text made here. */
 export async function writeBatch(store: PartStore, batch: SaveBatch): Promise<boolean> {
   const put: [string, Blob][] = [];
-  for (const entry of batch.put) {
-    const text = JSON.stringify(entry.value);
-    put.push([entry.key, entry.packed ? await gzip(text) : new Blob([text])]);
+  // A batch of streams in flight at a time: a whole map's first save is thousands of frames.
+  for (let i = 0; i < batch.put.length; i += GZIP_BATCH) {
+    const some = batch.put.slice(i, i + GZIP_BATCH);
+    put.push(...await Promise.all(some.map(async (entry) => [entry.key, entry.packed ? await gzipBytes(entry.bytes) : new Blob([entry.bytes])] as [string, Blob])));
   }
   return store.write(put, batch.remove);
 }
@@ -62,7 +70,7 @@ export function portWriter(port: () => Worker): SaveWriter {
       const id = next++;
       return new Promise<boolean>((resolve) => {
         waiting.set(id, resolve);
-        try { worker!.postMessage({ id, batch }); } catch (error) { waiting.delete(id); console.error('[save] the save could not reach its worker', error); resolve(false); }
+        try { worker!.postMessage({ id, batch }, batchBuffers(batch)); } catch (error) { waiting.delete(id); console.error('[save] the save could not reach its worker', error); resolve(false); }
       });
     },
   };

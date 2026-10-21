@@ -65,12 +65,12 @@ function createSaves(saves) {
     return true;
   }
 
-  /** A save's batch encoded here, off the page (`save.worker.ts` `writeBatch`: JSON, gzip when `packed`), then written as one transaction. */
+  /** A save's batch compressed here, off the page (`src/editor/saveStore.ts` `writeBatch`: each entry a binary frame, gzip when `packed`), then written as one transaction. No text is made: the frames' bytes are viewed, never copied (Node `Buffer.from(arrayBuffer)` shares its memory). */
   async function writeBatch(batch) {
     const put = [];
     for (const entry of batch.put) {
-      const text = JSON.stringify(entry.value);
-      put.push([entry.key, entry.packed ? await gzip(text) : Buffer.from(text)]);
+      const bytes = entry.bytes instanceof ArrayBuffer ? Buffer.from(entry.bytes) : Buffer.from(entry.bytes.buffer, entry.bytes.byteOffset, entry.bytes.byteLength);
+      put.push([entry.key, entry.packed ? await gzip(bytes) : bytes]);
     }
     return write(put, batch.remove);
   }
