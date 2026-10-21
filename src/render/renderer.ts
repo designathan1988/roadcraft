@@ -911,6 +911,10 @@ export function createSceneRenderer(
   let scopeNextOpening = false;
   /** Whether the town now shown had a scoped opening, its fill still to come. */
   let openingFillPending = false;
+  /** A map was opened since the last world build (`beginLoad`): the solve standing is another map's, nothing of the new one follows from it. */
+  let mapOpened = false;
+  /** The roads of the map being opened have landed (`worldSteps`): until then `roads` are the last map's, or none. */
+  let mapRoadsIn = true;
   /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
   let openingHeld: (() => boolean) | null = null;
   /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
@@ -1843,7 +1847,8 @@ export function createSceneRenderer(
   let worldNet: Network | null = null;
   const rebuildWorld = (net: Network): void => {
     worldNet = net;
-    if (networkRevision === net.revision && terrainRevision === net.doc.terrainRevision && activeBuilt === activeSerial) {
+    // A map opened always builds its own world (`mapRoadsIn`), whatever its revision says.
+    if (!mapOpened && networkRevision === net.revision && terrainRevision === net.doc.terrainRevision && activeBuilt === activeSerial) {
       stationsWait = false;
       // A world being built builds the poles too (`worldSteps`)
       if (worldJob === null && (utilityRevision !== net.doc.utilityRevision || poleSerial !== net.doc.changes.serialOf(...POLE_KINDS))) {
@@ -1871,10 +1876,12 @@ export function createSceneRenderer(
     // Over the whole network's extent: DO NOT take one plate's (`TERRAIN_HALF`) - a metropolis spans several, and every street past the middle plate was left unbuilt (the player, 2026-10-20: "não gera vias").
     const fillBlocks = full ? blocksOver(networkExtent(net)) : null;
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
-    const landStill = full || (terrainRevision === net.doc.terrainRevision && elevation !== null);
+    // A map just opened (`mapOpened`): the last solve is another city's. DO NOT start from it or compare the two: every block of the map differed, and the whole-map digest held the opening's world 1.7 s on a worker (2026-10-21).
+    const newMap = mapOpened && !full;
+    const landStill = full || (!newMap && terrainRevision === net.doc.terrainRevision && elevation !== null);
     // Where the land moved (a stroke's region), when it can be said: the solve and the surfaces follow it there only. Kept until the solve
     // runs: cleared before a wait for the roads' stations, the next frame found no region and solved the whole map (TER-01, VIA-01).
-    const land = full ? null : landDirty;
+    const land = full || newMap ? null : landDirty;
     const landBlocks = full ? fillBlocks : (!landStill && land !== null && land !== 'all' ? blocksOver(land) : null);
     const groundMoved = full ? null : (landBlocks && land !== null && land !== 'all' ? [land] : null);
     const from = landStill || groundMoved ? elevation : null;
@@ -1892,6 +1899,7 @@ export function createSceneRenderer(
     if (stationsWait) return;
     landDirty = null;
     const previousElevation = elevation;
+    mapOpened = false;
     networkRevision = net.revision;
     terrainRevision = net.doc.terrainRevision;
     activeBuilt = activeSerial;
@@ -1909,7 +1917,7 @@ export function createSceneRenderer(
     measureHitch('hitch:road-edit/elevation', started);
     // Now the ground comes to meet the roads
     // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job, which waits for them. A fill compares none: its blocks are the surfaces' visit list, not a ground change (`worldSteps` shapes none on level land).
-    const compare = full ? null : (previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null);
+    const compare = full || newMap ? null : (previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null);
     pendingBlocks = full ? [{ blocks: fillBlocks!, ready: true, ms: 0, fill: true }] : (compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null]);
     const elevationMs = performance.now() - started;
     const cause = net.doc.changes.version;
@@ -2000,6 +2008,7 @@ export function createSceneRenderer(
     triangles -= details?.triangles ?? 0;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
+    mapRoadsIn = true;
     performance.mark('world:roads');
     roads.adopt();
     world.add(roads.group);
@@ -2712,6 +2721,8 @@ export function createSceneRenderer(
       openingBuild = scopeNextOpening;
       openingFillPending = openingBuild;
       scopeNextOpening = false;
+      mapOpened = true;
+      mapRoadsIn = false;
       onAssetsReady();
     },
     /** The next map opened is large: its first world covers the view alone, the rest filled after the curtain (`openingBuild`). */
@@ -2904,7 +2915,10 @@ export function createSceneRenderer(
         buildingGroundSeen = groundChanges.version;
       }
       // At the opening the buildings come once the first world (the roads, the ground cut and filled to them) is in
-      if (roads !== null && (reveal.opened || !worldJob)) {
+      // On level land the ground is in once this network's roads are solved and the job is past its ground (`worldJobGround`): what the buildings stand on (the land, the pavements' heights of the solve, `pavedHeightAt`) is final, the road surfaces still building change none of it. DO NOT hold them for the surfaces: the view's cells started only once every road tile was in, 4.7 s after it on the critical path of a large city's opening (2026-10-21).
+      // DO NOT let them start on the last map's solve either: before this network's solve the pavements were the previous city's.
+      const groundIn = !worldJob || (levelLand && !worldJobGround && networkRevision === net.revision);
+      if (roads !== null && (reveal.opened || (groundIn && networkRevision === net.revision))) {
         buildings.hidden = !reveal.opened;
         buildingsGrounded = true;
         farRoads.coarseFirst(buildings.hidden);
@@ -3492,14 +3506,16 @@ export function createSceneRenderer(
         // ARE the final detail there. The near levels were still waited for and took seconds of the curtain (2026-10-20); they stream after it,
         // where a pixel cannot tell them from what stands.
         const mapView = !rig.perspective && rig.viewport.zoom < 1;
-        const whole = roads !== null && !buildings.coarsePending && farRoads.waiting === 0
+        // THE MAP'S OWN ROADS (`mapRoadsIn`), not whatever stands: DO NOT take the last city's for this one's - the curtain fell on a town of buildings over grass, no street drawn (2026-10-21).
+        const roadsIn = roads !== null && mapRoadsIn;
+        const whole = roadsIn && !buildings.coarsePending && farRoads.waiting === 0
           && (mapView || (!buildings.viewPending && nearTiles.pendingInView() === 0))
           && natureTreesStarted && !natureTreesPending && held;
         // DO NOT draw the unseen frame before the town's programs are built: drawn first, each program was built at its first use, one after the other, in that one frame (4.5 s of the opening's 62, 2026-10-16); asked together, the driver builds them in parallel (KHR_parallel_shader_compile).
         // The programs are asked once the BUILDINGS are in, not when every road tile and tree is: the town's cells are what bring every
         // material the reveal draws, and the driver builds the shaders while the last tiles stream (the compile was on the critical path
         // after everything else was ready: 2.4-7.4 s of the opening, measured 2026-10-20).
-        const drawablesIn = roads !== null && !buildings.coarsePending && !buildings.viewPending;
+        const drawablesIn = roadsIn && !buildings.coarsePending && !buildings.viewPending;
         if (openingPrograms === 'no' && (whole || drawablesIn)) {
           openingPrograms = 'asked';
           performance.mark('reveal:whole');
