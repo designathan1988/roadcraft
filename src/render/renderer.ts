@@ -966,6 +966,13 @@ export function createSceneRenderer(
     if (pads) out.add(pads.apron).addPlain(pads.pads);
     return out.value();
   };
+  /** THE GROUND OF A BOX OFF LEVEL LAND, DIGESTED WITHOUT SAMPLING UNDER EACH BUILDING: the land's own heights there as the terrain keeps them (`TerrainSurface.digest`: what `renderedHeightAt` reads, by content), the roads' profiles and flush footways the paving reads. DO NOT sample 36 points under every building of the map at the first look (`layer.ts` `boxGroundDigest`, a cell's buildings each): one digest a cell of what its ground is made of. */
+  const landGroundDigest = (minX: number, minY: number, maxX: number, maxY: number): number => {
+    const out = new Digest().add(terrain.digest(minX, minY, maxX, maxY)).add(elevation?.digest(minX, minY, maxX, maxY) ?? 0);
+    const flush = worldNet ? packFlush(worldNet, [[minX, minY, maxX, maxY]]).data : null;
+    if (flush) out.addAll(flush.rects).addAll(flush.lineEnds).addAll(flush.lines).addPlain(flush.roads);
+    return out.value();
+  };
   /** See `SceneHandle.pavedHeightAt` (`world/paving.ts`). */
   const pavedHeightAt: PavingSource = Object.assign((x: number, y: number): number => {
     if (!elevation || !elevation.has(GROUND_ONLY)) return NaN;
@@ -2889,7 +2896,7 @@ export function createSceneRenderer(
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
         performance.mark('frame:buildings-start');
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
-          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))), levelLand ? levelGroundDigest : null)) shadowMoved = true;
+          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))), levelLand ? levelGroundDigest : landGroundDigest)) shadowMoved = true;
         // Another frame while they land, nothing more: what lands stirs the stores itself (childadded, the door, `update`'s answer).
         if (buildings.pending) askDraw();
         performance.mark('frame:buildings-end');

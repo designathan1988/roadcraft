@@ -19,6 +19,7 @@ import { FAR_ERROR, createMassCells, sameFrustum } from './massCells';
 import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, letBackFitting, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
+import { levelCells } from './levelKeys';
 import { type BuildingKit, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
 import { type BatchKind, CellRequests } from './cellRequests';
@@ -326,7 +327,7 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       }
     }
   };
-  /** DO NOT read the ground building by building for the whole map, nor keep a digest a building in a `Map`: ONE GROUND DIGEST A CELL, of what its buildings stand on, content-addressed (the heights and roads there, never a serial of the session), so the masses and floors kept on disk under it (`cellPool.ts` `storedKey`) are found again only on the same ground after a reopen, and a cell's digest is whole or not worked out at all. On level land given `groundDigestOf` (the roads' profiles round the cell: the ground there is the level cut to them) no height is read; elsewhere each building's ground sampled as `groundDigest` samples it. Worked out when a cell is first asked, again when its buildings or the ground under them changed. */
+  /** DO NOT read the ground building by building for the whole map, nor keep a digest a building in a `Map`: ONE GROUND DIGEST A CELL, of what its buildings stand on, content-addressed (the heights and roads there, never a serial of the session), so the masses and floors kept on disk under it (`cellPool.ts` `storedKey`) are found again only on the same ground after a reopen, and a cell's digest is whole or not worked out at all. Given `groundDigestOf` (the page's, `renderer.ts`: on level land the roads' profiles round the cell, the ground there the level cut to them; off it the terrain's own heights by content) no height is read; without one (a spec) each building's ground sampled as `groundDigest` samples it. Worked out when a cell is first asked, again when its buildings or the ground under them changed. */
   const cellGround = new Map<string, number>();
   /** How a cell's ground is digested as the last `update` was given it. */
   let groundNow: { groundAt: GroundAt; pavedAt?: PavedAt | undefined; digestOf: GroundDigestOf | null } = { groundAt: () => 0, digestOf: null };
@@ -473,6 +474,12 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
     (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
   levels.changed = lodChanged;
+  // The plates waiting asked nearest the eye first (`massLevels.ts` PLATES_IN_FLIGHT).
+  levels.away = (key) => {
+    if (!eye) return 0;
+    const { i0, j0, n } = levelCells(key);
+    return Math.hypot((i0 + n / 2) * BATCH_CELL - eye.x, (j0 + n / 2) * BATCH_CELL - eye.y);
+  };
   /** Each cell's buildings as last filed (`askMass`), packed (`PackedEntries`: ids and digests in typed arrays, no object a building), and as last asked of the workers for its own masses: asked only while the view draws the cell one by one (`askExposed`). */
   const massEntries = new Map<string, PackedEntries>();
   /** The cells the player's edit changed since their jobs were last asked (a road demolishing buildings, in its own tile or the next): their detail and masses asked first (`cellPool.ts` EDIT_TIER), in whichever tile. DO NOT put the growth here: every building grown ahead of the queue held the view's detail behind it (the near tiles, conf23). */
@@ -710,8 +717,8 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
     },
     update(doc, groundAt, groundKey, pavedAt, naturalAt = groundAt, groundMovedUnder, groundDigestOf = null) {
       lastGround = { groundAt, groundKey, pavedAt, naturalAt };
-      // The cells' ground digested another way (level land or not): every cell's digest worked out again.
-      if ((groundDigestOf === null) !== (groundNow.digestOf === null)) cellGround.clear();
+      // The cells' ground digested another way (level land or not, `renderer.ts` levelGroundDigest and landGroundDigest): every cell's digest worked out again.
+      if (groundDigestOf !== groundNow.digestOf) cellGround.clear();
       groundNow = { groundAt, pavedAt, digestOf: groundDigestOf };
       // Another document: its ids are other buildings.
       if (doc !== docNow) docNow = doc;

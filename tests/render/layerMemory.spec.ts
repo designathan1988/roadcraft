@@ -30,10 +30,17 @@ vi.mock('@render/buildings/cellWork', async (load) => {
 
 setFlagsFromString('--expose_gc');
 const collect = runInNewContext('gc') as () => void;
-/** The heap after a full collection, the weak references of the job just run let go first (a `WeakRef`'s target is kept to the end of the job that made or read it: ECMA-262 ClearKeptObjects). */
+/** The heap after a full collection, the weak references of the job just run let go first (a `WeakRef`'s target is kept to the end of the job that made or read it: ECMA-262 ClearKeptObjects), then the finalizers the collection queued run (MDN "FinalizationRegistry": the table's entries of records collected let go) and collected again. */
 const heap = async (): Promise<{ js: number; arrays: number }> => {
-  await new Promise((done) => setTimeout(done, 0));
-  collect(); collect();
+  const tick = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+  let was = Infinity;
+  for (let round = 0; round < 8; round++) {
+    await tick();
+    collect();
+    const now = getHeapStatistics().used_heap_size;
+    if (Math.abs(was - now) < 64 * 1024) break;
+    was = now;
+  }
   return { js: getHeapStatistics().used_heap_size, arrays: process.memoryUsage().arrayBuffers };
 };
 
@@ -50,7 +57,7 @@ function cooked(name: string): RoadDoc {
 
 const flat = (): number => 0;
 
-/** `walkBytes`: the JS heap a walk of every record leaves held by the table (`tableRows.ts`: a slot a row, its shared members held weakly); `layerBytes`: the JS heap the layer adds; `arrayBytes`: the array buffers it adds (outside the JS heap: its columns, the masses' arrays). */
+/** `walkBytes`: the JS heap a walk of every record leaves held by the table (`tableRows.ts`: an entry a record held, let go when it is collected); `layerBytes`: the JS heap the layer adds; `arrayBytes`: the array buffers it adds (outside the JS heap: its columns, the masses' arrays). */
 interface Held { readonly buildings: number; readonly walkBytes: number; readonly layerBytes: number; readonly arrayBytes: number; readonly decoded: number; readonly ms: number }
 
 /** The layer updated round one camera over the city's middle until it settles; the heap it adds and the records left decoded. */
@@ -98,7 +105,7 @@ describe("the buildings layer's page memory", () => {
     expect(large.decoded).toBeLessThan(small.decoded * 1.5 + 64);
     // The layer's heap is the view's, not the city's (it held every record shown, sent and kept: 55 MB of the large city before, 2026-10-21).
     expect(large.layerBytes).toBeLessThan(small.layerBytes * 1.5);
-    // A walk of every record leaves a slot a row in the table, never the records nor their shared members (13.8 MB of the large city before).
-    expect(large.walkBytes / large.buildings).toBeLessThan(600);
+    // A walk of every record leaves nothing a row once collected: no slot nor dead `WeakRef` a row or a shared member (13.8 MB of the large city before, then ~380 B a building of slots; ~75 B now, 2026-10-21).
+    expect(large.walkBytes / large.buildings).toBeLessThan(150);
   }, 300_000);
 });

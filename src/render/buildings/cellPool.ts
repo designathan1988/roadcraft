@@ -11,6 +11,7 @@ import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkR
 import { levelCells } from './levelKeys';
 import { groundAround } from '../sharedGround';
 import { Digest } from '../../core/digest';
+import { IdSlots, grown } from '../../core/idSlots';
 import { forgetOtherDerived, keepDerivedNow, readDerived, readDerivedKeys } from '../derivedCache';
 
 declare const __CELL_WORK_HASH__: string | undefined;
@@ -104,10 +105,60 @@ interface Asked {
 /** A building's ground floor as a job measured it, and what it was measured on: its record, its ground (`CellEntry`) and whether the paving was read. */
 interface Floor { readonly sig: number; readonly digest: number; readonly paved: boolean; readonly floor: number | null }
 
+/** `FloorColumns` flags: the paving was read; the job found no floor (null). */
+const FLOOR_PAVED = 1, FLOOR_NONE = 2;
+
+/** THE FLOORS MEASURED, IN COLUMNS BY BUILDING ID (`core/idSlots.ts`): a plate's job measures every building of 2 km round, and a `Map` entry and an object each held ~100 B of JS heap a building of the city. A building cut open (its key `id|...`, a few at a time) is kept in a `Map` of its own. */
+class FloorColumns {
+  private readonly slots = new IdSlots(1024);
+  private sig = new Float64Array(16);
+  private digest = new Float64Array(16);
+  private floor = new Float64Array(16);
+  private flags = new Uint8Array(16);
+  private readonly cut = new Map<string, Floor>();
+
+  constructor() {
+    this.slots.onGrow = (n) => {
+      this.sig = grown(this.sig, n); this.digest = grown(this.digest, n); this.floor = grown(this.floor, n); this.flags = grown(this.flags, n);
+    };
+  }
+
+  /** A plain building's id from its key; NaN for a key of a building cut open. */
+  private static idOf(key: string): number {
+    const id = Number(key);
+    return key.length > 0 && Number.isFinite(id) && String(id) === key ? id : NaN;
+  }
+
+  get(key: string): Floor | undefined {
+    const id = FloorColumns.idOf(key);
+    if (Number.isNaN(id)) return this.cut.get(key);
+    const slot = this.slots.get(id);
+    if (slot < 0) return undefined;
+    const flags = this.flags[slot]!;
+    return { sig: this.sig[slot]!, digest: this.digest[slot]!, paved: (flags & FLOOR_PAVED) !== 0, floor: flags & FLOOR_NONE ? null : this.floor[slot]! };
+  }
+
+  set(key: string, value: Floor): void {
+    const id = FloorColumns.idOf(key);
+    if (Number.isNaN(id)) { this.cut.set(key, value); return; }
+    const slot = this.slots.take(id);
+    this.sig[slot] = value.sig; this.digest[slot] = value.digest; this.floor[slot] = value.floor ?? 0;
+    this.flags[slot] = (value.paved ? FLOOR_PAVED : 0) | (value.floor === null ? FLOOR_NONE : 0);
+  }
+
+  /** Every floor whose key `keep` refuses let go. */
+  retain(keep: (key: string) => boolean): void {
+    const gone: number[] = [];
+    this.slots.forEach((id) => { if (!keep(String(id))) gone.push(id); });
+    for (const id of gone) this.slots.delete(id);
+    for (const key of [...this.cut.keys()]) if (!keep(key)) this.cut.delete(key);
+  }
+}
+
 export class CellPool {
   private readonly asked = new Map<number, Asked>();
   /** DO NOT measure a building's floor in each job of it (its cell's masses, its tile's, its plate's, its detail, its far level): measured once, handed with the next jobs while its record and ground are the same (`CellEntry.floor`). */
-  private readonly floors = new Map<string, Floor>();
+  private readonly floors = new FloorColumns();
   /** Each key's job asked: a newer one replaces it (the queue drops it too). */
   private readonly byKey = new Map<string, Asked>();
   private nextId = 1;
@@ -306,7 +357,7 @@ export class CellPool {
 
   /** DO NOT keep the floor of a building gone from the document (a tile let go as the eye walked on): the floors kept follow what is loaded, not the way walked. `keep`: whether an entry's building is still there, by its key (an id, or a building cut open, `id|...`). */
   forgetFloors(keep: (key: string) => boolean): void {
-    for (const key of this.floors.keys()) if (!keep(key)) this.floors.delete(key);
+    this.floors.retain(keep);
   }
 
   /** Where a job's result is kept between sessions: its kind, its cell and all it is made from (each building's record and the ground under it, `CellEntry`; the paving read or not; the kit's boxes and tones). Null for a kind not kept, or with no fingerprint of the code. */

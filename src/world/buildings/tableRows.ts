@@ -6,15 +6,19 @@ import type { Building, BuildingId } from './types';
 /** The records read by id kept alive, newest last: the selection, the inspector and the tools read the same few again and again. */
 const RECENT = 2048;
 
-/** DO NOT keep every record decoded (`tableRecords` did: ~8 KB of heap a building, the table ~1.3 KB outside it). A record read is the same object while anyone holds it (a `WeakRef` a row), so a reader that compares a held record with the store's sees what it saw when every record was an object; one nobody holds is collected and decoded again when asked. */
+/** DO NOT keep every record decoded (`tableRecords` did: ~8 KB of heap a building, the table ~1.3 KB outside it). A record read is the same object while anyone holds it (a `WeakRef` by row while it lives), so a reader that compares a held record with the store's sees what it saw when every record was an object; one nobody holds is collected and decoded again when asked. */
 export class TableRows implements ReadonlyMap<BuildingId, Building> {
   readonly table: RecordTable;
   private readonly reader: TableReader;
   /** The ids sorted, and each one's row: a row found by binary search, 12 bytes a building, no `Map` entry each. */
   private readonly sortedIds: Float64Array;
   private readonly sortedRows: Uint32Array;
-  /** Each row's record while it is held somewhere (WeakRef: MDN "WeakRef"); filled once to its length, never grown from empty (a sparse array turns into a dictionary). */
-  private readonly alive: (WeakRef<Building> | undefined)[];
+  /** Each row's record while it is held somewhere (WeakRef: MDN "WeakRef"), by row: an entry while the record lives, let go by `collected` once the collector takes it. DO NOT keep a slot a row nor a dead `WeakRef` in it: a walk of the city left a slot and a `WeakRef` for every building (~380 B a building, 2026-10-21). */
+  private readonly alive = new Map<number, WeakRef<Building>>();
+  /** A record collected: its row's entry let go, unless the row was decoded again since (MDN "FinalizationRegistry"). */
+  private readonly collected = new FinalizationRegistry<number>((row) => {
+    if (this.alive.get(row)?.deref() === undefined) this.alive.delete(row);
+  });
   /** The rows last read by id (`get`), held: the working set near the player, never the whole walk of `values`. */
   private readonly recent = new Map<number, Building>();
   /** Told each record decoded (the store marks it settled: `BuildingStore.settled`). */
@@ -31,7 +35,6 @@ export class TableRows implements ReadonlyMap<BuildingId, Building> {
     this.sortedRows = order;
     this.sortedIds = new Float64Array(n);
     for (let i = 0; i < n; i++) this.sortedIds[i] = ids[order[i]!]!;
-    this.alive = new Array<WeakRef<Building> | undefined>(n).fill(undefined);
   }
 
   get [Symbol.toStringTag](): string {
@@ -65,10 +68,11 @@ export class TableRows implements ReadonlyMap<BuildingId, Building> {
 
   /** A row's record: the one held somewhere if any, else decoded now. */
   record(row: number): Building {
-    const held = this.alive[row]?.deref();
+    const held = this.alive.get(row)?.deref();
     if (held) return held;
     const b = readRow(this.reader, row);
-    this.alive[row] = new WeakRef(b);
+    this.alive.set(row, new WeakRef(b));
+    this.collected.register(b, row);
     this.onRead?.(b);
     return b;
   }
@@ -76,7 +80,7 @@ export class TableRows implements ReadonlyMap<BuildingId, Building> {
   /** How many rows' records are decoded and held somewhere now (the LRU of `get` among them): what the table saves is what is not. */
   held(): number {
     let n = 0;
-    for (const ref of this.alive) if (ref?.deref() !== undefined) n++;
+    for (const ref of this.alive.values()) if (ref.deref() !== undefined) n++;
     return n;
   }
 

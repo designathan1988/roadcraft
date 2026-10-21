@@ -1,5 +1,6 @@
 import type { Aabb } from '@core/aabb';
 import type { Vec2 } from '@core/vec2';
+import { IdSlots, grown } from '@core/idSlots';
 import { m } from '../units';
 import { type GroundAt, type PavedAt, PLINTH_MIN, floorHeight } from './foundation';
 import { groundVolumes, solidFootprints, volumeLift } from './geometry';
@@ -95,8 +96,10 @@ export function buildingPads(
   known?: WeakMap<Building, Pad | null>,
   /** Each building's floor as kept for every reader (`floors.ts`); worked out here without. */
   floorOf?: (b: Building) => number,
+  /** A building's platform worked out again by its id (`townPads`): given, the town keeps a bounded number of platforms and each one's box alone; without, every platform. */
+  resolve: ((id: number) => Pad | null) | null = null,
 ): TownPads {
-  const town = townPads(apron);
+  const town = townPads(apron, resolve);
   for (const b of buildings) {
     let pad: Pad | null;
     if (known?.has(b)) pad = known.get(b) ?? null;
@@ -170,61 +173,135 @@ export interface PadShapeCut {
 const PAD_CELL = m(25.6);
 const padCellKey = (cx: number, cy: number): number => cx * 100_003 + cy;
 
+/** The platforms kept worked out (`townPads` with a resolver), and the cells' lists of them kept put together: what a shaping round the view reads again and again, never the whole town's. */
+const PADS_KEPT = 1024;
+const CELL_LISTS_KEPT = 256;
+/** Cells a side of the squares the platforms' ids are filed under. */
+const FILE_CELLS = 4;
+
 /** The platforms filed under every grid cell their box reaches: a corner of the ground asks only the ones over it. */
-function townPads(apron: number): TownPads {
+/** DO NOT hold every building's platform (its rings, levels and bounds: ~6.8 KB of the page's heap a building of the city, 2026-10-21): with `resolve`, each one's box is kept in columns by its id (`core/idSlots.ts`) and its id in the squares of `FILE_CELLS` cells it reaches (a platform reaches ~25 cells, ~4 squares); the platform itself is worked out again by `resolve` when a shaping reads it, the last `PADS_KEPT` kept. A cell's platforms are its square's whose box reaches it, in the square's order. */
+function townPads(apron: number, resolve: ((id: number) => Pad | null) | null): TownPads {
   const CELL = PAD_CELL;
   const cellKey = padCellKey;
-  const cells = new Map<number, Pad[]>();
+  /** The ids filed under each square, in the town's order. */
+  const squares = new Map<number, number[]>();
+  const squareOf = (c: number): number => Math.floor(c / FILE_CELLS);
   const grading = new Grading();
-  const placed = new Map<number, { pad: Pad; keys: number[] }>();
-  let bounds: Aabb[] | null = null;
-  const keysOf = (pad: Pad): number[] => {
+  const slots = new IdSlots(1024);
+  let minX = new Float64Array(16), minY = new Float64Array(16), maxX = new Float64Array(16), maxY = new Float64Array(16);
+  /** Whether a slot holds a platform: the bounds read in the slots' order (the order they were handed out, as the town's was). */
+  let filled = new Uint8Array(16);
+  slots.onGrow = (n) => { minX = grown(minX, n); minY = grown(minY, n); maxX = grown(maxX, n); maxY = grown(maxY, n); filled = grown(filled, n); };
+  /** Platforms worked out, by id, oldest first (every one without `resolve`). */
+  const kept = new Map<number, Pad>();
+  /** Each cell's platforms put together from its square's ids, oldest first. */
+  const lists = new Map<number, readonly Pad[]>();
+  /** The squares a box reaches. */
+  const squaresOf = (x0: number, y0: number, x1: number, y1: number): number[] => {
     const keys: number[] = [];
-    for (let cx = Math.floor(pad.box.minX / CELL); cx <= Math.floor(pad.box.maxX / CELL); cx++) {
-      for (let cy = Math.floor(pad.box.minY / CELL); cy <= Math.floor(pad.box.maxY / CELL); cy++) keys.push(cellKey(cx, cy));
+    for (let sx = squareOf(Math.floor(x0 / CELL)); sx <= squareOf(Math.floor(x1 / CELL)); sx++) {
+      for (let sy = squareOf(Math.floor(y0 / CELL)); sy <= squareOf(Math.floor(y1 / CELL)); sy++) keys.push(cellKey(sx, sy));
     }
     return keys;
   };
+  /** Each cell a box reaches. */
+  const forEachCell = (x0: number, y0: number, x1: number, y1: number, visit: (key: number) => void): void => {
+    for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) visit(cellKey(cx, cy));
+  };
+  const keep = (id: number, pad: Pad): void => {
+    kept.delete(id);
+    kept.set(id, pad);
+    if (resolve && kept.size > PADS_KEPT) kept.delete(kept.keys().next().value!);
+  };
+  /** An id's platform: kept, or worked out again. */
+  const padAt = (id: number): Pad | null => {
+    const known = kept.get(id);
+    if (known) return known;
+    const pad = resolve?.(id) ?? null;
+    if (pad) keep(id, pad);
+    return pad;
+  };
+  /** The ids whose box reaches cell (cx, cy), in its square's order; null for none. */
+  const idsIn = (cx: number, cy: number): number[] | null => {
+    const square = squares.get(cellKey(squareOf(cx), squareOf(cy)));
+    if (!square) return null;
+    const out: number[] = [];
+    for (const id of square) {
+      const slot = slots.get(id);
+      if (Math.floor(minX[slot]! / CELL) <= cx && cx <= Math.floor(maxX[slot]! / CELL) && Math.floor(minY[slot]! / CELL) <= cy && cy <= Math.floor(maxY[slot]! / CELL)) out.push(id);
+    }
+    return out.length ? out : null;
+  };
+  const forget = (key: number): void => { lists.delete(key); };
+  const listOf = (cx: number, cy: number): readonly Pad[] | undefined => {
+    const key = cellKey(cx, cy);
+    let list = lists.get(key);
+    if (!list) {
+      const ids = idsIn(cx, cy);
+      if (!ids) return undefined;
+      const out: Pad[] = [];
+      for (const id of ids) { const pad = padAt(id); if (pad) out.push(pad); }
+      lists.set(key, list = out);
+      if (lists.size > CELL_LISTS_KEPT) lists.delete(lists.keys().next().value!);
+    }
+    return list;
+  };
   return {
-    get count() { return placed.size; },
-    shapeBounds: () => (bounds ??= [...placed.values()].map((p) => p.pad.box)),
+    get count() { return slots.size; },
+    // Made when asked (a shaping of the whole map), never kept: an object a building.
+    shapeBounds: () => {
+      const out: Aabb[] = [];
+      for (let slot = 0; slot < slots.capacity; slot++) if (filled[slot]) out.push({ minX: minX[slot]!, minY: minY[slot]!, maxX: maxX[slot]!, maxY: maxY[slot]! });
+      return out;
+    },
     put(id, pad) {
-      const was = placed.get(id);
-      if (!was && !pad) return;
-      bounds = null;
-      const keys = pad ? keysOf(pad) : [];
-      const now = new Set(keys);
-      for (const key of was?.keys ?? []) {
-        const list = cells.get(key)!;
-        const at = list.indexOf(was!.pad);
-        if (pad && now.has(key)) { list[at] = pad; now.delete(key); continue; }
-        list.splice(at, 1);
-        if (list.length === 0) cells.delete(key);
+      const slot = slots.get(id);
+      if (slot < 0 && !pad) return;
+      const now = new Set(pad ? squaresOf(pad.box.minX, pad.box.minY, pad.box.maxX, pad.box.maxY) : []);
+      if (pad) forEachCell(pad.box.minX, pad.box.minY, pad.box.maxX, pad.box.maxY, forget);
+      if (slot >= 0) {
+        forEachCell(minX[slot]!, minY[slot]!, maxX[slot]!, maxY[slot]!, forget);
+        for (const key of squaresOf(minX[slot]!, minY[slot]!, maxX[slot]!, maxY[slot]!)) {
+          // Still under it: it keeps its place in the square's order.
+          if (now.delete(key)) continue;
+          const list = squares.get(key)!;
+          list.splice(list.indexOf(id), 1);
+          if (list.length === 0) squares.delete(key);
+        }
       }
       for (const key of now) {
-        const list = cells.get(key);
-        if (list) list.push(pad!); else cells.set(key, [pad!]);
+        const list = squares.get(key);
+        if (list) list.push(id); else squares.set(key, [id]);
       }
-      if (pad) placed.set(id, { pad, keys }); else placed.delete(id);
+      if (!pad) { filled[slot] = 0; slots.delete(id); kept.delete(id); return; }
+      const at = slots.take(id);
+      filled[at] = 1;
+      minX[at] = pad.box.minX; minY[at] = pad.box.minY; maxX[at] = pad.box.maxX; maxY[at] = pad.box.maxY;
+      keep(id, pad);
     },
-    shapeAt: (x, y, ground) => shapeOverPads(cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), apron, x, y, ground, grading),
+    shapeAt: (x, y, ground) => shapeOverPads(listOf(Math.floor(x / CELL), Math.floor(y / CELL)), apron, x, y, ground, grading),
     cut(boxes) {
       const pads: Pad[] = [];
-      const indexOf = new Map<Pad, number>();
+      const indexOf = new Map<number, number>();
       const out = new Map<number, Int32Array>();
       for (const box of boxes) {
         for (let cx = Math.floor(box[0] / CELL); cx <= Math.floor(box[2] / CELL); cx++) {
           for (let cy = Math.floor(box[1] / CELL); cy <= Math.floor(box[3] / CELL); cy++) {
             const key = cellKey(cx, cy);
             if (out.has(key)) continue;
-            const list = cells.get(key) ?? NO_PADS;
-            const ids = new Int32Array(list.length);
-            list.forEach((pad, k) => {
-              let at = indexOf.get(pad);
-              if (at === undefined) { indexOf.set(pad, at = pads.length); pads.push(pad); }
-              ids[k] = at;
-            });
-            out.set(key, ids);
+            const at: number[] = [];
+            for (const id of idsIn(cx, cy) ?? NO_IDS) {
+              let k = indexOf.get(id);
+              if (k === undefined) {
+                const pad = padAt(id);
+                k = pad ? pads.length : -1;
+                if (pad) pads.push(pad);
+                indexOf.set(id, k);
+              }
+              if (k >= 0) at.push(k);
+            }
+            out.set(key, Int32Array.from(at));
           }
         }
       }
@@ -232,6 +309,8 @@ function townPads(apron: number): TownPads {
     },
   };
 }
+
+const NO_IDS: readonly number[] = Object.freeze([]);
 
 /** The platforms of a cut (`TownPads.cut`) graded as the town grades them */
 export function padShaper(cut: PadShapeCut): Pick<BuildingPads, 'shapeAt'> {
