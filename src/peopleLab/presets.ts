@@ -194,7 +194,7 @@ export interface LookPreset { readonly label: string; readonly glyph: string; re
 export const LOOKS: readonly LookPreset[] = [
   { label: 'Casual', glyph: '👕', female: { outfit: 'female_casualsuit02', outfitTint: 0x6a8fbf, footwear: 'shoes01', extras: [] },
     male: { outfit: 'male_casualsuit02', outfitTint: null, footwear: 'shoes01', extras: [] } },
-  { label: 'Social', glyph: '👔', female: { outfit: 'female_elegantsuit01', outfitTint: 0x22252b, footwear: 'shoes03', extras: [] },
+  { label: 'Social', glyph: '👔', female: { outfit: 'female_elegantsuit01', outfitTint: 0x22252b, footwear: 'elvs_flatshoe_pointy1', extras: [] },
     male: { outfit: 'male_elegantsuit01', outfitTint: null, footwear: 'shoes02', extras: [] } },
   // Not female_sportsuit01: its texture's holes show white specks at the ankles.
   { label: 'Esporte', glyph: '🏀', female: { outfit: 'female_casualsuit02', outfitTint: 0xe05a8a, footwear: 'shoes01', extras: [] },
@@ -203,7 +203,7 @@ export const LOOKS: readonly LookPreset[] = [
     male: { outfit: 'male_worksuit01', outfitTint: null, footwear: 'shoes02', extras: [] } },
   { label: 'Colorido', glyph: '🌈', female: { outfit: 'female_casualsuit01', outfitTint: 0xffd166, footwear: 'shoes01', extras: [] },
     male: { outfit: 'male_casualsuit03', outfitTint: 0xe8b820, footwear: 'shoes01', extras: [] } },
-  { label: 'Festa', glyph: '🎉', female: { outfit: 'female_elegantsuit01', outfitTint: 0xb03a2e, footwear: 'shoes03', extras: [] },
+  { label: 'Festa', glyph: '🎉', female: { outfit: 'female_elegantsuit01', outfitTint: 0xb03a2e, footwear: 'elvs_flatshoe_gemmed1', extras: [] },
     male: { outfit: 'male_elegantsuit01', outfitTint: 0x3b4a6b, footwear: 'shoes02', extras: [] } },
 ];
 

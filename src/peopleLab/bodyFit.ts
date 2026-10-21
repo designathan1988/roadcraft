@@ -12,7 +12,7 @@ export async function fitBody(person: LabPerson, builder: LabBuilder): Promise<L
   let p: LabPerson = { ...person, style: { ...person.style, legs: 1, eyes: 1 } };
   const shapes = new Map<string, BodyMeasure>();
   const at = async (q: LabPerson): Promise<BodyMeasure> => {
-    const key = JSON.stringify([q.style.head, q.spec.features['measure-shoulder-dist-decr-incr'], q.spec.features['measure-neck-circ-decr-incr']]);
+    const key = JSON.stringify([q.style.head, q.spec.features['measure-shoulder-dist-decr-incr'], q.spec.features['measure-neck-circ-decr-incr'], q.spec.features['torso-scale-horiz-decr-incr']]);
     let m = shapes.get(key);
     if (!m) { m = await bodyOf(q); shapes.set(key, m); }
     return m;
@@ -32,6 +32,11 @@ export async function fitBody(person: LabPerson, builder: LabBuilder): Promise<L
   const withF = (k: string, v: number): LabPerson => ({ ...p, spec: { ...p.spec, features: { ...p.spec.features, [k]: v } } });
   const sh = await fit1((v) => withF('measure-shoulder-dist-decr-incr', v), 'shoulders', target.shoulders, p.spec.features['measure-shoulder-dist-decr-incr'] ?? 0, -1, 1);
   p = withF('measure-shoulder-dist-decr-incr', sh);
+  // Where the shoulder slider runs out, the chest's width finishes the job.
+  if (Math.abs((await at(p)).shoulders - target.shoulders) > 0.02) {
+    const tw = await fit1((v) => withF('torso-scale-horiz-decr-incr', v), 'shoulders', target.shoulders, p.spec.features['torso-scale-horiz-decr-incr'] ?? 0, -0.7, 0.7);
+    p = withF('torso-scale-horiz-decr-incr', tw);
+  }
   const nk = await fit1((v) => withF('measure-neck-circ-decr-incr', v), 'neck', target.neck, p.spec.features['measure-neck-circ-decr-incr'] ?? 0, -1, 1);
   p = withF('measure-neck-circ-decr-incr', nk);
   return p;
