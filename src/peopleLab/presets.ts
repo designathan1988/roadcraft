@@ -196,7 +196,8 @@ export const LOOKS: readonly LookPreset[] = [
     male: { outfit: 'male_casualsuit02', outfitTint: null, footwear: 'shoes01', extras: [] } },
   { label: 'Social', glyph: '👔', female: { outfit: 'female_elegantsuit01', outfitTint: 0x22252b, footwear: 'shoes03', extras: [] },
     male: { outfit: 'male_elegantsuit01', outfitTint: null, footwear: 'shoes02', extras: [] } },
-  { label: 'Esporte', glyph: '🏀', female: { outfit: 'female_sportsuit01', outfitTint: 0xe05a8a, footwear: 'shoes01', extras: [] },
+  // Not female_sportsuit01: its texture's holes show white specks at the ankles.
+  { label: 'Esporte', glyph: '🏀', female: { outfit: 'female_casualsuit02', outfitTint: 0xe05a8a, footwear: 'shoes01', extras: [] },
     male: { outfit: 'male_casualsuit06', outfitTint: 0x2f9d8f, footwear: 'shoes01', extras: [] } },
   { label: 'Trabalho', glyph: '🦺', female: { outfit: 'female_casualsuit01', outfitTint: 0x3b4a6b, footwear: 'shoes02', extras: [] },
     male: { outfit: 'male_worksuit01', outfitTint: null, footwear: 'shoes02', extras: [] } },
@@ -205,3 +206,30 @@ export const LOOKS: readonly LookPreset[] = [
   { label: 'Festa', glyph: '🎉', female: { outfit: 'female_elegantsuit01', outfitTint: 0xb03a2e, footwear: 'shoes03', extras: [] },
     male: { outfit: 'male_elegantsuit01', outfitTint: 0x3b4a6b, footwear: 'shoes02', extras: [] } },
 ];
+
+/** The lab's base faces, approved by eye (front and profile, 2026-10-21): a soft, pretty face whose mouth sits back over a forward chin.
+ *  Every new person starts from one and varies a little; the canon fit is a button, not the default (it bent noses and mouths to their ends). */
+const SHARED_FACE: Readonly<Record<string, number>> = {
+  'eye-scale-decr-incr': 0.35, 'eye-corner1-down-up': 0.15, 'nose-point-down-up': 0.2,
+  'mouth-cupidsbow-decr-incr': 0.2, 'mouth-angles-down-up': 0.2, 'mouth-trans-backward-forward': -0.5, 'chin-prominent-decr-incr': 0.4,
+  'mouth-upperlip-volume-decr-incr': -0.2, 'mouth-lowerlip-volume-decr-incr': -0.1, 'cheek-bones-decr-incr': 0.25,
+};
+export const BASE_FACE = {
+  female: { ...SHARED_FACE, 'nose-scale-horiz-decr-incr': -0.25, 'nose-scale-vert-decr-incr': -0.2, 'nose-volume-decr-incr': -0.2,
+    'chin-width-decr-incr': -0.3, 'head-oval': 0.3, 'eyebrows-trans-down-up': 0.15, 'eyebrows-angle-down-up': 0.15 },
+  male: { ...SHARED_FACE, 'eye-scale-decr-incr': 0.25, 'chin-width-decr-incr': 0.3, 'chin-bones-decr-incr': 0.25, 'head-square': 0.3,
+    'mouth-angles-down-up': 0.1 },
+} as const;
+
+/** A base face varied a little per person (each slider up to 0.12 either way): no two alike, none bent out of shape. */
+export function variedFace(sex: 'female' | 'male', r: () => number): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(BASE_FACE[sex])) out[k] = Math.max(-1, Math.min(1, v + (r() - 0.5) * 0.24));
+  return sex === 'female' ? { ...FEMALE_FIGURE, ...out } : out;
+}
+
+/** A woman's body as she is drawn by default (the player, 2026-10-21: no builder in a dress): narrow shoulders, a small waist, fuller hips, a slim neck and arms. */
+export const FEMALE_FIGURE: Readonly<Record<string, number>> = {
+  'measure-shoulder-dist-decr-incr': -0.45, 'measure-waist-circ-decr-incr': -0.4, 'measure-hips-circ-decr-incr': 0.3, 'buttocks-volume-decr-incr': 0.25,
+  'measure-neck-circ-decr-incr': -0.35, 'upperarm-fat-decr-incr': -0.2, 'measure-upperarm-circ-decr-incr': -0.3, 'torso-scale-horiz-decr-incr': -0.25,
+};

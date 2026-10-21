@@ -14,13 +14,13 @@ import { applySkinAppearance, createPersonLayers, loadSkinAppearance, releaseSki
 import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
 import { Poser, type PoseName } from './pose';
-import { BIG_EYES, BODIES, FACES, LOOKS, PARTS, currentPreset, withBody, withFace, withPart } from './presets';
+import { BODIES, variedFace, FACES, LOOKS, PARTS, currentPreset, withBody, withFace, withPart } from './presets';
 import { HandShaper, addDragMorphs, type Region } from './direct';
 import { evenHairSheen, paintedSkin, polishPerson } from './polish';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
 import { sculptPanel } from './sculptPanel';
-import { PROC_PREFIX, readRoster, rosterOf, savedBytes, type LabPerson } from './record';
-import { CLOTH, FACE, HAIR_COLOURS, HAIR_NAMES, HEAD_SHAPES, MOODS, SKIN, STYLE_PRESETS } from './choices';
+import { PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
+import { CLOTH, FACE, NICE_HAIR, HAIR_COLOURS, HAIR_NAMES, HEAD_SHAPES, MOODS, SKIN, STYLE_PRESETS } from './choices';
 import { el, widgets } from './widgets';
 
 /** THE PERSON CREATOR LAB (`people-lab.html`): people made one by one, saved for the game; the game's own build, nothing of the game changed */
@@ -31,7 +31,7 @@ function startLab(): void {
 
   const first = randomPerson(1, 11, { body: { age: ageFromYears(26), gender: 0.06 } });
   // The first person shows a face: no glasses over the eyes.
-  let person: LabPerson = { spec: { ...first, name: '', features: { ...first.features, ...BIG_EYES }, look: { ...first.look, makeup: 0, extras: (first.look.extras ?? []).filter((x) => communityItem(x)?.kind !== 'glasses') } }, style: PIXAR };
+  let person: LabPerson = { spec: { ...first, name: '', body: { ...first.body, weight: 0.4, muscle: 0.4, proportions: 1 }, features: variedFace('female', () => 0.5), look: { ...first.look, makeup: 0, hairCut: 'long01', hairStyle: 'long', outfit: 'female_elegantsuit01', outfitTint: 0x3b6fd1, footwear: 'shoes03', extras: (first.look.extras ?? []).filter((x) => communityItem(x)?.kind !== 'glasses') } }, style: PIXAR };
   let activity: string | undefined;
   let pose: PoseName = 'idle';
   let built: BuiltPerson | null = null;
@@ -48,7 +48,9 @@ function startLab(): void {
   function freshPerson(seed: number): LabPerson {
     const id = Math.floor(Math.random() * 2 ** 30);
     const spec = randomPerson(id, seed + id);
-    return { spec: { ...spec, name: '', features: { ...spec.features, ...BIG_EYES }, look: { ...spec.look, makeup: 0 } }, style: PIXAR };
+    const hairs = NICE_HAIR[spec.body.gender < 0.5 ? 'female' : 'male'];
+    const hairCut = hairs[Math.floor(Math.random() * hairs.length)]!;
+    return { spec: { ...spec, name: '', features: variedFace(spec.body.gender < 0.5 ? 'female' : 'male', Math.random), look: { ...spec.look, makeup: 0, hairCut } }, style: PIXAR };
   }
 
   const years = (): number => yearsFromAge(person.spec.body.age);
@@ -303,7 +305,12 @@ function startLab(): void {
           const gender = v === 'f' ? 0.08 : 0.92;
           const keep = person.spec.look.outfit && (communityItem(person.spec.look.outfit)?.sex ?? (person.spec.look.outfit.startsWith('female') ? 'female' : 'male'));
           const outfit = keep === 'any' || keep === (v === 'f' ? 'female' : 'male') ? person.spec.look.outfit : v === 'f' ? 'female_casualsuit02' : 'male_casualsuit02';
-          setSpec({ body: { ...b, gender }, look: { ...person.spec.look, ...(outfit ? { outfit } : {}) } });
+          // The hair goes with the sex unless it suits both.
+          const cut = person.spec.look.hairCut ?? 'none';
+          const wrong = v === 'm' ? (NICE_HAIR.female as readonly string[]).includes(cut) || communityItem(cut)?.sex === 'female'
+            : (NICE_HAIR.male as readonly string[]).includes(cut) || communityItem(cut)?.sex === 'male';
+          const hairCut = wrong ? (v === 'm' ? 'short02' : 'long01') : cut;
+          setSpec({ body: { ...b, gender }, look: { ...person.spec.look, hairCut, ...(outfit ? { outfit } : {}) } });
         }),
         el('h3', { textContent: 'Corpos prontos' }),
         el('div', { cls: 'grid' }, ...BODIES.map((preset) => {
@@ -523,12 +530,6 @@ function startLab(): void {
   const importBtn = el('button', { cls: 'big alt', textContent: '⬆ Importar' });
   side.append(el('h2', { textContent: 'Minhas pessoas' }), save, el('div', { cls: 'pair' }, fresh, dice), gallery, el('div', { cls: 'pair' }, exportBtn, importBtn));
 
-  function loadRoster(): LabPerson[] {
-    try { return readRoster(JSON.parse(localStorage.getItem('roadcraft.peopleLab.roster') ?? 'null')); } catch (error) { console.warn('[people-lab] the saved roster could not be read', error); return []; }
-  }
-  function loadThumbs(): Record<string, string> {
-    try { return JSON.parse(localStorage.getItem('roadcraft.peopleLab.thumbs') ?? '{}') as Record<string, string>; } catch (error) { console.warn('[people-lab] the saved thumbnails could not be read', error); return {}; }
-  }
 
   /** The face, small, for the gallery. */
   function snapshot(): string {
@@ -545,13 +546,6 @@ function startLab(): void {
     return c.toDataURL('image/webp', 0.8);
   }
 
-  function markdown(people: readonly LabPerson[]): string {
-    return ['# Pessoas criadas no lab', '', `Formato \`roadcraft-people/1\`, ${people.length} pessoas.`, '',
-      ...people.map((p) => `- **${p.spec.name || 'Sem nome'}** (id ${p.spec.id}): ${Math.round(yearsFromAge(p.spec.body.age))} anos, `
-        + `${p.spec.body.gender < 0.5 ? 'feminino' : 'masculino'}, cabelo \`${p.spec.look.hairCut ?? 'none'}\`, roupa \`${p.spec.look.outfit ?? 'sob medida'}\`, `
-        + `${savedBytes(p)} bytes`)].join('\n');
-  }
-
   async function persist(): Promise<void> {
     const json = JSON.stringify(rosterOf(roster));
     try {
@@ -561,7 +555,7 @@ function startLab(): void {
     // Into the project (`lab-reports/people-roster.json`) through the dev server, for the game to take in.
     try {
       const r = await fetch('/__lab/report', { method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ stamp: 'people-roster', json: JSON.stringify(rosterOf(roster), null, 1), md: markdown(roster) }) });
+        body: JSON.stringify({ stamp: 'people-roster', json: JSON.stringify(rosterOf(roster), null, 1), md: rosterMarkdown(roster) }) });
       if (!r.ok) throw new Error(String(r.status));
     } catch (error) { console.warn('[people-lab] the roster was kept in the browser only', error); }
   }
@@ -593,8 +587,8 @@ function startLab(): void {
     renderGallery();
     say(`${saved.spec.name} salva (${savedBytes(saved)} bytes)`);
   };
-  fresh.onclick = () => { person = freshPerson(1); render(); void fitFace(); renderGallery(); };
-  dice.onclick = () => { const keepName = person.spec.name; person = freshPerson(Math.floor(Math.random() * 1e6)); person = { ...person, spec: { ...person.spec, name: keepName } }; render(); void fitFace(); };
+  fresh.onclick = () => { person = freshPerson(1); render(); rebuild(0); renderGallery(); };
+  dice.onclick = () => { const keepName = person.spec.name; person = freshPerson(Math.floor(Math.random() * 1e6)); person = { ...person, spec: { ...person.spec, name: keepName } }; render(); rebuild(0); };
   exportBtn.onclick = () => {
     const blob = new Blob([JSON.stringify(rosterOf(roster), null, 1)], { type: 'application/json' });
     const a = el('a', { href: URL.createObjectURL(blob), download: 'roadcraft-people.json' });
@@ -780,11 +774,11 @@ function startLab(): void {
   resize();
   render();
   renderGallery();
-  void fitFace();
+  rebuild(0);
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
   (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, setHair, setStyle, frame, get built() { return built; },
-    pick(tabId: string) { tab = tabId; render(); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
+    pick(tabId: string) { tab = tabId; render(); }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
     closeUp(dist = 0.5, x = 0) {
       const head = new Vector3();
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });

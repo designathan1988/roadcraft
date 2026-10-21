@@ -46,3 +46,6 @@ export const MOODS: readonly (readonly [string, string, string | undefined, Pose
   ['👋', 'Acenando', 'wave', 'wave'], ['🙌', 'Comemorando', 'cheer', 'cheer'], ['💃', 'Animado', 'dance', 'hips'],
   ['😠', 'Bravo', 'angry', 'hips'], ['🗯️', 'Discutindo', 'argue', 'idle'], ['😢', 'Chorando', 'cry', 'idle'], ['😱', 'Assustado', 'panic', 'idle'],
 ];
+
+/** Solid hairstyles that read well up close (the MakeHuman system cards, `people` studio's choices), by sex: what a new person wears. */
+export const NICE_HAIR = { female: ['long01', 'bob02', 'ponytail01', 'braid01', 'bob01'], male: ['short02', 'short01', 'short04', 'short03'] } as const;

@@ -23,13 +23,50 @@ export interface FaceMeasure {
   readonly mouth: number;
   /** Nose base to mouth over nose base to chin: 1/3. */
   readonly mouthLine: number;
+  /** One eye's width over the head's width at the eyes: the head is five eyes wide, 0.2. */
+  readonly eyeSize: number;
+  /** The jaw's width (the head's width a little below the mouth) over the cheekbones' (at the nose's base): bigonial over bizygomatic. */
+  readonly jaw: number;
 }
 
-export const CANON: FaceMeasure = { eyeLine: 0.5, thirds: 1, eyeGap: 1, nose: 1, mouth: 1.5, mouthLine: 1 / 3 };
+export const CANON: FaceMeasure = { eyeLine: 0.5, thirds: 1, eyeGap: 1, nose: 1, mouth: 1.5, mouthLine: 1 / 3, jaw: 0.8, eyeSize: 0.2 };
+
+/** A woman's face against the canon (sexual dimorphism: a vertically shorter lower face, a smaller nose and mouth - the Buryat and Caucasian 3D studies, the
+ *  geometric-morphometrics work on the jaw and chin): `fit` blends towards it by how feminine the body is. */
+export const FEMININE: FaceMeasure = { eyeLine: 0.5, thirds: 0.9, eyeGap: 1, nose: 0.92, mouth: 1.45, mouthLine: 1 / 3, jaw: 0.73, eyeSize: 0.2 };
+
+/** A woman's features the canon does not measure: a narrow, gracile jaw and chin with a soft point, cheekbones ahead of the brow ridge,
+ *  a rounder face, a fuller lower lip with its corners lifted, a slimmer neck. Each is applied at full strength on the most feminine body. */
+const FEMININE_FEATURES: Readonly<Record<string, number>> = {
+  'chin-width-decr-incr': -0.5, 'chin-bones-decr-incr': -0.45, 'chin-prominent-decr-incr': -0.25, 'chin-triangle': 0.3,
+  'cheek-bones-decr-incr': 0.3, 'head-invertedtriangular': 0.35,
+  // Brows set high and arched over an upright forehead: a low, flat brow over a sloping forehead reads as a caveman's.
+  'eyebrows-trans-down-up': 0.35, 'eyebrows-angle-down-up': 0.25, 'forehead-trans-backward-forward': 0.15,
+  'mouth-lowerlip-volume-decr-incr': 0.35, 'mouth-angles-down-up': 0.2, 'measure-neck-circ-decr-incr': -0.3,
+};
+
+/** How feminine a body is, 0 (the gender slider at the middle or above) to 1 (all the way female). */
+export const femininity = (gender: number): number => Math.max(0, Math.min(1, (0.5 - gender) * 2.5));
+
+/** The canon for this body: between the canon and the feminine one by its femininity. */
+export function canonFor(gender: number): FaceMeasure {
+  const f = femininity(gender);
+  const mix = (k: keyof FaceMeasure): number => CANON[k] + (FEMININE[k] - CANON[k]) * f;
+  return { eyeLine: mix('eyeLine'), thirds: mix('thirds'), eyeGap: mix('eyeGap'), nose: mix('nose'), mouth: mix('mouth'), mouthLine: mix('mouthLine'), jaw: mix('jaw'), eyeSize: mix('eyeSize') };
+}
+
+/** The feminine features, by the body's femininity, over the face's own. */
+export function withFeminine(features: Readonly<Record<string, number>>, gender: number): Record<string, number> {
+  const f = femininity(gender);
+  const out: Record<string, number> = { ...features };
+  for (const [k, v] of Object.entries(FEMININE_FEATURES)) out[k] = Math.max(-1, Math.min(1, v * f));
+  return out;
+}
 
 /** The sliders that set each measure, the first tried first; the next takes over where it reaches its end (each swept from -1 to 1 on the lab's face:
  *  the eye line 0.54..0.50 by the eyes' height, 0.51..0.59 by the forehead's; the thirds 0.88..0.68 by the nose's length, 0.65..0.96 by the chin's). */
 const SOLVE: readonly (readonly [keyof FaceMeasure, readonly string[]])[] = [
+  ['eyeSize', ['eye-scale-decr-incr']],
   ['eyeLine', ['eye-trans-down-up', 'forehead-scale-vert-decr-incr']],
   ['thirds', ['nose-scale-vert-decr-incr', 'chin-height-decr-incr']],
   ['eyeGap', ['eye-trans-in-out']],
@@ -116,7 +153,15 @@ export class FaceProportions {
     const front = z(L('innerCorner')) - 1;
     let chin = Infinity;
     for (const v of this.head) if (Math.abs(x(v)) < 0.12 && z(v) > front) chin = Math.min(chin, y(v));
+    // The head's width at a height: its widest pair of front vertices within 3 mm of it.
+    const widthAt = (h: number): number => {
+      let lo = Infinity, hi = -Infinity;
+      for (const v of this.head) if (Math.abs(y(v) - h) < 0.03 && z(v) > front) { lo = Math.min(lo, x(v)); hi = Math.max(hi, x(v)); }
+      return hi - lo;
+    };
     return {
+      jaw: widthAt(mouthY - (mouthY - chin) * 0.4) / widthAt(noseBase),
+      eyeSize: eyeWidth / widthAt(eyeY),
       eyeLine: (top - eyeY) / (top - chin),
       thirds: (noseBase - chin) / (brow - noseBase),
       eyeGap: eyeGap / eyeWidth,
@@ -127,9 +172,14 @@ export class FaceProportions {
   }
 
   /** The person's face set to the canon (`target`, the canon by default): each slider solved by the secant method, in passes until all agree. */
-  fit(spec: PersonSpec, target: FaceMeasure = CANON): PersonSpec {
-    let features: Record<string, number> = { ...spec.features };
-    const at = (slider: string, v: number): Record<string, number> => ({ ...features, [slider]: Math.max(-1, Math.min(1, v)) });
+  fit(spec: PersonSpec, target: FaceMeasure = canonFor(spec.body.gender)): PersonSpec {
+    // The sex's features first: they move the chin and mouth the canon then measures.
+    let features: Record<string, number> = withFeminine(spec.features, spec.body.gender);
+    // A fitting slider moves at most this far: pushed to its end, a slider deforms the face more than any proportion it buys (a nose or mouth at -1 is a pout, a 'testicle' face).
+    const REACH = 0.45;
+    // The eye's size may go all the way: it is the one slider the five-eyes rule leans on, and it keeps the eye's shape.
+    const reach = (slider: string): number => (slider === 'eye-scale-decr-incr' ? 1 : REACH);
+    const at = (slider: string, v: number): Record<string, number> => ({ ...features, [slider]: Math.max(-reach(slider), Math.min(reach(slider), v)) });
     // Passes until every measure is within 1% of the canon (the sliders touch each other: a longer chin lowers the eye line's share).
     for (let pass = 0; pass < 8; pass++) {
       const now = this.measure({ ...spec, features });
@@ -140,7 +190,7 @@ export class FaceProportions {
           let a = features[slider] ?? 0, b = a + 0.25;
           let fa = err(a), fb = err(b);
           for (let i = 0; i < 6 && Math.abs(fb) > 1e-3 && Math.abs(fb - fa) > 1e-6; i++) {
-            const c = Math.max(-1, Math.min(1, b - fb * (b - a) / (fb - fa)));
+            const c = Math.max(-reach(slider), Math.min(reach(slider), b - fb * (b - a) / (fb - fa)));
             a = b; fa = fb; b = c; fb = err(c);
           }
           features = at(slider, b);

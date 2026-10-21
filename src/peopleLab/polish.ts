@@ -91,7 +91,7 @@ function upperLashesOnly(mesh: SkinnedMesh): void {
   }
   index.needsUpdate = true;
   // Short lashes hugging the lid: each upper lash drawn halfway back to its root, the lid line (the lowest lash point in its 2 mm slice across the eye).
-  const BIN = 0.002, KEEP = 0.42;
+  const BIN = 0.002, KEEP = 0.34;
   const roots = new Map<number, [number, number]>();
   for (let v = 0; v < hairMask.count; v++) {
     if (Math.round(hairMask.getX(v)) !== LASH_SLOT || position.getY(v) < middle(position.getX(v))) continue;
@@ -120,8 +120,36 @@ function solidHair(mesh: SkinnedMesh, look: PersonLook): void {
   colour.needsUpdate = true;
 }
 
+/** No spikes off a garment: a vertex fitted to the wrong body point stretches its triangles into a long spike (a skirt's corner pulled to the knee).
+ *  A garment triangle with an edge over six times the garment's typical edge is folded to a point. */
+function foldSpikes(mesh: SkinnedMesh): void {
+  const g = mesh.geometry;
+  const slot = g.getAttribute('garmentSlot') as BufferAttribute | undefined;
+  const position = g.getAttribute('position') as BufferAttribute;
+  if (!slot || !g.index) return;
+  const index = g.index;
+  const edge = (a: number, b: number): number => Math.hypot(position.getX(a) - position.getX(b), position.getY(a) - position.getY(b), position.getZ(a) - position.getZ(b));
+  const lengths = new Map<number, number[]>();
+  for (let t = 0; t < index.count; t += 3) {
+    const a = index.getX(t), b = index.getX(t + 1), c = index.getX(t + 2);
+    const k = Math.round(slot.getX(a));
+    if (k < 1 || a === b) continue;
+    (lengths.get(k) ?? lengths.set(k, []).get(k)!).push(edge(a, b), edge(b, c), edge(c, a));
+  }
+  const typical = new Map<number, number>();
+  for (const [k, list] of lengths) { list.sort((x, y) => x - y); typical.set(k, list[Math.floor(list.length / 2)]!); }
+  for (let t = 0; t < index.count; t += 3) {
+    const a = index.getX(t), b = index.getX(t + 1), c = index.getX(t + 2);
+    const k = Math.round(slot.getX(a));
+    const limit = (typical.get(k) ?? Infinity) * 6;
+    if (k >= 1 && Math.max(edge(a, b), edge(b, c), edge(c, a)) > limit) { index.setX(t + 1, a); index.setX(t + 2, a); }
+  }
+  index.needsUpdate = true;
+}
+
 export function polishPerson(meshes: readonly SkinnedMesh[], look: PersonLook): void {
   for (const mesh of meshes) {
+    foldSpikes(mesh);
     clearScalpPaint(mesh, look);
     solidHair(mesh, look);
     upperLashesOnly(mesh);
@@ -170,7 +198,7 @@ export function evenHairSheen(material: MeshStandardMaterial): void {
       .replace('vec3 along = dp2 * du1.x - dp1 * du2.x;', 'vec3 along = vec3(0.0, 1.0, 0.0);')
       // No lash cards: their thin strands read as grey spikes round the eye.
       // Lashes as one dark, full line (The Sims draws them so): their strands' alpha thickened, never thinned.
-      .replace('cardTexel.a *= 0.65;', 'cardTexel.a = min(1.0, cardTexel.a * 0.95);')
+      .replace('cardTexel.a *= 0.65;', 'cardTexel.a = min(1.0, cardTexel.a * 0.75);')
       .replace('diffuseColor.a = cardTexel.a;', 'diffuseColor.a = cardTexel.a; if (slot > 2.5 && slot < 3.5) diffuseColor.rgb = vec3(0.02);');
   };
   material.customProgramCacheKey = () => `${key}-lab-even-sheen`;
