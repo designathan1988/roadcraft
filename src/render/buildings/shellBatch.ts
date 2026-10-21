@@ -1,8 +1,9 @@
-import { BatchedMesh, BufferAttribute, BufferGeometry, Group, type InterleavedBufferAttribute, type Material, Matrix4, type Mesh } from 'three';
+import { BufferAttribute, BufferGeometry, Group, type InterleavedBufferAttribute, type Material, Matrix4, type Mesh } from 'three';
 
 import { SHELL_MESH } from './cellArrays';
 import type { BuildingKit } from './kit';
 import type { BuildingMeshes } from './buildingMesh';
+import { GpuBatchedMesh } from './gpuBatchedMesh';
 
 /** THE CELLS' WALLS, ONE MULTI-DRAW A MATERIAL */
 // Every cell landed its shells as meshes of its own: a cell at its facade level drew a piece a group of buildings (`cellArrays.ts`
@@ -18,13 +19,13 @@ type ShellSet = 'detail' | 'facade' | 'runs';
 const IDENTITY = new Matrix4();
 
 /** A batch whose drawn pieces changed (one added, taken out, shown or hidden): its `castVersion` stepped, read by the shadows' signature of their still casters (`renderer.ts` casterSignature). DO NOT leave it to a timed redraw: a batch's pieces shown or hidden change none of its attributes, and only the cascades' safety redraw caught them (a whole cascade every ten frames, the frames that missed their vsync). */
-function castChanged(mesh: BatchedMesh): void {
+function castChanged(mesh: GpuBatchedMesh): void {
   mesh.userData['castVersion'] = ((mesh.userData['castVersion'] as number | undefined) ?? 0) + 1;
 }
 
 interface Batch {
   readonly set: ShellSet;
-  mesh: BatchedMesh;
+  mesh: GpuBatchedMesh;
   vertices: number;
   indices: number;
   instances: number;
@@ -158,7 +159,8 @@ export class ShellBatch {
   private makeBatches(): Batch[] {
     const make = (set: ShellSet, group: Group, material: Material): Batch => {
       // Small at first: a set the view never fills (the detail level from afar) held 65k vertices of nothing before (measured 2026-10-20).
-      const mesh = new BatchedMesh(64, 1 << 14, 1 << 15, material);
+      // Its buffers on the GPU only (`gpuBatchedMesh.ts`): DO NOT go back to three's BatchedMesh, whose arrays of the batch's whole size held a large city's walls a second time on the page (333 MB).
+      const mesh = new GpuBatchedMesh(64, 1 << 14, 1 << 15, material);
       mesh.name = `building-shell-batch-${set}`;
       mesh.castShadow = true;
       mesh.receiveShadow = true;

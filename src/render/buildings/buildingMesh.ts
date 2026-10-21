@@ -4057,8 +4057,10 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     setVisible(visible) {
       group.visible = visible;
     },
+    // DO NOT name `meshes` here: a shell taken into the multi-draw batch (`shellBatch.ts` add) leaves the group, and this closure, kept as long as the cell, held it and its arrays (107 MB of a large city's walls, heap snapshot of 2026-10-20). The meshes still in the group are the ones to let go.
     dispose() {
-      for (const mesh of meshes) {
+      for (const child of [...group.children]) {
+        const mesh = child as Mesh | InstancedMesh;
         // The shell geometry is this build's own; the part geometries are the kit's.
         if (mesh instanceof InstancedMesh) {
           // A part's posed copy of the kit's model: its own buffers freed, the model's kept (`partPose.ts`).

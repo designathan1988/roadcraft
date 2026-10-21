@@ -156,6 +156,7 @@ const viewOf = (zoom: number): CityView => (zoom >= STREET_ZOOM ? 'street' : zoo
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer, GAME_DETAIL_MEMORY_MB } from './buildings/layer';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
+import { gpuBatchContext } from './buildings/gpuBatchedMesh';
 import { wantAllTexels } from './surfaceTextures';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
@@ -1074,6 +1075,8 @@ export function createSceneRenderer(
   const signals: SignalHeads = createSignalHeads(scene, deckHeight);
 
   // Modular buildings: their own layer, behind their own gate
+  // The shell batches write their buffers on the GPU with this context (`gpuBatchedMesh.ts`).
+  gpuBatchContext(renderer.getContext() as WebGL2RenderingContext);
   const buildings = createBuildingLayer(anisotropy);
   // Buildings are placed once, never moved: a still tree.
   holdStill(buildings.group);

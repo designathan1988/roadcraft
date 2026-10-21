@@ -47,6 +47,13 @@ export function countMemory(root: Object3D, options: CountOptions = {}): MemoryC
     const array = owner.array as (ArrayLike<number> & { byteLength?: number }) | null;
     // Let go after upload with its size kept (`gpuOnly.ts`): on the GPU, off the CPU.
     const kept = (owner as { keptBytes?: number }).keptBytes;
+    // A buffer three never held an array for (`GLBufferAttribute`, the shell batches' `gpuBatchedMesh.ts`): on the GPU, its size kept.
+    if ((owner as { isGLBufferAttribute?: boolean }).isGLBufferAttribute) {
+      if (kept === undefined) { releasedBuffers++; return; }
+      geometryBytes += kept;
+      bytesByName.set(holder, (bytesByName.get(holder) ?? 0) + kept);
+      return;
+    }
     // DO NOT guess a buffer let go without its size at 4 bytes an item: `roadResidency.ts` lets a far block's go AND disposes it - nothing held anywhere, and it was counted as GPU memory (report TST-09).
     if (!array && kept === undefined) { releasedBuffers++; return; }
     const bytes = array ? array.byteLength ?? array.length * 4 : kept!;
