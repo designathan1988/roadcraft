@@ -141,17 +141,33 @@ export function runFor(kind: ElementKind, rise: number): number {
   return Math.max(STEP_RUN, Math.ceil(rise / STEP_RISE - 1e-9) * STEP_RUN);
 }
 
-/** The first volume an element would stand inside of, or null. Touching is allowed. */
-export function elementClash(b: Building, e: BuildingElement): Volume | null {
+/** Each block's heights as `elementClash` reads them, its floor then its top (two numbers a block, in the order of `b.volumes`; a lot, a cut or a clip left at 0): worked out once for a building whose every part is checked (`validate.ts` `structuralProblem`), not once a part. */
+export function massSpans(b: Building): Float64Array {
+  const volumes = b.volumes;
+  const out = new Float64Array(volumes.length * 2);
+  for (let i = 0; i < volumes.length; i++) {
+    const v = volumes[i]!;
+    if (v.open || v.mode === 'void' || v.mode === 'intersect') continue;
+    out[i * 2] = v.base === 0 ? Math.min(0, volumeLift(v)) : volumeElevation(b, v, v.base);
+    out[i * 2 + 1] = volumeElevation(b, v, volumeTop(v));
+  }
+  return out;
+}
+
+/** The first volume an element would stand inside of, or null. Touching is allowed. `spans`: the building's `massSpans`, when the building is unchanged since. */
+export function elementClash(b: Building, e: BuildingElement, spans?: Float64Array): Volume | null {
   const [x0, y0, x1, y1] = elementRect(e);
   const z0 = e.z;
   const z1 = e.z + e.h;
-  for (const v of b.volumes) {
+  const volumes = b.volumes;
+  for (let i = 0; i < volumes.length; i++) {
+    const v = volumes[i]!;
     // A lot is ground to stand things on, and a cut or a clip is no mass.
     if (v.open || v.mode === 'void' || v.mode === 'intersect') continue;
-    // Its own heights (a block at a floor of its own, `Volume.lift`)
-    const vz0 = v.base === 0 ? Math.min(0, volumeLift(v)) : volumeElevation(b, v, v.base);
-    const vz1 = volumeElevation(b, v, volumeTop(v));
+    // Its own heights (a block at a floor of its own, `Volume.lift`): read from `spans` when given (`massSpans`, the same numbers).
+    const known = spans !== undefined && i * 2 + 1 < spans.length;
+    const vz0 = known ? spans[i * 2]! : v.base === 0 ? Math.min(0, volumeLift(v)) : volumeElevation(b, v, v.base);
+    const vz1 = known ? spans[i * 2 + 1]! : volumeElevation(b, v, volumeTop(v));
     // A canopy, an awning or a unit hangs ON the wall
     if (ON_FACADE.has(e.kind)) {
       if (z0 < vz1 - EPS && vz0 < z1 - EPS && pointInPolygon({ x: e.x, y: e.y }, localFootprint(v))) return v;

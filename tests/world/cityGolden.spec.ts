@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSmallCityMap } from '@editor/smallCityMap';
+import { buildLargeCityMap, buildSmallCityMap } from '@editor/smallCityMap';
 
 /** FNV-1a over a string: the map's text as one number. */
 function hashText(text: string): number {
@@ -25,4 +25,16 @@ describe('city golden', () => {
       }
     `);
   });
+
+  // The large city (8,102 buildings): what the speed work on the generator (an index, a sort, a number worked out once) must leave as it was, bit for bit. Its number taken on the generator before that work (e9dc867f).
+  it('the large city of seed 7 is made exactly as before', () => {
+    const doc = buildLargeCityMap(7);
+    const text = JSON.stringify(doc);
+    expect({ hash: hashText(text), length: text.length }).toMatchInlineSnapshot(`
+      {
+        "hash": 2774247772,
+        "length": 60395033,
+      }
+    `);
+  }, 180_000);
 });

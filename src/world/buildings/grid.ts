@@ -7,6 +7,9 @@ import type { BuildingId } from './types';
 /** Side of a cell, world units: as wide as the largest of the common buildings. */
 const CELL = m(64);
 const keyOf = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
+/** A rank and an id packed in one number (`BuildingGrid.inOrder`): ids below 2^32, ranks below 2^20, the two within a double's 53 exact bits. */
+const PACKED_IDS = 2 ** 32;
+const PACKED_RANKS = 2 ** 20;
 
 interface Placed {
   readonly keys: readonly number[];
@@ -132,7 +135,25 @@ export class BuildingGrid<T extends Filed> {
         for (const id of this.cellAt(keyOf(i, j)) ?? []) found.add(id);
       }
     }
-    return [...found].sort((a, b) => this.placedOf(a)!.rank - this.placedOf(b)!.rank);
+    return this.inOrder(found);
+  }
+
+  /** Ids in the store's order (by rank, each rank one building's) */
+  private inOrder(ids: Set<BuildingId>): BuildingId[] {
+    // DO NOT sort by a comparator reading two ranks from the map at each comparison: the growth asks 200 m round every lot (`LIKE_REACH`), a hundred buildings and more sorted each time. Each rank and its id packed in one number (rank above, id below) sorted as numbers: the same order, ranks being distinct.
+    const keys = new Float64Array(ids.size);
+    let k = 0;
+    for (const id of ids) {
+      const rank = this.placedOf(id)!.rank;
+      if (rank >= PACKED_RANKS || id < 0 || id >= PACKED_IDS || !Number.isInteger(id)) {
+        return [...ids].sort((a, b) => this.placedOf(a)!.rank - this.placedOf(b)!.rank);
+      }
+      keys[k++] = rank * PACKED_IDS + id;
+    }
+    keys.sort();
+    const out = new Array<BuildingId>(keys.length);
+    for (let i = 0; i < keys.length; i++) out[i] = (keys[i]! % PACKED_IDS) as BuildingId;
+    return out;
   }
 
   /** DO NOT ask `near` rectangle by rectangle for many */
@@ -158,6 +179,6 @@ export class BuildingGrid<T extends Filed> {
         for (const r of list) if (meets(id, r)) { kept.add(id); break; }
       }
     }
-    return [...kept].sort((a, b) => this.placedOf(a)!.rank - this.placedOf(b)!.rank);
+    return this.inOrder(kept);
   }
 }
