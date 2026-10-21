@@ -1,6 +1,6 @@
 import type { JobScope } from '../jobs/jobScope';
 
-/** THE AUTOSAVE'S WRITER: the text, the compression and the IndexedDB write of what the page found changed, off the page */
+/** THE AUTOSAVE'S WRITER: the compression and the IndexedDB write of the binary frames the page found changed (transferred, never copied), off the page */
 
 import { type SaveBatch, writeBatch } from './saveStore';
 import { StoreTurns } from './storeTurns';
