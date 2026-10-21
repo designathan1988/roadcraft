@@ -1,0 +1,15 @@
+{
+  "hash": "b9b04041bf6abb27",
+  "cities": {
+    "large": {
+      "seed": 7,
+      "data": "large-7.json.gz",
+      "table": "large-7.table.gz"
+    },
+    "small": {
+      "seed": 7,
+      "data": "small-7.json.gz",
+      "table": "small-7.table.gz"
+    }
+  }
+}

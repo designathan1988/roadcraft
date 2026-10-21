@@ -5,6 +5,7 @@ import { watchDesktopShown } from './desktopShown';
 import { canQueueJobs, jobChannel, jobLanes, jobPoolStats, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
 import type { CityGenAsk, CityGenReply } from './cityGen.worker';
 import { type OpenedCity, prepareCity, preparedCity } from './editor/preparedCity';
+import { COOKED_CITY_SEEDS, readCookedCity } from './editor/cookedCities';
 import { tableBytes, tableIn } from '@world/buildings/recordTable';
 import { desktopJobWorkers } from './desktopJobs';
 import { profileOf } from '@world/roads/profile';
@@ -2008,7 +2009,8 @@ let cityOpening: Promise<void> | null = null;
 let cityAskId = 1;
 
 /** The generated cities kept from earlier sessions, by the generator's code (`cook-plugin.ts` DERIVED: its whole import closure): the same seed makes the same city with the same code, so one made before is read, not made again. */
-const CITY_PREFIX = typeof __CITY_GEN_HASH__ !== 'undefined' && __CITY_GEN_HASH__ ? `city:${__CITY_GEN_HASH__}:` : null;
+const CITY_HASH = typeof __CITY_GEN_HASH__ !== 'undefined' && __CITY_GEN_HASH__ ? __CITY_GEN_HASH__ : null;
+const CITY_PREFIX = CITY_HASH ? `city:${CITY_HASH}:` : null;
 if (CITY_PREFIX) forgetOtherDerived('city', CITY_PREFIX.slice('city:'.length, -1));
 // The next new cities made ahead from the start (`cityAhead`), once the boot's work is behind.
 queueMicrotask(() => citiesAheadLater());
@@ -2027,6 +2029,13 @@ async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
   if (making) { performance.mark('city:ahead'); return openedOf(await making); }
   const kept = key ? await readDerived<KeptCity>(key).catch(() => undefined) : undefined;
   if (kept?.data && kept.buildings instanceof ArrayBuffer) { performance.mark('city:kept'); return preparedCity(kept.data, tableIn(kept.buildings)); }
+  // Shipped with the game (the first new city of its size, `cookedCities.ts`): read, and kept as one grown here would be.
+  const cooked = (ask.kind === 'large' || ask.kind === 'small') ? await readCookedCity(import.meta.env.BASE_URL, CITY_HASH, ask.kind, ask.seed ?? 7) : null;
+  if (cooked) {
+    performance.mark('city:cooked');
+    if (key) void keepDerivedDurably(key, { data: cooked.data, buildings: cooked.buildings } satisfies KeptCity);
+    return preparedCity(cooked.data, tableIn(cooked.buildings));
+  }
   if (key) performance.mark('city:made');
   return openedOf(await cityJob(ask, key, 0));
 }
@@ -2070,7 +2079,8 @@ function nextCitySeed(kind: CityGenAsk['kind'], take = false): number {
   let seeds: Partial<Record<CityGenAsk['kind'], number>> = {};
   try { seeds = JSON.parse(localStorage.getItem(NEXT_CITY_KEY) ?? '{}') as typeof seeds; } catch { /* none kept */ }
   const fresh = (): number => Math.floor(Math.random() * 0x7fff_ffff) || 1;
-  const seed = Number.isInteger(seeds[kind]) && seeds[kind]! > 0 ? seeds[kind]! : fresh();
+  // The first of a size is the city shipped with the game (`COOKED_CITY_SEEDS`): read, never grown in front of the player.
+  const seed = Number.isInteger(seeds[kind]) && seeds[kind]! > 0 ? seeds[kind]! : (kind === 'large' || kind === 'small' ? COOKED_CITY_SEEDS[kind] : fresh());
   seeds[kind] = take ? fresh() : seed;
   try { localStorage.setItem(NEXT_CITY_KEY, JSON.stringify(seeds)); } catch { /* not kept: a seed of its own next time */ }
   return seed;
@@ -2085,6 +2095,9 @@ async function cityAhead(kind: CityGenAsk['kind']): Promise<void> {
   const kept = await readDerivedKeys(CITY_PREFIX).catch(() => new Set<string>());
   // `readDerivedKeys` gives the keys without their prefix: DO NOT ask for the whole key, every kept city was grown again.
   if (kept.has(key.slice(CITY_PREFIX.length)) || citiesAhead.has(key)) return;
+  // The city shipped with the game for this seed (`cookedCities.ts`): kept from its files, DO NOT grow it again.
+  const cooked = await readCookedCity(import.meta.env.BASE_URL, CITY_HASH, kind, seed);
+  if (cooked) { void keepDerivedDurably(key, { data: cooked.data, buildings: cooked.buildings } satisfies KeptCity); return; }
   const made = cityJob({ id: cityAskId++, kind, seed }, key, 1_000_000);
   citiesAhead.set(key, made);
   void made.catch(() => {}).finally(() => { if (citiesAhead.get(key) === made) citiesAhead.delete(key); });

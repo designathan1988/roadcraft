@@ -89,6 +89,14 @@ function derivedHash(root: string, entry: string, also: readonly string[] = []):
   return hash.digest('hex').slice(0, 16);
 }
 
+/** The city generator's fingerprint (`__CITY_GEN_HASH__`): what the shipped cities are stamped with (`scripts/cook-cities.mjs`). */
+export function cityGenHash(root: string): string {
+  return derivedHash(root, 'src/cityGen.worker.ts');
+}
+
+/** The shipped cities' folder (`src/editor/cookedCities.ts`), copied whole into the build. */
+const CITIES_DIR = 'cities';
+
 /** Refuses to build a game without the cast's people. */
 function checkCooked(root: string, stampWanted: string, dir: CookDir): void {
   const manifest = path.join(root, DIR, dir, 'manifest.json');
@@ -139,6 +147,11 @@ export function cookPlugin(): Plugin {
       if (!building || checked) return;
       checked = true;
       for (const c of COOKS) checkCooked(root, c.stamp, c.dir);
+      // The shipped cities of another generator are not read (each grown in front of the player again): said, not refused.
+      try {
+        const cities = JSON.parse(fs.readFileSync(path.join(root, DIR, CITIES_DIR, 'manifest.json'), 'utf8')) as { hash?: string };
+        if (cities.hash !== cityGenHash(root)) this.warn(`The shipped cities in ${DIR}/${CITIES_DIR} were grown by another generator: run \`npm run cook:cities\` (the first new cities are grown in front of the player until then).`);
+      } catch { this.warn(`No shipped cities in ${DIR}/${CITIES_DIR}: run \`npm run cook:cities\`.`); }
     },
     configResolved(resolved) {
       outDir = path.resolve(resolved.root, resolved.build.outDir);
@@ -179,6 +192,12 @@ export function cookPlugin(): Plugin {
     },
     closeBundle() {
       if (serverSide) return;
+      const citiesFrom = path.join(root, DIR, CITIES_DIR);
+      if (fs.existsSync(citiesFrom)) {
+        const to = path.join(outDir, DIR, CITIES_DIR);
+        fs.mkdirSync(to, { recursive: true });
+        for (const name of fs.readdirSync(citiesFrom)) fs.copyFileSync(path.join(citiesFrom, name), path.join(to, name));
+      }
       for (const c of COOKS) {
         if (stampOf(c.dir) !== c.stamp) continue;
         const from = path.join(root, DIR, c.dir);

@@ -25,6 +25,7 @@
     "check": "node scripts/run-limited.mjs node scripts/check.mjs",
     "check:all": "node scripts/run-limited.mjs node scripts/check.mjs --all",
     "cook:people": "node scripts/cook-people.mjs --base=http://127.0.0.1:5300",
+    "cook:cities": "node scripts/cook-cities.mjs",
     "desktop": "electron desktop/main.cjs",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
     "test:scale:raw": "vitest run -c vitest.scale.config.ts",
