@@ -13,15 +13,15 @@ import { siteGrading } from '@world/buildings/siteGrading';
 import { buildingFloors } from '@world/buildings/floors';
 import { storedBounds } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
-import { ChangeJournal } from '@world/changes';
 import type { Network } from '@world/network';
 import type { ChangeLog } from '@core/changeLog';
 import type { GraphChange } from '@world/lanelets';
 import { followKerbs, newKerbBook } from '@sim/agents/kerbBays';
 import { BuildingsInOrder } from '@sim/agents/buildingOrder';
-import { TrafficBuildingTable, docBuildings } from '@sim/agents/trafficBuildings';
-import { eachSectionRecord } from '@world/buildings/sections';
-import { trafficBuilding } from '@sim/agents/trafficBuildings';
+import { HELD_RECORDS, TRAIT_PARKING, TRAIT_YARD, TrafficBuildingTable, docBuildings } from '@sim/agents/trafficBuildings';
+import { BuildingMix, SightWalls } from '@sim/ambient/ambientIndex';
+import { LotPlaces } from '@sim/ambient/lotPlaces';
+import { DemandCells } from '@sim/meso/demand';
 import { m } from '@world/units';
 
 /**
@@ -30,7 +30,9 @@ import { m } from '@world/units';
  * walk of every record, the buildings' layer round one camera (its cells' floors, its plates), the wear's watch, the sites' grading, the
  * kerbs' entrances, the store's order - and the JS heap each one adds measured after a full collection. What a system holds per building
  * shows as bytes a building that grow with the city; what it holds per view or per cell does not. The simulation worker's own copy of the
- * buildings (`TrafficBuildingTable`) is measured apart: it lives in its worker, not on the page.
+ * buildings (`TrafficBuildingTable`) is measured apart: it lives in its worker, not on the page - its columns as loaded, the traffic
+ * records it holds once every building was asked (`HELD_RECORDS`), and what the worker's readers of the buildings keep of each (the
+ * sight lines' walls, the mix, the meso's demand, the places people walk to, the kerbs' entrances, the lots and yards in order).
  */
 
 vi.mock('@render/buildings/cellWork', async (load) => {
@@ -65,12 +67,18 @@ function cooked(name: string): RoadDoc {
   return doc;
 }
 
+/** The JS heap and the typed arrays' memory outside it (`process.memoryUsage().arrayBuffers`): the worker's columns live there. */
+const memory = async (): Promise<number> => (await heap()) + process.memoryUsage().arrayBuffers;
+
 const flat = (): number => 0;
 
 /** The JS heap each system adds, bytes, in the order they were brought up. */
 type Held = Record<string, number>;
 
-async function heldBy(name: string): Promise<{ buildings: number; page: Held; worker: number }> {
+/** What the simulation's worker holds of the buildings: its table as loaded, the records it holds once all were asked, its readers'. */
+interface WorkerHeld { readonly table: number; readonly held: number; readonly readers: Held }
+
+async function heldBy(name: string): Promise<{ buildings: number; page: Held; worker: WorkerHeld }> {
   const doc = cooked(name);
   const table = doc.buildings.table!.table;
   let sx = 0, sy = 0;
@@ -134,20 +142,54 @@ async function heldBy(name: string): Promise<{ buildings: number; page: Held; wo
   await measure('kerbBays');
 
   // The store's order and a list kept in it (the lots that park).
-  const order = new BuildingsInOrder((b) => (b.elements ?? []).some((el) => el.kind === 'parking'));
+  const order = new BuildingsInOrder((b) => (b.traits & TRAIT_PARKING) !== 0);
   order.update({ doc, buildings });
   keep.push(order);
   await measure('buildingOrder');
 
-  // The simulation worker's copy of the buildings (`takeTrafficMap`), measured apart.
-  const workerFrom = await heap();
-  const traffic = new TrafficBuildingTable(new ChangeJournal());
-  traffic.load(Array.from(eachSectionRecord(doc.buildings.sections()), trafficBuilding));
-  const worker = (await heap()) - workerFrom;
+  // The simulation worker's copy of the buildings (`takeTrafficMap`), measured apart: its columns, then every building asked once.
+  const workerFrom = await memory();
+  const copy = new RoadDoc();
+  const traffic = new TrafficBuildingTable(copy.changes);
+  traffic.load(doc.buildings.sections());
+  const columns = (await memory()) - workerFrom;
+  let asked = 0;
+  for (const id of traffic.ids()) asked += traffic.get(id)!.volumes.length;
+  expect(asked).toBe(volumes);
+  const held = (await memory()) - workerFrom - columns;
+  // The worker's readers of the buildings, each brought up in turn, as the simulation brings them up on a map sent whole.
+  const readers: Held = {};
+  let was = await memory();
+  const reader = async (system: string, made: unknown): Promise<void> => {
+    keep.push(made);
+    const now = await memory();
+    readers[system] = now - was;
+    was = now;
+  };
+  const walls = new SightWalls();
+  walls.sync(traffic, copy.changes);
+  await reader('sightWalls', walls);
+  const mix = new BuildingMix();
+  mix.sync(traffic, copy.changes);
+  await reader('buildingMix', mix);
+  const demand = new DemandCells();
+  demand.sync(traffic, copy.changes);
+  await reader('demandCells', demand);
+  const places = new LotPlaces({ wayOf: () => null });
+  places.sync(traffic, copy.changes);
+  await reader('lotPlaces', places);
+  const workerBook = newKerbBook();
+  followKerbs({ doc: copy, net, topologyLog, buildings: traffic }, workerBook, null, { rank: () => 0, laneAt: () => null, linksKey: () => 0 });
+  await reader('kerbEntrances', workerBook);
+  const lots = new BuildingsInOrder((b) => (b.traits & TRAIT_PARKING) !== 0), yards = new BuildingsInOrder((b) => (b.traits & TRAIT_YARD) !== 0);
+  lots.update({ doc: copy, buildings: traffic });
+  yards.update({ doc: copy, buildings: traffic });
+  await reader('lotsAndYards', [lots, yards]);
+  expect(lots.ids).toEqual(order.ids);
   expect(traffic.get(doc.buildings.idList().next().value!)).toBeTruthy();
   expect(keep.length).toBeGreaterThan(0);
   layer.dispose();
-  return { buildings: doc.buildings.size, page, worker };
+  return { buildings: doc.buildings.size, page, worker: { table: columns, held, readers } };
 }
 
 describe("the page's memory of a city round one camera", () => {
@@ -157,10 +199,21 @@ describe("the page's memory of a city round one camera", () => {
     const total = (held: Held): number => Object.values(held).reduce((a, b) => a + b, 0);
     for (const [name, city] of [['small', small], ['large', large]] as const) {
       const per = Object.entries(city.page).map(([system, bytes]) => `${system} ${(bytes / city.buildings).toFixed(0)}`).join(', ');
-      console.log(`[cityMemory] ${name}: ${city.buildings} buildings, page ${(total(city.page) / 1e6).toFixed(1)} MB (${(total(city.page) / city.buildings).toFixed(0)} B a building: ${per}), the simulation's copy ${(city.worker / city.buildings).toFixed(0)} B a building`);
+      const w = city.worker;
+      const readers = Object.entries(w.readers).map(([system, bytes]) => `${system} ${(bytes / city.buildings).toFixed(0)}`).join(', ');
+      console.log(`[cityMemory] ${name}: ${city.buildings} buildings, page ${(total(city.page) / 1e6).toFixed(1)} MB (${(total(city.page) / city.buildings).toFixed(0)} B a building: ${per}), ` +
+        `the simulation's copy ${(w.table / city.buildings).toFixed(0)} B a building, its records held ${(w.held / 1e6).toFixed(1)} MB (${HELD_RECORDS} at most), its readers ${(total(w.readers) / city.buildings).toFixed(0)} B a building: ${readers}`);
     }
     expect(large.buildings).toBeGreaterThan(small.buildings * 4);
     // The page's systems hold the view's share of the city, not each building's: six times the buildings, at most half again the heap and a fixed margin.
     expect(total(large.page)).toBeLessThan(total(small.page) * 1.5 + 4e6);
+    // The worker's copy: its columns at most 1 KB a building (10.7 KB of records before, 2026-10-21), the records it holds a fixed
+    // share however many buildings were asked (`HELD_RECORDS` of ~10 KB), its readers' at most 1.5 KB a building together (typed
+    // arrays counted: ~1.1 KB in the large city, the walls' rings the most).
+    for (const city of [small, large]) {
+      expect(city.worker.table).toBeLessThan(1024 * city.buildings);
+      expect(city.worker.held).toBeLessThan(HELD_RECORDS * 12 * 1024);
+      expect(total(city.worker.readers)).toBeLessThan(1536 * city.buildings);
+    }
   }, 300_000);
 });

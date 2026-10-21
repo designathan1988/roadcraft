@@ -13,7 +13,7 @@ import { vehiclePose } from '../pose';
 import { joinsFootway, onLastStretch, removeWalker, walkerAlive, walkerOf, walkOn, walkThrough } from '../agents/walk';
 import type { Walkway } from '@world/walkways';
 import { bayChangesSince, baySources, baySourcesIn, baysOfSource, lanesInBox, stallFits, type Bay } from '../agents/parking';
-import { type DoorWay, doorWay, personGates } from '../agents/lotDoors';
+import { type DoorWay, doorWay } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, outShare, PEOPLE, type Mix } from './demand';
 import { BuildingMix, SightWalls, StreetLength, atRoll, spotKey } from './ambientIndex';
@@ -984,7 +984,7 @@ export class AmbientWorld {
 /** Distance decay of a walk from one lot to another, u: the gravity model's negative exponential, e^(-d/L) */
 const WALK_DECAY = m(470);
 /** The buildings people walk into, by the lot's way (`lotDoors.ts`). */
-const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });
+const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay });
 const NO_WAY: readonly { x: number; y: number }[] = [];
 const REVERSED = new WeakMap<DoorWay, readonly { x: number; y: number }[]>();
 /** A lot's way the other way round: from the gate's foot on the footway in to the door. */

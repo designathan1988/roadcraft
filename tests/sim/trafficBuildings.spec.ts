@@ -10,7 +10,7 @@ import { SimWorld } from '@sim/world';
 import { collectBays } from '@sim/agents/parking';
 import { YardList } from '@sim/agents/lorryTraffic';
 import { doorWay } from '@sim/agents/lotDoors';
-import { TrafficBuildingTable, buildingChangesOf, docBuildings, takeTrafficMap, trafficChangesOf, trafficMapOf } from '@sim/agents/trafficBuildings';
+import { TrafficBuildingTable, buildingChangesOf, docBuildings, factsOf, takeTrafficMap, trafficChangesOf, trafficMapOf } from '@sim/agents/trafficBuildings';
 
 /** THE SIMULATION'S WORKER IS SENT WHAT TRAFFIC READS, NEVER THE WHOLE MAP NOR A BUILDING'S RECORD (`sim/host/simClient.ts`) */
 
@@ -77,7 +77,8 @@ describe('the map the simulation\'s worker is sent', () => {
     page.rebuildTopology();
     // The worker's side: a document and a table made from the message alone (`postMessage` copies it).
     const copy = new RoadDoc();
-    const table = new TrafficBuildingTable(copy.changes);
+    // Four records held at once: the bays, yards and doors read records worked out again from their rows.
+    const table = new TrafficBuildingTable(copy.changes, 4);
     takeTrafficMap(copy, table, structuredClone(trafficMapOf(doc)));
     expect(copy.buildings.size).toBe(0);
     // The lots keep their buildings (`fromJSON` alone would drop them: the copy holds no building record).
@@ -126,6 +127,30 @@ describe('the map the simulation\'s worker is sent', () => {
       same();
     }
     expect(sent).toBeGreaterThan(5);
+  });
+
+  it('works a traffic record out again from its row when it is not held, the same object while anyone holds it', () => {
+    const { doc } = town();
+    const copy = new RoadDoc();
+    // Four records held at once: every walk works most of them out again.
+    const table = new TrafficBuildingTable(copy.changes, 4);
+    takeTrafficMap(copy, table, trafficMapOf(doc));
+    const page = docBuildings(doc);
+    expect([...table.all()]).toEqual([...page.all()]);
+    expect([...table.all()]).toEqual([...page.all()]);
+    const ids = [...table.ids()];
+    expect(ids.length).toBeGreaterThan(8);
+    // A record kept by a reader (a yard, a lot being worked out) is the one the table answers, however many were asked since.
+    const kept = table.get(ids[0]!)!;
+    for (const id of ids) table.get(id);
+    expect(table.get(ids[0]!)).toBe(kept);
+    // What the walks read without a record is what the record says.
+    for (const id of ids) {
+      const b = page.get(id)!;
+      expect(table.facts(id)).toEqual(factsOf(b));
+      expect(table.entrances(id)).toEqual(b.entrances);
+      expect(table.footprints(id)).toEqual(b.footprints);
+    }
   });
 
   it('files the buildings by place: a box asks the cells it covers and answers in the store\'s order', () => {
