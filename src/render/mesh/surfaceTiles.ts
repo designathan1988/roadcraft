@@ -3,7 +3,7 @@ import { gpuOnly } from './gpuOnly';
 import { type BlockArrays, type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry } from './roadLod';
 import { readsRoadSection } from './roadEdges';
 import { makeFar } from './roadResidency';
-import { finish, type SurfaceMeshOptions, type Tile } from './surfaceMesh';
+import { finish, type SurfaceMeshOptions, type Tile, type TileRect } from './surfaceMesh';
 
 /** The attributes a surface's material reads besides position, normal and uv: no other is sent to the GPU. */
 interface SurfaceReads {
@@ -195,4 +195,22 @@ export function blockArraysOf(tiles: readonly Tile[], material: Material): Block
 export function tilesOnGpu(mesh: Mesh, source: () => readonly Tile[]): void {
   const reads = readsOf(mesh.material);
   gpuOnly(mesh as Mesh & { geometry: BufferGeometry }, () => tileArrays(source(), reads)!);
+}
+
+/** The box round a block's tiles' rectangles, [minX, minY, maxX, maxY]. */
+export function blockBox(rects: readonly TileRect[]): [number, number, number, number] {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rects) { minX = Math.min(minX, r[0]); minY = Math.min(minY, r[1]); maxX = Math.max(maxX, r[2]); maxY = Math.max(maxY, r[3]); }
+  return [minX, minY, maxX, maxY];
+}
+
+/** Arrays end to end, with where each ends: one buffer to hand over instead of one an array. */
+export function concat(parts: readonly ArrayLike<number>[]): { lineEnds: Uint32Array; lines: Float64Array } {
+  let length = 0;
+  for (const part of parts) length += part.length;
+  const lines = new Float64Array(length);
+  const lineEnds = new Uint32Array(parts.length);
+  let at = 0;
+  parts.forEach((part, i) => { lines.set(part, at); at += part.length; lineEnds[i] = at; });
+  return { lineEnds, lines };
 }

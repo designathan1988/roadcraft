@@ -14,7 +14,7 @@ import { LANE_LINE } from '@world/roadTypes';
 import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
 import type { SceneMaterials } from './materials';
 import { type PassLook, passDesc, passRaised, passReads, polysOf, tileBundle } from './roadSurfacePass';
-import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, memberSizes, mergeTiles, splitBlock, tilesOnGpu } from './mesh/surfaceTiles';
+import { attachFarLevel, blockArraysOf, blockBox, cloneBlock, concat, joinBlocks, memberSizes, mergeTiles, splitBlock, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { type BlockArrays, levelsOf } from './mesh/roadLod';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR } from './roadTones';
@@ -66,18 +66,13 @@ export interface SurfaceReuse {
   readonly stored?: StoredTiles;
   /** The passes' inputs, kept road by road and node by node between builds (`roadSurfaceInputs.ts`) */
   readonly inputs?: SurfaceInputs;
+  /** Where the eye is when a build ends: the inputs held round the view (`InputResidency`) are brought back to it. None: they stay as the build left them. */
+  readonly inputsEye?: () => { readonly x: number; readonly y: number } | null;
   /** Each tile built afresh, to be kept for a later session */
   readonly keep?: (key: string, bundle: TileBundle) => void;
   /** The store's prefix the road tile workers keep the tiles they make under (none: the page keeps them, `keep`); `kept` tells the page a key is kept. */
   readonly workersKeep?: string | null;
   readonly kept?: (key: string) => void;
-}
-
-/** The box round a block's tiles' rectangles, [minX, minY, maxX, maxY]. */
-function blockBox(rects: readonly TileRect[]): [number, number, number, number] {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const r of rects) { minX = Math.min(minX, r[0]); minY = Math.min(minY, r[1]); maxX = Math.max(maxX, r[2]); maxY = Math.max(maxY, r[3]); }
-  return [minX, minY, maxX, maxY];
 }
 
 /** A block into the group with its far level, which waits hidden beside it (`mesh/roadLod.ts`). */
@@ -407,8 +402,8 @@ export function* roadSurfaceSteps(
         ix * TILE + TILE_ORIGIN, iy * TILE + TILE_ORIGIN, (ix + 1) * TILE + TILE_ORIGIN, (iy + 1) * TILE + TILE_ORIGIN,
       ];
       const old = state.tiles.get(key);
-      // A tile gone, or of the kept ring: not built, not digested; the far roads draw it (its block loses it, or goes).
-      if (!inputs.hasTile(pass.id, key) || (reuse?.within && !reuse.within(rect))) {
+      // A tile gone, or of the kept ring: not built, not digested; the far roads draw it (its block loses it, or goes). One built here has its inputs derived first (`visits`, held round the view).
+      if ((reuse?.within && !reuse.within(rect)) || !inputs.visits(pass.id, key)) {
         if (old) { changes.set(key, null); affected.add(old.chunk); }
         depends.delete(key);
         continue;
@@ -733,8 +728,9 @@ export function* roadSurfaceSteps(
   }
   // Blocks no surface has any more.
   if (chunks) for (const [key, { mesh }] of chunks) if (!usedChunks.has(key)) { retire(mesh); chunks.delete(key); }
-  // Over: what it was asked to visit is visited.
+  // Over: what it was asked to visit is visited; the inputs held round the view brought back to the eye (`SurfaceInputs.keepNear`).
   for (const { pass, born, keys } of settleLater) inputs.settle(pass, born, keys);
+  inputs.keepNear(reuse?.inputsEye?.() ?? null);
   if (reuse && reuse.withinMoved !== undefined) {
     if (moved === null) { if (reuse.withinMoved === null) reuse.withinMoved = []; }
     else reuse.withinMoved?.splice(0, moved.length);
@@ -763,17 +759,6 @@ export function* roadSurfaceSteps(
       group.clear();
     },
   };
-}
-
-/** Arrays end to end, with where each ends: one buffer to hand over instead of one an array. */
-function concat(parts: readonly ArrayLike<number>[]): { lineEnds: Uint32Array; lines: Float64Array } {
-  let length = 0;
-  for (const part of parts) length += part.length;
-  const lines = new Float64Array(length);
-  const lineEnds = new Uint32Array(parts.length);
-  let at = 0;
-  parts.forEach((part, i) => { lines.set(part, at); at += part.length; lineEnds[i] = at; });
-  return { lineEnds, lines };
 }
 
 /** How a surface is drawn: its material, whether it casts a shadow, its order among the roads' meshes (the paint over the deck) - the region's (`dress`) and a tile's near roads baked off the page (`farRoads.ts` near level) alike. */
