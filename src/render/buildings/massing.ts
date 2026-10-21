@@ -55,7 +55,7 @@ const EAVES = m(0.45);
 /** A machine room over a lift core. */
 const MACHINE_ROOM_H = m(3);
 
-const TERRACE_RGB = rgbOf(0xb0a595);
+export const TERRACE_RGB = rgbOf(0xb0a595);
 const SAW_GLASS_RGB = rgbOf(0x3c5360);
 
 export function rgbOf(hex: number, shade = 1): [number, number, number] {
@@ -63,7 +63,7 @@ export function rgbOf(hex: number, shade = 1): [number, number, number] {
   return [c.r * shade, c.g * shade, c.b * shade];
 }
 
-type Rgb = readonly [number, number, number];
+export type Rgb = readonly [number, number, number];
 /** A facade's pattern at a vertex: along, bay, storey height, first storey's height; and the glass share. */
 interface Facade { readonly bay: number; readonly storey: number; readonly z0: number; readonly share: number }
 const NO_FACADE: Facade = { bay: 0, storey: 1, z0: 0, share: 0 };
@@ -194,6 +194,15 @@ class MassWriter {
 /** The building's own shade, as the detailed one has it (`buildingMesh.ts` `emitBuilding`). */
 const shadeOf = (b: Building): number => 0.93 + (((b.id * 2654435761) >>> 0) % 1000) / 1000 * 0.12;
 
+/** A building's colours from afar: a material's tint in its own shade, times its finish's tone (`finishes.ts` `finishAlbedo`) when given. */
+export function massColours(b: Building, tone?: Readonly<Record<Finish, readonly [number, number, number]>>): (spec: MaterialSpec) => Rgb {
+  const shade = shadeOf(b);
+  return (spec) => {
+    const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
+    return t ? [c[0] * t[0], c[1] * t[1], c[2] * t[2]] : c;
+  };
+}
+
 /** A building's floor as the detailed one's (`buildingMesh.ts` `emitChunk`, `floorHeight`); undefined with no closed block. */
 export function massFloor(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
   const resolved = resolveBlocks(b);
@@ -239,11 +248,7 @@ function massWriter(
   // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`)
   const floor = known ? known.floor : massFloor(b, naturalAt, pavedAt);
   if (floor !== undefined && !signature) {
-    const shade = shadeOf(b);
-    const rgb = (spec: MaterialSpec): Rgb => {
-      const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
-      return t ? [c[0] * t[0], c[1] * t[1], c[2] * t[2]] : c;
-    };
+    const rgb = massColours(b, tone);
     // The body as the detailed building draws it: its closed blocks alone (`buildingMesh.ts` `emitChunk`).
     const body = { ...resolved, volumes: closed };
     for (const v of closed) emitVolume(w, body, v, floor, rgb);

@@ -2,12 +2,13 @@ import type { CellMass } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
 import { type CellEntry, type PackedEntries, samePacked, unpack } from './chunk';
 import type { JobKind } from './cellWork';
-import { type MassLevel, cellIndex, levelCells, plateOf, tileOf } from './levelKeys';
+import { type MassLevel, baseOf, cellIndex, levelCells, plateOf, tileOf } from './levelKeys';
+import type { BaseMass } from './massBase';
 import { warmFull } from '../uploads';
 
-/** THE BUILDINGS' LEVELS ABOVE THE CELLS: a 1,024 m tile (L2) and a 2,048 m plate (L3) of masses, one mesh each (`massCells.ts` chooses them) */
+/** THE BUILDINGS' LEVELS ABOVE THE CELLS: a 1,024 m tile (L2) and a 2,048 m plate (L3) of masses, one mesh each (`massCells.ts` chooses them), and the base over each plate's square (the top level, `massBase.ts`): asked at once, before every other, never let go */
 
-const KIND: Readonly<Record<MassLevel, JobKind>> = { tile: 'massTile', plate: 'massPlate' };
+const KIND: Readonly<Record<MassLevel, JobKind>> = { tile: 'massTile', plate: 'massPlate', base: 'massBase' };
 /** DO NOT ask every plate of the map at once (the opening, a town filed whole): each job holds its entries (an object a building) until it is answered, so the whole city's were alive together. At most this many plates asked and not answered, nearest the eye first (`away`), the rest waiting in `stale`. */
 const PLATES_IN_FLIGHT = 3;
 
@@ -28,6 +29,8 @@ export class MassLevels {
   hole: (key: string) => boolean = () => false;
   /** A tile or a plate left waiting for now (`layer.ts`: out of the view while the curtain is up): asked by `pump` once it is not. */
   deferred: (key: string) => boolean = () => false;
+  /** A base's prisms come (`massBase.ts`; null: none of its buildings stands from afar). */
+  landBase: (key: string, base: BaseMass | null) => void = () => {};
 
   /** `land`: a level's masses come (null: none of its buildings has any); `remove`: a level with no building left; `plan`: a level that has buildings (its place known before its masses);
    *  `wanted`: whether a tile is wanted now (its plate refined for the view) - DO NOT ask every tile of the map: a plate stands for them from afar (Cesium asks a tile's children only when it refines). */
@@ -48,7 +51,8 @@ export class MassLevels {
     const [i, j] = cellIndex(cell);
     this.dirty.add(tileOf(i, j));
     this.dirty.add(plateOf(i, j));
-    if (edited) { this.edited.add(tileOf(i, j)); this.edited.add(plateOf(i, j)); }
+    this.dirty.add(baseOf(i, j));
+    if (edited) { this.edited.add(tileOf(i, j)); this.edited.add(plateOf(i, j)); this.edited.add(baseOf(i, j)); }
   }
 
   /** Every plate touched asked once (`PLATES_IN_FLIGHT` at a time, `pump`), made of its cells' entries; a tile touched asked once it is wanted (`pump`); a level with none left removed. */
@@ -64,6 +68,8 @@ export class MassLevels {
         continue;
       }
       this.plan(key);
+      // THE BASE AT ONCE, whatever the view and the upload queue: it is what stands where no finer level is (`massBase.ts`).
+      if (key[0] === 'b') { this.ask(key, this.listOf(key), env); continue; }
       // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains. A plate not edited waits its turn (`pump`).
       if ((key[0] === 'p' || this.wanted(key)) && (this.edited.has(key) || (key[0] !== 'p' && !warmFull() && !this.deferred(key)))) this.ask(key, this.listOf(key), env);
       else {
@@ -107,7 +113,7 @@ export class MassLevels {
 
   /** A tile whose masses were let go, neither drawn nor wanted, or a plate's let go out of the view for the budget (`massCells.ts` evictLevels): asked again once a view wants it (`pump`, `deferred`). */
   release(key: string): void {
-    if (!this.hasAny(key)) return;
+    if (key[0] === 'b' || !this.hasAny(key)) return;
     const was = this.asked.get(key);
     if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
     this.stale.add(key);
@@ -145,8 +151,9 @@ export class MassLevels {
     id = this.pool.run(kind, key, list, env, (result) => {
       if (this.asked.get(key) === id) this.asked.delete(key);
       this.changed();
-      this.land(key, result.mass ?? null);
-    }, `${kind}|${key}`, edited, this.hole(key));
+      if (key[0] === 'b') this.landBase(key, result.base ?? null);
+      else this.land(key, result.mass ?? null);
+    }, `${kind}|${key}`, edited, key[0] === 'b' || this.hole(key));
     if (this.pool.isRunning(id)) this.asked.set(key, id);
   }
 

@@ -22,10 +22,16 @@ export interface MassingUniforms {
   readonly roomDaylight?: { value: number };
 }
 
-/** The masses' material. */
-export function createMassingMaterial(uniforms: MassingUniforms): MeshStandardMaterial {
-  const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
-  material.name = 'building-massing';
+/** The base's colour (`massBase.ts` paint): 5-6-5 bits of sRGB in the vertex's fourth short, read back linear (IEC 61966-2-1). */
+const BASE_PAINT_GLSL = `
+  float basePacked = floor(basePaint * 65535.0 + 0.5);
+  vec3 baseSrgb = vec3(floor(basePacked / 2048.0) / 31.0, mod(floor(basePacked / 32.0), 64.0) / 63.0, mod(basePacked, 32.0) / 31.0);
+  vColor = vec4(mix(baseSrgb / 12.92, pow((baseSrgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), baseSrgb)), 1.0);`;
+
+/** The masses' material; `base`, the top level's (`massBase.ts`): no normal and no facade of its own - each face shaded by its own slope (three's `flatShading`), each triangle in its last corner's colour (a `flat` varying), no window drawn (their mean is in the wall's colour). */
+export function createMassingMaterial(uniforms: MassingUniforms, base = false): MeshStandardMaterial {
+  const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: base });
+  material.name = base ? 'building-massing-base' : 'building-massing';
   const glass = `vec3(${GLASS.r.toFixed(5)}, ${GLASS.g.toFixed(5)}, ${GLASS.b.toFixed(5)})`;
   material.onBeforeCompile = (shader) => {
     shader.uniforms['roomsAwake'] = uniforms.roomsAwake;
@@ -35,6 +41,14 @@ export function createMassingMaterial(uniforms: MassingUniforms): MeshStandardMa
       // A vertex's facade (along, foot) in full floats, its grid (bay, storey, glass share) in half floats, its seed whole (`cellArrays.ts` `CellMass`).
       .replace('#include <common>', '#include <common>\nattribute vec2 facade;\nattribute vec4 facadeGrid;\nattribute float glazingSeed;\nvarying vec4 vFacade;\nvarying vec2 vGlazing;\nvarying float vHeight;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFacade = vec4(facade.x, facadeGrid.x, facadeGrid.y, facade.y);\nvGlazing = vec2(facadeGrid.z, glazingSeed);\nvHeight = (modelMatrix * vec4(transformed, 1.0)).y;');
+    if (base) {
+      // Its colour from its paint, one a triangle; an up normal for what reads one in the vertex stage (the shadow's normal bias, the lots' overlay): the face's own is taken from its slope in the fragment stage.
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <color_pars_vertex>', 'flat varying vec4 vColor;\nattribute float basePaint;')
+        .replace('#include <color_vertex>', BASE_PAINT_GLSL)
+        .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_pars_fragment>', 'flat varying vec4 vColor;');
+    }
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform float roomsAwake;
@@ -83,7 +97,7 @@ if (vFacade.y > 0.0) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.06, massGlass);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += (massLamp * massingNight * massLit + ${ROOM_SEEN_GLSL} * roomDaylight) * massGlass;`);
   };
-  material.customProgramCacheKey = () => 'building-massing-lamps-v6';
+  material.customProgramCacheKey = () => (base ? 'building-massing-base-v1' : 'building-massing-lamps-v6');
   // A built lot's yard, coloured from afar as up close (`lotOverlay.ts`).
   applyLotOverlay(material, { building: true });
   return material;

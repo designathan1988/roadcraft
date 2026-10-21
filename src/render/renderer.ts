@@ -109,7 +109,7 @@ import { PLATE_SIZE, platesOver, plateRegion } from '@world/bounds';
 import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
 import { paintCatalogue } from './markings';
-import { isNear, updateRoadLevels } from './mesh/roadResidency';
+import { type RoadResidency, isNear, updateRoadLevels } from './mesh/roadResidency';
 import { JournalCursor } from '@world/derived';
 import { RoadStandIn } from './roadStandIn';
 import { Engine } from '@core/engine';
@@ -238,6 +238,8 @@ export interface SceneHandle {
   shadowStats(): ReturnType<SunCascades['takeStats']> | null;
   /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
   buildingLevels(): Readonly<Record<string, number>>;
+  /** What draws each cell of buildings now, by key (`massCells.ts` census): the census of holes (`tests/perf/massBase.spec.ts`). */
+  buildingCensus(): Map<string, string | null>;
   /** The geometry budgets kept (`quality.ts` GEOMETRY_BUDGETS): the tier's (null), or these (the probes' unbounded run: Infinity everywhere). */
   setGeometryBudget(budget: GeometryBudget | null): void;
   /** The scene's geometry read against the budget now (`governGeometry`, as every `GOVERN_FRAMES`): the bytes counted. */
@@ -1042,6 +1044,8 @@ export function createSceneRenderer(
   const crowdFrustum = new Frustum();
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
+  /** The roads' blocks at their full level: in the view's frustum (the buildings' detail's, set each frame) and under the tier's budget (`applyGeometryBudget`). */
+  const roadResidency: RoadResidency = { view: detailFrustum, budget: Infinity };
   const detailProjection = new Matrix4();
   const crowdProjection = new Matrix4();
   const crowdBounds = new Sphere(new Vector3(), 8);
@@ -1123,6 +1127,7 @@ export function createSceneRenderer(
   const applyGeometryBudget = (): void => {
     const budget = budgetNow();
     buildings.setMassBudget(budget.massesMB * 1048576);
+    roadResidency.budget = budget.roadsNearMB * 1048576;
     ViewCells.gpuShare = budget.viewCellsShare;
     governedDetail = Infinity;
   };
@@ -2851,6 +2856,9 @@ export function createSceneRenderer(
     buildingLevels() {
       return buildings.levels();
     },
+    buildingCensus() {
+      return buildings.census();
+    },
     openingState() {
       return { roadsIn: roads !== null && mapRoadsIn, coarsePending: buildings.coarsePending, viewPending: buildings.viewPending, treesStarted: natureTreesStarted,
         treesPending: natureTreesPending, programs: openingPrograms, worked: reveal.worked, worldBusy: worldJob !== null, fillPending: openingFillPending, fillCellsLeft: fillLeft?.size ?? 0 };
@@ -3550,7 +3558,7 @@ export function createSceneRenderer(
         if (roadFocus.frames++ % 6 === 0) {
           const blocks: Mesh[] = [];
           for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
-          updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach);
+          updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach, roadResidency);
         }
         if (optimizer.reliefDue()) terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }

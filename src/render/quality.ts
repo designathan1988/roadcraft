@@ -69,24 +69,30 @@ export interface QualitySettings {
 
 /**
  * THE GEOMETRY EACH TIER MAY HOLD ON THE GPU (vertex and index buffers, `memoryCounters.ts` geometryBytes; textures and render targets
- * apart), for cards of 4 to 12 GB: the whole under `totalMB`, the buildings' masses (cells, 1 km tiles, 2 km plates, `massCells.ts`)
- * under `massesMB`, the far props' and poles' blocks (`viewCells.ts` gpuBudget, 192 MB and 128 MB at ultra) at `viewCellsShare` of their
+ * apart), for cards of 4 to 12 GB: the whole under `totalMB`, the buildings' masses (cells, 1 km tiles, 2 km plates, and the base
+ * kept for good, `massCells.ts`) under `massesMB`, the roads' blocks at their full level under `roadsNearMB` (`mesh/roadResidency.ts`), the far props' and poles' blocks (`viewCells.ts` gpuBudget, 192 MB and 128 MB at ultra) at `viewCellsShare` of their
  * own. What is out of the view goes first, the least recently seen first (Cesium's `cacheBytes` LRU, 3DTilesRendererJS `lruCache`); the
  * buildings' detail (`detailMemoryMB`) gives way to its facade level and masses only when that is not enough (`renderer.ts` governGeometry).
  *
- * | tier   | total | masses | view cells | detail at most |
- * |--------|-------|--------|------------|----------------|
- * | ultra  | 1200  | 320    | 1          | 1024           |
- * | high   | 900   | 240    | 0.75       | 768            |
- * | medium | 600   | 160    | 0.5        | 448            |
- * | low    | 350   | 96     | 0.25       | 256            |
+ * | tier   | total | masses | view cells | roads near | detail at most |
+ * |--------|-------|--------|------------|------------|----------------|
+ * | ultra  | 1200  | 320    | 1          | 192        | 1024           |
+ * | high   | 900   | 240    | 0.75       | 128        | 768            |
+ * | medium | 600   | 160    | 0.5        | 96         | 448            |
+ * | low    | 350   | 96     | 0.25       | 48         | 256            |
  */
-export interface GeometryBudget { readonly totalMB: number; readonly massesMB: number; readonly viewCellsShare: number }
+export interface GeometryBudget {
+  readonly totalMB: number;
+  readonly massesMB: number;
+  readonly viewCellsShare: number;
+  /** The roads' blocks at their full level (`mesh/roadResidency.ts`): their far level stays for good, their full level only in the view and under this. */
+  readonly roadsNearMB: number;
+}
 export const GEOMETRY_BUDGETS: Readonly<Record<QualityLevel, GeometryBudget>> = {
-  ultra: { totalMB: 1200, massesMB: 320, viewCellsShare: 1 },
-  high: { totalMB: 900, massesMB: 240, viewCellsShare: 0.75 },
-  medium: { totalMB: 600, massesMB: 160, viewCellsShare: 0.5 },
-  low: { totalMB: 350, massesMB: 96, viewCellsShare: 0.25 },
+  ultra: { totalMB: 1200, massesMB: 320, viewCellsShare: 1, roadsNearMB: 192 },
+  high: { totalMB: 900, massesMB: 240, viewCellsShare: 0.75, roadsNearMB: 128 },
+  medium: { totalMB: 600, massesMB: 160, viewCellsShare: 0.5, roadsNearMB: 96 },
+  low: { totalMB: 350, massesMB: 96, viewCellsShare: 0.25, roadsNearMB: 48 },
 };
 
 export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {

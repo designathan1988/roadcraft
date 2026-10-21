@@ -4,6 +4,7 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingChunk } from './buildingMesh';
 import type { FrameScale } from './frameBudget';
 import type { BuildingKit } from './kit';
+import type { CellDrawn } from './massCells';
 import type { Camera, Frustum, Group, Object3D } from 'three';
 
 /** DO NOT put the detail of every cell together again, and DO NOT hold a far cell's detail for a while */
@@ -72,6 +73,8 @@ export interface BuildingLayer {
   readonly residentBytes: number;
   /** The town's cells by the level chosen and the level shown, those held back by the triangles' budget, and the budgets: asked by the measures (`scripts/lib/measureCity.mjs`), never each frame. */
   levels(): Readonly<Record<string, number>>;
+  /** What draws each cell of the town now, by key (`massCells.ts` census): asked by the census of holes, never each frame. */
+  census(): Map<string, CellDrawn>;
   /** "Ocultar outros": undefined draws every building solid, null fades them all */
   setDimmed(except: BuildingId | null | undefined): void;
   /** Buildings drawn by someone else (a ruin being knocked down, `destruction.ts`): left out here. */

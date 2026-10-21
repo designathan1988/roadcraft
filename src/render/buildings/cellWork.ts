@@ -12,6 +12,7 @@ import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
 import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, massFloor, type MassingChunk } from './massing';
 import { type PartFiling, fileParts, filingBuffers } from './partFiling';
 import { levelCells } from './levelKeys';
+import { type BaseMass, BaseWriter, baseBuffers, emitBase } from './massBase';
 import { PartyWalls } from './partyWalls';
 import { drawsSignature } from './signature';
 
@@ -20,8 +21,8 @@ import { drawsSignature } from './signature';
 export type { CellEntry } from './chunk';
 
 /** What a job makes: a cell's detail (its coarse batch and its detail cells'), the same at the far level (`facade`: L1, `emitChunk` `far`), a cell's buildings faded */
-/** 'massTile' and 'massPlate': the masses of a 1,024 m tile (L2) and a 2,048 m plate (L3) merged, simplified to their level (`massLevels.ts`). */
-export type JobKind = 'cell' | 'mass' | 'summary' | 'facade' | 'massTile' | 'massPlate';
+/** 'massTile' and 'massPlate': the masses of a 1,024 m tile (L2) and a 2,048 m plate (L3) merged, simplified to their level (`massLevels.ts`); 'massBase': a plate's square at the top level, its blocks' prisms (`massBase.ts`). */
+export type JobKind = 'cell' | 'mass' | 'summary' | 'facade' | 'massTile' | 'massPlate' | 'massBase';
 
 /** What each kind of masses leaves out (`massing.ts` `MassDetail`). */
 const MASS_DETAIL: Partial<Readonly<Record<JobKind, MassDetail>>> = { mass: CELL_DETAIL, massTile: TILE_DETAIL, massPlate: PLATE_DETAIL };
@@ -64,6 +65,8 @@ export interface CellResult {
   readonly summaries: readonly ChunkSummary[];
   /** The cell's masses ('mass'): null when none of its buildings has any. */
   readonly mass?: CellMass | null;
+  /** A square's base ('massBase'): null with no building. */
+  readonly base?: BaseMass | null;
   /** Each entry's ground floor as the job stood it (`CellEntry.floor`): null with no closed block, undefined where it read none; kept by the page for the next jobs of the same buildings (`cellPool.ts`). */
   readonly floors?: readonly (number | null | undefined)[];
 }
@@ -80,6 +83,7 @@ export function replyBuffers(reply: WorkReply): ArrayBuffer[] {
   const out = reply.result.batch ? cellBuffers(reply.result.batch) : [];
   if (reply.result.parts) out.push(...filingBuffers(reply.result.parts));
   if (reply.result.mass) out.push(...cellMassBuffers(reply.result.mass));
+  if (reply.result.base) out.push(...baseBuffers(reply.result.base));
   return out;
 }
 
@@ -137,6 +141,20 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
     return missX0 <= missX1;
   };
   const { groundAt, naturalAt } = reads;
+  if (job.kind === 'massBase') {
+    // The top level: each building's floor (measured once, handed to its later jobs: `floors`) and its blocks' prisms, in its cell's run.
+    const writer = new BaseWriter();
+    const floors: (number | null)[] = [];
+    let n = 0;
+    for (const b of eachRecord(job.entries.map((entry) => entry.record))) {
+      const given = job.entries[n]!.floor;
+      const floor = given !== undefined ? given ?? undefined : massFloor(b, naturalAt, paved);
+      floors.push(floor ?? null);
+      n++;
+      emitBase(writer.cellOf(b), b, floor, groundAt, drawsSignature(b), job.tone);
+    }
+    return missed() ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], base: writer.done(levelCells(job.cell)), floors } };
+  }
   const detail = MASS_DETAIL[job.kind];
   if (detail) {
     const masses: MassingChunk[] = [];
