@@ -87,7 +87,8 @@ export class GpuBatchedMesh extends BatchedMesh {
     const binding = target === gl.ELEMENT_ARRAY_BUFFER ? gl.ELEMENT_ARRAY_BUFFER_BINDING : gl.ARRAY_BUFFER_BINDING;
     const was = gl.getParameter(binding) as WebGLBuffer | null;
     gl.bindBuffer(target, buffer);
-    gl.bufferData(target, bytes, gl.DYNAMIC_DRAW);
+    // STATIC_DRAW, as three's own attributes: written when a cell comes, drawn every frame. DO NOT hint DYNAMIC_DRAW: ANGLE takes it to its streaming buffers, "not optimal for performance" (ANGLE doc/BufferImplementation.md), and the district and street views of a large city lost 15-19 % of their frames to it (bisected, 2026-10-21).
+    gl.bufferData(target, bytes, gl.STATIC_DRAW);
     gl.bindBuffer(target, was);
     this.made.add(buffer);
     return buffer;
