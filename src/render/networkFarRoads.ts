@@ -2,6 +2,7 @@ import { BufferAttribute, BufferGeometry, Color, Group, Mesh, MeshStandardMateri
 import type { SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
 import { Level, ROAD_TYPES } from '@world/roadTypes';
+import { ROAD_GROUND_CLEARANCE } from '@world/structures';
 import { jobPort } from '../jobs/jobPool';
 import { pullTowardEye } from './depthConvention';
 import { buildFarRoadCells, type FarRoadCell, type FarRoadInput } from './networkFarRoadsBuild';
@@ -53,9 +54,11 @@ export function farRoadInput(net: Network, heights: FarRoadHeights, groundAt: (x
     layers.push(layer);
     colors.push(colour[0], colour[1], colour[2]);
   };
-  const roadAt = (x: number, y: number): number => { const h = heights.at(x, y); return Number.isFinite(h) ? h : groundAt(x, y); };
+  // A road the solve left lies where a solved one would on its ground: its clearance over it (`roadField.ts` onSegment), not in the ground's own plane.
+  const onGround = (x: number, y: number): number => groundAt(x, y) + ROAD_GROUND_CLEARANCE;
+  const roadAt = (x: number, y: number): number => { const h = heights.at(x, y); return Number.isFinite(h) ? h : onGround(x, y); };
   for (const [id, ribbon] of net.ribbons) {
-    const height = pending.has(id) ? groundAt : (x: number, y: number): number => heights.onSegment(id, x, y);
+    const height = pending.has(id) ? onGround : (x: number, y: number): number => heights.onSegment(id, x, y);
     const casing = ribbon.rings[Level.Casing], asphalt = ribbon.rings[Level.Asphalt];
     if (casing) add(casing.flatten(), 0, CASING, height);
     if (asphalt) add(asphalt.flatten(), 1, ASPHALT_BY_CLASS[ribbon.typeIndex] ?? STREET_MEANS.asphalt, height);
@@ -64,7 +67,7 @@ export function farRoadInput(net: Network, heights: FarRoadHeights, groundAt: (x
     const node = net.doc.node(id);
     if (!node) continue;
     // A junction every road of which the solve left: on the ground, as they are.
-    const height = node.incident.length > 0 && node.incident.every((s) => pending.has(s)) ? groundAt : roadAt;
+    const height = node.incident.length > 0 && node.incident.every((s) => pending.has(s)) ? onGround : roadAt;
     const casing = levels.get(Level.Casing), asphalt = levels.get(Level.Asphalt);
     if (casing) add(casing.ring.flatten(), 0, CASING, height);
     if (asphalt) {
@@ -87,6 +90,10 @@ export class NetworkFarRoads {
   private triangleCount = 0;
   /** Each cell's triangles, by its key (`x,y` on the cells' grid): what the probes count. */
   readonly cells = new Map<string, number>();
+  /** Each cell's meshes, by its key: a cell goes once the fill's blocks drawing it in detail landed (`hide`). */
+  private readonly meshesOf = new Map<string, Mesh[]>();
+  /** The cells let go before the level came (`hide`): left out of it when it lands. */
+  private readonly hidden = new Set<string>();
 
   constructor() {
     this.group.name = 'road-far-network';
@@ -130,6 +137,7 @@ export class NetworkFarRoads {
   private show(cells: readonly FarRoadCell[]): void {
     this.clearMeshes();
     for (const c of cells) {
+      if (this.hidden.has(c.key)) continue;
       const g = new BufferGeometry();
       const normals = new Float32Array(c.positions.length);
       for (let i = 1; i < normals.length; i += 3) normals[i] = 1;
@@ -148,7 +156,26 @@ export class NetworkFarRoads {
       const n = c.indices.length / 3;
       this.triangleCount += n;
       this.cells.set(c.key, (this.cells.get(c.key) ?? 0) + n);
+      const list = this.meshesOf.get(c.key);
+      if (list) list.push(mesh); else this.meshesOf.set(c.key, [mesh]);
     }
+  }
+
+  /** The cells drawing roads, by key (`x,y` on the cells' grid). */
+  cellKeys(): string[] {
+    return [...this.cells.keys()];
+  }
+
+  /** A cell let go: the detailed blocks of its square landed (`renderer.ts` the opening's fill). */
+  hide(key: string): void {
+    this.hidden.add(key);
+    for (const mesh of this.meshesOf.get(key) ?? []) {
+      this.triangleCount -= (mesh.geometry.index?.count ?? 0) / 3;
+      this.group.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    this.meshesOf.delete(key);
+    this.cells.delete(key);
   }
 
   private clearMeshes(): void {
@@ -157,11 +184,13 @@ export class NetworkFarRoads {
       (child as Mesh).geometry.dispose();
     }
     this.cells.clear();
+    this.meshesOf.clear();
     this.triangleCount = 0;
   }
 
   /** The level let go: the detailed blocks stand everywhere (the fill landed), or another map opened. */
   clear(): void {
+    this.hidden.clear();
     this.asked++;
     this.waiting = false;
     this.clearMeshes();
