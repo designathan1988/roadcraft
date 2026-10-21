@@ -2,7 +2,7 @@ import { Color, Group, type Frustum, type InstancedMesh, type Matrix4, type Mesh
 
 import { Rng } from '@core/rng';
 import { angleOf } from '@core/vec2';
-import type { Change, ChangeJournal, ChangeKind } from '@world/changes';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
 import { CellFiling, grow } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
 import type { RoadElevation } from '@world/elevation';
@@ -13,9 +13,10 @@ import { FOOTWAY_RISE } from '@world/roadTypes';
 import { furnitureOf } from '@world/streetFurniture';
 import { m } from '@world/units';
 import { CLUMP_READ_REACH, grassClump, type Tuft } from './grass';
-import { RunBuilder, createInstanceRuns, sameRun, warmMeshes, type Run, type RunStore } from './instanceRuns';
+import { RunBuilder, createInstanceRuns, kindOf, sameRun, warmMeshes, type Run, type RunStore } from './instanceRuns';
 import { BUSH_KINDS, TREE_SPECIES, type BushKind, type TreeSpecies } from './propGeometry';
 import { PICTURE_PX, sceneryPictures, type SceneryPictures } from './plantImpostors';
+import { createPropLayer, type PropLayer, type PropPlacement } from './propCells';
 import { LAMP_BEAM_RADIUS, LAMP_HEIGHT, LAMP_OUTREACH, LAMP_POOL_RADIUS, POOL_ALONG, SHADOW_REACH, foliageTint, type SceneryKit } from './scenery';
 
 /** DO NOT go back to that: one bench placed paid for every bench of the city. */
@@ -58,7 +59,7 @@ interface FurniturePlace {
 }
 
 /** What the layer is refreshed from: the diary it reads, and the roads and their heights it places on. */
-interface FurnitureSource {
+export interface FurnitureSource {
   readonly changes: ChangeJournal;
   readonly net: Network;
   readonly elevation: RoadElevation;
@@ -66,7 +67,7 @@ interface FurnitureSource {
 }
 
 /** The meshes of the furniture and the street plants: the stores, and where each plant's body and cards are. */
-function furnitureStores(kit: SceneryKit, pictures: SceneryPictures): RunStore[] {
+export function furnitureStores(kit: SceneryKit, pictures: SceneryPictures): RunStore[] {
   /** A prop; `small`: one a pixel across or less is not drawn (a lamp's glow and its pools are seen from afar). */
   const prop = (name: string, geometry: RunStore['geometry'], material: RunStore['material'], castShadow = true, receiveShadow = true, renderOrder?: number, small = false): RunStore =>
     ({ name, geometry, material, castShadow, receiveShadow, ...(renderOrder !== undefined ? { renderOrder } : {}), tinted: false, cards: false,
@@ -319,16 +320,17 @@ function placeInto(builder: RunBuilder, place: FurniturePlace, now: number): voi
   }
 }
 
-/** The street furniture and the long grass, kept item by item. */
+/** The street furniture held round the view (`propCells.ts`), the long grass kept item by item. */
 export interface StreetFurnitureLayer {
   /** The furniture and the street plants: their visibility is set every frame by the zoom. */
   readonly group: Group;
   readonly meshes: readonly InstancedMesh[];
+  /** The furniture's cells, brought to the view with the gardens' (`lookProps`). */
+  readonly layer: PropLayer;
   /** The long grass, drawn at every zoom (as it was). */
   readonly grass: Group;
   readonly triangles: number;
-  /** Brought up to the diary: the items an entry of their kinds reached are placed again */
-  /** Brings the furniture and the long grass up to the diary (and the hour); the items computed (the engine's ledger, `core/engine.ts`). */
+  /** Brings the furniture and the long grass up to the diary (and the hour): the furniture's cells an entry reached dropped, placed again as the view asks; the work done (the engine's ledger, `core/engine.ts`). */
   sync(net: Network, elevation: RoadElevation, groundAt: (x: number, y: number) => number, minutes: number): number;
   setMap(map: boolean): void;
   /** A mesh of each of its stores, as it draws them */
@@ -341,59 +343,70 @@ export interface StreetFurnitureLayer {
 const stillGrowing = (planted: number | undefined, minutes: number): boolean =>
   planted !== undefined && !(Number.isFinite(minutes) && minutes - planted >= GROW_MINUTES);
 
+/** How far from its item a placed thing may stand: a lamp's pool of light out over the widest road. */
+const FURNITURE_SPREAD = m(40);
+
+/** The items the furniture draws (not the long grass, the signs, the street names). */
+const isFurniture = (item: LandscapeItem): boolean => item.kind !== 'meadow' && item.kind !== 'sign' && item.kind !== 'streetname';
+
+/** The furniture's things standing about a rectangle at the city's time `now` (the hour's start): each item near it placed (`furniturePlace`), a plant sized by its growth then. */
+export function furnitureAbout(source: FurnitureSource, stores: readonly RunStore[], lens: LampLens, now: number, rect: ChangeRect): PropPlacement {
+  const builder = new RunBuilder(stores);
+  let growing = false;
+  for (const item of source.net.doc.landscapeIn(grow(rect, FURNITURE_SPREAD))) {
+    if (!isFurniture(item)) continue;
+    const place = furniturePlace(source.net, source.elevation, item, lens);
+    if (!place) continue;
+    placeInto(builder, place, now);
+    if (stillGrowing(place.planted, now)) growing = true;
+  }
+  return { packs: builder.build(), growing };
+}
+
 export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
   const pictures = sceneryPictures(kit);
   const stores = furnitureStores(kit, pictures);
-  const furniture = createInstanceRuns('street-furniture', stores, SHADOW_REACH);
+  /** Each store's picture: the street plants' (`treeStore`, `bushStore`), none for the props. */
+  const pictureOf = stores.map((_, i): number | null => {
+    const plant = i - FURNITURE_MODELS.length;
+    if (plant < 0) return null;
+    return plant < TREE_SPECIES.length ? pictures.treeAt(TREE_SPECIES[plant]!) : pictures.bushAt(BUSH_KINDS[plant - TREE_SPECIES.length]!);
+  });
+  let source: FurnitureSource | null = null;
+  let hour = Number.NaN;
+  const layer = createPropLayer({
+    name: 'street-furniture', version: 1, kinds: stores.map(kindOf), margin: SHADOW_REACH,
+    // What an item's place reads (`furnitureProduct`): the item, its road within reach, the road's deck under it.
+    changes: ['landscape', 'roads', 'elevation'], pad: ROAD_REACH + FURNITURE_SPREAD,
+    pictures: pictures.set, pictureOf,
+    place: (rect) => (source ? furnitureAbout(source, stores, kit.lens, hour * 60, rect) : { packs: new Map(), growing: false }),
+  });
   // The grass throws no shadow: only what the view itself takes.
   const meadowStores = MEADOW_STORES(kit);
   const meadow = createInstanceRuns('grass', meadowStores, 0);
-  const places = furnitureProduct(kit);
   const clumps = meadowProduct(kit);
-  /** Each item's run as drawn, and the growth it was sized at. */
-  const runs = new Map<number, { readonly place: FurniturePlace; readonly run: Run }>();
   const clumpRuns = new Map<number, Run>();
-  /** The items with a plant still growing: sized again each city hour. */
-  const growing = new Set<number>();
-  let hour = Number.NaN;
-
-  /** An item's instances at the city's time (the hour's start: the same whenever it is made in that hour). */
-  const runOf = (place: FurniturePlace, now: number): Run => {
-    const builder = new RunBuilder(stores);
-    placeInto(builder, place, now);
-    return builder.build();
-  };
 
   return {
-    group: furniture.group,
-    get meshes() { return furniture.meshes; },
+    group: layer.group,
+    get meshes() { return layer.meshes; },
+    layer,
     grass: meadow.group,
-    get triangles() { return furniture.triangles + meadow.triangles; },
+    get triangles() { return layer.triangles + meadow.triangles; },
     sync(net, elevation, groundAt, minutes) {
-      const source: FurnitureSource = { changes: net.doc.changes, net, elevation, groundAt };
+      const fresh: FurnitureSource = { changes: net.doc.changes, net, elevation, groundAt };
       const nowHour = Number.isFinite(minutes) ? Math.floor(minutes / 60) : Number.NaN;
-      const now = nowHour * 60;
-      const removed: Run[] = [], added = new Set<Run>();
-      const place = (id: number): void => {
-        const was = runs.get(id);
-        // DO NOT hand the stores a run to take away in the change that puts it in.
-        if (was) { if (!added.delete(was.run)) removed.push(was.run); runs.delete(id); }
-        growing.delete(id);
-        const value = places.get(id);
-        if (!value) return;
-        const run = runOf(value, now);
-        runs.set(id, { place: value, run });
-        added.add(run);
-        if (stillGrowing(value.planted, now)) growing.add(id);
-      };
-      for (const id of places.refresh(source)) place(id);
-      let work = places.work.last;
-      // A new hour: the plants still growing sized again (and only those).
+      const before = layer.near.work.invalidated + layer.far.reduce((n, f) => n + f.work.invalidated, 0);
+      // Another document: every cell placed again from it.
+      if (source && source.net.doc !== net.doc) { layer.near.clear(); for (const f of layer.far) f.clear(); }
+      source = fresh;
+      layer.follow(net.doc.changes);
+      // A new hour: the cells with a plant still growing placed again (and only those).
       if (!Object.is(nowHour, hour)) {
         hour = nowHour;
-        for (const id of [...growing]) { place(id); work++; }
+        layer.forgetGrowing();
       }
-      if (removed.length || added.size) furniture.update({ removed, added: [...added] });
+      const work = layer.near.work.invalidated + layer.far.reduce((n, f) => n + f.work.invalidated, 0) - before;
       const gone: Run[] = [], grown: Run[] = [];
       for (const id of clumps.refresh(source)) {
         const was = clumpRuns.get(id);
@@ -405,17 +418,17 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
       return work + clumps.work.last;
     },
     setMap(map) {
-      furniture.setMap(map);
+      layer.setMap(map);
     },
     warm() {
       return warmMeshes([...stores, ...meadowStores]);
     },
     cull(frustum, view) {
-      furniture.cull(frustum, view);
+      layer.cull(frustum, view);
       meadow.cull(frustum, view);
     },
     dispose() {
-      furniture.dispose();
+      layer.dispose();
       meadow.dispose();
       pictures.release();
     },

@@ -1,6 +1,8 @@
 import {
+  type BufferAttribute,
   type Camera,
   type InstancedBufferGeometry,
+  type InterleavedBuffer,
   InstancedInterleavedBuffer,
   InstancedMesh,
   LOD,
@@ -63,7 +65,7 @@ export type { PoleSource } from './poleBake';
 export const docPoles = (doc: RoadDoc): PoleSource => ({ poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) });
 
 /** How far from a pole a change of the roads or the ground can move it: its kerb (`kerbward`), its lamp's pool. */
-const POLE_REACH = m(12);
+export const POLE_REACH = m(12);
 
 
 interface PoleState {
@@ -79,7 +81,7 @@ interface PoleState {
 }
 
 /** The screen the layers were last drawn on and the sun's shadow map: what a pixel and a shadow texel measure. */
-const screen = {
+export const screen = {
   /** Half the drawing buffer's height, pixels; until first drawn, a tall screen's (more detail, never less). */
   halfHeight: 1080,
   /** The shadow camera and its map's width, from the shadow pass (`noteShadow`); null until a piece is cast. */
@@ -102,7 +104,7 @@ function noteShadow(renderer: WebGLRenderer, _object: Object3D, _camera: Camera,
 }
 
 /** What a world unit measures on the screen where a bounding sphere comes nearest the eye, and a texel of the sun's shadow. */
-class ScreenScale {
+export class ScreenScale {
   private readonly eye = new Vector3();
   private readonly ahead = new Vector3();
   private pixels = 0;
@@ -147,7 +149,7 @@ class ScreenScale {
 }
 
 /** A part's instances over a block of the layer (`BLOCK`): a mesh with room for `capacity`, the first `count` drawn, and which pole holds each slot. */
-class PartStore {
+export class PartStore {
   private mesh: InstancedMesh | null = null;
   private capacity = 0;
   count = 0;
@@ -271,6 +273,23 @@ class PartStore {
     }
   }
 
+  /** Its instances made for good (a block of the view's, `PoleCells`): no pole's slot kept, the matrices to be let go once on the GPU. The buffer, none when empty. */
+  seal(): BufferAttribute | null {
+    this.owner.length = 0;
+    this.written.length = 0;
+    return this.mesh && this.count > 0 ? this.mesh.instanceMatrix : null;
+  }
+
+  /** Its mesh, none while it holds nothing. */
+  get drawn(): InstancedMesh | null {
+    return this.mesh;
+  }
+
+  /** The matrices' array as made (`seal`): what the GPU is given again after a lost context. */
+  get matrices(): Float32Array | null {
+    return (this.mesh?.instanceMatrix.array as Float32Array | undefined) ?? null;
+  }
+
   dispose(): void {
     if (!this.mesh) return;
     this.group.remove(this.mesh);
@@ -279,7 +298,7 @@ class PartStore {
 }
 
 /** One block's spans' wires: `SPAN_WIRES` instances a span in a block of their own, drawn with the template the view asks for. */
-class WireStore {
+export class WireStore {
   private mesh: Mesh | null = null;
   private data = new Float32Array(0);
   private buffer: InstancedInterleavedBuffer | null = null;
@@ -411,6 +430,26 @@ class WireStore {
     }
   }
 
+  /** Its wires made for good (`PoleCells`): no span's block kept, the instances to be let go once on the GPU. The buffer, none when empty. */
+  seal(): InterleavedBuffer | null {
+    this.owner.length = 0;
+    this.written.length = 0;
+    const buffer = this.count > 0 ? this.buffer : null;
+    // The buffer holds the array until it is uploaded: not this store as well.
+    this.data = new Float32Array(0);
+    return buffer;
+  }
+
+  /** The wires' array as made (before `seal`). */
+  get instances(): Float32Array {
+    return this.data;
+  }
+
+  /** Its mesh, none while it holds nothing. */
+  get drawn(): Mesh | null {
+    return this.mesh;
+  }
+
   dispose(): void {
     this.dropLevels();
     if (this.mesh) this.group.remove(this.mesh);
@@ -418,7 +457,7 @@ class WireStore {
 }
 
 /** The layer's root: three calls an LOD's `update` with the camera before it draws its children, each time it draws (`WebGLRenderer.projectObject`). */
-class ViewedRoot extends LOD {
+export class ViewedRoot extends LOD {
   constructor(private readonly onView: (camera: Camera) => void) {
     super();
   }
@@ -429,10 +468,10 @@ class ViewedRoot extends LOD {
 }
 
 /** THE LAYER IN BLOCKS OF THE PLANE: a store a part and one for the wires in each, so a block out of the view is culled by three and each is drawn at the detail its own nearest pole asks. DO NOT keep one store a part for the whole layer: its bounds were the city's, never culled, and its levels chosen by the pole nearest the eye, every wire, insulator and lamp of a large city drawn at that detail at every frame (26,145 wires of 64 triangles, 3 M triangles at a close view, 2026-10-20). DO NOT make them a world cell (256 m) either: forty meshes a part over a city, drawn. */
-const BLOCK = m(768);
+export const BLOCK = m(768);
 const blockKey = (x: number, y: number): string => `${Math.floor(x / BLOCK)},${Math.floor(y / BLOCK)}`;
 
-interface Block {
+export interface Block {
   readonly parts: PartStore[];
   readonly wires: WireStore;
   /** The poles placed in it here (none for a block of wires only): where it is nearest the eye. */
