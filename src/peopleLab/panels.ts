@@ -43,6 +43,8 @@ export interface PanelContext {
   openHairStudio(): void;
   /** The garment atelier (`atelier.ts`). */
   openAtelier(): void;
+  /** Brushes on the body and face (`bodySculpt.ts`). */
+  openCarver(): void;
 }
 
 interface Pic { readonly id: string; readonly label: string; readonly variant: LabPerson }
@@ -150,6 +152,7 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
         slider('Proporções', 0, 1, 0.01, b().proportions, (v) => c.setBody('proportions', v)),
         ...(sex() === 'female' ? [slider('Busto', 0, 1, 0.01, b().cupsize, (v) => c.setBody('cupsize', v)), slider('Firmeza', 0, 1, 0.01, b().firmness, (v) => c.setBody('firmness', v))] : []),
       ]],
+      ['esculpir', 'Esculpir', () => { const b = el('button', { cls: 'big save' }, icon('sculpt', 16), 'Esculpir corpo e rosto'); b.onclick = () => c.openCarver(); return [b]; }],
       ['tronco', 'Tronco', () => sliderList(BODY_SLIDERS['tronco']!)],
       ['bracos', 'Braços', () => sliderList(BODY_SLIDERS['bracos']!)],
       ['pernas', 'Pernas', () => sliderList(BODY_SLIDERS['pernas']!)],
@@ -200,6 +203,7 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       ['bochechas', 'Bochechas', partGroup('cheeks')],
       ['queixo', 'Queixo', partGroup('jaw')],
       ['orelhas', 'Orelhas', partGroup('ears')],
+      ['esculpir', 'Esculpir', () => { const b = el('button', { cls: 'big save' }, icon('sculpt', 16), 'Esculpir rosto'); b.onclick = () => c.openCarver(); return [b]; }],
       ['maquiagem', 'Maquiagem', () => [slider('Intensidade', 0, 1, 0.01, p().spec.look.makeup ?? 0, (v) => c.setLook({ makeup: v }))]],
     ],
     estilo: [

@@ -27,6 +27,8 @@ export interface LabPerson {
   readonly groom?: GroomRecord;
   /** A garment made in the atelier (`atelier.ts`), worn over the outfit (`spec.look.extras` has `atelier`). */
   readonly garment?: GarmentRecord;
+  /** The body and face sculpted with brushes (`bodySculpt.ts`): moves of the base mesh's vertices. */
+  readonly body?: HairSculpt;
 }
 
 export interface LabRoster {
@@ -69,6 +71,7 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.sculpts?.length ? { sculpts: person.sculpts } : {}),
     ...(person.motion && Object.keys(person.motion).length ? { motion: person.motion } : {}),
     ...(person.groom && spec.look.hairCut === GROOM ? { groom: person.groom } : {}),
+    ...(person.body ? { body: person.body } : {}),
     ...(person.garment && spec.look.extras?.includes(ATELIER) ? { garment: person.garment } : {}),
   };
 }

@@ -30,6 +30,8 @@ import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
 import { HairStudio } from './hairStudio';
 import { hairPanel } from './hairPanel';
 import { Atelier } from './atelier';
+import { BodySculptor, bodyDelta } from './bodySculpt';
+import { bodySculptPanel } from './bodySculptPanel';
 import { atelierPanel } from './atelierPanel';
 import { sculptPanel } from './sculptPanel';
 import { ATELIER, GROOM, PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
@@ -67,8 +69,10 @@ function startLab(): void {
   let studio: HairStudio | null = null;
   /** The atelier while it is open. */
   let atelier: Atelier | null = null;
+  /** The body sculptor while it is open. */
+  let carver: BodySculptor | null = null;
   /** The editor taking the pointer: the sculptor or the hair studio. */
-  const editor = (): HairSculptor | HairStudio | Atelier | null => sculptor ?? studio ?? atelier;
+  const editor = (): HairSculptor | HairStudio | Atelier | BodySculptor | null => sculptor ?? studio ?? atelier ?? carver;
   /** Click-and-drag shaping of the person built now. */
   let shaper: HandShaper | null = null;
 
@@ -170,7 +174,7 @@ function startLab(): void {
   controls.maxPolarAngle = Math.PI * 0.55;
   // Navigation as editors do it (`navigation.ts`): right orbits, middle pans, wheel zooms to the cursor, Alt with any button, F frames.
   setupNavigation(controls, camera, renderer.domElement, {
-    targets: () => [built?.scene, sculptor?.group, studio?.group, atelier?.group, tab === 'pose' ? posing.helpers : null].filter((o): o is Object3D => !!o),
+    targets: () => [built?.scene, sculptor?.group, studio?.group, atelier?.group, carver?.group, tab === 'pose' ? posing.helpers : null].filter((o): o is Object3D => !!o),
     frame: () => frame(view),
   });
   const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
@@ -330,6 +334,7 @@ function startLab(): void {
     posing.show(tab === 'pose' && !editor());
     if (tab !== 'pose') tl?.classList.remove('on');
     if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
+    else if (carver) panel.replaceChildren(...bodySculptPanel(carver, { slider, render, close: closeCarver }));
     else if (atelier) panel.replaceChildren(...atelierPanel(atelier, { ui: { slider, swatches, seg, tiles }, render, close: closeAtelier, colours: CLOTH }));
     else if (studio) panel.replaceChildren(...hairPanel(studio, { ui: { slider, swatches, seg, tiles }, render, close: closeHairStudio, colours: HAIR_COLOURS }));
     else if (tab === 'pose') panel.replaceChildren(...posePanelNodes());
@@ -360,7 +365,7 @@ function startLab(): void {
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
-    openHairStudio: () => { void openHairStudio(); }, openAtelier: () => { void openAtelier(); },
+    openHairStudio: () => { void openHairStudio(); }, openCarver: () => { void openCarver(); }, openAtelier: () => { void openAtelier(); },
     setSex: (v) => {
       // The hair and the outfit go with the sex unless they suit both.
       const look = person.spec.look;
@@ -519,6 +524,32 @@ function startLab(): void {
     if (keep) rebuild(0);
   }
 
+  // ---------------------------------------------------------------- the body sculptor
+
+  async function openCarver(): Promise<void> {
+    const { body: _sculpt, ...unsculpted } = person;
+    void _sculpt;
+    const body = await builder.studioBody(unsculpted);
+    const start = person.body ? bodyDelta(person.body, body.positions.length / 3) : null;
+    carver = new BodySculptor(body.positions, start, body.faces, body.faceGroup, body.skinGroup, body.skin, person.spec.look.skin);
+    scene.add(carver.group);
+    if (built) built.scene.visible = false;
+    render();
+  }
+
+  function closeCarver(keep: boolean): void {
+    const c = carver;
+    if (!c) return;
+    if (keep) person = { ...person, body: c.record(person.body) };
+    scene.remove(c.group);
+    c.dispose();
+    carver = null;
+    if (built) built.scene.visible = true;
+    controls.enabled = true;
+    render();
+    if (keep) rebuild(0);
+  }
+
   // ---------------------------------------------------------------- the atelier
 
   async function openAtelier(): Promise<void> {
@@ -658,7 +689,7 @@ function startLab(): void {
   renderer.domElement.addEventListener('pointerdown', (e) => {
     const ed = editor();
     if (!ed || e.button !== 0 || e.altKey) return;
-    if (ed instanceof HairStudio ? ed.begin(ndc(e), camera, e.shiftKey) : ed.begin(ndc(e), camera)) {
+    if (ed instanceof HairStudio || ed instanceof BodySculptor ? ed.begin(ndc(e), camera, e.shiftKey) : ed.begin(ndc(e), camera)) {
       carving = true;
       controls.enabled = false;
       renderer.domElement.setPointerCapture(e.pointerId);

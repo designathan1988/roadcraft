@@ -17,6 +17,7 @@ import { GroomBody, decodeGroom, groomPack } from './groom';
 import type { StudioBody } from './hairStudio';
 import { FaceProportions } from './proportions';
 import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
+import type { HairSculpt } from './sculpt';
 
 /** A LAB PERSON BUILT THE GAME'S WAY: `buildPersonScene` (`render/people/personBuild.ts`), with the hair studio's hairstyle worn as an item */
 
@@ -25,6 +26,14 @@ const hairBase = (a: PeopleAssets, mo: Morpher): HairBase => ({ positions: mo.ba
 
 /** The style as the lab draws it: the eyes never swollen by `cartoonBody` (its sphere round each eye leaves a crater round the socket, an alien's face); big eyes come from the face's own `eye-scale` slider. */
 const labStyle = (style: CartoonStyle): CartoonStyle => ({ ...style, eyes: 1 });
+
+/** The body with its brush sculpt (`bodySculpt.ts`) added. */
+function sculpted(positions: Float32Array, body: HairSculpt | undefined): Float32Array {
+  if (!body) return positions;
+  const d = decodeSculpt(body, positions.length / 3);
+  for (let i = 0; i < positions.length; i++) positions[i] = positions[i]! + d[i]!;
+  return positions;
+}
 
 export interface BuiltPerson {
   readonly scene: Object3D;
@@ -132,7 +141,7 @@ export class LabBuilder {
   /** The body's shape for a person (decimetres): what `BuiltPerson.morph` reads. */
   async shape(person: LabPerson): Promise<Float32Array> {
     const { assets: a, morpher: mo } = await this.setup();
-    return cartoonBody(mo.shape(person.spec.body, person.spec.features), a.mesh, labStyle(person.style));
+    return sculpted(cartoonBody(mo.shape(person.spec.body, person.spec.features), a.mesh, labStyle(person.style)), person.body);
   }
 
   async build(person: LabPerson): Promise<BuiltPerson> {
@@ -165,7 +174,7 @@ export class LabBuilder {
       proxies,
       texturedSkin: true,
       data: a.mesh, skeleton: a.skeleton, bodyRange: a.bodyRange,
-      positions: cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), look: spec.look,
+      positions: sculpted(cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), person.body), look: spec.look,
       capture: captureBind(sex), captureAxes: captureBindRotations(sex),
     };
     await personSimplifier;
