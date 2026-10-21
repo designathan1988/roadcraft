@@ -3374,7 +3374,8 @@ export function createSceneRenderer(
         const signature = casterSignature();
         const still = signature === lastCasterSignature && !castersStirred;
         // Where the view stands, a cascade drawn whole is kept for the frames after (`ShadowPassInput.keep`).
-        const viewStill = shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
+        // DO NOT keep one behind the curtain: the town is hidden there (`buildings.hidden`), which no caster's signature says, and a cascade drawn then without the buildings was kept past the reveal - a reopened city, its cells in from the store before the curtain fell, had no building's shadow at all, its streets lit bright (2026-10-21).
+        const viewStill = reveal.opened && shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
         shadowView.copy(rig.camera.matrixWorld);
         shadowProjection.copy(rig.camera.projectionMatrix);
         lastCasterSignature = signature;
@@ -3539,6 +3540,8 @@ export function createSceneRenderer(
         } else if (next === 'show') {
           // Shown however far it got (`REVEAL_LIMIT_MS`): its programs compiled all the same.
           programs.compile(scene);
+          // The town comes out from behind the curtain: its casters drawn into the sun's stores (what the curtain hid, no signature sees).
+          shadowMoved = true;
           performance.mark('opening:shown', { detail: { waitedMs: performance.now() - openingSince, workedMs: reveal.worked, whole } });
         }
       }
