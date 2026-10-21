@@ -1,4 +1,5 @@
 import {
+  ACESFilmicToneMapping, AgXToneMapping, CineonToneMapping, ColorManagement, CustomToneMapping, LinearToneMapping, NeutralToneMapping, ReinhardToneMapping, SRGBTransfer,
   Color, DepthTexture, type DirectionalLight, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
   RGFormat, RedFormat, SRGBColorSpace, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
@@ -29,6 +30,8 @@ export interface PostChain {
   readonly enabled: boolean;
   /** What the scene is drawn into (null: the screen): shaders are compiled ahead for it. */
   readonly target: WebGLRenderTarget | null;
+  /** Settles once the chain's own programs (its passes') are built: a quality change holds the last picture until then (`renderer.ts` compileChanged). */
+  readonly ready: Promise<void>;
   /** Every render target the chain holds (the scene's, the composer's two, the masks, the clouds', the occlusion's), for the video memory count (`targetBytes.ts`). */
   targets(): readonly WebGLRenderTarget[];
   render(delta: number): void;
@@ -83,6 +86,7 @@ export function createPostChain(
     return {
       enabled: false,
       target: plain?.target ?? null,
+      ready: Promise.resolve(),
       targets: () => (plain ? [plain.target] : []),
       render() {
         if (plain) plain.render();
@@ -129,6 +133,9 @@ export function createPostChain(
     depthTexture: new DepthTexture(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), FloatType),
     // Multisampled, its depth resolved into the texture the occlusion reads (three's `resolveDepthBuffer`).
     samples: Math.min(quality.msaa, renderer.capabilities.maxSamples),
+    // DO NOT keep the multisampled buffers once resolved: nothing reads them after the scene pass (the passes read the resolved colour and depth), and the driver may drop them instead of storing them (three's `invalidateFramebuffer` after the resolve).
+    storeMultisampledColorBuffer: false,
+    storeMultisampledDepthBuffer: false,
   });
   /** DO NOT hand the composer the scene's multisampled target again: it clones it */
   const target = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), { type: HalfFloatType, depthBuffer: false });
@@ -415,6 +422,39 @@ export function createPostChain(
   output.uniforms['uTexel'] = { value: new Vector2(1 / Math.max(1, size.x * ratio), 1 / Math.max(1, size.y * ratio)) };
   output.material.needsUpdate = true;
   composer.addPass(output);
+  // The programs no warm-up above built (the scene's copy, SMAA's three, the output's), built now in parallel: a tier change makes a new chain, and the old one's materials,
+  // disposed before the new chain first draws, give their programs back (three's WebGLPrograms.releaseProgram at usedTimes 0) - linked again in the frame otherwise.
+  {
+    const quad = fullScreenTriangle();
+    const passes = new Scene();
+    passes.add(new Mesh(quad, copyQuad.material));
+    if (smaa) {
+      const materials = smaa as unknown as { _materialEdges: ShaderMaterial; _materialWeights: ShaderMaterial; _materialBlend: ShaderMaterial };
+      passes.add(new Mesh(quad, materials._materialEdges), new Mesh(quad, materials._materialWeights), new Mesh(quad, materials._materialBlend));
+    }
+    // The output's defines as its first draw sets them (r186 OutputPass.render), so that draw finds them set and builds nothing new.
+    {
+      const state = output as unknown as { _outputColorSpace: string | null; _toneMapping: number | null };
+      state._outputColorSpace = renderer.outputColorSpace;
+      state._toneMapping = renderer.toneMapping;
+      output.material.defines = outputDefines(renderer.outputColorSpace, renderer.toneMapping);
+      output.material.needsUpdate = true;
+    }
+    const screen = new Scene();
+    screen.add(new Mesh(quad, output.material));
+    const previous = renderer.getRenderTarget();
+    // Each for the target it draws into: the composer's (no tone mapping, the working colour space), and the screen.
+    renderer.setRenderTarget(composer.renderTarget1);
+    const intoChain = renderer.compileAsync(passes, camera).catch((error: unknown) => {
+      console.error('Post pass shader precompile failed', error);
+    });
+    renderer.setRenderTarget(null);
+    const intoScreen = renderer.compileAsync(screen, camera).catch((error: unknown) => {
+      console.error('Output shader precompile failed', error);
+    });
+    renderer.setRenderTarget(previous);
+    warming.push(Promise.all([intoChain, intoScreen]).finally(() => quad.dispose()));
+  }
   // Each pass told to the lab's observer when one is set (`PostPassHook`).
   for (const [pass, name] of [[scenePass, 'scene'], [gtao, 'gtao'], [canyon?.pass, 'canyon'], [bloom, 'bloom'], [clouds, 'clouds'], [smaa, 'smaa'], [output, 'output']] as [Pass | null | undefined, string][]) {
     if (!pass) continue;
@@ -437,6 +477,7 @@ export function createPostChain(
   return {
     enabled: true,
     target: sceneTarget,
+    ready: Promise.allSettled(warming).then(() => undefined),
     // The occlusion's two targets too (its `normalRenderTarget` is never bound once `setGBuffer` is handed the scene's depth: no GPU memory)
     // The bloom's bright pass and its five mips each way (made at construction, on or off) and SMAA's edges and weights (r186 `_edgesRT`, `_weightsRT`)
     targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...bodiesTargets, shadowMapTarget, ...(gtao ? [gtao.gtaoRenderTarget, gtao.pdRenderTarget] : []),
@@ -1230,4 +1271,20 @@ export function shareBloomBlur(materials: readonly ShaderMaterial[]): void {
       .replace(loop, `${loop} if ( i >= uPairs ) break;`);
     material.needsUpdate = true;
   }
+}
+
+/** The defines three's OutputPass gives its material for a colour space and a tone mapping (r186 OutputPass.render), set ahead to compile its program before its first draw. */
+export function outputDefines(colorSpace: string, toneMapping: number): Record<string, string> {
+  const defines: Record<string, string> = {};
+  if (ColorManagement.getTransfer(colorSpace) === SRGBTransfer) defines['SRGB_TRANSFER'] = '';
+  const name = toneMapping === LinearToneMapping ? 'LINEAR_TONE_MAPPING'
+    : toneMapping === ReinhardToneMapping ? 'REINHARD_TONE_MAPPING'
+    : toneMapping === CineonToneMapping ? 'CINEON_TONE_MAPPING'
+    : toneMapping === ACESFilmicToneMapping ? 'ACES_FILMIC_TONE_MAPPING'
+    : toneMapping === AgXToneMapping ? 'AGX_TONE_MAPPING'
+    : toneMapping === NeutralToneMapping ? 'NEUTRAL_TONE_MAPPING'
+    : toneMapping === CustomToneMapping ? 'CUSTOM_TONE_MAPPING'
+    : null;
+  if (name) defines[name] = '';
+  return defines;
 }
