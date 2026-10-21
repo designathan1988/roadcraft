@@ -46,6 +46,8 @@ const FIELDS: Readonly<Record<Field, FieldSpec>> = {
   rain: { system: 'particles', kind: 'bool', unread: true, title: 'Gotas de chuva', what: 'As gotas no ar.', affects: ['layer:weather', 'name:rain'] },
   skyClouds: { system: 'post', kind: 'bool', title: 'Nuvens do céu', what: 'Monta o passe das nuvens (junto com "Sombras das nuvens").', affects: ['post', 'pass:clouds'] },
   mist: { system: 'post', kind: 'bool', unread: true, title: 'Névoa matinal', what: 'Névoa nos vales e sobre a água.', affects: ['post'] },
+  triangleScale: { system: 'buildings', kind: 'number', title: 'Parcela do orçamento de triângulos', what: 'A parcela do orçamento de triângulos da vista que os níveis dos prédios podem somar (acima dela a escala de erro sobe).', affects: ['layer:buildings'] },
+  detailMemoryMB: { system: 'buildings', kind: 'number', title: 'Memória do detalhe dos prédios (MB)', what: 'O máximo que o detalhe das células dos prédios guarda na GPU.', affects: ['layer:buildings'] },
   waterfalls: { system: 'water', kind: 'bool', unread: true, title: 'Spray das cachoeiras', what: 'Spray e névoa ao pé das cachoeiras.', affects: ['layer:water'] },
 };
 

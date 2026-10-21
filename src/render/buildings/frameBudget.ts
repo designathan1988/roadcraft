@@ -6,8 +6,6 @@ export const ERROR_STEP = 1.25;
 export const MOST_ERROR_SCALE = 32;
 /** Under this share of the budget the scale may come down a step (a gap under the budget, so a step down does not step up again next frame). */
 export const SLACK = 0.6;
-/** The most the GPU's time may raise the scale (`layer.ts` `pressTime`): 8 px of error keeps the street view's near cells in detail (0.3 m spans 8.4 px at 28 px a metre); a frame slow past that is not slow for triangles, and coarser levels would only take the picture away. */
-export const MOST_TIME_SCALE = 4;
 
 /** THE CELLS HELD BACK THAT THE EYE CAME NEARER TO THAN A CELL KEPT (`layer.ts` capTriangles): let go. The budget coarsens the farthest first; a cell held in one view stayed held when the eye went down into it, its neighbours farther off kept in detail: the street view showed the building at the camera at its facade level (conferencia 09-street, 2026-10-17). `kept`: the cells drawn near now, each with whether at full detail; `away`: a cell's distance from the eye. */
 export function letGoPassed(heldFar: Set<string>, heldCoarse: Set<string>, kept: Iterable<{ readonly key: string; readonly fine: boolean }>, away: (key: string) => number): void {
@@ -55,21 +53,13 @@ export function fitErrorScale(scale: number, floor: number, budget: number, coun
   return k;
 }
 
-/** THE SCALE OF A FRAME (`layer.ts` `levelOfDetail`): the most triangles the levels may add up to (`budget`, the view's, `core/perfBudget.ts`), the scale that fits it (`scale`) and the least the GPU's time allows (`floor`, `press`). */
+/** THE SCALE OF A FRAME (`layer.ts` `levelOfDetail`): the most triangles the levels may add up to (`budget`, the view's, `core/perfBudget.ts`) and the scale that fits it (`scale`). The frame's time is the quality governor's (`render/quality.ts` QualityGovernor), never the levels': the detail is kept to 1.4 km. */
 export class FrameScale {
   budget = Infinity;
   scale = 1;
-  floor = 1;
   /** The levels chosen at the scale that fits the budget: `count` chooses at a scale and says their triangles. */
   fit(count: (scale: number) => number): void {
-    this.scale = fitErrorScale(this.scale, this.floor, this.budget, count);
-  }
-  /** The floor a step up (coarser than what is drawn now: a floor under the scale the budget chose would change nothing) or down; false when it cannot move. */
-  press(up: boolean): boolean {
-    const next = up ? Math.min(MOST_TIME_SCALE, Math.max(this.floor, this.scale) * ERROR_STEP) : Math.max(1, this.floor / ERROR_STEP);
-    if (next === this.floor) return false;
-    this.floor = next;
-    return true;
+    this.scale = fitErrorScale(this.scale, 1, this.budget, count);
   }
 }
 
@@ -148,63 +138,5 @@ export class LandedMeasure<K extends string> {
     for (const [other, measured] of this.othersOf(kind, key)) return (measured * this.typical[kind]) / this.typical[other];
     const s = this.sums.get(kind);
     return s?.n ? s.sum / s.n : this.typical[kind];
-  }
-}
-
-/** A step up paid only if the window's p95 fell by this share of what it was: under it the frame is slow for pixels (the targets, MSAA, the post chain), not for triangles, and coarser levels would only take the picture away (measured 2026-10-16: 22.9 ms at 2.96 M triangles on the RTX 3060, the same at 13 M). */
-export const GAIN = 0.1;
-/** Under this share of what raises the floor (`OVER` times the budget) it may come down a step. DO NOT bring it down only under a share of the budget itself: the pixel pipeline alone costs more than that, the floor raised in a road's build (judged paid when the build ended) stayed for good and the district stood in masses (r20, 2026-10-17). */
-export const TIME_SLACK = 0.66;
-/** The floor rises only past this many times the budget (30 ms at 12: under 33 fps, a view not playable). DO NOT trade the picture for a frame time the view cannot reach anyway: the pixel pipeline alone costs 15-20 ms at 1080p on the RTX 3060, and the governor stepped the district view down to masses chasing 12 ms (2026-10-16). */
-export const OVER = 2.5;
-
-/** THE GPU'S TIME GOVERNS THE SCALE'S FLOOR, one window of frames at a time (`renderer.ts` `governFrame`): past `OVER` times the budget, a step coarser is asked; the next window is the levels' to settle; the one after says whether the step paid (`GAIN`). A step that did not pay is undone and none is tried again until the frame is slower than it was then by `GAIN` (something changed) or the view changes (`reset`). Well under `OVER` times the budget (`TIME_SLACK`), a step finer; one that brought the frame back past `OVER` is stepped up again and not tried again in the view. */
-export class TimeGovernor {
-  /** The p95 before the step up being judged, ms. */
-  private pressedAt: number | null = null;
-  /** The window after a step up is the levels' to settle: judged on the one after. */
-  private settling = false;
-  /** The p95 at which a step up bought nothing, ms: none tried again under it. */
-  private vainAt = Infinity;
-  /** A step down made by the last window: judged by this one. */
-  private lowered = false;
-  /** A step down brought the frame back past `OVER`: none tried again in this view. */
-  private downVain = false;
-  /** The last step up was judged paid: tried once back down under `OVER` (DO NOT keep it for good: the opening's load ended in the window that judged it, and with the district between the marks the floor never came down, half the town in masses, conferencia 103/104). */
-  private paid = false;
-
-  /** A window's p95 against the view's budget, ms: `press(true)` asks the floor a step coarser (false when there is none left), `press(false)` a step finer. */
-  read(p95: number, budget: number, press: (up: boolean) => boolean): void {
-    // The window that judges a step up may step further up, never back down (that is the next window's to say).
-    const judging = this.pressedAt !== null;
-    if (this.pressedAt !== null) {
-      if (this.settling) { this.settling = false; return; }
-      const before = this.pressedAt;
-      this.pressedAt = null;
-      if (p95 > before * (1 - GAIN)) { press(false); this.vainAt = before; return; }
-      this.paid = true;
-    }
-    const lowered = this.lowered;
-    this.lowered = false;
-    if (p95 > budget * OVER) {
-      if (lowered) this.downVain = true;
-      if (p95 > this.vainAt * (1 + GAIN)) this.vainAt = Infinity;
-      if (this.vainAt === Infinity && press(true)) { this.pressedAt = p95; this.settling = true; this.paid = false; }
-    } else if ((p95 < budget * OVER * TIME_SLACK || this.paid) && !this.downVain && !judging) {
-      // A step judged paid is tried once back down: what fell may have been a passing load (the opening, a road's build), not the triangles.
-      this.paid = false;
-      this.lowered = press(false);
-      this.vainAt = Infinity;
-    }
-  }
-
-  /** Another view: what was learnt of the last forgotten. */
-  reset(): void {
-    this.pressedAt = null;
-    this.settling = false;
-    this.vainAt = Infinity;
-    this.lowered = false;
-    this.downVain = false;
-    this.paid = false;
   }
 }

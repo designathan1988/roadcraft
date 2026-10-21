@@ -1,5 +1,21 @@
 # Migração do renderizador para WebGPU
 
+> **Parada na etapa 1 (decisão de 2026-10-21).** A migração não continua. A etapa 1 (a chave `?gpu=webgpu`, os gêmeos do
+> céu e do terreno e a ferramenta de comparação) fica no código como está; as etapas 2 a 7 não serão feitas agora.
+>
+> Por quê:
+> - O objetivo do momento é a cidade de ~200 mil prédios em PCs fracos e fortes (`ARQUITETURA.md`). O que impede isso é
+>   memória e trabalho de mapa inteiro na página, não a API gráfica: o heap passa de 7 GB a 200 mil prédios com o
+>   WebGL ou com o WebGPU.
+> - O ganho que motivava a migração, esconder prédios atrás de prédios, é alcançado sem WebGPU: culling por oclusão na
+>   CPU sobre o campo de alturas da cidade (`cameraSolids.ts`), testado no quadro atual.
+> - Migrar 79 `onBeforeCompile`, 17 `ShaderMaterial` e 12 passes de pós para TSL, com comparação pixel a pixel de cada
+>   um, é um projeto do tamanho do jogo; feito ao mesmo tempo que a mudança de arquitetura, as duas regressões se
+>   misturariam e nenhuma das duas poderia ser provada.
+> - Nada da arquitetura nova depende do WebGPU; o WebGL2 continua o único caminho do jogo.
+>
+> Quando a cidade grande estiver pronta e medida, a migração pode ser retomada da etapa 2 com o texto abaixo.
+
 ## Por que
 
 Medido em 2026-10-21 (RTX 3060, 1920×1080, cidade grande, Electron):

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBuildingKit } from '@render/buildings/kit';
 import { cellMass } from '@render/buildings/cellArrays';
-import { ERROR_STEP, FrameScale, GAIN, LandedMeasure, MOST_ERROR_SCALE, MOST_TIME_SCALE, TIME_SLACK, TimeGovernor, fitErrorScale, letBackFitting, letGoPassed } from '@render/buildings/frameBudget';
+import { ERROR_STEP, FrameScale, LandedMeasure, MOST_ERROR_SCALE, fitErrorScale, letBackFitting, letGoPassed } from '@render/buildings/frameBudget';
 import { createMassCells } from '@render/buildings/massCells';
 import { emitMassing } from '@render/buildings/massing';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
@@ -40,34 +40,17 @@ describe('the error scale that fits the budget', () => {
   });
 });
 
-describe("the frame's scale and the floor the time sets", () => {
+describe("the frame's scale", () => {
   const count = (scale: number): number => Math.round(1000 / scale);
 
-  it('the floor steps up from what is drawn, stops at the coarsest the time may ask, and comes down to 1', () => {
+  it('fits the budget, and is 1 when the budget is room enough', () => {
     const f = new FrameScale();
     f.budget = 400;
     f.fit(count);
     expect(count(f.scale)).toBeLessThanOrEqual(400);
-    // A floor under the scale chosen would change nothing: the step is taken from the scale drawn.
-    expect(f.press(true)).toBe(true);
-    expect(f.floor).toBeCloseTo(f.scale * ERROR_STEP, 6);
-    while (f.press(true));
-    expect(f.floor).toBe(MOST_TIME_SCALE);
-    expect(f.press(true)).toBe(false);
-    expect(f.press(false)).toBe(true);
-    expect(f.floor).toBeCloseTo(MOST_TIME_SCALE / ERROR_STEP, 6);
-    while (f.press(false));
-    expect(f.floor).toBe(1);
-    expect(f.press(false)).toBe(false);
-  });
-
-  it('the scale never goes under the floor', () => {
-    const f = new FrameScale();
-    f.fit(count);
-    expect(f.scale).toBe(1);
-    f.press(true);
-    f.fit(count);
-    expect(f.scale).toBe(f.floor);
+    const g = new FrameScale();
+    g.fit(count);
+    expect(g.scale).toBe(1);
   });
 });
 
@@ -123,125 +106,6 @@ describe('the cells at an error scale', () => {
     cells.choose(CELL / 2, CELL / 2, m(300), 1000, 10, false, Infinity);
     for (let i = 0; i < 5; i++) expect(cells.near(`${i},0`)).toBe(false);
     cells.dispose();
-  });
-});
-
-describe("the GPU's time governing the floor", () => {
-  /** A press log: what the governor asked, in order; `left` steps up before the coarsest. */
-  const pressing = (left = 8) => {
-    const asked: boolean[] = [];
-    return { asked, press: (up: boolean): boolean => { asked.push(up); if (up && left <= 0) return false; left += up ? -1 : 1; return true; } };
-  };
-
-  it('past OVER times the budget: a step up, a window to settle, kept when the time fell by the gain', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    g.read(40, 12, press);
-    expect(asked).toEqual([true]);
-    g.read(40, 12, press);
-    expect(asked).toEqual([true]);
-    g.read(40 * (1 - GAIN) - 0.1, 12, press);
-    expect(asked).toEqual([true, true]);
-  });
-
-  it('a step that did not pay is undone, and none is tried again under that time', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    g.read(40, 12, press);
-    g.read(40, 12, press);
-    g.read(39, 12, press);
-    expect(asked).toEqual([true, false]);
-    for (let i = 0; i < 5; i++) g.read(40, 12, press);
-    expect(asked).toEqual([true, false]);
-    // Slower than then by the gain: something changed, tried again.
-    g.read(40 * (1 + GAIN) + 0.1, 12, press);
-    expect(asked).toEqual([true, false, true]);
-  });
-
-  it('well under the budget: a step down, and the vain mark forgotten', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    g.read(40, 12, press); g.read(40, 12, press); g.read(40, 12, press);
-    expect(asked).toEqual([true, false]);
-    g.read(12 * TIME_SLACK - 0.1, 12, press);
-    expect(asked).toEqual([true, false, false]);
-    g.read(40, 12, press);
-    expect(asked).toEqual([true, false, false, true]);
-  });
-
-  it('between the slack and OVER times the budget nothing moves; a view change forgets the vain mark', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    g.read(20, 12, press);
-    expect(asked).toEqual([]);
-    g.read(40, 12, press); g.read(40, 12, press); g.read(40, 12, press);
-    expect(asked).toEqual([true, false]);
-    g.reset();
-    g.read(40, 12, press);
-    expect(asked).toEqual([true, false, true]);
-  });
-
-  it('brings a floor raised by a passing load back down once the frame is well under what raised it, though never under the budget itself (r20: a road built)', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    // A road's build: 35 ms; it ends in the window that judges the step, which seems to have paid.
-    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
-    expect(asked).toEqual([true]);
-    // 18 ms, the pixels' own cost, over the budget: the floor comes back down all the same.
-    g.read(18, 12, press);
-    expect(asked).toEqual([true, false]);
-  });
-
-  it('steps up again a step down that brought the frame back past OVER, and tries none again in the view', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
-    g.read(18, 12, press);
-    expect(asked).toEqual([true, false]);
-    // The detail back costs the frame again: up, and held there.
-    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
-    expect(asked).toEqual([true, false, true]);
-    for (let i = 0; i < 4; i++) g.read(18, 12, press);
-    expect(asked).toEqual([true, false, true]);
-    // Another view: tried again.
-    g.reset();
-    g.read(18, 12, press);
-    expect(asked).toEqual([true, false, true, false]);
-  });
-
-  it('between the two marks (20 to 29 ms) moves the floor neither way, raised or not: no level coming and going', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    const between = [20, 29, 21, 28.9, 24, 20.1, 27, 22];
-    for (const p95 of between) g.read(p95, 12, press);
-    expect(asked).toEqual([]);
-    // Raised, paid (35 -> 29): tried once back down between the marks, then nothing moves while the frame swings there.
-    g.read(35, 12, press); g.read(35, 12, press); g.read(29, 12, press);
-    expect(asked).toEqual([true]);
-    for (const p95 of between) g.read(p95, 12, press);
-    expect(asked).toEqual([true, false]);
-  });
-
-  it('tries a step judged paid once back down under OVER: a passing load gone, the floor down; the load real, up again and held (conferencia 103/104)', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing();
-    // The opening: 35 ms, over in the window that judges the step (25 ms, between the marks).
-    g.read(35, 12, press); g.read(35, 12, press); g.read(25, 12, press);
-    g.read(25, 12, press);
-    expect(asked).toEqual([true, false]);
-    // A real load: the step down brings the frame back past OVER: up again, and never tried down again in the view.
-    g.read(35, 12, press); g.read(35, 12, press); g.read(25, 12, press);
-    expect(asked).toEqual([true, false, true]);
-    for (let i = 0; i < 6; i++) g.read(25, 12, press);
-    expect(asked).toEqual([true, false, true]);
-  });
-
-  it('at the coarsest floor nothing is asked for a window to settle', () => {
-    const g = new TimeGovernor();
-    const { asked, press } = pressing(0);
-    g.read(40, 12, press);
-    g.read(40, 12, press);
-    expect(asked).toEqual([true, true]);
   });
 });
 

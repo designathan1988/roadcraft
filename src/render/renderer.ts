@@ -153,14 +153,14 @@ const STREET_ZOOM = perM(8);
 const DISTRICT_ZOOM = perM(0.8);
 const viewOf = (zoom: number): CityView => (zoom >= STREET_ZOOM ? 'street' : zoom >= DISTRICT_ZOOM ? 'district' : 'map');
 
-import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer, GAME_DETAIL_MEMORY_MB } from './buildings/layer';
+import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
 import { gpuBatchContext } from './buildings/gpuBatchedMesh';
 import { wantAllTexels } from './surfaceTextures';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
-import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } from './quality';
+import { QUALITY, type QualityLevel, type QualitySettings } from './quality';
 import { type GroundRecord, type Rect, unionRect } from './groundChanges';
 import { FOREST_SPECIES, createGroundCoverKit } from './groundCover';
 import type { PlantedTree } from '@world/trees';
@@ -627,8 +627,9 @@ export function createSceneRenderer(
   };
 
   let requested: QualityLevel | 'auto' = initialQuality;
-  const governor = new QualityGovernor(requested === 'auto' ? 'high' : requested);
-  let quality: QualitySettings = initialSettings ?? QUALITY[governor.current];
+  /** The tier drawn now: the one asked for; `auto` here (no wiring choosing for it, the tests) is high. The automatic tier is moved by `graphicsWiring.ts`, which asks for each tier it picks. */
+  let tier: QualityLevel = requested === 'auto' ? 'high' : requested;
+  let quality: QualitySettings = initialSettings ?? QUALITY[tier];
 
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
   const anisotropy = Math.min(quality.anisotropy, maxAnisotropy);
@@ -1120,6 +1121,8 @@ export function createSceneRenderer(
   // The shell batches write their buffers on the GPU with this context (`gpuBatchedMesh.ts`).
   gpuBatchContext(renderer.getContext() as WebGL2RenderingContext);
   const buildings = createBuildingLayer(anisotropy);
+  // The tier's memory for the buildings' detail (`quality.ts` detailMemoryMB); the lab's switch over it (`setEffects`).
+  buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
   // Buildings are placed once, never moved: a still tree.
   holdStill(buildings.group);
   scene.add(buildings.group);
@@ -2220,6 +2223,7 @@ export function createSceneRenderer(
     renderer.shadowMap.enabled = quality.shadows && effectSwitches.shadows;
     materials.setDetail(quality.surfaceDetail && effectSwitches.surfaceDetail);
     environment.setQuality({ shadows: quality.shadows && effectSwitches.shadows, shadowMapSize: quality.shadowMapSize });
+    if (buildingChoices.detailMemoryMB < 0) buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
     post?.dispose();
     post = createPostChain(renderer, scene, rig.camera, quality, level);
     post.setNight(Math.max(0, lastDark));
@@ -2228,7 +2232,7 @@ export function createSceneRenderer(
     shadowMoved = true;
   };
 
-  let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, governor.current);
+  let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, tier);
   /** The chain's targets that hold memory on the GPU now: those bound at least once (three makes a target's framebuffer at its first `setRenderTarget`, r186 `WebGLTextures.setupRenderTarget`; a disposed one loses it). DO NOT charge the ledger for targets never drawn into (the clouds' with no cloud placed, the bloom's mips by day): ~40 MB at 1440p taken from the buildings' detail for nothing (RND-19). */
   const livePostTargets = (): ReturnType<PostChain['targets']>[number][] => liveTargets(post.targets(), renderer.properties);
   /** How many were live when the ledger was last told: told again when that changes (a target drawn into for the first time, the bloom at nightfall). */
@@ -2661,7 +2665,7 @@ export function createSceneRenderer(
         builtTriangles: builtTriangles + buildings.triangles,
         drawnTriangles: frameDrawn.triangles,
         drawCalls: frameDrawn.calls,
-        quality: governor.current,
+        quality: tier,
         fps: Math.round(fps),
         rebuildMs: Math.round(rebuildMs),
         roadTiles: roads ? { built: roads.built, reused: roads.reused } : { built: 0, reused: 0 },
@@ -2857,7 +2861,7 @@ export function createSceneRenderer(
       rig.setPerspective(on);
       // The passes hold the camera they were made with.
       post.dispose();
-      post = createPostChain(renderer, scene, rig.camera, quality, governor.current);
+      post = createPostChain(renderer, scene, rig.camera, quality, tier);
       post.setNight(Math.max(0, lastDark));
       resize();
       onAssetsReady();
@@ -3161,7 +3165,7 @@ export function createSceneRenderer(
         // The sun's cascades are made by three at their first draw: counted as they stand before the detail is chosen.
         gpuLedger.set('shadow maps', 'shadow maps', renderTargetsBytes(environment.shadowMaps()));
         // The view's budget of triangles (`core/perfBudget.ts`): the levels' error scale rises until they fit (`buildings/frameBudget.ts`).
-        buildings.frame.budget = buildingChoices.triangles === 0 ? Infinity : VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles * buildingChoices.triangles;
+        buildings.frame.budget = buildingChoices.triangles === 0 ? Infinity : VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles * buildingChoices.triangles * quality.triangleScale;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre * optimizer.buildingPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre * optimizer.roadPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         nearTiles.choose(ex, ey, ez, pxAtMetre * optimizer.roadPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
@@ -3635,8 +3639,8 @@ export function createSceneRenderer(
     },
     setQuality(level, settings) {
       requested = level;
-      const resolved = level === 'auto' ? governor.current : level;
-      governor.set(resolved);
+      const resolved = level === 'auto' ? tier : level;
+      tier = resolved;
       baseQuality = settings ?? QUALITY[resolved];
       // The lab's optimisations over the tier's settings: the same settings when none changes them.
       applyQuality(resolved, withOptimizations(baseQuality, optimizer.values));
@@ -3648,7 +3652,7 @@ export function createSceneRenderer(
       const { programs, shadows } = optimizer.set(values);
       let compile = programs;
       if (qualityOptionsDiffer(before, values)) {
-        applyQuality(governor.current, withOptimizations(baseQuality, values));
+        applyQuality(tier, withOptimizations(baseQuality, values));
         compile = true;
       }
       if (shadows) shadowMoved = true;
@@ -3660,7 +3664,7 @@ export function createSceneRenderer(
       const before = effectSwitches;
       effectSwitches = Object.values(next).every(Boolean) ? ALL_EFFECTS_ON : next;
       if (nextBuildings.detailMemoryMB !== buildingChoices.detailMemoryMB) {
-        buildings.setDetailBudget(nextBuildings.detailMemoryMB < 0 ? GAME_DETAIL_MEMORY_MB * 1048576 : nextBuildings.detailMemoryMB * 1048576);
+        buildings.setDetailBudget((nextBuildings.detailMemoryMB < 0 ? quality.detailMemoryMB : nextBuildings.detailMemoryMB) * 1048576);
       }
       const plain = (Object.keys(DEFAULT_BUILDING_CHOICES) as (keyof BuildingChoices)[]).every((key) => nextBuildings[key] === DEFAULT_BUILDING_CHOICES[key]);
       buildingChoices = plain ? DEFAULT_BUILDING_CHOICES : nextBuildings;

@@ -125,7 +125,7 @@ import {
 } from '@ui/labels';
 import { QUALITY_LEVELS, isQualityLevel } from '@render/quality';
 import { createBuildingWiring } from './buildingsWiring';
-import { createGraphicsWiring } from './graphicsWiring';
+import { createGraphicsWiring, isQualityPreset } from './graphicsWiring';
 import { createEffectsWiring } from './effectsWiring';
 import { createLab } from './lab/lab';
 import { createSteamAchievements } from './steamAchievements';
@@ -626,7 +626,7 @@ canvas3d.setAttribute('aria-hidden', 'true');
 canvas3d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
 canvas.parentElement?.insertBefore(canvas3d, canvas);
 /** The graphics options (`graphicsWiring.ts`): the tier the player chose, or the one this GPU holds at the first start, and their settings on it. */
-const graphics = createGraphicsWiring((level) => gameState.set('quality', level, 'quality menu'));
+const graphics = createGraphicsWiring((preset) => gameState.set('quality', preset, 'quality menu'));
 /** The effects panel (F7, `effectsWiring.ts`): every effect and heavy system switched live, to measure what each costs. */
 const effects = createEffectsWiring();
 /** The city's milestones told to Steam when the desktop shell runs under it (`steamAchievements.ts`). */
@@ -1840,7 +1840,7 @@ function mountInterface(): void {
     openMap: () => void openMap(),
     saveMap,
     about: openAbout,
-    qualityLevels: QUALITY_LEVELS,
+    qualityLevels: ['auto', ...QUALITY_LEVELS],
     setQuality,
     graphicsOptions: () => graphics.openPanel(),
     effectsPanel: () => lab.open('switches'),
@@ -2636,7 +2636,8 @@ function frame(now: number): void {
     : null);
   frameTimer.mark('poles');
   scene.draw(net, sim, alpha, wall, { holdRoads: terrainBrush.stroking });
-  graphics.frame();
+  // DO NOT let the automatic tier or the dynamic resolution move under a measure (`__roadcraft.measure`): its pictures and times are of one tier; nor while a map opens behind the curtain: its uploads and builds are not the frame rate.
+  if (!measure.on && loadingCurtain.style.display === 'none') graphics.frame();
   frameTimer.mark('drawing');
   drawnOnce = true;
   drawOverlayScreen();
@@ -3870,9 +3871,9 @@ function setMarkingStyle(value: string): void {
   requestDraw();
 }
 
-gameState.set('quality', graphics.level, 'saved preference');
+gameState.set('quality', graphics.preset, 'saved preference');
 function setQuality(value: string): void {
-  if (isQualityLevel(value)) graphics.setPreset(value);
+  if (isQualityPreset(value)) graphics.setPreset(value);
 }
 /** The game's state in the console (`core/gameState.ts`): `__state()` its values now and the last changes */
 if (PROBES) (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({

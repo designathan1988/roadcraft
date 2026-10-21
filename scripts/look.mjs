@@ -96,6 +96,8 @@ async function runOnce(report) {
     await session.send('Emulation.setCPUThrottlingRate', { rate: plan.cpu });
     console.log(`CPU ${plan.cpu}x slower (emulated)`);
   }
+  // The page's stored values before the game reads any (`plan.storage`, key -> text): a graphics tier pinned ("roadcraft.quality": "ultra"), so the automatic tier does not move under a run's pictures.
+  if (plan.storage && !page.desktop) await page.addInitScript((pairs) => { for (const [k, v] of Object.entries(pairs)) window.localStorage.setItem(k, v); }, plan.storage);
   try {
     await steps(page, report);
   } catch (err) {

@@ -896,7 +896,7 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       // DO NOT choose the levels again when nothing they read changed and the last choice left them as the one before it did (the choice is deterministic: the same inputs from where it settled give the same levels; 2 to 4 whole choices and caps a frame, PRD-01). A choice that moved anything (a held cell let back a level, a scale stepping down) is run again until it settles.
       const read = lodRead;
       read[0] = eyeX; read[1] = eyeY; read[2] = eyeZ; read[3] = pxAtMetre; read[4] = orthoPx ?? -1; read[5] = reach;
-      read[6] = frame.budget; read[7] = frame.floor; read[8] = room(); read[9] = view ? 1 : 0;
+      read[6] = frame.budget; read[7] = 1; read[8] = room(); read[9] = view ? 1 : 0;
       const sameRead = lodForced === forcedNear && read.every((v, i) => Object.is(v, lodLast[i])) && (!view || sameFrustum(lodView, view));
       if (lodStale || !sameRead || !lodSettled) {
         const wasStale = lodStale;

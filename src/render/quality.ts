@@ -1,4 +1,4 @@
-/** DO NOT describe `auto` as adaptive until it is wired. */
+/** THE GRAPHICS TIERS, and the governor that moves `auto` between them in play (`graphicsWiring.ts`). */
 
 import { m, perM } from '@world/units';
 
@@ -61,6 +61,10 @@ export interface QualitySettings {
   readonly mist: boolean;
   /** The spray and mist at the foot of waterfalls (their falling water is drawn on every tier). */
   readonly waterfalls: boolean;
+  /** Share of the view's budget of triangles the buildings' levels may add up to (`core/perfBudget.ts` VIEW_BUDGETS, `buildings/frameBudget.ts`): past it their error scale rises. */
+  readonly triangleScale: number;
+  /** The most the buildings' cells' detail may hold on the GPU, MB (`BuildingLayer.setDetailBudget`). */
+  readonly detailMemoryMB: number;
 }
 
 export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
@@ -94,6 +98,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: false,
     mist: false,
     waterfalls: false,
+    triangleScale: 0.35,
+    detailMemoryMB: 256,
   },
   medium: {
     pixelRatio: 1.25,
@@ -124,6 +130,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: false,
     waterfalls: true,
+    triangleScale: 0.6,
+    detailMemoryMB: 448,
   },
   high: {
     pixelRatio: 1.5,
@@ -156,6 +164,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: true,
     waterfalls: true,
+    triangleScale: 1,
+    detailMemoryMB: 768,
   },
   ultra: {
     pixelRatio: 2,
@@ -187,6 +197,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: true,
     waterfalls: true,
+    triangleScale: 1,
+    detailMemoryMB: 1024,
   },
 };
 
@@ -195,14 +207,33 @@ export const QUALITY_LEVELS: readonly QualityLevel[] = ['low', 'medium', 'high',
 export const isQualityLevel = (value: unknown): value is QualityLevel =>
   value === 'low' || value === 'medium' || value === 'high' || value === 'ultra';
 
-/** Watches frame time and reports when the tier should change. */
+/** Frames read per window: a p90 over a second and a half at 60 Hz. */
+const WINDOW = 90;
+/** Frames left out after a tier changes: its programs are built and its targets made, and the GPU's timings come back a few frames late. */
+const SETTLE = 60;
+/** A tier is dropped after this many windows in a row whose p90 missed the frame's budget (one slow window is a road built, a city opened). */
+const DOWN_WINDOWS = 2;
+/** A tier is raised after this many windows in a row whose p90 stayed under `UP_SHARE` of the budget: rising wants more room than falling (the hysteresis). */
+const UP_WINDOWS = 4;
+const UP_SHARE = 0.6;
+/** A raise undone within this long, s: the machine cannot hold that tier; none tried again for `HOLD` s, twice as long each time it happens again. */
+const UNDONE_WITHIN = 30;
+const HOLD = 90;
+/** A frame longer than this is a stall (a rebuild, the tab hidden), not a frame rate, s. */
+const STALL = 0.4;
+
+/** THE AUTOMATIC TIER: the 90th percentile of each window's frame cost (the GPU's time, or the frame's own where no timer answers) against the frame's budget; down after `DOWN_WINDOWS` missed windows, up after `UP_WINDOWS` roomy ones, never above the tier the hardware was given (`core/gpuTier.ts`), and a tier the machine could not hold not tried again for a while. */
 export class QualityGovernor {
-  private samples: number[] = [];
-  private costs: number[] = [];
-  private cooldown = 0;
+  private readonly costs = new Float32Array(WINDOW);
+  private readonly sorted = new Float32Array(WINDOW);
+  private count = 0;
+  private skip = SETTLE;
+  private missed = 0;
+  private roomy = 0;
   private clock = 0;
   private lastRaise = -Infinity;
-  private holdRaise = 0;
+  private holdUntil = 0;
+  private hold = HOLD;
   private readonly ceiling: number;
 
   constructor(private level: QualityLevel, ceiling: QualityLevel = level) {
@@ -213,45 +244,39 @@ export class QualityGovernor {
     return this.level;
   }
 
+  /** The tier changed (by this governor or by the player): the windows start again once it has settled. */
   set(level: QualityLevel): void {
     this.level = level;
-    this.samples.length = 0;
-    this.costs.length = 0;
-    this.cooldown = 2.5;
+    this.count = 0;
+    this.missed = 0;
+    this.roomy = 0;
+    this.skip = SETTLE;
   }
 
-  /** Returns the tier to switch to, or null to stay put. */
-  sample(deltaSeconds: number, costMs = Infinity): QualityLevel | null {
+  /** One frame: `deltaSeconds` since the last, `costMs` what it cost, `budgetMs` the frame it must fit (the refresh, or the player's cap). The tier to switch to, or null to stay. */
+  sample(deltaSeconds: number, costMs: number, budgetMs: number): QualityLevel | null {
     this.clock += deltaSeconds;
-    if (this.holdRaise > 0) this.holdRaise -= deltaSeconds;
-    if (this.cooldown > 0) {
-      this.cooldown -= deltaSeconds;
-      return null;
-    }
-    // A stall from a road rebuild is not a frame rate; it is one bad frame.
-    if (deltaSeconds > 0.4) return null;
-    this.samples.push(deltaSeconds);
-    this.costs.push(costMs);
-    if (this.samples.length < 60) return null;
-    const median = middle(this.samples);
-    const cost = middle(this.costs);
-    this.samples.length = 0;
-    this.costs.length = 0;
+    if (deltaSeconds > STALL || !(costMs > 0) || !(budgetMs > 0)) return null;
+    if (this.skip > 0) { this.skip--; return null; }
+    this.costs[this.count++] = costMs;
+    if (this.count < WINDOW) return null;
+    this.count = 0;
+    this.sorted.set(this.costs);
+    this.sorted.sort();
+    const p90 = this.sorted[Math.floor(WINDOW * 0.9)]!;
     const index = QUALITY_LEVELS.indexOf(this.level);
-    if (median > 1 / 34 && index > 0) {
-      // Undone within twenty seconds: this machine cannot hold that tier.
-      if (this.clock - this.lastRaise < 20) this.holdRaise = 90;
-      return QUALITY_LEVELS[index - 1] as QualityLevel;
+    if (p90 > budgetMs) { this.missed++; this.roomy = 0; } else { this.missed = 0; this.roomy = p90 < budgetMs * UP_SHARE ? this.roomy + 1 : 0; }
+    if (this.missed >= DOWN_WINDOWS && index > 0) {
+      if (this.clock - this.lastRaise < UNDONE_WITHIN) {
+        this.holdUntil = this.clock + this.hold;
+        this.hold *= 2;
+      }
+      return QUALITY_LEVELS[index - 1]!;
     }
-    if (index < this.ceiling && this.holdRaise <= 0 && median < 1 / 50 && cost < 7) {
+    if (this.roomy >= UP_WINDOWS && index < this.ceiling && this.clock >= this.holdUntil) {
       this.lastRaise = this.clock;
-      return QUALITY_LEVELS[index + 1] as QualityLevel;
+      return QUALITY_LEVELS[index + 1]!;
     }
     return null;
   }
-}
-
-function middle(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[sorted.length >> 1] as number;
 }
