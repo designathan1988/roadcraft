@@ -22,6 +22,8 @@ export interface SharedGroundData {
   readonly relief: ReliefVersion | null;
   /** The plates made, by key (`world/bounds.ts` `plateOf`); a plate not in it is read off the relief. */
   readonly plates: ReadonlyMap<number, SharedArrayBuffer>;
+  /** Plates made but left out of `plates` (`groundAround`): a read there is a miss, not the relief. */
+  readonly away?: readonly number[];
 }
 
 /** The ground as a building reads it: as drawn, and as it was before the roads cut it. */
@@ -95,13 +97,26 @@ export class GroundShare {
   }
 }
 
-/** The ground read off the shared plates, point for point as `flatAtlas.ts` `ask` and `terrain.ts` `sampleGrid` read it on the page */
-export function sharedGroundReaders(data: SharedGroundData): GroundReaders {
+/** The ground of the plates over `rect` alone ([x0, y0, x1, y1]), the others made said `away`: what a job sent to another process carries (`jobs/processWorker.ts`), whose memory is not the page's - every plate is copied there, and all of a large city's went with every cell job (~33 MB, JOB-03). */
+export function groundAround(data: SharedGroundData, rect: readonly [number, number, number, number]): SharedGroundData {
+  const near = new Set<number>();
+  const i0 = Math.floor(rect[0] / PLATE_SIZE + 0.5), i1 = Math.floor(rect[2] / PLATE_SIZE + 0.5);
+  const j0 = Math.floor(rect[1] / PLATE_SIZE + 0.5), j1 = Math.floor(rect[3] / PLATE_SIZE + 0.5);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) near.add(plateOf(i * PLATE_SIZE, j * PLATE_SIZE));
+  const plates = new Map<number, SharedArrayBuffer>(), away: number[] = [];
+  for (const [key, buffer] of data.plates) if (near.has(key)) plates.set(key, buffer); else away.push(key);
+  return { ...data, plates, away };
+}
+
+/** The ground read off the shared plates, point for point as `flatAtlas.ts` `ask` and `terrain.ts` `sampleGrid` read it on the page; `missed`, told of a read on a plate left `away` (its height then the relief's: the job is asked again over it). */
+export function sharedGroundReaders(data: SharedGroundData, missed?: (x: number, y: number) => void): GroundReaders {
   const grid = { n: data.n, cell: data.cell, half: data.half };
   const views = new Map<number, PlateHeights | null>();
-  const viewOf = (key: number): PlateHeights | null => {
+  const away = data.away?.length ? new Set(data.away) : null;
+  const viewOf = (key: number, x: number, y: number): PlateHeights | null => {
     let v = views.get(key);
     if (v === undefined) {
+      if (away?.has(key)) { missed?.(x, y); return null; }
       const buffer = data.plates.get(key);
       views.set(key, v = buffer ? viewsOf(buffer, data.n) : null);
     }
@@ -114,7 +129,7 @@ export function sharedGroundReaders(data: SharedGroundData): GroundReaders {
     const pi = Math.floor(x / PLATE_SIZE + 0.5), pj = Math.floor(y / PLATE_SIZE + 0.5);
     const cx = pi * PLATE_SIZE, cy = pj * PLATE_SIZE;
     const lx = x - cx, ly = y - cy;
-    const v = viewOf(plateOf(x, y));
+    const v = viewOf(plateOf(x, y), x, y);
     if (!v || !(lx >= -data.half && lx <= data.half && ly >= -data.half && ly <= data.half)) return bare(cx + lx, cy + ly);
     return natural ? sampleCorners(grid, v.natural, v.naturalFlip, lx, ly) : sampleCorners(grid, v.rendered, v.flip, lx, ly);
   };

@@ -9,6 +9,7 @@ import { BATCH_CELL } from './layerCells';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkReply, runCellJob } from './cellWork';
 import { levelCells } from './levelKeys';
+import { groundAround } from '../sharedGround';
 
 /** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`), through the job system's one queue (`jobPool.ts` `submitJob`) */
 
@@ -76,7 +77,7 @@ interface Asked {
   /** Taken by a worker (`write` called): it runs through as asked. */
   sent: boolean;
   readonly place: readonly [number, number] | null;
-  /** The roads handed with it: the cell and its reach, wider once the worker said so. */
+  /** The roads handed with it, and the ground's plates to a job process (`groundAround`): the cell and its reach, wider once the worker said so. */
   rect: [number, number, number, number] | null;
   widened: number;
   ticket: JobTicket | null;
@@ -133,7 +134,7 @@ export class CellPool {
     const priority = cellPriority(kind, 0, first, this.coarse);
     const asked: Asked = {
       id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority, first, sent: false, place,
-      rect: env.pavedAt ? pavingRect(cell) : null, widened: 0, ticket: null,
+      rect: pavingRect(cell), widened: 0, ticket: null,
     };
     if (!this.offPage(env)) { this.onPage(asked); return asked.id; }
     this.asked.set(asked.id, asked);
@@ -183,20 +184,25 @@ export class CellPool {
       key: asked.key === null ? null : `cells:${asked.key}`,
       priority: asked.priority,
       ...(asked.place ? { at: asked.place } : {}),
-      write: () => { asked.sent = true; return this.write(asked); },
+      // Fit for a job process: its ground cut to the plates around it there (`write`).
+      crosses: true,
+      write: (to) => { asked.sent = true; return this.write(asked, to.sharesMemory); },
       done: (answer) => this.answer(asked, answer as WorkReply),
       failed: (message) => this.failed(asked, message),
     });
   }
 
   /** The job as its worker reads it: the records' shared tables and rows, the plates' shared buffers, the roads near the cell (MDN, transfer). */
-  private write(asked: Asked): { data: CellJob; transfer: ArrayBuffer[] } {
-    const ground = (asked.env.groundAt as SharedGroundAt).share?.current;
-    if (!ground) throw new Error('[buildings] the ground is not shared any more');
+  /** `sharesMemory`: false for a worker in another process (`jobs/processWorker.ts`), every shared buffer copied there: the plates around the cell alone (`groundAround`). */
+  private write(asked: Asked, sharesMemory: boolean): { data: CellJob; transfer: ArrayBuffer[] } {
+    const whole = (asked.env.groundAt as SharedGroundAt).share?.current;
+    if (!whole) throw new Error('[buildings] the ground is not shared any more');
+    const around = !sharesMemory && asked.rect ? asked.rect : null;
+    const ground = around ? groundAround(whole, around) : whole;
     const packed = asked.env.pavedAt && asked.rect ? asked.env.pavedAt.pack!(asked.rect) : null;
     if (asked.env.pavedAt && asked.rect && !packed) throw new Error('[buildings] the paving cannot be handed to a worker');
     const job: CellJob = {
-      ...this.base(asked), ground,
+      ...this.base(asked), ground, ...(around ? { around } : {}),
       ...(asked.env.naturalAt === asked.env.groundAt ? { naturalIsGround: true } : {}),
       ...(packed ? { paving: packed.data } : {}),
     };

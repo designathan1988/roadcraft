@@ -2,7 +2,7 @@ import { ALL_EFFECTS_ON, DEFAULT_BUILDING_CHOICES, type BuildingChoices, type Ef
 import { DEFAULT_OPTIMIZATIONS, type Optimizations } from '@render/optimizations';
 import { measureHitch } from '@core/hitch';
 import { watchDesktopShown } from './desktopShown';
-import { canQueueJobs, jobChannel, jobLanes, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
+import { canQueueJobs, jobChannel, jobLanes, jobPoolStats, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
 import type { CityGenAsk, CityGenReply } from './cityGen.worker';
 import { type OpenedCity, preparedCity } from './editor/preparedCity';
 import { desktopJobWorkers } from './desktopJobs';
@@ -3864,6 +3864,8 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   profiler: () => profiler.view(),
   /** The engine's ledger: each product's computes, last refresh and in all (`core/engine.ts`). */
   ledger: () => Object.fromEntries(engine.ledger),
+  /** The job pool as it stands (`jobs/jobPool.ts` jobPoolStats): its workers, in the page or a job process, and what each runs. */
+  jobPool: () => jobPoolStats(),
   doc,
   net,
   sim,

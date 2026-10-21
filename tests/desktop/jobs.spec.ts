@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { MessageChannel, type MessagePort as NodePort } from 'node:worker_threads';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ProcessWorker, unshared } from '@/jobs/processWorker';
+import { ProcessWorker, restoreKept, unshared } from '@/jobs/processWorker';
 import { desktopJobWorkers } from '@/desktopJobs';
 
 /** THE DESKTOP'S JOB PROCESSES: a long job worker's messages as another process can take them (`src/jobs/processWorker.ts`), and the process's bridge from the page's port to a thread of its own (`desktop/jobs.cjs`) */
@@ -84,6 +84,57 @@ describe("a long job worker's message to another process", () => {
     worker.postMessage({ k: 3 });
     await Promise.resolve();
     expect(seen).toHaveLength(2);
+  });
+});
+
+/** A port to the job process as the page holds one, each message posted kept with what it moves. */
+function sentPort(): { readonly port: MessagePort; readonly sent: { readonly data: unknown; readonly moved: unknown[] }[] } {
+  const sent: { data: unknown; moved: unknown[] }[] = [];
+  const port = { onmessage: null, onmessageerror: null, postMessage: (data: unknown, moved: unknown[] = []) => { sent.push({ data, moved }); }, close: () => {} };
+  return { port: port as unknown as MessagePort, sent };
+}
+
+describe("a message the shell's port can carry (Electron MessagePortMain)", () => {
+  it('names no port inside it: the port goes in the list alone, the job process puts it back (`jobs.cjs` serve)', async () => {
+    const { port, sent } = sentPort();
+    const worker = new ProcessWorker(() => Promise.resolve(port));
+    const { port1, port2 } = new MessageChannel();
+    closers.push(() => { port1.close(); port2.close(); });
+    worker.postMessage({ storeSetup: true, port: port1 }, [port1 as unknown as Transferable]);
+    await Promise.resolve();
+    expect(sent).toEqual([{ data: { storeSetup: true, port: null }, moved: [port1] }]);
+  });
+
+  it("moves no buffer: a buffer is copied with it, still the page's", async () => {
+    const { port, sent } = sentPort();
+    const worker = new ProcessWorker(() => Promise.resolve(port));
+    const buffer = new Float64Array([1, 2]).buffer;
+    worker.postMessage({ paving: buffer }, [buffer]);
+    await Promise.resolve();
+    expect(sent[0]!.moved).toEqual([]);
+    expect((sent[0]!.data as { paving: ArrayBuffer }).paving).toBe(buffer);
+  });
+
+  it('sends a buffer written once (a record table) with its bytes the first time, by its id after; the thread puts it back', async () => {
+    const { port, sent } = sentPort();
+    const worker = new ProcessWorker(() => Promise.resolve(port), () => true);
+    const table = new SharedArrayBuffer(16);
+    new Float64Array(table)[1] = 5;
+    worker.postMessage({ entries: [{ record: { buffer: table, row: 0 } }, { record: { buffer: table, row: 1 } }] });
+    worker.postMessage({ entries: [{ record: { buffer: table, row: 2 } }] });
+    await Promise.resolve();
+    const first = sent[0]!.data as { entries: { record: { buffer: { keptBuffer: number; bytes?: ArrayBuffer } } }[] };
+    const second = sent[1]!.data as typeof first;
+    expect(first.entries[0]!.record.buffer.bytes!.byteLength).toBe(16);
+    expect(first.entries[1]!.record.buffer).toBe(first.entries[0]!.record.buffer);
+    expect(second.entries[0]!.record.buffer).toEqual({ keptBuffer: first.entries[0]!.record.buffer.keptBuffer });
+    // The thread's side, each message as structured clone hands it.
+    const kept = new Map<number, ArrayBuffer>();
+    const a = restoreKept(structuredClone(first), kept) as { entries: { record: { buffer: ArrayBuffer } }[] };
+    const b = restoreKept(structuredClone(second), kept) as { entries: { record: { buffer: ArrayBuffer } }[] };
+    expect(new Float64Array(a.entries[0]!.record.buffer)[1]).toBe(5);
+    expect(a.entries[1]!.record.buffer).toBe(a.entries[0]!.record.buffer);
+    expect(b.entries[0]!.record.buffer).toBe(a.entries[0]!.record.buffer);
   });
 });
 

@@ -1,4 +1,5 @@
 import { ProcessWorker, type WorkerLike } from './jobs/processWorker';
+import { isRecordTable } from '@world/buildings/recordTable';
 
 /** THE DESKTOP'S JOB PROCESSES: the long-running job workers (the tiles' maker, the growth) in utility processes of the shell (`desktop/jobs.cjs`), each process a V8 cage of its own, so a 20 km map's tile workers no longer fill the page's (V8 pointer compression: one cage a process, the page and its workers sharing it); none in a browser */
 
@@ -39,7 +40,7 @@ export function desktopJobWorkers(): ((long: boolean) => WorkerLike | null) | nu
         resolve(port);
       });
       connect();
-    }));
+    }), isRecordTable);
     return made;
   };
 }
