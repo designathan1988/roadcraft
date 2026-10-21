@@ -1,6 +1,7 @@
 import type { ChangeLog } from '@core/changeLog';
 import { Digest } from '@core/digest';
-import { IdSlots, grown } from '@core/idSlots';
+import { IdSlots } from '@core/idSlots';
+import { RunPool } from '@core/runPool';
 import type { Vec2 } from '@core/vec2';
 import type { BuildingId } from '@world/buildings/types';
 import type { RoadDoc } from '@world/doc';
@@ -98,34 +99,24 @@ interface Box { x0: number; y0: number; x1: number; y1: number }
 /** THE BUILDINGS' ENTRANCES AS NUMBERS IN COLUMNS (`core/idSlots.ts`), NOT THEIR RECORDS' ARRAYS: each building's run of entrances (ends x, y, x, y) in one typed array, and the ids by cell. DO NOT hold each building's `entrances` list in a `Map` with a `Set` entry a cell: ~1.2 KB of the simulation's heap a building of the city (2026-10-21). */
 export class EntranceBook {
   private readonly slots = new IdSlots(256);
-  /** Each building's run in `ends` (its first entrance, and how many). */
-  private start = new Int32Array(16);
-  private count = new Int32Array(16);
-  /** Every run's entrances, four numbers each; a run let go stays until the dead outweigh the live (`pack`). */
-  private ends = new Float64Array(64);
-  private used = 0;
-  private live = 0;
+  /** Each building's run of entrances at its slot, four numbers each (`RunPool`: a run let go stays until the dead outweigh the live). */
+  private readonly runs = new RunPool();
   /** The buildings whose entrances' box reaches each cell (`KERB_CELL`). */
   readonly cells = new Map<number, number[]>();
-
-  constructor() {
-    this.slots.onGrow = (n) => { this.start = grown(this.start, n); this.count = grown(this.count, n); };
-  }
 
   clear(): void {
     this.slots.clear();
     this.cells.clear();
-    this.used = 0;
-    this.live = 0;
+    this.runs.clear();
   }
 
   /** Whether a building's entrances kept are these (none kept: `list` is empty). */
   same(id: BuildingId, list: readonly Entrance[]): boolean {
     const slot = this.slots.get(id);
-    const n = slot < 0 ? 0 : this.count[slot]!;
+    const n = slot < 0 ? 0 : this.runs.length(slot) / 4;
     if (n !== list.length) return false;
-    const ends = this.ends;
-    for (let i = 0, at = slot < 0 ? 0 : this.start[slot]! * 4; i < n; i++, at += 4) {
+    const ends = this.runs.data;
+    for (let i = 0, at = slot < 0 ? 0 : this.runs.start(slot); i < n; i++, at += 4) {
       const [p, q] = list[i]!;
       if (ends[at] !== p.x || ends[at + 1] !== p.y || ends[at + 2] !== q.x || ends[at + 3] !== q.y) return false;
     }
@@ -137,8 +128,8 @@ export class EntranceBook {
     const slot = this.slots.get(id);
     if (slot < 0) return null;
     const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-    const ends = this.ends;
-    for (let i = 0, at = this.start[slot]! * 4; i < this.count[slot]!; i++, at += 4) {
+    const ends = this.runs.data;
+    for (let at = this.runs.start(slot), end = at + this.runs.length(slot); at < end; at += 4) {
       box.x0 = Math.min(box.x0, ends[at]!, ends[at + 2]!); box.y0 = Math.min(box.y0, ends[at + 1]!, ends[at + 3]!);
       box.x1 = Math.max(box.x1, ends[at]!, ends[at + 2]!); box.y1 = Math.max(box.y1, ends[at + 1]!, ends[at + 3]!);
     }
@@ -150,16 +141,12 @@ export class EntranceBook {
     const was = this.box(id);
     if (was) this.file(id, was, false);
     const slot = this.slots.get(id);
-    if (slot >= 0) { this.live -= this.count[slot]! * 4; this.slots.delete(id); }
+    if (slot >= 0) { this.runs.drop(slot); this.slots.delete(id); }
     if (!list.length) return;
-    if (this.used + list.length * 4 > this.ends.length) this.pack(list.length * 4);
-    const at = this.slots.take(id);
-    this.start[at] = this.used / 4;
-    this.count[at] = list.length;
-    for (const [p, q] of list) {
-      this.ends[this.used++] = p.x; this.ends[this.used++] = p.y; this.ends[this.used++] = q.x; this.ends[this.used++] = q.y;
-    }
-    this.live += list.length * 4;
+    const to = this.slots.take(id);
+    let at = this.runs.put(to, list.length * 4);
+    const ends = this.runs.data;
+    for (const [p, q] of list) { ends[at++] = p.x; ends[at++] = p.y; ends[at++] = q.x; ends[at++] = q.y; }
     this.file(id, entranceBox(list), true);
   }
 
@@ -167,8 +154,8 @@ export class EntranceBook {
   each(id: BuildingId, visit: (px: number, py: number, qx: number, qy: number) => void): void {
     const slot = this.slots.get(id);
     if (slot < 0) return;
-    const ends = this.ends;
-    for (let i = 0, at = this.start[slot]! * 4; i < this.count[slot]!; i++, at += 4) visit(ends[at]!, ends[at + 1]!, ends[at + 2]!, ends[at + 3]!);
+    const ends = this.runs.data;
+    for (let at = this.runs.start(slot), end = at + this.runs.length(slot); at < end; at += 4) visit(ends[at]!, ends[at + 1]!, ends[at + 2]!, ends[at + 3]!);
   }
 
   /** Files (or unfiles) a building by the cells a box reaches. */
@@ -187,23 +174,6 @@ export class EntranceBook {
         }
       }
     }
-  }
-
-  /** The runs packed together, room made for `more` numbers. */
-  private pack(more: number): void {
-    let size = Math.max(64, this.ends.length);
-    while (size < (this.live + more) * 2) size *= 2;
-    const out = new Float64Array(size);
-    let used = 0;
-    this.slots.forEach((_id, slot) => {
-      const from = this.start[slot]! * 4, n = this.count[slot]! * 4;
-      out.set(this.ends.subarray(from, from + n), used);
-      this.start[slot] = used / 4;
-      used += n;
-    });
-    this.ends = out;
-    this.used = used;
-    this.live = used;
   }
 }
 
@@ -234,8 +204,7 @@ export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta |
   if (delta === null) readEntrances(w, book);
   const touched: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (const id of delta?.ids ?? []) {
-    const b = w.buildings.get(id);
-    const now = b ? b.entrances : [];
+    const now = w.buildings.entrances(id);
     if (book.entrances.same(id, now)) continue;
     const was = book.entrances.box(id);
     book.entrances.put(id, now);
@@ -318,7 +287,8 @@ function sameBays(a: readonly Bay[], b: readonly Bay[]): boolean {
 /** @rebuild Every building's entrances, read whole: the first look, or when the diary cannot say what changed. */
 function readEntrances(w: KerbWorld, book: KerbBook): void {
   book.entrances.clear();
-  for (const b of w.buildings.all()) if (b.entrances.length) book.entrances.put(b.id, b.entrances);
+  // By id and entrances alone (`TrafficBuildings.eachEntrances`): DO NOT work out every building's traffic record for them.
+  w.buildings.eachEntrances((id, list) => { if (list.length) book.entrances.put(id, list); });
 }
 
 /** @rebuild The streets that park, read whole: the first look, a map opened, or roads further behind than the logs remember. */

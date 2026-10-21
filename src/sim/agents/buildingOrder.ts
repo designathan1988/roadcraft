@@ -2,7 +2,7 @@ import { IdSlots, grown } from '@core/idSlots';
 import type { RoadDoc } from '@world/doc';
 import type { ChangeKind, ChangeRect, JournalReader } from '@world/changes';
 import type { BuildingId } from '@world/buildings/types';
-import { BATCH_DETAIL, BATCH_GONE, BATCH_KEPT, type BuildingSource, type TrafficBuilding } from './trafficBuildings';
+import { BATCH_DETAIL, BATCH_GONE, BATCH_KEPT, type BuildingSource, type TrafficFacts } from './trafficBuildings';
 
 /** THE BUILDINGS A READER KEEPS, IN THE STORE'S ORDER, FROM THE DIARY. */
 
@@ -126,7 +126,8 @@ export class BuildingsInOrder implements JournalReader {
   private list: BuildingId[] = [];
   private epoch = -1;
 
-  constructor(private readonly keep: (b: TrafficBuilding) => boolean) {}
+  /** `keep`: asked of a building's facts, never its traffic record (`TrafficBuildings.facts`: the worker works no record out for it). */
+  constructor(private readonly keep: (b: TrafficFacts) => boolean) {}
 
   /** The kept buildings' ids, in the store's order. */
   get ids(): readonly BuildingId[] {
@@ -174,7 +175,7 @@ export class BuildingsInOrder implements JournalReader {
       for (const id of ids) this.unfile(id);
       if (order.epoch !== this.epoch) this.resort();
       for (const id of ids) {
-        const b = w.buildings.get(id);
+        const b = w.buildings.facts(id);
         if (b && this.keep(b)) this.file(id, order.rank(id)!);
       }
     }
@@ -193,7 +194,7 @@ export class BuildingsInOrder implements JournalReader {
     }
     const come: BuildingId[] = [];
     for (const id of ids) {
-      const b = w.buildings.get(id);
+      const b = w.buildings.facts(id);
       if (b && this.keep(b)) { come.push(id); this.filedAt.set(id, order.rank(id)!); }
     }
     if (come.length) {
@@ -242,10 +243,10 @@ export class BuildingsInOrder implements JournalReader {
   private reread(w: BuildingSource): void {
     this.filedAt.clear();
     this.list = [];
-    for (const b of w.buildings.all()) {
-      if (!this.keep(b)) continue;
+    w.buildings.eachFacts((b) => {
+      if (!this.keep(b)) return;
       this.filedAt.set(b.id, this.order.rank(b.id)!);
       this.list.push(b.id);
-    }
+    });
   }
 }

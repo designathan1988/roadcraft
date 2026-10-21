@@ -1,7 +1,8 @@
+import { IdSlots, grown } from '@core/idSlots';
 import type { ChangeJournal } from '@world/changes';
 import { m } from '@world/units';
-import type { TrafficBuilding, TrafficBuildings } from '../agents/trafficBuildings';
-import { CARS, busy, kindOf, type Mix } from '../ambient/demand';
+import type { TrafficBuildings, TrafficFacts } from '../agents/trafficBuildings';
+import { CARS, busy, type Mix } from '../ambient/demand';
 import { buildingsChangedSince, cellKey } from '../ambient/ambientIndex';
 
 /** WHAT THE LAND USE PUTS ON THE STREETS, BY THE WORLD'S 256 m CELL: the meso traffic's trips start and end where the buildings are */
@@ -17,17 +18,24 @@ const STRIDE = 5;
 /**
  * Each cell's buildings by kind (`kindOf`), kept by the diary.
  * DO NOT ask a Map by a cell's key on the meso's step: a cell gets a dense index once (`cellOf`, when a link is placed or a building
- * filed), and its numbers live in typed arrays by that index, so the step reads arrays only (`carsPer100m`, `weight`).
+ * filed), and its numbers live in typed arrays by that index, so the step reads arrays only (`carsPer100m`, `weight`). DO NOT hold a
+ * building an object: its cell and kind in columns at its slot (`IdSlots`).
  */
 export class DemandCells {
   /** The diary read by serial, not followed (a reader that stops reading would keep every entry after it). */
   private serial = -1;
-  private readonly byBuilding = new Map<number, { readonly cell: number; readonly kind: number }>();
+  private readonly byBuilding = new IdSlots(256);
+  private cellAt = new Int32Array(16);
+  private kindAt = new Uint8Array(16);
   /** Each cell key's dense index; indexes are never given back (a cell is a 256 m square: a city has a few thousand). */
   private readonly index = new Map<number, number>();
   private counts = new Float64Array(64 * STRIDE);
   /** The cells' busyness of the hour (`busy`), by kind, set by `atHour`. */
   private readonly now = new Float64Array(4);
+
+  constructor() {
+    this.byBuilding.onGrow = (n) => { this.cellAt = grown(this.cellAt, n); this.kindAt = grown(this.kindAt, n); };
+  }
 
   /** Cells given an index so far: every index below it is valid. */
   get cells(): number {
@@ -41,12 +49,12 @@ export class DemandCells {
       // @rebuild A map opened, or a diary that forgot: every building read again.
       this.byBuilding.clear();
       this.counts.fill(0);
-      for (const b of store.all()) this.file(b.id, b);
+      store.eachFacts((b) => this.file(b.id, b));
       return;
     }
     for (const id of changed) {
       this.unfile(id);
-      const b = store.get(id as never);
+      const b = store.facts(id as never);
       if (b) this.file(id, b);
     }
   }
@@ -87,21 +95,23 @@ export class DemandCells {
     return cell < 0 || at >= this.counts.length ? 0 : Math.min(1, this.counts[at + 4]! / FULL_CELL);
   }
 
-  private file(id: number, b: TrafficBuilding): void {
+  private file(id: number, b: TrafficFacts): void {
     if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) return;
-    const cell = this.cellOf(b.x, b.y), kind = KINDS.indexOf(kindOf(b));
-    this.byBuilding.set(id, { cell, kind });
+    const cell = this.cellOf(b.x, b.y), kind = KINDS.indexOf(b.kind);
+    const slot = this.byBuilding.take(id);
+    this.cellAt[slot] = cell;
+    this.kindAt[slot] = kind;
     const at = cell * STRIDE;
     this.counts[at + kind] = this.counts[at + kind]! + 1;
     this.counts[at + 4] = this.counts[at + 4]! + 1;
   }
 
   private unfile(id: number): void {
-    const f = this.byBuilding.get(id);
-    if (!f) return;
+    const slot = this.byBuilding.get(id);
+    if (slot < 0) return;
     this.byBuilding.delete(id);
-    const at = f.cell * STRIDE;
-    this.counts[at + f.kind] = this.counts[at + f.kind]! - 1;
+    const at = this.cellAt[slot]! * STRIDE, kind = this.kindAt[slot]!;
+    this.counts[at + kind] = this.counts[at + kind]! - 1;
     this.counts[at + 4] = this.counts[at + 4]! - 1;
   }
 }

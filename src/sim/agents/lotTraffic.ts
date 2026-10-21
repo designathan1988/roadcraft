@@ -12,7 +12,7 @@ import { planFrom } from '../routing/router';
 import { chooseVehicleDestination } from '../routing/destination';
 import { bayChangesSince, baySources, baysOfSource, stallFits, type Bay } from './parking';
 import { trafficTarget } from '../vehicles/spawn';
-import { flows, kindOf, type Mix } from '../ambient/demand';
+import { flows, type Mix } from '../ambient/demand';
 import { buildingsChangedSince, spotKey } from '../ambient/ambientIndex';
 import type { AmbientWorld } from '../ambient/ambient';
 import { arrival, departure, type Manoeuvre } from './manoeuvre';
@@ -713,8 +713,8 @@ export class LotTraffic {
 
 /** A building's class in the draws: its kind of place (`KINDS`), or `GONE`. */
 function kindClass(w: SimWorld, building: BuildingId): number {
-  const b = w.buildings.get(building);
-  return b ? KINDS.indexOf(kindOf(b)) : GONE;
+  const b = w.buildings.facts(building);
+  return b ? KINDS.indexOf(b.kind) : GONE;
 }
 
 /** A list's whole weight: each class's count by its weight. */

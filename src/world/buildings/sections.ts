@@ -1,5 +1,5 @@
 import { BuildingItems } from './items';
-import { RecordTable, encodeRecords, tableRecords } from './recordTable';
+import { type RecordRef, RecordTable, encodeRecords, tableRecords } from './recordTable';
 import { TableRows } from './tableRows';
 import type { Building, BuildingId } from './types';
 
@@ -67,5 +67,28 @@ export function* eachSectionRecord(s: BuildingSections): Generator<Building, voi
     const table = new RecordTable(s.added);
     const reader = table.reader();
     for (let row = 0; row < table.rows; row++) yield reader.record(row);
+  }
+}
+
+/** Where each record of the sections is read, in the store's order (`eachSectionRecord`'s order): a row of the table, of the records replaced or of those added - nothing decoded (the worker's columns, `sim/agents/trafficBuildings.ts`). */
+export function* eachSectionRef(s: BuildingSections): Generator<RecordRef, void, void> {
+  const replaced = new Map<number, number>();
+  if (s.replaced) {
+    const table = new RecordTable(s.replaced);
+    for (let row = 0; row < table.rows; row++) replaced.set(table.ids[row]!, row);
+  }
+  const gone = new Set<number>(s.gone);
+  if (s.base) {
+    const table = new RecordTable(s.base);
+    for (let row = 0; row < table.rows; row++) {
+      const id = table.ids[row]!;
+      if (gone.has(id)) continue;
+      const over = replaced.get(id);
+      yield over === undefined ? { buffer: s.base, row } : { buffer: s.replaced!, row: over };
+    }
+  }
+  if (s.added) {
+    const rows = new RecordTable(s.added).rows;
+    for (let row = 0; row < rows; row++) yield { buffer: s.added, row };
   }
 }
