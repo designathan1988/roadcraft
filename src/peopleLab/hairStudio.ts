@@ -3,10 +3,11 @@ import {
   type Camera,
 } from 'three';
 import {
-  GroomBody, curtainTopology, decodeGroom, shellPositions, encodeGroom, groomPack, plant, remember, settle, step,
+  GroomBody, decodeGroom, encodeGroom, gather, groomPack, plant, remember, settle, step,
   type Guide, type GroomRecord, type Tie,
 } from './groom';
 import type { ProxyPack } from '@people/body/proxy';
+import { HairVolume } from './hairVolume';
 
 /** THE HAIR STUDIO: hair made from guide strands with the grooming tools (Blender's curves sculpting, XGen's and Ornatrix's guides) -
  *  plant, fill, comb, pull, cut, grow, puff, smooth, curl, part, tie, delete - with gravity on or off and the body never passed through. */
@@ -53,6 +54,10 @@ export class HairStudio {
   private readonly redo: string[] = [];
   private readonly anchors: readonly number[];
   private readonly hairColour: Color;
+  /** The hair's surface: the guides' clumps as one volume (`hairVolume.ts`). */
+  private readonly volume: HairVolume;
+  /** When the surface was last rebuilt during a stroke (ms): rebuilt at most ten times a second while dragging. */
+  private builtAt = 0;
 
   constructor(body: StudioBody, record: GroomRecord | null, hairColour: number, skinColour: number) {
     this.body = new GroomBody(body.positions, body.skin, body.faces, body.faceGroup, body.skinGroup);
@@ -79,12 +84,10 @@ export class HairStudio {
     this.skinMesh.userData['skin'] = new Color(skinColour);
     this.group.add(this.skinMesh);
 
-    const hairMaterial = new MeshStandardMaterial({ color: hairColour, roughness: 0.62, metalness: 0, side: DoubleSide });
-    // Both faces of a ribbon lit by its outward normal (`shade`): three flips a back face's normal (normal_fragment_begin, faceDirection), which turned every inner ribbon seen from behind dark.
-    hairMaterial.onBeforeCompile = (shader) => { shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize( vNormal );'); };
-    hairMaterial.customProgramCacheKey = () => 'lab-hair-outward';
-    this.hairMesh = new Mesh(new BufferGeometry(), hairMaterial);
-    this.hairMesh.castShadow = true;
+    // A soft sheen, little sky: solid painted hair.
+    const hairMaterial = new MeshStandardMaterial({ color: hairColour, roughness: 0.55, metalness: 0, envMapIntensity: 0.3 });
+    this.volume = new HairVolume(hairMaterial);
+    this.hairMesh = this.volume.mesh;
     this.group.add(this.hairMesh);
     this.group.add(this.tieMarks);
 
@@ -136,8 +139,8 @@ export class HairStudio {
 
   /** The style presets: lengths and ties on a full head. */
   preset(name: 'short' | 'bob' | 'long' | 'ponytail' | 'bun' | 'pigtails'): void {
-    const lengths = { short: 0.9, bob: 2.0, long: 4.2, ponytail: 3.6, bun: 2.4, pigtails: 3.2 } as const;
-    const thick = { short: 0.26, bob: 0.34, long: 0.36, ponytail: 0.32, bun: 0.32, pigtails: 0.32 } as const;
+    const lengths = { short: 0.9, bob: 2.0, long: 4.2, ponytail: 4.4, bun: 4.4, pigtails: 4.0 } as const;
+    const thick = { short: 0.2, bob: 0.24, long: 0.25, ponytail: 0.22, bun: 0.22, pigtails: 0.22 } as const;
     const keep = this.thickness;
     this.thickness = thick[name];
     this.fill(lengths[name], name === 'short' ? 0.18 : 0.2);
@@ -173,16 +176,7 @@ export class HairStudio {
   private tieAll(t: Tie, only: (g: Guide) => boolean = () => true): void {
     this.ties.push(t);
     const id = this.ties.length - 1;
-    for (const g of this.guides) {
-      if (!only(g)) continue;
-      // Held at the point a strand's length from its root nearest the tie, no closer than a third of the way.
-      let best = 1, bestD = Infinity;
-      for (let i = 1; i < g.pts.length / 3; i++) {
-        const d = Math.hypot(g.pts[i * 3]! - t.x, g.pts[i * 3 + 1]! - t.y, g.pts[i * 3 + 2]! - t.z);
-        if (d < bestD) { bestD = d; best = i; }
-      }
-      g.tie = { id, k: Math.max(Math.round(g.pts.length / 3 / 3), best) };
-    }
+    for (const g of this.guides) if (only(g)) gather(g, this.body, t, id, this.margin(g));
   }
 
   /** Run the dynamics `steps` times with gravity (settling a new style). */
@@ -191,7 +185,8 @@ export class HairStudio {
     for (const g of this.guides) { g.vel.fill(0); remember(g); }
   }
 
-  private margin(g: Guide): number { return 0.05 + g.radius * 0.5; }
+  /** How far a guide's middle stays off the skin: the clump's surface (a radius further out) then lies a few centimetres off the head, not a helmet. */
+  private margin(g: Guide): number { return 0.03 + g.radius * 0.2; }
 
   /** Each frame: the dynamics when gravity is on. */
   tick(dt: number): void {
@@ -260,14 +255,11 @@ export class HairStudio {
         const id = this.ties.length;
         let caught = 0;
         for (const g of this.guides) {
-          let best = -1, bestD = Infinity;
-          for (let i = 2; i < g.pts.length / 3; i++) {
-            const d = Math.hypot(g.pts[i * 3]! - t.x, g.pts[i * 3 + 1]! - t.y, g.pts[i * 3 + 2]! - t.z);
-            if (d < bestD) { bestD = d; best = i; }
-          }
-          if (bestD < this.radius * 1.6) { g.tie = { id, k: best }; caught++; }
+          let bestD = Infinity;
+          for (let i = 2; i < g.pts.length / 3; i++) bestD = Math.min(bestD, Math.hypot(g.pts[i * 3]! - t.x, g.pts[i * 3 + 1]! - t.y, g.pts[i * 3 + 2]! - t.z));
+          if (bestD < this.radius * 1.6 && gather(g, this.body, t, id, this.margin(g))) caught++;
         }
-        if (caught) { this.ties.push(t); tie = id; }
+        if (caught) { this.ties.push(t); tie = id; } else for (const g of this.guides) if (g.tie?.id === id) g.tie = null;
       }
     }
     this.stroke = { plane: new Plane().setFromNormalAndCoplanarPoint(facing.clone().transformDirection(this.group.matrixWorld.clone().invert()).normalize(), at), last: at, tie };
@@ -427,9 +419,9 @@ export class HairStudio {
   private holdTie(g: Guide): void {
     const t = g.tie ? this.ties[g.tie.id] : undefined;
     if (!t || !g.tie) return;
-    step(g, this.body, this.ties, 1 / 60, 0, 0, this.margin(g));
-    g.vel.fill(0);
+    gather(g, this.body, t, g.tie.id, this.margin(g));
   }
+
 
   /** The strand cut to `points` points. */
   private trim(g: Guide, points: number): void {
@@ -440,12 +432,8 @@ export class HairStudio {
   // ------------------------------------------------------------ the mesh
 
   private rebuild(): void {
-    const g = this.hairMesh.geometry;
-    const positions = shellPositions(this.guides);
-    g.setAttribute('position', new BufferAttribute(positions, 3));
-    g.setIndex(new BufferAttribute(curtainTopology(this.guides, this.body), 1));
-    this.shade(g);
-    g.computeBoundingSphere();
+    this.volume.build(this.guides);
+    this.builtAt = performance.now();
     this.paintScalp();
     this.tieMarks.clear();
     for (const t of this.ties) {
@@ -455,30 +443,11 @@ export class HairStudio {
     }
   }
 
+  /** The surface again after the guides moved: at most ten times a second, the stroke's end rebuilds it exactly. */
   private updatePositions(): void {
-    const g = this.hairMesh.geometry;
-    const attr = g.getAttribute('position') as BufferAttribute | undefined;
-    if (!attr) return;
-    shellPositions(this.guides, attr.array as Float32Array);
-    attr.needsUpdate = true;
-    this.shade(g);
-    g.computeBoundingSphere();
-  }
-
-  /** Normals out from the head, a little towards each ribbon's own: the mass shades as one smooth shell, never the inner ribbons' jumble. */
-  private shade(g: BufferGeometry): void {
-    g.computeVertexNormals();
-    const pos = g.getAttribute('position'), nor = g.getAttribute('normal');
-    const [sx, sy, sz] = this.body.skull;
-    for (let i = 0; i < pos.count; i++) {
-      let ox = pos.getX(i) - sx, oy = (pos.getY(i) - sy) * 0.6, oz = pos.getZ(i) - sz;
-      const l = Math.hypot(ox, oy, oz) || 1; ox /= l; oy /= l; oz /= l;
-      const own = nor.getX(i) * ox + nor.getY(i) * oy + nor.getZ(i) * oz < 0 ? -0.25 : 0.25;
-      const nx = ox + nor.getX(i) * own, ny = oy + nor.getY(i) * own, nz = oz + nor.getZ(i) * own;
-      const m = Math.hypot(nx, ny, nz) || 1;
-      nor.setXYZ(i, nx / m, ny / m, nz / m);
-    }
-    nor.needsUpdate = true;
+    if (performance.now() - this.builtAt < 100) return;
+    this.volume.build(this.guides);
+    this.builtAt = performance.now();
   }
 
   /** The scalp under the hair in the hair's colour: skin within a guide's clump width of a root. */

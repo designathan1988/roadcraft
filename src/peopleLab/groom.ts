@@ -1,5 +1,7 @@
 import { nearestThree } from '@people/hair/procedural';
 import type { ProxyPack } from '@people/body/proxy';
+import { MeshStandardMaterial } from 'three';
+import { HairVolume } from './hairVolume';
 
 /** A GROOM: hair made of guide strands, as the grooming tools build it (Blender's hair curves, XGen and Ornatrix guides).
  *  Each guide grows from a scalp vertex as a chain of points a fixed length apart; it is drawn as a clump (a tapered, flattened tube, the solid
@@ -38,6 +40,9 @@ export class GroomBody {
   /** The scalp's vertices: where hair may grow. */
   readonly scalp: number[];
   readonly top: number;
+
+  /** The scalp's skin quads (as triangles): the hair cap. */
+  capTris: number[] = [];
 
   constructor(readonly positions: Float32Array, readonly skin: readonly number[], faces: Uint16Array, faceGroup: Uint8Array, skinGroup: number) {
     const n = positions.length / 3;
@@ -84,7 +89,17 @@ export class GroomBody {
       return y > hairline(Math.atan2(x, z));
     });
     // The face: from the brow (the hairline's front, a little lower) to the chin, as wide as the head less the temples, its front the skull's middle.
-    this.face = { x: mid[0]!, half: (hi[0]! - lo[0]!) * 0.36, front: mid[2]! + 0.25, top: mid[1]! + ry * 0.2, bottom: lo[1]! - 0.2 };
+    const inScalp = new Set(this.scalp);
+    for (let f = 0; f < faceGroup.length; f++) {
+      if (faceGroup[f] !== skinGroup) continue;
+      const q = [faces[f * 4]!, faces[f * 4 + 1]!, faces[f * 4 + 2]!, faces[f * 4 + 3]!];
+      if (!q.every((v) => inScalp.has(v))) continue;
+      this.capTris.push(q[0]!, q[1]!, q[2]!);
+      if (q[3] !== q[2]) this.capTris.push(q[0]!, q[2]!, q[3]!);
+    }
+    // The skull's middle from the head's box (the mean of the skin was pulled forward by the face's dense vertices).
+    this.skull = [mid[0]!, top - 1.0, mid[2]!];
+    this.face = { x: mid[0]!, half: (hi[0]! - lo[0]!) * 0.36, front: mid[2]! + 0.25, top: mid[1]! + ry * 0.12, bottom: lo[1]! - 0.2 };
   }
 
   private key(x: number, y: number, z: number): number {
@@ -140,117 +155,6 @@ function hairline(theta: number): number {
   return -0.55;
 }
 
-/** THE HAIR AS ONE MASS, as the catalogue's mesh hair is: each guide joined to its nearest neighbours by a ribbon along their lengths.
- *  Seen from outside only the outermost ribbons show, a continuous surface; where strands part (a parting, a tie) ribbons that would stretch across the gap are left out.
- *  The vertices are the guides' own points, so moving the guides moves the surface. */
-export function shellTopology(guides: readonly Guide[], body: GroomBody): Uint32Array {
-  const P = body.positions;
-  const roots = guides.map((g) => [P[g.root * 3]!, P[g.root * 3 + 1]!, P[g.root * 3 + 2]!] as const);
-  const start: number[] = [];
-  let base = 0;
-  for (const g of guides) { start.push(base); base += g.pts.length / 3; }
-  const index: number[] = [];
-  const seen = new Set<string>();
-  const NEIGHBOURS = 5;
-  for (let a = 0; a < guides.length; a++) {
-    const near = roots.map((r, b) => [b, (r[0] - roots[a]![0]) ** 2 + (r[1] - roots[a]![1]) ** 2 + (r[2] - roots[a]![2]) ** 2] as const)
-      .filter(([b]) => b !== a).sort((x, y) => x[1] - y[1]).slice(0, NEIGHBOURS);
-    for (const [b, d2] of near) {
-      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
-      if (seen.has(key) || d2 > 0.5 * 0.5) continue;
-      seen.add(key);
-      const ga = guides[a]!, gb = guides[b]!;
-      const n = Math.min(ga.pts.length, gb.pts.length) / 3;
-      const rootGap = Math.sqrt(d2);
-      for (let i = 0; i < n - 1; i++) {
-        // A ribbon stops where its two strands have drifted apart (a parting, a tie, a strand pulled away).
-        const gap = Math.hypot(ga.pts[(i + 1) * 3]! - gb.pts[(i + 1) * 3]!, ga.pts[(i + 1) * 3 + 1]! - gb.pts[(i + 1) * 3 + 1]!, ga.pts[(i + 1) * 3 + 2]! - gb.pts[(i + 1) * 3 + 2]!);
-        if (gap > Math.max(0.55, rootGap * 3)) break;
-        const a0 = start[a]! + i, a1 = a0 + 1, b0 = start[b]! + i, b1 = b0 + 1;
-        index.push(a0, b0, a1, a1, b0, b1);
-      }
-    }
-  }
-  return Uint32Array.from(index);
-}
-
-/** THE HAIR AS CURTAINS, as mesh hair is modelled: each ring of guides round the head joined into one continuous sheet, the rings stacked
- *  from the crown (outside) down to the hairline (inside) like shingles; the centre parting at the brow left open. Guides planted by hand join their neighbours. */
-export function curtainTopology(guides: readonly Guide[], body: GroomBody): Uint32Array {
-  const start: number[] = [];
-  let base = 0;
-  for (const g of guides) { start.push(base); base += g.pts.length / 3; }
-  const rows = new Map<number, number[]>();
-  guides.forEach((g, i) => { if (g.row >= 0) (rows.get(g.row) ?? rows.set(g.row, []).get(g.row)!).push(i); });
-  const index: number[] = [];
-  const join = (a: number, b: number, maxGap: number, segments = Infinity): void => {
-    const ga = guides[a]!, gb = guides[b]!;
-    const n = Math.min(ga.pts.length / 3, gb.pts.length / 3, segments + 1);
-    for (let i = 0; i < n - 1; i++) {
-      const gap = Math.hypot(ga.pts[(i + 1) * 3]! - gb.pts[(i + 1) * 3]!, ga.pts[(i + 1) * 3 + 1]! - gb.pts[(i + 1) * 3 + 1]!, ga.pts[(i + 1) * 3 + 2]! - gb.pts[(i + 1) * 3 + 2]!);
-      if (gap > maxGap) break;
-      const a0 = start[a]! + i, a1 = a0 + 1, b0 = start[b]! + i, b1 = b0 + 1;
-      index.push(a0, b0, a1, a1, b0, b1);
-    }
-  };
-  for (const list of rows.values()) {
-    list.sort((x, y) => guides[x]!.theta - guides[y]!.theta);
-    for (let k = 0; k < list.length; k++) {
-      const a = list[k]!, b = list[(k + 1) % list.length]!;
-      if (a === b) continue;
-      // Not across the parting at the brow (between the last strand left of it and the first right of it).
-      const ta = guides[a]!.theta, tb = guides[b]!.theta;
-      if (k === list.length - 1 && Math.abs(ta - tb) > Math.PI) {
-        const wrap = 2 * Math.PI - Math.abs(ta - tb);
-        if (Math.abs(ta) > 2.4 && wrap < 1) join(a, b, 0.9);
-        continue;
-      }
-      if (ta < 0 && tb >= 0) continue;
-      join(a, b, 0.9);
-    }
-  }
-  // Across the rings: each guide joined to the nearest of the next ring along the stretch that lies on the scalp, closing the crown and the gaps between curtains.
-  const P = body.positions;
-  const rootDist = (a: number, b: number): number => {
-    const ra = guides[a]!.root, rb = guides[b]!.root;
-    return Math.hypot(P[ra * 3]! - P[rb * 3]!, P[ra * 3 + 1]! - P[rb * 3 + 1]!, P[ra * 3 + 2]! - P[rb * 3 + 2]!);
-  };
-  const ringIds = [...rows.keys()].sort((x, y) => x - y);
-  for (let r = 0; r + 1 < ringIds.length; r++) {
-    const here = rows.get(ringIds[r]!)!, next = rows.get(ringIds[r + 1]!)!;
-    for (const a of here) {
-      let best = -1, bestD = Infinity;
-      for (const b of next) { const d = rootDist(a, b); if (d < bestD) { bestD = d; best = b; } }
-      if (best >= 0 && bestD < 0.6) join(a, best, 0.7, 4);
-    }
-  }
-  const loose = guides.map((g, i) => (g.row < 0 ? i : -1)).filter((i) => i >= 0);
-  if (loose.length) {
-    const sub = shellTopology(loose.map((i) => guides[i]!), body);
-    const offset: number[] = loose.map((i) => start[i]!);
-    // Re-indexed from the loose guides' own numbering to the whole mesh's.
-    const localStart: number[] = [];
-    let lb = 0;
-    for (const i of loose) { localStart.push(lb); lb += guides[i]!.pts.length / 3; }
-    for (const v of sub) {
-      let g = 0;
-      while (g + 1 < localStart.length && localStart[g + 1]! <= v) g++;
-      index.push(offset[g]! + (v - localStart[g]!));
-    }
-  }
-  return Uint32Array.from(index);
-}
-
-/** The guides' points, all of them, as the shell's vertices. */
-export function shellPositions(guides: readonly Guide[], out?: Float32Array): Float32Array {
-  let count = 0;
-  for (const g of guides) count += g.pts.length;
-  const pos = out && out.length === count ? out : new Float32Array(count);
-  let o = 0;
-  for (const g of guides) { pos.set(g.pts, o); o += g.pts.length; }
-  return pos;
-}
-
 /** A guide planted at `root`: out along the skin's normal a little, then falling (as hair lies before it is styled). */
 export function plant(body: GroomBody, root: number, length: number, radius: number, points = 14): Guide {
   const P = body.positions, N = body.normals;
@@ -264,7 +168,8 @@ export function plant(body: GroomBody, root: number, length: number, radius: num
   const along = fx * n[0]! + fy * n[1]! + fz * n[2]!;
   fx -= n[0]! * along; fy -= n[1]! * along; fz -= n[2]! * along;
   const fl = Math.hypot(fx, fy, fz) || 1;
-  let d = [n[0]! * 0.3 + fx / fl * 0.7, n[1]! * 0.3 + fy / fl * 0.7 - 0.1, n[2]! * 0.3 + fz / fl * 0.7];
+  // Lying on the head, lifted only a little: hair falls from the crown, it does not stand off it.
+  let d = [n[0]! * 0.12 + fx / fl * 0.88, n[1]! * 0.12 + fy / fl * 0.88 - 0.1, n[2]! * 0.12 + fz / fl * 0.88];
   const dl = Math.hypot(d[0]!, d[1]!, d[2]!) || 1;
   d = [d[0]! / dl, d[1]! / dl, d[2]! / dl];
   for (let i = 0; i < points; i++) {
@@ -276,7 +181,7 @@ export function plant(body: GroomBody, root: number, length: number, radius: num
     d = [d[0]! / l, d[1]! / l, d[2]! / l];
   }
   const g: Guide = { root, pts, rest: new Float32Array(points * 3), vel: new Float32Array(points * 3), seg, radius, tie: null, row: -1, theta: 0 };
-  settle(g, body, 0.06 + radius * 0.5);
+  settle(g, body, 0.03 + radius * 0.2);
   remember(g);
   return g;
 }
@@ -285,7 +190,8 @@ export function plant(body: GroomBody, root: number, length: number, radius: num
 export function settle(g: Guide, body: GroomBody, margin: number, from = 1): void {
   const p = g.pts;
   const n = p.length / 3;
-  for (let i = from; i < n; i++) {
+  // A tied strand's stretch up to the tie is laid along the head (`gather`): only the tail after it is settled.
+  for (let i = Math.max(from, g.tie ? g.tie.k + 1 : 1); i < n; i++) {
     const a = (i - 1) * 3, b = i * 3;
     const dx = p[b]! - p[a]!, dy = p[b + 1]! - p[a + 1]!, dz = p[b + 2]! - p[a + 2]!;
     const l = Math.hypot(dx, dy, dz) || 1;
@@ -307,7 +213,9 @@ export function step(g: Guide, body: GroomBody, ties: readonly Tie[], dt: number
   const n = p.length / 3;
   const x = Float32Array.from(p);
   const d = new Float32Array(n * 3);
-  for (let i = 1; i < n; i++) {
+  // Up to its tie a tied strand lies combed along the head (`gather`) and does not move.
+  const fixed = g.tie ? g.tie.k : 0;
+  for (let i = fixed + 1; i < n; i++) {
     const b = i * 3;
     v[b + 1] = v[b + 1]! - gravity * dt;
     p[b] = p[b]! + v[b]! * dt; p[b + 1] = p[b + 1]! + v[b + 1]! * dt; p[b + 2] = p[b + 2]! + v[b + 2]! * dt;
@@ -317,26 +225,18 @@ export function step(g: Guide, body: GroomBody, ties: readonly Tie[], dt: number
       p[b] = p[b]! + (p[0]! + g.rest[b]! - p[b]!) * t; p[b + 1] = p[b + 1]! + (p[1]! + g.rest[b + 1]! - p[b + 1]!) * t; p[b + 2] = p[b + 2]! + (p[2]! + g.rest[b + 2]! - p[b + 2]!) * t;
     }
   }
-  const tie = g.tie ? ties[g.tie.id] : undefined;
-  for (let i = 1; i < n; i++) {
+  void ties;
+  for (let i = fixed + 1; i < n; i++) {
     const a = (i - 1) * 3, b = i * 3;
     const ox = p[b]!, oy = p[b + 1]!, oz = p[b + 2]!;
-    if (tie && g.tie!.k === i) {
-      // Held in the tie: on a small disc round its middle, spread by the guide's own root.
-      const s = ((g.root * 2654435761) >>> 0) / 4294967296 * Math.PI * 2;
-      p[b] = tie.x + Math.cos(s) * tie.radius * 0.6; p[b + 1] = tie.y + Math.sin(s) * tie.radius * 0.6; p[b + 2] = tie.z;
-    } else {
-      const dx = p[b]! - p[a]!, dy = p[b + 1]! - p[a + 1]!, dz = p[b + 2]! - p[a + 2]!;
-      const l = Math.hypot(dx, dy, dz) || 1;
-      // Before a tie the strand may stretch to reach it; after, never.
-      const len = tie && i < g.tie!.k ? Math.min(l, g.seg * 1.6) : g.seg;
-      p[b] = p[a]! + dx / l * len; p[b + 1] = p[a + 1]! + dy / l * len; p[b + 2] = p[a + 2]! + dz / l * len;
-      body.collide(p, b, margin * (1 - 0.5 * i / n));
-    }
+    const dx = p[b]! - p[a]!, dy = p[b + 1]! - p[a + 1]!, dz = p[b + 2]! - p[a + 2]!;
+    const l = Math.hypot(dx, dy, dz) || 1;
+    p[b] = p[a]! + dx / l * g.seg; p[b + 1] = p[a + 1]! + dy / l * g.seg; p[b + 2] = p[a + 2]! + dz / l * g.seg;
+    body.collide(p, b, margin * (1 - 0.5 * i / n));
     d[b] = p[b]! - ox; d[b + 1] = p[b + 1]! - oy; d[b + 2] = p[b + 2]! - oz;
   }
   const S = 0.9;
-  for (let i = 1; i < n; i++) {
+  for (let i = fixed + 1; i < n; i++) {
     const b = i * 3, nb = (i + 1) * 3;
     for (let k = 0; k < 3; k++) {
       const next = i + 1 < n ? d[nb + k]! : 0;
@@ -345,58 +245,44 @@ export function step(g: Guide, body: GroomBody, ties: readonly Tie[], dt: number
   }
 }
 
-/** The clumps as one mesh: a flattened, tapered tube of `SIDES` round each guide. Positions only when `index` is given back. */
-export const SIDES = 6;
-
-export function clumpTopology(guides: readonly Guide[]): Uint32Array {
-  const index: number[] = [];
-  let base = 0;
-  for (const g of guides) {
-    const n = g.pts.length / 3;
-    for (let i = 0; i < n - 1; i++) for (let s = 0; s < SIDES; s++) {
-      const a = base + i * SIDES + s, b = base + i * SIDES + (s + 1) % SIDES, c = a + SIDES, d = b + SIDES;
-      index.push(a, c, b, b, c, d);
-    }
-    base += n * SIDES;
+/** A strand gathered into a tie, as hair is brushed back into a ponytail: from its root along the head to the tie (an arc round the skull's middle,
+ *  kept just off the scalp), held there at its own place in the tie's bunch; the rest of it the tail, hanging from the tie. Returns false when the strand is too short. */
+export function gather(g: Guide, body: GroomBody, tie: Tie, id: number, margin: number): boolean {
+  const p = g.pts, n = p.length / 3;
+  const [cx, cy, cz] = body.skull;
+  const root = [p[0]!, p[1]!, p[2]!];
+  const dist = Math.hypot(tie.x - root[0]!, tie.y - root[1]!, tie.z - root[2]!);
+  const k = Math.min(n - 2, Math.max(2, Math.round(dist / g.seg)));
+  if (n < 4) return false;
+  // Its place in the bunch: spread on a small disc by the root's angle round the head (so the tail has thickness, and strands stay in order).
+  const a = Math.atan2(root[0]! - cx, root[1]! - cy);
+  const held = [tie.x + Math.sin(a) * tie.radius * 0.55, tie.y + Math.cos(a) * tie.radius * 0.55, tie.z];
+  const r0 = Math.hypot(root[0]! - cx, root[1]! - cy, root[2]! - cz), r1 = Math.hypot(held[0]! - cx, held[1]! - cy, held[2]! - cz);
+  const u0 = [(root[0]! - cx) / r0, (root[1]! - cy) / r0, (root[2]! - cz) / r0], u1 = [(held[0]! - cx) / r1, (held[1]! - cy) / r1, (held[2]! - cz) / r1];
+  for (let i = 1; i <= k; i++) {
+    const t = i / k;
+    // Spherical interpolation of the direction from the skull's middle, linear in the radius.
+    let ux = u0[0]! * (1 - t) + u1[0]! * t, uy = u0[1]! * (1 - t) + u1[1]! * t, uz = u0[2]! * (1 - t) + u1[2]! * t;
+    const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    const r = r0 * (1 - t) + r1 * t;
+    p[i * 3] = cx + ux * r; p[i * 3 + 1] = cy + uy * r; p[i * 3 + 2] = cz + uz * r;
+    if (i < k) body.collide(p, i * 3, margin, false);
   }
-  return Uint32Array.from(index);
-}
-
-export function clumpPositions(guides: readonly Guide[], body: GroomBody, out?: Float32Array): Float32Array {
-  let count = 0;
-  for (const g of guides) count += g.pts.length / 3;
-  const pos = out && out.length === count * SIDES * 3 ? out : new Float32Array(count * SIDES * 3);
-  const [sx, sy, sz] = body.skull;
-  let o = 0;
-  for (const g of guides) {
-    const p = g.pts, n = p.length / 3;
-    for (let i = 0; i < n; i++) {
-      const a = Math.max(0, i - 1) * 3, b = Math.min(n - 1, i + 1) * 3;
-      let tx = p[b]! - p[a]!, ty = p[b + 1]! - p[a + 1]!, tz = p[b + 2]! - p[a + 2]!;
-      const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
-      // Out from the head: the clump lies flat against the hair beneath it (wide across, thin outwards).
-      let ox = p[i * 3]! - sx, oy = p[i * 3 + 1]! - sy, oz = p[i * 3 + 2]! - sz;
-      let bx = ty * oz - tz * oy, by = tz * ox - tx * oz, bz = tx * oy - ty * ox;
-      const bl = Math.hypot(bx, by, bz) || 1; bx /= bl; by /= bl; bz /= bl;
-      ox = by * tz - bz * ty; oy = bz * tx - bx * tz; oz = bx * ty - by * tx;
-      const t = i / (n - 1);
-      // Wide and flat, tapering late: the clumps overlap like shingles into one surface, the tips still pointed.
-      const w = g.radius * (1 - 0.6 * t ** 1.8), h = w * 0.3;
-      for (let s = 0; s < SIDES; s++) {
-        const ang = (s / SIDES) * Math.PI * 2, c = Math.cos(ang), si = Math.sin(ang);
-        pos[o++] = p[i * 3]! + bx * c * w + ox * si * h;
-        pos[o++] = p[i * 3 + 1]! + by * c * w + oy * si * h;
-        pos[o++] = p[i * 3 + 2]! + bz * c * w + oz * si * h;
-      }
-    }
-  }
-  return pos;
+  g.tie = { id, k };
+  // The tail: straight down from the tie, then settled.
+  for (let i = k + 1; i < n; i++) { p[i * 3] = p[(i - 1) * 3]!; p[i * 3 + 1] = p[(i - 1) * 3 + 1]! - g.seg; p[i * 3 + 2] = p[(i - 1) * 3 + 2]! - 0.02; }
+  g.vel.fill(0);
+  settle(g, body, margin);
+  return true;
 }
 
 /** The groom as a game item (`ProxyPack`): every clump vertex pinned to its three nearest head and neck skin vertices, as MakeHuman items are. */
 export function groomPack(guides: readonly Guide[], body: GroomBody, anchors: readonly number[]): ProxyPack {
-  const positions = shellPositions(guides);
-  const index = curtainTopology(guides, body);
+  // The surface the studio shows (`hairVolume.ts`), at a resolution light enough for the street.
+  const volume = new HairVolume(new MeshStandardMaterial(), 60);
+  volume.build(guides);
+  const { positions, index } = volume.geometry();
+  volume.mesh.geometry.dispose();
   const P = body.positions;
   const n = positions.length / 3;
   const refs = new Uint32Array(n * 3), weights = new Float32Array(n * 3), offsets = new Float32Array(n * 3);

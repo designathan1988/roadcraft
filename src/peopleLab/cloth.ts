@@ -39,7 +39,7 @@ export class ClothSim {
   prev: Float32Array;
   vel: Float32Array;
   invMass: Float32Array;
-  readonly tris: Uint32Array;
+  tris: Uint32Array;
   /** Pairs and rest lengths: stretch (edges), bend (across triangle pairs), seams (pulled to zero). */
   private readonly stretch: Uint32Array;
   private readonly stretchLen: Float32Array;
@@ -54,7 +54,7 @@ export class ClothSim {
   /** How hard seams pull, 0..1 a substep. */
   seamPull = 0.08;
 
-  constructor(readonly garment: Garment, cell: number, axis: readonly [number, number]) {
+  constructor(readonly garment: Garment, readonly cell: number, axis: readonly [number, number]) {
     const pts: number[] = [], uv: number[] = [], piece: number[] = [], tris: number[] = [];
     const edgeIndex: Map<string, number>[] = [];
     const outlineVert: number[][] = [];
@@ -141,9 +141,17 @@ export class ClothSim {
     for (const seam of garment.seams) {
       const A = this.edgeParticles(seam.a, seam.ea, outlineVert[seam.a]!), B = this.edgeParticles(seam.b, seam.eb, outlineVert[seam.b]!).reverse();
       const n = Math.max(A.length, B.length);
+      const start = sp.length;
       for (let i = 0; i < n; i++) sp.push(A[Math.round(i * (A.length - 1) / Math.max(1, n - 1))]!, B[Math.round(i * (B.length - 1) / Math.max(1, n - 1))]!);
+      // A strip of triangles along the seam between the two edges: the grid's stair-stepped borders never close by themselves (a slit at the side).
+      for (let i = start; i + 3 < sp.length; i += 2) {
+        const a1 = sp[i]!, b1 = sp[i + 1]!, a2 = sp[i + 2]!, b2 = sp[i + 3]!;
+        if (a1 !== a2) tris.push(a1, a2, b1);
+        if (b1 !== b2) tris.push(b1, a2, b2);
+      }
     }
     this.seams = Uint32Array.from(sp);
+    this.tris = Uint32Array.from(tris);
   }
 
   /** The particles along an outline edge of a piece (outline vertices `from`..`to`), in order: boundary particles nearest the straight line between them. */
@@ -154,7 +162,8 @@ export class ClothSim {
       const L = pat.outline.length;
       const [ax, ay] = pat.outline[k % L]!, [bx, by] = pat.outline[(k + 1) % L]!;
       const len = Math.hypot(bx - ax, by - ay);
-      const steps = Math.max(1, Math.round(len / 0.15));
+      // Sampled finer than the grid: every border particle along the edge is in the seam (none left out to open a hole).
+      const steps = Math.max(1, Math.round(len / (this.cell * 0.4)));
       for (let s = 0; s <= steps; s++) {
         const x = ax + (bx - ax) * s / steps, y = ay + (by - ay) * s / steps;
         let best = -1, bd = Infinity;
@@ -222,6 +231,14 @@ export class ClothSim {
         const sp = Math.hypot(v[i * 3]!, v[i * 3 + 1]!, v[i * 3 + 2]!);
         if (sp > MAX_SPEED) { const k = MAX_SPEED / sp; v[i * 3] = v[i * 3]! * k; v[i * 3 + 1] = v[i * 3 + 1]! * k; v[i * 3 + 2] = v[i * 3 + 2]! * k; }
       }
+    }
+    // Each seam's two sides drawn together once it is nearly closed: the garment shows sewn, not gaping.
+    const p2 = this.pos;
+    for (let c = 0; c < this.seams.length; c += 2) {
+      const a = this.seams[c]!, b = this.seams[c + 1]!;
+      const d = Math.hypot(p2[a * 3]! - p2[b * 3]!, p2[a * 3 + 1]! - p2[b * 3 + 1]!, p2[a * 3 + 2]! - p2[b * 3 + 2]!);
+      if (d > 0.25) continue;
+      for (let k = 0; k < 3; k++) { const m = (p2[a * 3 + k]! + p2[b * 3 + k]!) / 2; p2[a * 3 + k] = m; p2[b * 3 + k] = m; }
     }
   }
 

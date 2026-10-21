@@ -1,0 +1,123 @@
+import { BufferAttribute, BufferGeometry, MeshStandardMaterial } from 'three';
+import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+import type { Guide } from './groom';
+
+/** THE HAIR'S SURFACE AS A VOLUME: every guide strand a tapered tube of density (its clump), the hair the surface where the density crosses a level -
+ *  an implicit surface polygonized by marching cubes (Lorensen & Cline 1987; three's MarchingCubes). Clumps meet without gaps, the grooves between
+ *  them stay (the union is the densest clump at each point, not their sum), tips come to points: the solid, sculpted hair of The Sims, from any groom. */
+
+/** The level of the surface: a clump's edge at about two thirds of its radius. */
+const ISO = 0.42;
+
+export class HairVolume {
+  readonly mesh: MarchingCubes;
+  private readonly res: number;
+
+  constructor(material: MeshStandardMaterial, res = 76) {
+    this.res = res;
+    this.mesh = new MarchingCubes(res, material, false, false, 260000);
+    this.mesh.isolation = ISO;
+    this.mesh.castShadow = true;
+    this.mesh.frustumCulled = false;
+  }
+
+  /** The surface for these guides (in the body's frame, dm). */
+  build(guides: readonly Guide[]): void {
+    const mc = this.mesh, N = this.res;
+    mc.reset();
+    if (!guides.length) { mc.update(); return; }
+    let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity], rmax = 0;
+    for (const g of guides) {
+      rmax = Math.max(rmax, g.radius);
+      for (let i = 0; i < g.pts.length; i += 3) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a]!, g.pts[i + a]!); hi[a] = Math.max(hi[a]!, g.pts[i + a]!); }
+    }
+    lo = lo.map((x) => x - rmax * 1.6); hi = hi.map((x) => x + rmax * 1.6);
+    const centre = [(lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2, (lo[2]! + hi[2]!) / 2];
+    // A cube (marching cubes' grid is uniform), a cell's margin past the box on every side.
+    const half = Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!) / 2 * (N / (N - 4));
+    mc.position.set(centre[0]!, centre[1]!, centre[2]!);
+    mc.scale.setScalar(half);
+    const toCell = (v: number, a: number): number => ((v - centre[a]!) / half) * (N / 2) + N / 2;
+    const cell = (2 * half) / N;
+    const field = mc.field;
+    for (const g of guides) {
+      const p = g.pts, n = p.length / 3;
+      for (let i = 0; i < n - 1; i++) {
+        const t0 = i / (n - 1), t1 = (i + 1) / (n - 1);
+        // The clump: full at the root, narrowing to a point over the last third.
+        const r0 = g.radius * taper(t0), r1 = g.radius * taper(t1);
+        const r = Math.max(r0, r1);
+        if (r <= 0) continue;
+        const ax = p[i * 3]!, ay = p[i * 3 + 1]!, az = p[i * 3 + 2]!, bx = p[i * 3 + 3]!, by = p[i * 3 + 4]!, bz = p[i * 3 + 5]!;
+        const x0 = Math.max(1, Math.floor(toCell(Math.min(ax, bx) - r, 0))), x1 = Math.min(N - 2, Math.ceil(toCell(Math.max(ax, bx) + r, 0)));
+        const y0 = Math.max(1, Math.floor(toCell(Math.min(ay, by) - r, 1))), y1 = Math.min(N - 2, Math.ceil(toCell(Math.max(ay, by) + r, 1)));
+        const z0 = Math.max(1, Math.floor(toCell(Math.min(az, bz) - r, 2))), z1 = Math.min(N - 2, Math.ceil(toCell(Math.max(az, bz) + r, 2)));
+        const dx = bx - ax, dy = by - ay, dz = bz - az, ll = dx * dx + dy * dy + dz * dz || 1;
+        for (let z = z0; z <= z1; z++) {
+          const wz = centre[2]! + (z - N / 2) * cell;
+          for (let y = y0; y <= y1; y++) {
+            const wy = centre[1]! + (y - N / 2) * cell;
+            const row = z * N * N + y * N;
+            for (let x = x0; x <= x1; x++) {
+              const wx = centre[0]! + (x - N / 2) * cell;
+              const s = Math.max(0, Math.min(1, ((wx - ax) * dx + (wy - ay) * dy + (wz - az) * dz) / ll));
+              const qx = ax + dx * s - wx, qy = ay + dy * s - wy, qz = az + dz * s - wz;
+              const rr = r0 + (r1 - r0) * s;
+              const d2 = (qx * qx + qy * qy + qz * qz) / (rr * rr);
+              if (d2 >= 1) continue;
+              const v = (1 - d2) * (1 - d2);
+              const q = row + x;
+              // Blended, not the densest alone: neighbouring clumps flow into one mass (a soft sum, capped so a crowd of them does not swell).
+              field[q] = Math.min(1.3, field[q]! + v * 0.7);
+            }
+          }
+        }
+      }
+    }
+    blur(field, N);
+    blur(field, N);
+    mc.update();
+  }
+
+  /** The surface as plain geometry in the body's frame (dm): its triangles welded into shared vertices. */
+  geometry(): { positions: Float32Array; index: Uint32Array } {
+    const mc = this.mesh;
+    const src = mc.positionArray, count = mc.count;
+    const s = mc.scale.x, c = mc.position;
+    const map = new Map<string, number>();
+    const pos: number[] = [];
+    const index = new Uint32Array(count);
+    for (let i = 0; i < count; i++) {
+      const x = c.x + src[i * 3]! * s, y = c.y + src[i * 3 + 1]! * s, z = c.z + src[i * 3 + 2]! * s;
+      const key = `${Math.round(x * 2000)},${Math.round(y * 2000)},${Math.round(z * 2000)}`;
+      let k = map.get(key);
+      if (k === undefined) { k = pos.length / 3; map.set(key, k); pos.push(x, y, z); }
+      index[i] = k;
+    }
+    return { positions: Float32Array.from(pos), index };
+  }
+
+  get triangles(): number { return this.mesh.count / 3; }
+}
+
+/** The density smoothed by a 1-2-1 kernel along each axis: no lumps, no stair steps from the grid. */
+function blur(f: Float32Array, N: number): void {
+  const tmp = new Float32Array(f.length);
+  const strides = [1, N, N * N];
+  for (const s of strides) {
+    tmp.set(f);
+    for (let i = s; i < f.length - s; i++) f[i] = (tmp[i - s]! + 2 * tmp[i]! + tmp[i + s]!) * 0.25;
+  }
+}
+
+/** A clump's width along it: full, then narrowing to a rounded point. */
+function taper(t: number): number { return t < 0.55 ? 1 : Math.max(0.12, 1 - ((t - 0.55) / 0.45) ** 1.4 * 0.88); }
+
+/** Welded geometry as a BufferGeometry with smooth normals. */
+export function volumeBuffer(g: { positions: Float32Array; index: Uint32Array }): BufferGeometry {
+  const b = new BufferGeometry();
+  b.setAttribute('position', new BufferAttribute(g.positions, 3));
+  b.setIndex(new BufferAttribute(g.index, 1));
+  b.computeVertexNormals();
+  return b;
+}

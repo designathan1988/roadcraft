@@ -243,7 +243,13 @@ export function evenHairSheen(material: MeshStandardMaterial): void {
       .replace('cardTexel.a *= 0.65;', 'cardTexel.a = min(1.0, cardTexel.a * 0.6);')
       .replace('diffuseColor.a = cardTexel.a;', 'diffuseColor.a = cardTexel.a; if (slot > 2.5 && slot < 3.5) diffuseColor.rgb = vec3(0.02);');
   };
-  material.customProgramCacheKey = () => `${key}-lab-even-sheen`;
+  const before2 = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    before2.call(material, shader, renderer);
+    // Hair lit by its own normal on both faces: three flips a back face's normal, and the curtains' back faces showed as dark patches.
+    if (shader.fragmentShader.includes('varying float vHairMask')) shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nif (abs(vHairMask - 1.0) < 0.5) normal = normalize( vNormal );');
+  };
+  material.customProgramCacheKey = () => `${key}-lab-even-sheen-2`;
 }
 
 /** The eyes from their own full-size texture: the game draws them from a 256 px layer of its shared arrays (`skinAppearance.ts` SMALL_LAYER), a blur up close. */
