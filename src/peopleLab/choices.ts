@@ -49,3 +49,37 @@ export const MOODS: readonly (readonly [string, string, string | undefined, Pose
 
 /** Solid hairstyles that read well up close (the MakeHuman system cards, `people` studio's choices), by sex: what a new person wears. */
 export const NICE_HAIR = { female: ['long01', 'bob02', 'ponytail01', 'braid01', 'bob01'], male: ['short02', 'short01', 'short04', 'short03'] } as const;
+
+/** The hairstyles that read well, picked by eye from a picture of each on the lab's person (2026-10-21): solid, clean, no stray strands. */
+export const HAIR_CATALOGUE = {
+  female: ['long01', 'bob02', 'bob01', 'ponytail01', 'braid01', 'culturalibre_hair_01', 'culturalibre_hair_18', 'culturalibre_hair_17', 'cortu_straight_bangs',
+    'elvs_50s_updo', 'elvs_daisy_hair', 'elvs_hazel_hair', 'elvs_katherine_hair', 'elvs_short_daisy_hair', 'elvs_that_80s_babe_hair', 'elvs_wavy_bob',
+    'elvs_witchy_lil_bob', 'elvs_ashley_may_hair', 'elvs_island_princess_hair', 'elvs_french_braid_variation', 'faydaen_hair_1', 'littleright_bobcut_hair',
+    'toigo_blunt_bob', 'toigo_blunt_bob_with_bangs', 'toigo_curled_under_bob', 'toigo_curled_under_bob_with_bangs', 'toigo_inverted_bob',
+    'toigo_inverted_bob_with_bangs', 'rehmanpolanski_hair_bun_brown', 'elvs_micky_afro'],
+  male: ['short02', 'short01', 'short03', 'short04', 'culturalibre_hair_02', 'culturalibre_hair_05', 'culturalibre_hair_14', 'elvs_maxwell_hair',
+    'elvs_short_side_do', 'elvs_grump_hair', 'elvs_keylth_hair', 'afro01', 'elvs_braided_rows'],
+} as const;
+
+/** Shoes for each sex, the street's own (no boots for heroes, no costume). */
+export const SHOES_CATALOGUE = {
+  female: ['elvs_flatshoe_pointy1', 'elvs_flatshoe_gemmed1', 'elvs_flatshoe_bow1', 'elvs_flatshoe_plain1', 'toigo_ballet_flats', 'toigo_ballet_flats_with_bows',
+    'toigo_flats', 'dressupdoc_maryjane1', 'dressupdoc_sandals1', 'mindfront_shoes_oxford_female', 'mindfront_shoes_monk_strap_female', 'punkduck_comfortable_sneakers',
+    'toigo_ankle_boots_female', 'punkduck_female_half-boots', 'shoes01', 'shoes03'],
+  male: ['shoes02', 'shoes01', 'shoes04', 'shoes05', 'shoes06', 'mindfront_shoes_oxford_male', 'mindfront_shoes_monk_strap_male', 'callharvey3d_harvey_saddleshoes1',
+    'culturalibre_sneakers', 'punkduck_running_shoes_01', 'punkduck_tennis_shoes', 'toigo_ankle_boots_male', 'mindfront_shoes_biker_boots_male', 'elvs_male_flip_flop_sandals1'],
+} as const;
+
+/** What the hairstyles are called in the creator. */
+export const HAIR_LABELS: Readonly<Record<string, string>> = {
+  long01: 'Longo liso', bob02: 'Chanel', bob01: 'Chanel de lado', ponytail01: 'Rabo de cavalo', braid01: 'Trança', culturalibre_hair_01: 'Longo solto',
+  culturalibre_hair_18: 'Chanel com franja', culturalibre_hair_17: 'Ondulado', cortu_straight_bangs: 'Franja reta', elvs_50s_updo: 'Coque anos 50',
+  elvs_daisy_hair: 'Ondas longas', elvs_hazel_hair: 'Longo repicado', elvs_katherine_hair: 'Chanel franja', elvs_short_daisy_hair: 'Médio ondulado',
+  elvs_that_80s_babe_hair: 'Anos 80', elvs_wavy_bob: 'Chanel retrô', elvs_witchy_lil_bob: 'Chanel curto', elvs_ashley_may_hair: 'Cachos soltos',
+  elvs_island_princess_hair: 'Praiano', elvs_french_braid_variation: 'Trança embutida', faydaen_hair_1: 'Médio liso', littleright_bobcut_hair: 'Joãozinho',
+  toigo_blunt_bob: 'Chanel reto', toigo_blunt_bob_with_bangs: 'Chanel reto franja', toigo_curled_under_bob: 'Chanel virado', toigo_curled_under_bob_with_bangs: 'Virado com franja',
+  toigo_inverted_bob: 'Chanel invertido', toigo_inverted_bob_with_bangs: 'Invertido franja', rehmanpolanski_hair_bun_brown: 'Coque', elvs_micky_afro: 'Puffs',
+  short02: 'Curto clássico', short01: 'Curto', short03: 'Curto penteado', short04: 'Raspado', culturalibre_hair_02: 'Topete', culturalibre_hair_05: 'Curto bagunçado',
+  culturalibre_hair_14: 'Ondulado curto', elvs_maxwell_hair: 'Social', elvs_short_side_do: 'De lado', elvs_grump_hair: 'Despenteado', elvs_keylth_hair: 'Médio',
+  afro01: 'Black', elvs_braided_rows: 'Tranças nagô',
+};
