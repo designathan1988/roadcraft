@@ -9,7 +9,7 @@ import { LOT_READS, type TrafficBuilding, type TrafficBuildings } from './traffi
 import { BuildingsInOrder } from './buildingOrder';
 import { type LaneGridWorld, laneChangesSince, laneGrid, lanesInBox, lanesNear } from './laneGrid';
 export { laneChangesSince, lanesInBox };
-import { type KerbBook, type KerbReads, type KerbWorld, followKerbs, newKerbBook } from './kerbBays';
+import { type KerbBook, type KerbReads, type KerbWorld, followKerbs, kerbStreetsIn, newKerbBook } from './kerbBays';
 import {
   type BayReads, type LotAsk, type LotExit, type WallRing, LANE_REACH, bayRows, baysOfShare, gateExits as lotGateExits, laneFor, shareOf,
 } from './lotBays';
@@ -337,6 +337,16 @@ export function baySources(w: BayWorld): string[] {
   const out: string[] = [];
   for (const id of book.lots.ids) if (book.known.has(id)) out.push(`L${id}`);
   for (const id of streetsInOrder(book)) if (book.kerb.bays.get(id)?.length) out.push(`K${id}`);
+  return out;
+}
+
+/** The sources of bays whose lot or street meets the rectangle (the micro window's square), in the town's order as `baySources`: found by place, DO NOT list the map's. */
+export function baySourcesIn(w: BayWorld, x0: number, y0: number, x1: number, y1: number): string[] {
+  const book = baysNow(w);
+  const out: string[] = [];
+  // `near` answers in the store's order, the lots' own.
+  for (const b of w.buildings.near(x0, y0, x1, y1)) if (book.known.has(b.id)) out.push(`L${b.id}`);
+  for (const id of kerbStreetsIn(book.kerb, x0, y0, x1, y1)) if (book.kerb.bays.get(id)?.length) out.push(`K${id}`);
   return out;
 }
 

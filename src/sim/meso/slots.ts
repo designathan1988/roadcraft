@@ -2,7 +2,7 @@
 // Data-oriented layout (structure of arrays indexed by a dense slot, free lists for slots let go), as Unity DOTS / Unreal Mass keep their entities.
 
 /** A typed array of `n` with `a`'s values first, the rest `fill`. */
-export function grown<T extends Float64Array | Float32Array | Int32Array | Uint8Array>(a: T, n: number, fill = 0): T {
+export function grown<T extends Float64Array | Float32Array | Int32Array | Uint32Array | Uint8Array>(a: T, n: number, fill = 0): T {
   const b = new (a.constructor as unknown as new (n: number) => T)(n);
   b.set(a);
   if (fill !== 0) b.fill(fill, a.length);
@@ -193,6 +193,11 @@ export class Threads {
   /** `visit` called with every group, in the order they were made (`Map.prototype.forEach`): DO NOT walk them with an iterator a step, a result object a group (the meso's step, sim20a). */
   eachGroup(visit: (group: number) => void): void {
     this.groups.forEach(visit);
+  }
+
+  /** One past the highest group index ever made: a resumable walk over the groups goes from 0 to it, skipping the empty (`count` 0). */
+  get groupLimit(): number {
+    return this.gTop;
   }
 
   /** A group's first slot (-1: none), the slot after `slot` in its group (-1: the last), how many it holds. */

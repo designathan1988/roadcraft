@@ -31,7 +31,7 @@ async function wired(doc: RoadDoc): Promise<SimClient> {
   const client = new SimClient(doc);
   let chain = Promise.resolve();
   const host = new SimHost((message: FromSim) => (client as unknown as { receive(m: FromSim): void }).receive(message));
-  await host.handle({ type: 'init', map: trafficMapOf(new RoadDoc()), live: [], seed: 7, zones: new Map(), frames: makeSharedFrames(), zonesPrefix: null, ambient: 'edges' } as ToSim);
+  await host.handle({ type: 'init', map: trafficMapOf(new RoadDoc()), seed: 7, zones: new Map(), frames: makeSharedFrames(), zonesPrefix: null, ambient: 'edges' } as ToSim);
   (client as unknown as { worker: { postMessage(message: ToSim): void } }).worker = {
     postMessage: (message) => { chain = chain.then(() => host.handle(message)); },
   };

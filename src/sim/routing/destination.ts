@@ -3,7 +3,7 @@ import type { BodyClass } from '@world/conflictPoints';
 import type { SimWorld } from '../world';
 import { m } from '@world/units';
 import { goalEnd, laneLowerBound } from './lowerBound';
-import { searchScratch } from './searchScratch';
+import { noteCapped, noteSearch, searchScratch } from './searchScratch';
 
 /** DO NOT search the graph from each entry */
 function reachableExits(w: SimWorld, start: LaneletId, body: BodyClass): readonly LaneletId[] {
@@ -26,6 +26,7 @@ export function routeToDestination(w: SimWorld, start: LaneletId, goal: LaneletI
   if (!w.laneReaches.mayReach(w, start, goal, body)) return null;
   const scratch = searchScratch(w);
   scratch.begin(w.graph.lanelets.size + w.graph.connectors.size);
+  const cap = noteSearch(w);
   const end = goalEnd(w, goal)!;
   const toGo = (slot: number): number => {
     let h = scratch.boundOf(slot);
@@ -38,10 +39,13 @@ export function routeToDestination(w: SimWorld, start: LaneletId, goal: LaneletI
   scratch.setBest(startState, 0, -1, -1);
   scratch.push(startState, 0, toGo(startSlot));
 
+  let expanded = 0;
   while (scratch.size) {
     const state = scratch.pop();
     const currentCost = scratch.poppedCost;
     if (currentCost > scratch.best(state) + 1e-9) continue;
+    // DO NOT walk the whole map for one car: past the cap there is no route (the car drives on by its lookahead).
+    if (++expanded > cap) { noteCapped(w); return null; }
     const currentLane = scratch.ids[state >> 1]!;
     if (currentLane === goal) {
       // DO NOT `unshift`: the route is gathered goal first and turned round once.

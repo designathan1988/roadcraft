@@ -50,7 +50,7 @@ describe('the same map sent again', () => {
   it("brings the worker's copy up to it and keeps its traffic driving", async () => {
     const doc = grid(3, m(150));
     const host = new SimHost(() => {});
-    await host.handle({ type: 'init', map: trafficMapOf(doc), live: [], seed: 7, zones: new Map(), frames: makeSharedFrames(), zonesPrefix: null, ambient: 'edges' } as ToSim);
+    await host.handle({ type: 'init', map: trafficMapOf(doc), seed: 7, zones: new Map(), frames: makeSharedFrames(), zonesPrefix: null, ambient: 'edges' } as ToSim);
     const inner = host as unknown as { sim: SimWorld; doc: RoadDoc };
     // A car of the city as it stands (put straight into the worker's world).
     const archetype = ARCHETYPES.find((x) => x.id === 'hatch')!;
@@ -60,7 +60,7 @@ describe('the same map sent again', () => {
     // A road taken out on the page; the worker hears of it only as the whole map again.
     const gone = [...doc.segments.keys()].at(-1)! as SegmentId;
     doc.removeSegment(gone);
-    await host.handle({ type: 'resync', map: trafficMapOf(doc), live: [] } as ToSim);
+    await host.handle({ type: 'resync', map: trafficMapOf(doc) } as ToSim);
     expect(inner.doc.segments.has(gone)).toBe(false);
     expect(inner.doc.segments.size).toBe(doc.segments.size);
     // Before: another map's load, every vehicle gone.
