@@ -2084,9 +2084,9 @@ async function cityAhead(kind: CityGenAsk['kind']): Promise<void> {
   citiesAhead.set(key, made);
   void made.catch(() => {}).finally(() => { if (citiesAhead.get(key) === made) citiesAhead.delete(key); });
 }
-/** Both sizes' next cities made ahead, the large first, once the opening's work is behind: some seconds after the game stands. */
+/** Both sizes' next cities made ahead, the large first, once the opening's work is behind (`cityAhead` waits for the world to stand). DO NOT wait a fixed 15 s more: on the first launch the empty map stands in seconds, and the player's first large city was grown from nothing in front of them (8.4 s of its 18 s, 2026-10-21). */
 function citiesAheadLater(): void {
-  setTimeout(() => { void cityAhead('large').then(() => cityAhead('small')); }, 15_000);
+  setTimeout(() => { void cityAhead('large').then(() => cityAhead('small')); }, 2_000);
 }
 
 /** A city made off the page and put in place of the map: the curtain over the map while its worker builds it, then the real map opened whole. One at a time, in the order asked. */
