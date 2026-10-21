@@ -218,9 +218,9 @@ export class RecordTable {
     return this.rowOf.get(id) ?? -1;
   }
 
-  /** A reader of this table: what it decodes (strings, shapes, shared members) is kept for its own life only (a job's). */
-  reader(): TableReader {
-    return new TableReader(this);
+  /** A reader of this table: what it decodes (strings, shapes, shared members) is kept for its own life only (a job's). `weak`: its shared members kept only while a record read holds them (`TableReader`). */
+  reader(weak = false): TableReader {
+    return new TableReader(this, weak);
   }
 }
 
@@ -236,12 +236,14 @@ export class TableReader {
   // DO NOT fill these at the ids met, from empty: a row read first meets ids far past the array's end, and V8 turns such an array into a dictionary (each look-up hashed: the cell jobs' decoding, wprof4). Sized and filled once.
   private readonly strings: (string | undefined)[];
   private readonly shapes: (string[] | undefined)[];
+  /** Each shared member decoded; in a weak reader an object member is held by a `WeakRef` (MDN "WeakRef"), decoded again once nobody holds it. */
   private readonly nodes: unknown[];
   /** Whether each shared member was decoded (a member may decode to null). */
   private readonly decoded: Uint8Array;
   private pos = 0;
 
-  constructor(readonly table: RecordTable) {
+  /** `weak`: a reader that lives as long as its table (`tableRows.ts`, the page's whole city) - DO NOT hold every shared member it ever decoded: a walk of the whole map left them all decoded and held (13.8 MB of the large city of 8 102 buildings, 2026-10-21); held weakly, they live while a record read holds them. */
+  constructor(readonly table: RecordTable, private readonly weak = false) {
     const { buffer, at } = table;
     this.view = new DataView(buffer, at.streamAt, at.stream);
     this.rootAt = new Uint32Array(buffer, at.rootAt, at.rows);
@@ -311,14 +313,19 @@ export class TableReader {
       case T_NODE: {
         const id = view.getUint32(this.pos, true); this.pos += 4;
         if (this.decoded[id]) {
-          // The first meeting is followed by the member's body: stepped over when it was decoded before.
-          if (this.pos === this.nodeAt[id]) this.skip();
-          return this.nodes[id];
+          const kept = this.nodes[id];
+          const node = this.weak && kept instanceof WeakRef ? kept.deref() as unknown : kept;
+          // Let go by every record that held it (a weak reader): decoded again below.
+          if (node !== undefined || !(kept instanceof WeakRef)) {
+            // The first meeting is followed by the member's body: stepped over when it was decoded before.
+            if (this.pos === this.nodeAt[id]) this.skip();
+            return node;
+          }
         }
         const back = this.pos;
         this.pos = this.nodeAt[id]!;
         const node = this.value();
-        this.nodes[id] = node;
+        this.nodes[id] = this.weak && typeof node === 'object' && node !== null ? new WeakRef(node) : node;
         this.decoded[id] = 1;
         if (back !== this.nodeAt[id]) this.pos = back;
         return node;

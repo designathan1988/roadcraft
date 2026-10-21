@@ -1,6 +1,6 @@
 import type { CellMass } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
-import { type CellEntry, sameEntries } from './chunk';
+import { type CellEntry, type PackedEntries, samePacked, unpack } from './chunk';
 import type { JobKind } from './cellWork';
 import { type MassLevel, cellIndex, levelCells, plateOf, tileOf } from './levelKeys';
 import { warmFull } from '../uploads';
@@ -12,7 +12,7 @@ const KIND: Readonly<Record<MassLevel, JobKind>> = { tile: 'massTile', plate: 'm
 /** DO NOT ask a tile or a plate again for each cell an edit touched: the cells are touched, their levels asked once (`flush`) */
 export class MassLevels {
   /** Each cell's entries as last asked for its masses (`layer.ts` `askMass`): what its tile and plate are made of. */
-  private readonly entries = new Map<string, readonly CellEntry[]>();
+  private readonly entries = new Map<string, PackedEntries>();
   private readonly dirty = new Set<string>();
   /** Tiles changed and not asked: no view wants them yet (their plate stands for them, `wanted`). */
   private readonly stale = new Set<string>();
@@ -30,12 +30,12 @@ export class MassLevels {
   private readonly edited = new Set<string>();
 
   /** A cell's buildings asked again (`entries`), or gone (null): its tile and plate to be asked again at `flush`; `edited`, by the player's edit (asked first). */
-  touch(cell: string, entries: readonly CellEntry[] | null, edited = false): void {
+  touch(cell: string, entries: PackedEntries | null, edited = false): void {
     const was = this.entries.get(cell);
     // The same buildings on the same ground (the whole town filed again): its levels stand as they are.
-    if (was && entries && sameEntries(was, entries)) return;
-    if (!was && !entries?.length) return;
-    if (entries?.length) this.entries.set(cell, entries); else this.entries.delete(cell);
+    if (was && entries && samePacked(was, entries)) return;
+    if (!was && !entries?.ids.length) return;
+    if (entries?.ids.length) this.entries.set(cell, entries); else this.entries.delete(cell);
     this.changed();
     const [i, j] = cellIndex(cell);
     this.dirty.add(tileOf(i, j));
@@ -47,8 +47,7 @@ export class MassLevels {
   flush(env: CellEnv): void {
     if (this.dirty.size) this.changed();
     for (const key of this.dirty) {
-      const list = this.listOf(key);
-      if (list.length === 0) {
+      if (!this.hasAny(key)) {
         const was = this.asked.get(key);
         if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
         this.stale.delete(key);
@@ -58,7 +57,7 @@ export class MassLevels {
       }
       this.plan(key);
       // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains.
-      if ((key[0] === 'p' || this.wanted(key)) && (!warmFull() || this.edited.has(key))) this.ask(key, list, env);
+      if ((key[0] === 'p' || this.wanted(key)) && (!warmFull() || this.edited.has(key))) this.ask(key, this.listOf(key), env);
       else {
         // Its old masses, if any, are no longer its buildings': asked again once a view wants it.
         const was = this.asked.get(key);
@@ -83,20 +82,27 @@ export class MassLevels {
 
   /** A tile whose masses were let go, neither drawn nor wanted (`massCells.ts`): asked again once a view wants it (`pump`). */
   release(key: string): void {
-    if (key[0] === 't' && this.listOf(key).length) { this.stale.add(key); this.changed(); }
+    if (key[0] === 't' && this.hasAny(key)) { this.stale.add(key); this.changed(); }
   }
 
-  /** A level's buildings, its cells' in order. */
+  /** A level's buildings, its cells' in order: entries made now, for the job asked. */
   private listOf(key: string): CellEntry[] {
     const { i0, j0, n } = levelCells(key);
     const list: CellEntry[] = [];
     for (let i = i0; i < i0 + n; i++) {
       for (let j = j0; j < j0 + n; j++) {
         const some = this.entries.get(`${i},${j}`);
-        if (some) for (const e of some) list.push(e);
+        if (some) unpack(some, list);
       }
     }
     return list;
+  }
+
+  /** Whether a level has any building (its cells' packed entries), no entry made. */
+  private hasAny(key: string): boolean {
+    const { i0, j0, n } = levelCells(key);
+    for (let i = i0; i < i0 + n; i++) for (let j = j0; j < j0 + n; j++) if (this.entries.has(`${i},${j}`)) return true;
+    return false;
   }
 
   /** A level asked of the workers, the older ask of it cancelled. */

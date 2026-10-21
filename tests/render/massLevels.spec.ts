@@ -7,6 +7,7 @@ import type { CellEnv, CellPool } from '@render/buildings/cellPool';
 import { type CellEntry, type CellJob, type CellResult, type JobKind, runCellJob } from '@render/buildings/cellWork';
 import { createBuildingKit } from '@render/buildings/kit';
 import { createMassCells } from '@render/buildings/massCells';
+import type { PackedEntries } from '@render/buildings/chunk';
 import { MassLevels } from '@render/buildings/massLevels';
 import { plateOf, tileOf } from '@render/buildings/levelKeys';
 import { CELL_DETAIL, PLATE_DETAIL, TILE_DETAIL, emitMassing, emitMassingLevels } from '@render/buildings/massing';
@@ -263,7 +264,9 @@ describe('the tiles and plates asked of the workers', () => {
     return { pool, asked, answer };
   }
   const env = { groundAt: flat, naturalAt: flat } as CellEnv;
-  const entries = (...keys: string[]): CellEntry[] => keys.map((key, i) => ({ key, sig: i + 1, digest: 7 }));
+  /** A cell's buildings packed (`PackedEntries`), each named by a letter: its id the letter's code. */
+  const entries = (...keys: string[]): PackedEntries => ({ ids: Float64Array.from(keys, (key) => key.charCodeAt(0)), sigs: Float64Array.from(keys, (_key, i) => i + 1), digest: 7 });
+  const named = (list: readonly CellEntry[]): string[] => list.map((e) => String.fromCharCode(Number(e.key))).sort();
 
   it('a change in one cell asks again its tile and its plate only, once for every cell touched', () => {
     const { pool, asked, answer } = fakePool();
@@ -277,8 +280,8 @@ describe('the tiles and plates asked of the workers', () => {
     const keys = asked.map((a) => `${a.kind} ${a.key}`).sort();
     expect(keys).toEqual(['massPlate p:0,0', 'massPlate p:1,0', 'massTile t:-1,0', 'massTile t:0,0', 'massTile t:1,0'].sort());
     // A tile is made of its cells' buildings; a plate of its tiles'.
-    expect(asked.find((a) => a.key === 't:0,0')!.entries.map((e) => e.key).sort()).toEqual(['a', 'b', 'c']);
-    expect(asked.find((a) => a.key === 'p:0,0')!.entries.map((e) => e.key).sort()).toEqual(['a', 'b', 'c', 'e']);
+    expect(named(asked.find((a) => a.key === 't:0,0')!.entries)).toEqual(['a', 'b', 'c']);
+    expect(named(asked.find((a) => a.key === 'p:0,0')!.entries)).toEqual(['a', 'b', 'c', 'e']);
     expect(levels.asking).toBe(5);
     answer();
     expect(levels.asking).toBe(0);
@@ -395,7 +398,7 @@ describe('a tile or a plate drawn before some of its buildings came in', () => {
     } as unknown as CellPool;
     const levels = new MassLevels(pool, () => {}, () => {}, () => {}, () => false);
     expect(levels.outdated(plateOf(0, 0))).toBe(false);
-    levels.touch('0,0', [{ key: '1', sig: 1, digest: 0 }]);
+    levels.touch('0,0', { ids: Float64Array.of(1), sigs: Float64Array.of(1), digest: 0 });
     expect(levels.outdated(plateOf(0, 0))).toBe(true);
     levels.flush({ groundAt: flat, naturalAt: flat });
     expect(levels.outdated(plateOf(0, 0))).toBe(true);

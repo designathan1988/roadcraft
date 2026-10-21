@@ -1,3 +1,4 @@
+import type { RecordRef } from './recordTable';
 import type { TableRows } from './tableRows';
 import type { Building, BuildingId } from './types';
 
@@ -55,6 +56,14 @@ export class BuildingItems implements Map<BuildingId, Building> {
   sameUnwritten(other: BuildingItems, key: BuildingId): boolean {
     return this.base !== null && this.base === other.base && !this.owns(key) && !other.owns(key)
       && !this.gone.has(key) && !other.gone.has(key) && this.base.has(key);
+  }
+
+  /** Where a worker reads the record of `key` when it is the table's own (not written here): the table's buffer and its row, nothing decoded; null otherwise. */
+  tableRef(key: BuildingId): RecordRef | null {
+    const base = this.base;
+    if (!base || this.owns(key) || this.gone.has(key)) return null;
+    const row = base.rowOf(key);
+    return row < 0 ? null : { buffer: base.buffer, row };
   }
 
   get size(): number {

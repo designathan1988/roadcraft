@@ -12,8 +12,8 @@ export interface GardenLists {
   update(buildings: BuildingStore, settled: boolean): GardenChange | null;
 }
 
-/** A planted building: its record, its plants digested, its bank, and its plants on the ground (once placed) with the ground change they follow. */
-interface Site { b: Building; key: number; box: Rect; plants: readonly GardenPlant[] | null; seen: number }
+/** A planted building: its plants digested, its bank, and its plants on the ground (once placed) with the ground change they follow. DO NOT keep its record: every planted building of the map was held decoded (the table decodes a record while it is read, `tableRows.ts`); read from the store when its plants are placed. */
+interface Site { key: number; box: Rect; plants: readonly GardenPlant[] | null; seen: number }
 
 /** `ground`: where and when the drawn ground changed */
 export function gardenLists(
@@ -53,15 +53,15 @@ export function gardenLists(
       pending.delete(id);
       return;
     }
-    if (site?.key === key) { site.b = b!; return; }
+    if (site?.key === key) return;
     const box = bankBox(b!);
     if (site) {
       if (site.plants) gone.push(site.plants);
-      Object.assign(site, { b, key, box, plants: null });
+      Object.assign(site, { key, box, plants: null });
       banks.remove(id);
       banks.file(id, site, box);
     } else {
-      const fresh: Site = { b: b!, key, box, plants: null, seen: -1 };
+      const fresh: Site = { key, box, plants: null, seen: -1 };
       sites.set(id, fresh);
       banks.file(id, fresh, box);
     }
@@ -109,9 +109,10 @@ export function gardenLists(
       const added: (readonly GardenPlant[])[] = [];
       for (const id of pending) {
         const site = sites.get(id);
-        if (!site) continue;
+        const b = site ? buildings.get(id) : undefined;
+        if (!site || !b) continue;
         if (site.plants) gone.push(site.plants);
-        site.plants = plantsOf(site.b);
+        site.plants = plantsOf(b);
         site.seen = ground.version;
         added.push(site.plants);
       }

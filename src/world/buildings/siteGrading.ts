@@ -42,8 +42,8 @@ export function siteGrading(
   let padsCache: TownPads | null = null;
   /** Each building's platform by record, while the roads and the land stand (`buildingPads`). */
   let padsKnown = new WeakMap<Building, Pad | null>();
-  /** The buildings the ground was last graded for, by id: their record then, its site as text, and the box their bank reaches. */
-  const graded = new Map<number, { ref: Building; site: number; box: SiteBox }>();
+  /** The buildings the ground was last graded for, by id: its site digested, and the box their bank reaches. DO NOT keep the record here: every building of the map was held decoded (the table decodes a record while it is read, `tableRows.ts`). */
+  const graded = new Map<number, { site: number; box: SiteBox }>();
   /** What a building's site is graded from, as a digest (`core/digest.ts`), once per record */
   const siteKey = new WeakMap<Building, number>();
   const siteKeyOf = (b: Building): number => {
@@ -80,14 +80,13 @@ export function siteGrading(
     const take = (q: SiteBox): void => { boxes.push(q); };
     const grade = (b: Building): void => {
       const was = graded.get(b.id);
-      if (was?.ref === b) return;
       const site = siteKeyOf(b);
       // A new record of the same site (aged, renamed): nothing to grade.
-      if (was && was.site === site) { graded.set(b.id, { ref: b, site, box: was.box }); return; }
+      if (was && was.site === site) return;
       if (was) take(was.box);
       const now = bankBox(b);
       take(now);
-      graded.set(b.id, { ref: b, site, box: now });
+      graded.set(b.id, { site, box: now });
     };
     const ids = buildings.changedFor(sitesRead);
     if (ids) {
