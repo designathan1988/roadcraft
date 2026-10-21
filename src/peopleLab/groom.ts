@@ -106,7 +106,7 @@ export class GroomBody {
   }
 
   /** The point pushed out of the body to `margin` above the skin (the nearest skin vertex's tangent plane, as a signed distance near the surface). */
-  collide(p: Float32Array, i: number, margin: number): void {
+  collide(p: Float32Array, i: number, margin: number, face = true): void {
     const P = this.positions, N = this.normals, c = GroomBody.CELL;
     const x = p[i]!, y = p[i + 1]!, z = p[i + 2]!;
     const cx = Math.floor(x / c), cy = Math.floor(y / c), cz = Math.floor(z / c);
@@ -119,7 +119,7 @@ export class GroomBody {
         if (d < bestD) { bestD = d; best = v; }
       }
     }
-    this.clearFace(p, i);
+    if (face) this.clearFace(p, i);
     if (best < 0) return;
     const d = (x - P[best * 3]!) * N[best * 3]! + (y - P[best * 3 + 1]!) * N[best * 3 + 1]! + (z - P[best * 3 + 2]!) * N[best * 3 + 2]!;
     if (d < margin) {

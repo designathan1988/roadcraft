@@ -28,9 +28,11 @@ import { makePanels } from './panels';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
 import { HairStudio } from './hairStudio';
 import { hairPanel } from './hairPanel';
+import { Atelier } from './atelier';
+import { atelierPanel } from './atelierPanel';
 import { sculptPanel } from './sculptPanel';
-import { GROOM, PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
-import { HAIR_CATALOGUE, HAIR_COLOURS, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
+import { ATELIER, GROOM, PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
+import { CLOTH, HAIR_CATALOGUE, HAIR_COLOURS, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
 import { el, widgets } from './widgets';
 import { icon } from './icons';
 
@@ -62,8 +64,10 @@ function startLab(): void {
   let sculptor: HairSculptor | null = null;
   /** The hair studio while it is open. */
   let studio: HairStudio | null = null;
+  /** The atelier while it is open. */
+  let atelier: Atelier | null = null;
   /** The editor taking the pointer: the sculptor or the hair studio. */
-  const editor = (): HairSculptor | HairStudio | null => sculptor ?? studio;
+  const editor = (): HairSculptor | HairStudio | Atelier | null => sculptor ?? studio ?? atelier;
   /** Click-and-drag shaping of the person built now. */
   let shaper: HandShaper | null = null;
 
@@ -165,7 +169,7 @@ function startLab(): void {
   controls.maxPolarAngle = Math.PI * 0.55;
   // Navigation as editors do it (`navigation.ts`): right orbits, middle pans, wheel zooms to the cursor, Alt with any button, F frames.
   setupNavigation(controls, camera, renderer.domElement, {
-    targets: () => [built?.scene, sculptor?.group, studio?.group].filter((o): o is Object3D => !!o),
+    targets: () => [built?.scene, sculptor?.group, studio?.group, atelier?.group].filter((o): o is Object3D => !!o),
     frame: () => frame(view),
   });
   const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
@@ -256,7 +260,7 @@ function startLab(): void {
       const spec = person.spec;
       const nextShaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
       if (nextShaper) next.meshes[0]!.geometry.setAttribute('labRegion', new BufferAttribute(nextShaper.regionAttribute(), 1));
-      const skin = await dressPerson(next, effective(person).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit));
+      const skin = await dressPerson(next, effective(person).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit), person.garment?.colour ?? null);
       for (const m of next.meshes) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) if (m.geometry.hasAttribute('labRegion')) regionGlow(mat as MeshStandardMaterial, glow);
       if (mine !== generation) { releaseSkinAppearance(skin); dispose(next.scene); return; }
       if (appearance) releaseSkinAppearance(appearance);
@@ -324,6 +328,7 @@ function startLab(): void {
     pictures.clearQueue();
     if (tab !== 'pose') posing.select(null);
     if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
+    else if (atelier) panel.replaceChildren(...atelierPanel(atelier, { ui: { slider, swatches, seg, tiles }, render, close: closeAtelier, colours: CLOTH }));
     else if (studio) panel.replaceChildren(...hairPanel(studio, { ui: { slider, swatches, seg, tiles }, render, close: closeHairStudio, colours: HAIR_COLOURS }));
     else if (tab === 'pose') panel.replaceChildren(...posePanel());
     else {
@@ -353,7 +358,7 @@ function startLab(): void {
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
-    openHairStudio: () => { void openHairStudio(); }, openAtelier: () => { say('Ateliê em construção'); },
+    openHairStudio: () => { void openHairStudio(); }, openAtelier: () => { void openAtelier(); },
     setSex: (v) => {
       // The hair and the outfit go with the sex unless they suit both.
       const look = person.spec.look;
@@ -534,6 +539,30 @@ function startLab(): void {
     if (keep) rebuild(0);
   }
 
+  // ---------------------------------------------------------------- the atelier
+
+  async function openAtelier(): Promise<void> {
+    const body = await builder.studioBody(person);
+    atelier = new Atelier(body, person.spec.look.extras?.includes(ATELIER) ? person.garment ?? null : null, person.spec.look.skin);
+    scene.add(atelier.group);
+    if (built) built.scene.visible = false;
+    frame('body');
+    render();
+  }
+
+  function closeAtelier(keep: boolean): void {
+    const a = atelier;
+    if (!a) return;
+    if (keep) person = { ...person, garment: a.record(), spec: { ...person.spec, look: { ...person.spec.look, extras: [...(person.spec.look.extras ?? []).filter((x) => x !== ATELIER), ATELIER] } } };
+    scene.remove(a.group);
+    a.dispose();
+    atelier = null;
+    if (built) built.scene.visible = true;
+    controls.enabled = true;
+    render();
+    if (keep) rebuild(0);
+  }
+
   // ---------------------------------------------------------------- the hair sculptor
 
   /** The item the sculptor has open: the hair, or any worn piece by name. */
@@ -681,6 +710,7 @@ function startLab(): void {
     const now = performance.now();
     const t = (now - clock0) / 1000;
     studio?.tick(Math.min(0.05, (now - lastTick) / 1000));
+    atelier?.tick(Math.min(0.05, (now - lastTick) / 1000));
     lastTick = now;
     glow.time.value = t;
     if (buildAt && now >= buildAt) { buildAt = 0; void runBuild(); }
@@ -741,7 +771,7 @@ function startLab(): void {
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });
       controls.target.copy(head).add(new Vector3(0, 0.02, 0.05));
       camera.position.copy(controls.target).add(new Vector3(x, 0, dist));
-    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, openHairStudio, closeHairStudio, get studio() { return studio; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
+    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, openHairStudio, closeHairStudio, get studio() { return studio; }, openAtelier, closeAtelier, get atelier() { return atelier; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
 }
 
 startLab();
