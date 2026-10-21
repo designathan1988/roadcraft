@@ -116,7 +116,9 @@ export type TileBundle = ReadonlyMap<string, Tile>;
 /** A tile kept between builds: the names of the surfaces it has. Its digest is its key. */
 type KeptTile = readonly string[];
 
-/** One tile of a pass in a build: its digest and block, its rings, its surfaces and arrays once known. */
+/** One tile of a pass in a build: its digest and block, its surfaces and arrays once known. DO NOT keep its rings with it: read from the
+ *  inputs when it is built (`SurfaceInputs.reachOf`, held round the view), a tile kept in the pass's state held them for good, and the
+ *  fill after a large city's opening every tile of the map's until it was over. */
 interface PassTile {
   /** Its key among the pass's tiles (`roadSurfaceInputs.ts` tileKey). */
   readonly key: number;
@@ -125,7 +127,6 @@ interface PassTile {
   readonly stored: string;
   readonly chunk: string;
   readonly rect: TileRect;
-  readonly into: Reach;
   surfaces: KeptTile | null;
   bundle: TileBundle | null;
 }
@@ -178,11 +179,21 @@ function drawGroups(specs: readonly SurfaceSpec[]): DrawGroup[] {
   });
 }
 
-/** One surface's tiles in a block, built again from their rings (a lost WebGL context, `mesh/gpuOnly.ts`) */
-function surfaceSource(spec: SurfaceSpec, tiles: readonly { readonly rect: TileRect; readonly into: Reach }[],
-  reading: <T>(work: () => T) => T): () => Tile[] {
-  return () => tiles.map(({ rect, into }) =>
-    reading(() => tileBundle(into, rect, [spec]).get(spec.options.name)!));
+/** One surface's tiles in a block, built again from their rings (a lost WebGL context, `mesh/gpuOnly.ts`), read again off the inputs
+ *  then (`ringsOf`): DO NOT hold every block's rings for it, the whole map's roads kept on the CPU. A tile its pass no longer has is gone
+ *  from the network since, its block built again by the next build: left out. */
+function surfaceSource(spec: SurfaceSpec, tiles: readonly { readonly rect: TileRect; readonly key: number }[],
+  reading: <T>(work: () => T) => T, ringsOf: (key: number) => Reach | null): () => Tile[] {
+  return () => tiles.flatMap(({ rect, key }) => {
+    const into = ringsOf(key);
+    return into ? [reading(() => tileBundle(into, rect, [spec]).get(spec.options.name)!)] : [];
+  });
+}
+
+/** A pass's rings by tile key (`surfaceSource`, the build), made here: DO NOT make it in the build's pass loop, whose closures share one
+ *  context (V8): kept by every block's source, it held the pass's every tile of the build with it. */
+function ringsReader(inputs: SurfaceInputs, pass: string): (key: number) => Reach | null {
+  return (key) => (inputs.visits(pass, key) ? inputs.reachOf(pass, key).reach : null);
 }
 
 export interface RoadSurfaces {
@@ -408,7 +419,7 @@ export function* roadSurfaceSteps(
         depends.delete(key);
         continue;
       }
-      const { reach: into, digest: read, colours } = inputs.reachOf(pass.id, key);
+      const { digest: read, colours } = inputs.reachOf(pass.id, key);
       // A paint colour's constants in the keys of the tiles that hold lines of that colour alone.
       const digest = new Digest().add(saltValue).add(key).add(read);
       for (const color of colours) digest.add(paintSalt.get(color) ?? 0);
@@ -424,7 +435,7 @@ export function* roadSurfaceSteps(
       const stored = storedKey(pass.id, key, value);
       const chunk = `${Math.floor(ix / CHUNK)},${Math.floor(iy / CHUNK)}`;
       if (!surfaces && reuse?.stored?.has(stored)) fromStore.push(tiles.length);
-      const tile: PassTile = { key, value, stored, chunk, rect, into, surfaces: surfaces ?? null, bundle: null };
+      const tile: PassTile = { key, value, stored, chunk, rect, surfaces: surfaces ?? null, bundle: null };
       tiles.push(tile);
       changes.set(key, tile);
       affected.add(chunk);
@@ -479,6 +490,8 @@ export function* roadSurfaceSteps(
       for (const array of [edgeData.keys, edgeData.ends, edgeData.xy]) transfer.push(array.buffer as ArrayBuffer);
       return { data: { field, looks: lookList, flush: flush.data, ramps: [...ramps], edges: edgeData }, transfer };
     };
+    /** A tile's rings, read off the inputs as it is built (held round the view: its cells derived again if they were let go); null for a tile the pass no longer has. */
+    const ringsOf = ringsReader(inputs, pass.id);
     /** DO NOT cut, triangulate or read the vertices of a city's tiles on the page: the whole of its roads' build (2026-10-15). */
     const offPage = tiler && elevation.fieldFor ? tiler : null;
     /** The tiles their worker kept in the store (`TileJob.keep`). */
@@ -491,7 +504,7 @@ export function* roadSurfaceSteps(
         const prefix = reuse?.workersKeep;
         const request: TileJob = {
           pass: desc,
-          tiles: batch.map((t) => ({ rect: t.rect, into: polysOf(t.into) })),
+          tiles: batch.map((t) => ({ rect: t.rect, into: polysOf(ringsOf(t.key)!) })),
           dataFor,
           terrainAt,
           // Kept by the workers that make them, with a ceiling of their own on what is not committed: DO NOT post them back to be kept (past the page's ceiling a tile was dropped).
@@ -528,7 +541,7 @@ export function* roadSurfaceSteps(
           const tile = list[k]!;
           const tileAt = performance.now();
           // Made off the page: taken as it is.
-          const bundle = made ? made[k - from]! : reading(() => tileBundle(tile.into, tile.rect, specs));
+          const bundle = made ? made[k - from]! : reading(() => tileBundle(ringsOf(tile.key)!, tile.rect, specs));
           tile.bundle = bundle;
           tile.surfaces = [...bundle.keys()];
           tilesMs += performance.now() - tileAt;
@@ -623,7 +636,7 @@ export function* roadSurfaceSteps(
         const members = group.specs.flatMap((spec, i) => (lists[i]!.length ? [{ spec, list: lists[i]! }] : []));
         let mesh: Mesh | null;
         // DO NOT let the mesh hold its tiles for it: a second copy of every road on the GPU, kept on the CPU
-        const sources = members.map(({ spec, list: tiles }) => surfaceSource(spec, tiles.map((tile) => ({ rect: tile.rect, into: tile.into })), reading));
+        const sources = members.map(({ spec, list: tiles }) => surfaceSource(spec, tiles.map((tile) => ({ rect: tile.rect, key: tile.key })), reading, ringsOf));
         const source = sources.length === 1 ? sources[0]! : (): Tile[] => sources.flatMap((s) => s());
         if (known && sameTiles(known.parts, lists)) {
           mesh = known.mesh;

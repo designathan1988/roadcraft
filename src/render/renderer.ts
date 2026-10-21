@@ -42,7 +42,7 @@ import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind }
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
-import { FLAT_GROUND, GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
+import { FLAT_GROUND, GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, pendingOrder, roadsToRead, type RoadElevation, type SolveScope } from '@world/elevation';
 import { RoadsRead } from './roadsRead';
 import { RoadStations } from './roadStations';
 import { FOOTWAY_RISE, LANE_LINE, sidewalkHalf } from '@world/roadTypes';
@@ -377,6 +377,13 @@ export interface SceneHandle {
 
 /** Roads at grade, and the decks above them, as `surfaceHeightAt` asks them. */
 const SURFACE_SETS: readonly ReadonlySet<RoadStructure>[] = [GROUND_ONLY, new Set<RoadStructure>(['elevated', 'bridge'])];
+
+/** How far past a scoped opening's view its roads are solved (`buildWorld`, `SolveScope`): a tile meeting the view (76.8 m), what a tile reads round it (`SURFACE_READ_REACH`) and a junction or two whose heights reach in. `tests/world/elevationScope.spec.ts` proves every tile of the view reads the whole solve's heights with it, and that half of it does not (the small city, 2026-10-21). */
+const OPENING_SOLVE_MARGIN = m(320);
+/** The roads the opening's solve left, solved a share a frame once the town is shown (`completeSolve`): ~15-20 ms of a frame on level ground (the 16,708 roads of a city of the largest radius: 1.5 roads solved a road taken, ~0.04 ms each, Node, 2026-10-21). */
+const SOLVE_SHARE = 300;
+/** Level ground (a new map's `RELIEF_FLAT`, no stamp): every station's ground is the same, nothing is read under a road (`FLAT_GROUND`). A stroke or a height stamp makes it real ground again. */
+const isLevelLand = (net: Network): boolean => net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
 
 /** A plant's leaf cards (`scenery.ts` `plantMeshes`, `gardens.ts`): `...-trees-<species>-cards`, `...-bushes-<kind>-cards`. */
 const isLeafCards = (mesh: Object3D): boolean => mesh.name.endsWith('-cards');
@@ -1828,6 +1835,42 @@ export function createSceneRenderer(
   };
   /** The roads the next solve reads the ground under, worked out once a state of the network and solve (`roadsRead.ts`): with no solve to start from every road is read whatever the ground, with one the land has not moved (`landStill`), and a moved region is never kept. */
   const roadsRead = new RoadsRead<ReturnType<typeof roadsToRead>>();
+  /** Whether a solve waits for the ground under `roads`, read off the page on the shared ground as it stands (`RoadStations.waiting`). */
+  const stationsAsked = (net: Network, roads: ReturnType<typeof roadsToRead>): boolean =>
+    roadStations.waiting(roads, (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
+  /** The roads a scoped opening's solve left (`SolveScope`), nearest its view first (`order`, made at the first share), and how many are taken. */
+  let solveLeft: { readonly x: number; readonly y: number; order: readonly SegmentId[] | null; at: number } | null = null;
+  /** The network's state the solve standing was made of (`Network.state`). */
+  let solvedState: object | null = null;
+  /**
+   * @rebuild One share of the roads the opening's solve left, solved from the solve standing (`SOLVE_SHARE` a frame, nearest the view
+   * first); true once every road is solved. The heights it moved are told to the diary where they moved, a share's boxes a frame: what
+   * read them there follows. DO NOT solve the rest in one go after the curtain: the whole network's solve in the frame the town is shown.
+   */
+  const completeSolve = (net: Network): boolean => {
+    const partial = elevation;
+    if (!partial?.pending) { solveLeft = null; return true; }
+    // The network moved since the solve standing and its world is not built yet: that build's solve (no scope) takes every road left. DO NOT take a share of it here: the edit's roads would be solved in it, and the build's comparison of the two solves would find none of them moved (`compareSolves`).
+    if (net.state !== solvedState) return false;
+    const left = solveLeft ??= { x: rig.viewport.centre.x, y: rig.viewport.centre.y, order: null, at: 0 };
+    left.order ??= pendingOrder(net, partial.pendingRoads!(), left.x, left.y);
+    const scope: SolveScope = { roads: left.order.slice(left.at, left.at + SOLVE_SHARE) };
+    const groundAt = isLevelLand(net) ? FLAT_GROUND : builtGroundAt;
+    // Off level ground the share's stations are read off the page first, as a world build's (`roadStations.ts`).
+    if (stationsAsked(net, roadsToRead(net, groundAt, partial, null, scope))) return false;
+    const started = performance.now();
+    elevation = buildRoadElevation(net, groundAt, partial, roadStations.current, null, scope);
+    roadStations.used();
+    left.at += SOLVE_SHARE;
+    const moved = elevation.differences?.(partial) ?? null;
+    derived(net, 'elevation', moved ? moved.map((r): ChangeRect => [r.minX, r.minY, r.maxX, r.maxY]) : null, 'road heights solved past the opening', worldCause,
+      { ms: performance.now() - started, detail: `${elevation.pending ?? 0} roads left` });
+    measureHitch('hitch:opening/solve share', started);
+    onAssetsReady();
+    if (elevation.pending) return false;
+    solveLeft = null;
+    return true;
+  };
   /** @rebuild The roads' heights solved again and the world's rebuild started (`worldSteps`). `full`: the whole map, after a scoped opening (`openingFill`). */
   const buildWorld = (net: Network, full = false): void => {
     const started = performance.now();
@@ -1838,6 +1881,10 @@ export function createSceneRenderer(
     openingWithin = opening ? (rect) => rect[0] <= centre.x + openingHalf && rect[2] >= centre.x - openingHalf
       && rect[1] <= centre.y + openingHalf && rect[3] >= centre.y - openingHalf : null;
     const openingRegion = opening ? terrainRegion([centre.x - openingHalf, centre.y - openingHalf, centre.x + openingHalf, centre.y + openingHalf]) : null;
+    // The opening's solve: the roads round its view and a margin (`OPENING_SOLVE_MARGIN`), the rest solved once the town is shown (`completeSolve`). DO NOT solve a large city's whole network before its first frame: no pixel of the opening reads a road past the margin.
+    const reach = openingHalf + OPENING_SOLVE_MARGIN;
+    const solveScope: SolveScope | null = opening ? { region: [centre.x - reach, centre.y - reach, centre.x + reach, centre.y + reach] } : null;
+    if (opening) solveLeft = { x: centre.x, y: centre.y, order: null, at: 0 };
     // The fill after the reveal (`full`): the solve stands and only the road tiles the opening's scope left out are built, in place - DO NOT rebuild every tile of the city and hold the old and the new surfaces at once (the 3.4 GB peak of the metropolis).
     // Over the whole network's extent: DO NOT take one plate's (`TERRAIN_HALF`) - a metropolis spans several, and every street past the middle plate was left unbuilt (the player, 2026-10-20: "não gera vias").
     const fillBlocks = full ? blocksOver(networkExtent(net)) : null;
@@ -1852,15 +1899,14 @@ export function createSceneRenderer(
     const groundMoved = full ? null : (landBlocks && land !== null && land !== 'all' ? [land] : null);
     const from = landStill || groundMoved ? elevation : null;
     // A new map on level ground (`RELIEF_FLAT`, no stamp): every station's ground is the same, and reading it costs most of a large city's solve. A stroke or a height stamp makes it real ground again.
-    const levelLand = net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
+    const levelLand = isLevelLand(net);
     const groundAt = levelLand ? FLAT_GROUND : builtGroundAt;
     // DO NOT read the ground under a tile's hundreds of new roads in this frame: a job reads it off the shared plates, the solve waits for it.
     const solvedAhead = offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision;
     performance.mark('world:stations-start');
-    const stationAsk = roadsRead.of(groundMoved ? null : [net.state, from], () => roadsToRead(net, groundAt, from, groundMoved));
+    const stationAsk = roadsRead.of(groundMoved ? null : [net.state, from, ...(solveScope?.region ?? [])], () => roadsToRead(net, groundAt, from, groundMoved, solveScope));
     performance.mark('world:stations-read');
-    stationsWait = !solvedAhead && roadStations.waiting(stationAsk,
-      (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
+    stationsWait = !solvedAhead && stationsAsked(net, stationAsk);
     performance.mark('world:stations-done');
     if (stationsWait) return;
     landDirty = null;
@@ -1876,8 +1922,9 @@ export function createSceneRenderer(
     elevation = offered && offered.revision === net.revision && offered.terrain === terrainRevision
       ? offered.elevation
       // On land that has not moved, from the last solve
-      : buildRoadElevation(net, groundAt, from, roadStations.current, groundMoved);
+      : buildRoadElevation(net, groundAt, from, roadStations.current, groundMoved, solveScope);
     performance.mark('world:solved');
+    solvedState = net.state;
     roadStations.used();
     measureHitch('hitch:road-edit/elevation', started);
     // Now the ground comes to meet the roads
@@ -2804,7 +2851,7 @@ export function createSceneRenderer(
       performance.mark('frame:pump');
       measureHitch('hitch:draw/Pump', atPump);
       // A building placed, moved or reshaped grades its own site. Level ground (a generated city's new map) moves under nothing: DO NOT follow 29 thousand floors or grade every pad again (3.7 s of the opening's frame).
-      const levelLand = net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
+      const levelLand = isLevelLand(net);
       landShapes();
       if (!levelLand) followFloors(net);
       performance.mark('frame:follow');
@@ -3435,7 +3482,8 @@ export function createSceneRenderer(
       else if (reveal.opened) {
         if (!revealedPrograms) { revealedPrograms = true; programs.afterReveal(); }
         // The rest of a large city's roads and ground, now that its view is shown: built in slices while the game runs (`openingBuild`).
-        if (openingFillPending && worldJob === null) {
+        // The roads' heights past the opening's view first, a share a frame (`completeSolve`): the fill builds on the whole solve.
+        if (openingFillPending && worldJob === null && completeSolve(net)) {
           openingFillPending = false;
           openingBuild = false;
           openingWithin = null;
