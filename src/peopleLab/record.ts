@@ -16,6 +16,8 @@ export interface LabPerson {
   readonly hair?: HairStyle;
   /** The hairstyle reshaped with the sculptor, when `base` is the one worn (`spec.look.hairCut`). */
   readonly sculpt?: HairSculpt;
+  /** Any worn piece reshaped with the sculptor (a garment, shoes, a hat), each by its item name (`sculpt.base`). */
+  readonly sculpts?: readonly HairSculpt[];
 }
 
 export interface LabRoster {
@@ -49,6 +51,7 @@ export function compactPerson(person: LabPerson): LabPerson {
     style,
     ...(person.hair && spec.look.hairCut?.startsWith(PROC_PREFIX) ? { hair: person.hair } : {}),
     ...(person.sculpt && person.sculpt.base === spec.look.hairCut ? { sculpt: person.sculpt } : {}),
+    ...(person.sculpts?.length ? { sculpts: person.sculpts } : {}),
   };
 }
 

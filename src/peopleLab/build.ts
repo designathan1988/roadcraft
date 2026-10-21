@@ -74,6 +74,12 @@ export class LabBuilder {
     return cut.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : loadProxyItem(cut);
   }
 
+  /** Any worn item by name, before its sculpt. */
+  async item(person: LabPerson, name: string): Promise<ProxyItem | null> {
+    if (name === person.spec.look.hairCut) return this.hairItem(person);
+    try { return await loadProxyItem(name); } catch (error) { console.warn('[people-lab] no such item to sculpt', name, error); return null; }
+  }
+
   /** The person's body as the sculptor shows it: shaped and styled, in its bind posture. */
   async sculptBody(person: LabPerson): Promise<SculptBody> {
     const { assets: a, morpher: mo } = await this.setup();
@@ -106,6 +112,11 @@ export class LabBuilder {
     if (cut && worn && sculpt?.base === cut) {
       const n = worn.pack.refs.length / 3;
       proxies.set(cut, { ...worn, pack: sculptedPack(worn.pack, decodeSculpt(sculpt, n)) });
+    }
+    // Every other sculpted piece worn, the same way.
+    for (const piece of person.sculpts ?? []) {
+      const item = proxies.get(piece.base);
+      if (item) proxies.set(piece.base, { ...item, pack: sculptedPack(item.pack, decodeSculpt(piece, item.pack.refs.length / 3)) });
     }
     const sex = spec.body.gender < 0.5 ? 'female' : 'male';
     const input = {

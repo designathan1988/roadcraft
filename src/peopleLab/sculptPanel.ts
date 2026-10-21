@@ -28,9 +28,11 @@ export function sculptPanel(s: HairSculptor, { slider, render, close }: SculptPa
   cancel.onclick = () => close(false);
   const mirror = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: s.mirror }), 'Espelhar nos dois lados');
   mirror.querySelector('input')!.addEventListener('change', (e) => { s.mirror = (e.target as HTMLInputElement).checked; });
+  const step = (label: string, run: () => void): HTMLButtonElement => { const b = el('button', { cls: 'big alt', textContent: label }); b.onclick = run; return b; };
   return [
-    el('h2', { textContent: 'Esculpir cabelo' }),
-    el('div', { cls: 'note', textContent: 'Botão esquerdo esculpe; botão direito gira a vista; roda do mouse aproxima. Shift inverte o pincel. Ctrl+Z desfaz.' }),
+    el('h3', { textContent: 'Peça inteira' }),
+    el('div', { cls: 'pair' }, step('⬇ Mais longa', () => s.lengthen(1.12)), step('⬆ Mais curta', () => s.lengthen(0.9))),
+    el('div', { cls: 'pair' }, step('↔ Mais larga', () => s.loosen(0.08)), step('→← Mais justa', () => s.loosen(-0.06))),
     el('h3', { textContent: 'Pincel' }),
     el('div', { cls: 'grid' }, ...BRUSHES.map(([b, glyph, label]) => {
       const t = el('button', { cls: `tile${s.brush === b ? ' on' : ''}` }, el('span', { cls: 'glyph', textContent: glyph }), label);

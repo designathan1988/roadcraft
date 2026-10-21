@@ -29,7 +29,9 @@ export interface PanelContext {
   setShowAll(v: boolean): void;
   act(activity: string | undefined, pose: PoseName, clip: LibraryClipName): void;
   render(): void;
-  openSculptor(): void;
+  openSculptor(item?: string): void;
+  /** Takes a piece's sculpt off. */
+  dropPiece(item: string): void;
   dropSculpt(): void;
   fitFace(): void;
   extraOf(kinds: readonly WardrobeItem['kind'][]): string;
@@ -69,6 +71,17 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
   };
   const sliderLabel = new Map(FACE.flatMap(([, , sliders]) => sliders.map(([k, label]) => [k, label] as const)));
   const featureSlider = (k: string, label = sliderLabel.get(k) ?? k): HTMLElement => slider(label, -1, 1, 0.01, p().spec.features[k] ?? 0, (v) => c.setFeature(k, v));
+  /** A worn piece's sculpt buttons: open the sculptor on it, or take its sculpt off. */
+  const carvePiece = (item: string | undefined, label: string): HTMLElement[] => {
+    if (!item || item === 'none') return [];
+    const carve = el('button', { cls: 'big alt', textContent: label });
+    carve.onclick = () => c.openSculptor(item);
+    const sculpted = p().sculpts?.some((x) => x.base === item);
+    if (!sculpted) return [carve];
+    const drop = el('button', { cls: 'big alt', textContent: 'Desfazer escultura' });
+    drop.onclick = () => c.dropPiece(item);
+    return [el('div', { cls: 'pair' }, carve, drop)];
+  };
   const nameOf = (n: string): string => n.replace(/^(female|male)_/, '').replace(/^[a-z0-9]+_(?=[a-z])/i, '').replace(/_/g, ' ').slice(0, 18);
 
   return {
@@ -201,8 +214,10 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
         pics(outfits.map((n) => ({ id: n, label: nameOf(n), variant: withLook({ outfit: n }) })), l.outfit, (id) => c.setLook({ outfit: id }), 'body'),
         el('h3', { textContent: 'Cor' }),
         swatches(CLOTH, l.outfitTint ?? -1, (col) => c.setLook({ outfitTint: col })),
+        ...carvePiece(l.outfit, '✋ Esculpir a roupa'),
         el('h3', { textContent: 'Sapatos' }),
         pics(SHOES_CATALOGUE[sex].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ footwear: n }) })), l.footwear, (id) => c.setLook({ footwear: id }), 'feet'),
+        ...carvePiece(l.footwear, '✋ Esculpir os sapatos'),
         el('h3', { textContent: 'Óculos' }),
         pics(['none', ...itemsOf('glasses', { street: true, sex })].map((n) => ({ id: n, label: n === 'none' ? 'Sem' : nameOf(n),
           variant: withLook({ extras: n === 'none' ? [] : [n] }) })),

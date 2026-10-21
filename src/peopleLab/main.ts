@@ -161,7 +161,7 @@ function startLab(): void {
     const head = new Vector3(0, height * 0.92, 0);
     built?.scene.traverse((o) => { if (o.name === 'head' || o.name === 'Bip01_Head') o.getWorldPosition(head); });
     const target = which === 'face' ? head.clone().add(new Vector3(0, 0.06, 0)) : new Vector3(0, height * 0.52, 0);
-    const dist = which === 'face' ? (sculptor ? 1.7 : 1.15) : height * 2.3;
+    const dist = which === 'face' ? (sculptor ? 1.25 : 1.15) : height * 2.3;
     const dir = camera.position.clone().sub(controls.target);
     if (dir.lengthSq() < 1e-6 || instant) dir.set(0.35, 0.12, 1);
     camera.position.copy(target).add(dir.normalize().multiplyScalar(dist));
@@ -239,7 +239,7 @@ function startLab(): void {
       const spec = person.spec;
       const nextShaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
       if (nextShaper) next.meshes[0]!.geometry.setAttribute('labRegion', new BufferAttribute(nextShaper.regionAttribute(), 1));
-      const skin = await dressPerson(next, effective(person).spec, layers, paintedSkins);
+      const skin = await dressPerson(next, effective(person).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit));
       for (const m of next.meshes) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) if (m.geometry.hasAttribute('labRegion')) regionGlow(mat as MeshStandardMaterial, glow);
       if (mine !== generation) { releaseSkinAppearance(skin); dispose(next.scene); return; }
       if (appearance) releaseSkinAppearance(appearance);
@@ -318,7 +318,8 @@ function startLab(): void {
     setMood: (v) => { person = { ...person, spec: { ...person.spec, mood: v } }; },
     setShowAll: (v) => { showAll = v; render(); },
     act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
-    render, openSculptor: () => { void openSculptor(); }, fitFace: () => { void fitFace(); },
+    render, openSculptor: (item) => { void openSculptor(item); }, fitFace: () => { void fitFace(); },
+    dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
     setSex: (v) => {
@@ -462,26 +463,35 @@ function startLab(): void {
 
   // ---------------------------------------------------------------- the hair sculptor
 
-  async function openSculptor(): Promise<void> {
-    const cut = person.spec.look.hairCut;
-    const item = await builder.hairItem(person);
-    if (!item || !cut) { say('Escolha um cabelo primeiro'); return; }
+  /** The item the sculptor has open: the hair, or any worn piece by name. */
+  let sculpting = '';
+  async function openSculptor(name = person.spec.look.hairCut ?? ''): Promise<void> {
+    const cut = name;
+    const item = cut && cut !== 'none' ? await builder.item(person, cut) : null;
+    if (!item) { say('Escolha uma peça primeiro'); return; }
     const body = await builder.sculptBody(person);
     const n = item.pack.refs.length / 3;
-    const start = person.sculpt?.base === cut ? decodeSculpt(person.sculpt, n) : null;
-    sculptor = new HairSculptor(item.pack, body, start, person.spec.look.hair, person.spec.look.skin);
+    const hair = cut === person.spec.look.hairCut;
+    const prior = hair ? (person.sculpt?.base === cut ? person.sculpt : undefined) : person.sculpts?.find((x) => x.base === cut);
+    const start = prior ? decodeSculpt(prior, n) : null;
+    sculpting = cut;
+    sculptor = new HairSculptor(item.pack, body, start, hair ? person.spec.look.hair : (person.spec.look.outfitTint ?? 0x8a96a3), person.spec.look.skin, item.texture);
     scene.add(sculptor.group);
     if (built) built.scene.visible = false;
     // The left button sculpts, never turns the view: the right one turns it, the wheel zooms.
     controls.mouseButtons = { LEFT: null, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
-    frame('face');
+    frame(hair ? 'face' : 'body');
     render();
   }
 
   function closeSculptor(keep: boolean): void {
     const s = sculptor;
     if (!s) return;
-    if (keep) person = { ...person, sculpt: encodeSculpt(person.spec.look.hairCut!, s.delta()) };
+    if (keep) {
+      const piece = encodeSculpt(sculpting, s.delta());
+      person = sculpting === person.spec.look.hairCut ? { ...person, sculpt: piece }
+        : { ...person, sculpts: [...(person.sculpts ?? []).filter((x) => x.base !== sculpting), piece] };
+    }
     scene.remove(s.group);
     s.dispose();
     sculptor = null;

@@ -8,8 +8,8 @@ import { PROC_PREFIX } from './record';
 /** A BUILT PERSON DRESSED AS THE LAB DRAWS THEM: the lab's finish (`polish.ts`), then the game's textures (skin, irises, fabrics, `skinAppearance.ts`) with the lab's changes */
 
 /** `painted`: painted skins by their source texture, kept by the caller (each made once). */
-export async function dressPerson(person: BuiltPerson, spec: PersonSpec, layers: PersonLayers, painted: WeakMap<Texture, Texture>): Promise<SkinAppearance> {
-  polishPerson(person.meshes, spec.look);
+export async function dressPerson(person: BuiltPerson, spec: PersonSpec, layers: PersonLayers, painted: WeakMap<Texture, Texture>, sculpted = false): Promise<SkinAppearance> {
+  polishPerson(person.meshes, spec.look, sculpted);
   // A grown hairstyle is no catalogue file: its card texture is not loaded (the lab draws hair solid anyway).
   const skin = await loadSkinAppearance(spec.look.hairCut?.startsWith(PROC_PREFIX) ? { ...spec, look: { ...spec.look, hairCut: 'none' } } : spec);
   let soft = painted.get(skin.texture);
