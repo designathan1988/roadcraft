@@ -38,7 +38,7 @@ export const FEMININE: FaceMeasure = { eyeLine: 0.5, thirds: 0.9, eyeGap: 1, nos
 /** A woman's features the canon does not measure: a narrow, gracile jaw and chin with a soft point, cheekbones ahead of the brow ridge,
  *  a rounder face, a fuller lower lip with its corners lifted, a slimmer neck. Each is applied at full strength on the most feminine body. */
 const FEMININE_FEATURES: Readonly<Record<string, number>> = {
-  'chin-width-decr-incr': -0.5, 'chin-bones-decr-incr': -0.45, 'chin-prominent-decr-incr': -0.25, 'chin-triangle': 0.3,
+  'chin-width-decr-incr': -0.3, 'chin-triangle': 0.2,
   'cheek-bones-decr-incr': 0.3, 'head-invertedtriangular': 0.35,
   // Brows set high and arched over an upright forehead: a low, flat brow over a sloping forehead reads as a caveman's.
   'eyebrows-trans-down-up': 0.35, 'eyebrows-angle-down-up': 0.25, 'forehead-trans-backward-forward': 0.15,
@@ -67,6 +67,7 @@ export function withFeminine(features: Readonly<Record<string, number>>, gender:
  *  the eye line 0.54..0.50 by the eyes' height, 0.51..0.59 by the forehead's; the thirds 0.88..0.68 by the nose's length, 0.65..0.96 by the chin's). */
 const SOLVE: readonly (readonly [keyof FaceMeasure, readonly string[]])[] = [
   ['eyeSize', ['eye-scale-decr-incr']],
+  ['jaw', ['chin-bones-decr-incr', 'head-fat-decr-incr']],
   ['eyeLine', ['eye-trans-down-up', 'forehead-scale-vert-decr-incr']],
   ['thirds', ['nose-scale-vert-decr-incr', 'chin-height-decr-incr']],
   ['eyeGap', ['eye-trans-in-out']],
@@ -200,4 +201,64 @@ export class FaceProportions {
     }
     return { ...spec, features };
   }
+}
+
+/** The body's proportions, measured on the shaped mesh as drawn (the lab's style applied), against the anthropometric and figure-drawing canons:
+ *  ~7.5 heads tall; a woman's shoulders ~1.15 times her hips, a man's ~1.35; the neck ~0.6 of the head's width in a woman, ~0.75 in a man
+ *  (neck circumference over pi against head breadth: 293.5/154 mm in women, 350/158 in men). */
+export interface BodyMeasure { readonly heads: number; readonly shoulders: number; readonly neck: number }
+
+/** Heads tall as a stylized game figure is drawn (The Sims' adults ~6-6.5; a real adult's 7.5 left the head small and plain, 2026-10-21). */
+export const BODY_CANON = { female: { heads: 6.3, shoulders: 1.15, neck: 0.6 }, male: { heads: 6.5, shoulders: 1.35, neck: 0.75 } } as const;
+
+export function measureBody(assets: PeopleAssets, p: Float32Array): BodyMeasure {
+  const m = assets.mesh;
+  const y = (v: number): number => p[v * 3 + 1]!, x = (v: number): number => p[v * 3]!;
+  const centre = (group: string): number => {
+    let s = 0, c = 0;
+    for (const [a, b] of m.vertexGroups[group] ?? []) for (let v = a; v <= b; v++) { s += y(v); c++; }
+    return c ? s / c : 0;
+  };
+  const bones = m.boneNames;
+  const main = (v: number): string => {
+    let best = 0, bone = 0;
+    for (let k = 0; k < 4; k++) if (m.weights[v * 4 + k]! > best) { best = m.weights[v * 4 + k]!; bone = m.joints[v * 4 + k]!; }
+    return bones[bone] ?? '';
+  };
+  // The skin only (no helpers, eyes or teeth): the body's own vertex range.
+  const skin: number[] = [];
+  for (const [a, b] of assets.bodyRange) for (let v = a; v <= b; v++) skin.push(v);
+  let top = -Infinity, bottom = Infinity;
+  for (const v of skin) { top = Math.max(top, y(v)); bottom = Math.min(bottom, y(v)); }
+  const width = (h: number, band: number, ok: (bone: string) => boolean): number => {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of skin) if (Math.abs(y(v) - h) < band && ok(main(v))) { lo = Math.min(lo, x(v)); hi = Math.max(hi, x(v)); }
+    return hi - lo;
+  };
+  // The chin: the head's lowest skin point near the middle line.
+  let chin = Infinity;
+  for (const v of skin) if (main(v) === 'head' && Math.abs(x(v)) < 0.15) chin = Math.min(chin, y(v));
+  const head = top - chin;
+  const shoulderY = (centre('joint-l-shoulder') + centre('joint-r-shoulder')) / 2;
+  const hipY = (centre('joint-l-upper-leg') + centre('joint-r-upper-leg')) / 2;
+  const notHand = (b: string): boolean => !/hand|thumb|index|middle|ring|pinky|lowerarm/.test(b);
+  const neckY = centre('joint-neck');
+  return {
+    heads: (top - bottom) / head,
+    // Across the deltoids, and the hips' widest at the hip joints (the hands hanging there left out).
+    shoulders: width(shoulderY - 0.35, 0.25, notHand) / width(hipY - 0.4, 0.4, notHand),
+    neck: width(neckY + 0.25, 0.08, (b) => b.startsWith('neck')) / width(chin + head * 0.62, 0.08, (b) => b === 'head'),
+  };
+}
+
+/** The secant method on one value: `f(x) = 0` within `lo..hi`, from `x0`. */
+export function solve(f: (x: number) => number, x0: number, lo: number, hi: number): number {
+  let a = x0, b = Math.min(hi, x0 + (hi - lo) * 0.1);
+  if (b === a) b = Math.max(lo, x0 - (hi - lo) * 0.1);
+  let fa = f(a), fb = f(b);
+  for (let i = 0; i < 8 && Math.abs(fb) > 1e-3 && Math.abs(fb - fa) > 1e-7; i++) {
+    const c = Math.max(lo, Math.min(hi, b - fb * (b - a) / (fb - fa)));
+    a = b; fa = fb; b = c; fb = f(c);
+  }
+  return Math.abs(fb) < Math.abs(fa) ? b : a;
 }

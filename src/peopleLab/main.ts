@@ -16,6 +16,9 @@ import { LabBuilder, type BuiltPerson } from './build';
 import { Poser, type PoseName } from './pose';
 import { BODIES, variedFace, FACES, LOOKS, PARTS, currentPreset, withBody, withFace, withPart } from './presets';
 import { HandShaper, addDragMorphs, type Region } from './direct';
+import { measureBody } from './proportions';
+import { fitBody } from './bodyFit';
+import { sharpEyes } from './polish';
 import { evenHairSheen, paintedSkin, polishPerson } from './polish';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
 import { sculptPanel } from './sculptPanel';
@@ -96,7 +99,8 @@ function startLab(): void {
   app.append(rail, panel, stage, side);
 
   const renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+  // Drawn at twice the screen's pixels at least (supersampled): eyes and brows read sharp on a 1x screen.
+  renderer.setPixelRatio(Math.min(3, Math.max(2, devicePixelRatio)));
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -226,6 +230,7 @@ function startLab(): void {
           material.metalness = 0;
           applySkinAppearance(material, m.geometry, skin, layers);
           evenHairSheen(material);
+          sharpEyes(material, skin.eyeTexture);
           return material;
         });
         m.material = Array.isArray(m.material) ? materials : materials[0]!;
@@ -587,8 +592,8 @@ function startLab(): void {
     renderGallery();
     say(`${saved.spec.name} salva (${savedBytes(saved)} bytes)`);
   };
-  fresh.onclick = () => { person = freshPerson(1); render(); rebuild(0); renderGallery(); };
-  dice.onclick = () => { const keepName = person.spec.name; person = freshPerson(Math.floor(Math.random() * 1e6)); person = { ...person, spec: { ...person.spec, name: keepName } }; render(); rebuild(0); };
+  fresh.onclick = () => { person = freshPerson(1); render(); void fitFace(); renderGallery(); };
+  dice.onclick = () => { const keepName = person.spec.name; person = freshPerson(Math.floor(Math.random() * 1e6)); person = { ...person, spec: { ...person.spec, name: keepName } }; render(); void fitFace(); };
   exportBtn.onclick = () => {
     const blob = new Blob([JSON.stringify(rosterOf(roster), null, 1)], { type: 'application/json' });
     const a = el('a', { href: URL.createObjectURL(blob), download: 'roadcraft-people.json' });
@@ -610,9 +615,9 @@ function startLab(): void {
   };
 
   /** The face set to the classical proportions (`proportions.ts`), the person's own look kept. */
+  /** The body set to the measured canon (`bodyFit.ts`); the face stays the approved one. */
   async function fitFace(): Promise<void> {
-    const faces = await builder.proportions();
-    person = { ...person, spec: faces.fit(person.spec) };
+    person = await fitBody(person, builder);
     render();
     rebuild(0);
   }
@@ -774,11 +779,11 @@ function startLab(): void {
   resize();
   render();
   renderGallery();
-  rebuild(0);
+  void fitFace();
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
   (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, setHair, setStyle, frame, get built() { return built; },
-    pick(tabId: string) { tab = tabId; render(); }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
+    pick(tabId: string) { tab = tabId; render(); }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async body() { return measureBody((await builder.setup()).assets, await builder.shape(person)); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
     closeUp(dist = 0.5, x = 0) {
       const head = new Vector3();
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });

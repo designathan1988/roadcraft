@@ -203,3 +203,17 @@ export function evenHairSheen(material: MeshStandardMaterial): void {
   };
   material.customProgramCacheKey = () => `${key}-lab-even-sheen`;
 }
+
+/** The eyes from their own full-size texture: the game draws them from a 256 px layer of its shared arrays (`skinAppearance.ts` SMALL_LAYER), a blur up close. */
+export function sharpEyes(material: MeshStandardMaterial, eye: Texture): void {
+  const before = material.onBeforeCompile;
+  const key = material.customProgramCacheKey();
+  eye.anisotropy = 8;
+  material.onBeforeCompile = (shader, renderer) => {
+    before.call(material, shader, renderer);
+    shader.uniforms['labEye'] = { value: eye };
+    shader.fragmentShader = `uniform sampler2D labEye;\n${shader.fragmentShader}`
+      .replace('vec4 eyeTexel = personLayer(personEye.x, personEye.y, vSkinUv);', 'vec4 eyeTexel = texture2D(labEye, vSkinUv);');
+  };
+  material.customProgramCacheKey = () => `${key}-lab-sharp-eyes`;
+}
