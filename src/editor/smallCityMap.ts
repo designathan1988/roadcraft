@@ -27,6 +27,8 @@ export function buildLargeCityMap(seed: number): SerializedDoc {
 /** A planned city laid out as one map: its footways, lots, green and zones, and every lot grown, on the flat ground of a new map. The size is the plan's (`cityGen/plan.ts`): the probes' larger cities test the renderer's scale. */
 export function buildCityMap(city: CityPlan): SerializedDoc {
   const doc = layCity(city);
+  // The city is written out and this document thrown away: its buildings are interned where they are read (`prepareCity` settles every one again before its table, the page reads the table). DO NOT share them here as well: the grown buildings were interned twice, 1.6 s of the large city's 9.5 s generation spent in `intern` (profile, 2026-10-21).
+  doc.buildings.internShared = false;
   widenCityFootways(doc);
   const net = new Network(doc);
   net.rebuild();
