@@ -409,6 +409,8 @@ function hostFor(service: JobService, crosses: boolean): Host | null {
     if (warm) return host;
     cold ??= host;
   }
+  // A long-running job fit to cross (the city's generation) to a job process first: DO NOT hold a page worker for seconds with it while one stands idle there (the building cells queue on the page's).
+  if (crosses && system.makeWorker && LONG_RUNNING.includes(service)) { const away = idleLong && !idleLong.inPage ? idleLong : growSpareLong(); if (away) return away; }
   return grow(false) ?? cold ?? idleLong ?? (system.makeWorker ? (crosses ? growSpareLong() : null) : grow(true)) ?? warmBusy ?? coldBusy;
 }
 

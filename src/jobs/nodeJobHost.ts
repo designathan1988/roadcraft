@@ -1,5 +1,5 @@
 import { parentPort } from 'node:worker_threads';
-import { isForgetKept, restoreKept } from './processWorker';
+import { isForgetKept, restoreKept, unshared } from './processWorker';
 
 /** A JOB WORKER AS A THREAD OF THE DESKTOP'S JOB PROCESS (`desktop/jobs.cjs`): the page's `job.worker.ts` as it is, its `self` the thread's port (Node `worker_threads` parentPort), built for Node (`scripts/vite/desktop-jobs.config.ts`) */
 
@@ -27,8 +27,9 @@ class ThreadSelf {
     if (next) for (const event of this.early.splice(0)) next(event);
   }
 
+  /** DO NOT post shared memory to the page: the shell's port carries none (a thread's SharedArrayBuffer is its process's, HTML "StructuredSerialize"), the city's table (`recordTable.ts` allocate, shared where `crossOriginIsolated` is not false - never said in Node) went with every city made here. A copy of it, as the page sends its own (`unshared`). */
   postMessage(message: unknown, transfer: Transferable[] = []): void {
-    this.port.postMessage(message, transfer as never);
+    this.port.postMessage(unshared(message), transfer.filter((t) => !(t instanceof SharedArrayBuffer)) as never);
   }
 }
 

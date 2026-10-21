@@ -2018,7 +2018,8 @@ async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
 /** A city's reply as the page opens it. */
 function openedOf(reply: CityGenReply): OpenedCity {
   if (!reply.data) throw new Error(reply.error ?? 'the city was not made');
-  return reply.buildings ? preparedCity(reply.data, reply.buildings) : { data: reply.data, prepared: false };
+  // Made in a job process (the desktop's), its table came as a plain copy: back in shared memory, as the page's workers read it (`tableIn`).
+  return reply.buildings ? preparedCity(reply.data, reply.buildings instanceof ArrayBuffer ? tableIn(reply.buildings) : reply.buildings) : { data: reply.data, prepared: false };
 }
 
 /** The city's worker asked for a city (`priority`: the queue's, 0 first), its answer kept under `key` for the next opening of this seed. */
@@ -2026,6 +2027,8 @@ function cityJob(ask: CityGenAsk, key: string | null, priority: number): Promise
   return new Promise((done, fail) => {
     submitJob({
       service: 'cityGen', key: priority === 0 ? 'cityGen' : `cityGen:ahead:${key}`, priority,
+      // Its message is the ask alone: fit for the desktop's job processes (`jobPool.ts` hostFor). DO NOT keep it to the page's two short workers: the boot's city grew there 12 s behind the building cells, and the next city made ahead took the worker the cells queue on (2026-10-21).
+      crosses: true,
       write: () => ({ data: ask, transfer: [] }),
       done: (answer) => {
         const reply = answer as CityGenReply;
