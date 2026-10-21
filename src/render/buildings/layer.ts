@@ -1,4 +1,4 @@
-import { Box3, Frustum, Group, type Object3D } from 'three';
+import { Box3, type Camera, Frustum, Group, InstancedMesh, type Mesh, type Object3D } from 'three';
 import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
@@ -45,6 +45,39 @@ export const playerCause = (cause: string): boolean => cause.startsWith('tool ')
  *  grow the memory for ever. The player's panel sets another value; -1 is this one. */
 export const GAME_DETAIL_MEMORY_MB = 768;
 
+/** SHADOW CASTERS BY THEIR SIZE IN THE CASCADE (Unreal's r.Shadow.RadiusThreshold, 0.03 at its epic scalability to 0.06 at low: a caster
+ *  whose bounding radius is under that share of the shadow's extent casts nothing; the Cities: Skylines II autopsy found 72 % of the draws
+ *  were shadows of props at any size and distance). Past the first cascade a part casts only where its widest piece spans this share of
+ *  the cascade's half side: the far cascades take the buildings by their walls and masses, never by their balconies and sills. */
+const CAST_RADIUS_SHARE = 0.03;
+
+/** A world box (three's axes) as the plan's (x, y, height) to the occlusion's test. */
+type PlanTest = (x0: number, y0: number, x1: number, y1: number, z0: number, z1: number) => boolean;
+const planHidden = (hidden: PlanTest, box: Box3): boolean =>
+  !box.isEmpty() && hidden(box.min.x, -box.max.z, box.max.x, -box.min.z, box.min.y, box.max.y);
+
+/** A group's box in the world from its meshes' own boxes (an instanced part's, a mesh's geometry's put in place), kept while its children
+ *  are the same; null where one has none to read (its arrays let go on the GPU: never computed here), and such a group is never hidden. */
+function groupBoxReader(): (group: Object3D) => Box3 | null {
+  const boxes = new WeakMap<Object3D, { readonly children: number; readonly box: Box3 | null }>();
+  const scratch = new Box3();
+  return (group) => {
+    const known = boxes.get(group);
+    if (known && known.children === group.children.length) return known.box;
+    let box: Box3 | null = new Box3();
+    group.traverse((o) => {
+      if (box === null) return;
+      const mesh = o as Mesh;
+      if (!mesh.isMesh) return;
+      const own = mesh instanceof InstancedMesh ? mesh.boundingBox : mesh.geometry.boundingBox;
+      if (own === null) { box = null; return; }
+      box.union(scratch.copy(own).applyMatrix4(mesh.matrixWorld));
+    });
+    boxes.set(group, { children: group.children.length, box });
+    return box;
+  };
+}
+
 export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   const kit: BuildingKit = createBuildingKit(anisotropy);
   const group = new Group();
@@ -89,6 +122,16 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   let shadowCoarse = false;
   const shadowHidden = new Map<Object3D, boolean>();
   let ruined: ReadonlySet<number> = new Set();
+  /** What the occlusion hid from this frame's colour pass (`hideOccluded`): shown for the shadow passes inside it, shown again after it. */
+  const occluded: Object3D[] = [];
+  const groupBox = groupBoxReader();
+  /** A mass shown hidden from the colour pass where its box (in the world, `massCells.ts` cellMesh) is behind the walls. */
+  const hideMass = (o: Object3D, hidden: PlanTest): void => {
+    const mesh = o as Mesh;
+    if (!mesh.isMesh || !mesh.visible) return;
+    const box = mesh.geometry.boundingBox;
+    if (box && planHidden(hidden, box)) occluded.push(mesh);
+  };
   /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
   let ruinedSerial = 0;
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
@@ -967,7 +1010,9 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
         }
       }
     },
-    castInto(texel, coarse = false) {
+    castInto(texel, coarse = false, half = 0) {
+      // Past the first cascade, a part narrower than `CAST_RADIUS_SHARE` of the cascade casts nothing (its texel test alone let a sill cast into a cascade of kilometres).
+      const partTexel = texel === null ? null : Math.max(texel, CAST_RADIUS_SHARE * half);
       // DO NOT draw hundreds of detail meshes into a far cascade: a cell's masses are its silhouette at those texels, one mesh. Only the cells whose masses stand in: the detail of any other (none landed yet, a town drawn whole) still casts, never a hole.
       if (texel === null || !coarse) {
         farParts.castShadow(true);
@@ -978,10 +1023,12 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
           shadowHidden.clear();
           massCells.shadowMasses(false);
         }
-        if (texel === null) return;
-        for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(texel);
+        if (partTexel === null) return;
+        for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(partTexel);
         return;
       }
+      // The parts of the cells whose masses cannot stand in (their detail still casts): by their size in this cascade, as above.
+      for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(partTexel!);
       if (shadowCoarse) return;
       shadowCoarse = true;
       farParts.castShadow(false);
@@ -993,6 +1040,35 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
           group.visible = false;
         }
       }
+    },
+    occluderCell(i, j) {
+      // The town not drawn as the document says: no wall hides anything.
+      if (hiddenNow || eye === null || cutaway !== null || dimmed !== undefined || ruined.size > 0 || bridges.size > 0 || (preview?.hides ?? null) !== null) return false;
+      const key = `${i},${j}`;
+      // Drawn at its own detail and current: its level landed for the buildings it holds now (a cell whose buildings changed is pending until it is).
+      return levelShown(key) !== null && !pendingCells.has(key);
+    },
+    hideOccluded(camera: Camera, hidden) {
+      this.restoreOccluded();
+      // The masses shown (far cells, tiles, plates): their boxes are in the world (`massCells.ts` cellMesh).
+      // The cells' meshes, and the tiles' and plates' in their own group beside them.
+      for (const child of massCells.group.children) {
+        if (child instanceof Group) { if (child.visible) for (const level of child.children) hideMass(level, hidden); } else hideMass(child, hidden);
+      }
+      // Each cell's detail and facade level, and their parts.
+      for (const cache of [cells, facades]) for (const { part } of cache.values()) if (part.group.visible) { const box = groupBox(part.group); if (box && planHidden(hidden, box)) occluded.push(part.group); }
+      for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible && planHidden(hidden, cell.bounds)) occluded.push(cell.group);
+      for (const o of occluded) o.visible = false;
+      // The walls in the multi-draw batches: by instance, for this camera alone (`GpuBatchedMesh.colourHidden`).
+      return occluded.length + shellBatch.hideOccluded(camera, (box) => planHidden(hidden, box));
+    },
+    revealOccluded(on) {
+      for (const o of occluded) o.visible = on;
+    },
+    restoreOccluded() {
+      for (const o of occluded) o.visible = true;
+      occluded.length = 0;
+      shellBatch.restoreOccluded();
     },
     setCutaway(next) {
       cutaway = next;

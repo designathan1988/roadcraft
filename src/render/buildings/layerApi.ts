@@ -4,7 +4,7 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingChunk } from './buildingMesh';
 import type { FrameScale } from './frameBudget';
 import type { BuildingKit } from './kit';
-import type { Frustum, Group, Object3D } from 'three';
+import type { Camera, Frustum, Group, Object3D } from 'three';
 
 /** DO NOT put the detail of every cell together again, and DO NOT hold a far cell's detail for a while */
 export interface BuildingPreviewInput {
@@ -40,8 +40,17 @@ export interface BuildingLayer {
   setNight(dark: number, hour?: number): void;
   /** The parts of each cell drawn in detail, each kind at the coarsest level whose error is under a pixel, none under a pixel, its shadow only over `shadowTexel` (m; Infinity without shadows) */
   cullDetails(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, shadowTexel: number): void;
-  /** Before a sun cascade is drawn: the parts shown cast into it only where wider than its texel, m (`sunCascades.ts` `setCasters`); `coarse` (a far cascade): every cell in detail casts by its masses, its detail, facade level and parts left out of the pass. null: the passes are done, all drawn as it was. */
-  castInto(texel: number | null, coarse?: boolean): void;
+  /** Before a sun cascade is drawn: the parts shown cast into it only where wider than its texel, m (`sunCascades.ts` `setCasters`); `coarse` (a far cascade): every cell in detail casts by its masses, its detail, facade level and parts left out of the pass. null: the passes are done, all drawn as it was.
+   *  `half`: the cascade's half side, m (0 for the first cascade): a part casts only where it spans `CAST_RADIUS_SHARE` of it (Unreal's r.Shadow.RadiusThreshold). */
+  castInto(texel: number | null, coarse?: boolean, half?: number): void;
+  /** Whether the walls of the buildings filed in cell (i, j) (`BATCH_CELL`) may hide what stands behind them (`render/occlusion.ts`): the cell drawn in its own detail as the document stands now. False for every cell while the town is not drawn as the document says (the curtain, a preview standing for a building, a cut-open view, "Ocultar outros", ruins, a building drawn on its own until its cell lands). */
+  occluderCell(i: number, j: number): boolean;
+  /** The colour pass about to be drawn from `camera`: every per-cell object `hidden` says is behind the walls laid (a plan box x0..x1, y0..y1, height z0..z1) hidden for it alone; how many were. */
+  hideOccluded(camera: Camera, hidden: (x0: number, y0: number, x1: number, y1: number, z0: number, z1: number) => boolean): number;
+  /** A shadow pass drawn inside the colour pass: what `hideOccluded` hid shown for it (true), hidden again after (false). A shadow never loses a caster to the occlusion. */
+  revealOccluded(on: boolean): void;
+  /** The colour pass drawn: everything `hideOccluded` hid shown again. */
+  restoreOccluded(): void;
   /** Each cell of buildings drawn near (in detail) or far (its buildings' masses, `massCells.ts`) by the error on the screen */
   levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number, view?: Frustum | null): void;
   /** The most the cells' detail may hold on the GPU, bytes: past it the cells drawn far go first (their masses stand for them). */

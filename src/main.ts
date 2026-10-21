@@ -3977,6 +3977,8 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   compare: (options?: Parameters<SceneHandle['compare']>[0]) => scene.compare(options),
   /** What the WebGPU renderer left out of its frames so far, by reason. */
   webgpuLeftOut: () => scene.webgpuLeftOut(),
+  /** The buildings' occlusion culling (`render/occlusion.ts`): `enabled` switches it, `stats` the last frame's walls laid, boxes hidden and ms. */
+  occlusion: scene.occlusion,
   doc,
   net,
   sim,

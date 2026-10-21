@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Group, type InterleavedBufferAttribute, type Material, Matrix4, type Mesh } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, type Camera, Group, type InterleavedBufferAttribute, type Material, Matrix4, type Mesh } from 'three';
 
 import { SHELL_MESH } from './cellArrays';
 import type { BuildingKit } from './kit';
@@ -38,6 +38,8 @@ export class ShellBatch {
   private batches: Batch[];
   private readonly cells = new Map<string, { batch: Batch; id: number; geometryId: number }[]>();
   private readonly visible = new Map<string, boolean>();
+  /** Each cell's shells' box in the world (their vertices are world vertices): what the occlusion tests (`hideOccluded`). */
+  private readonly boxes = new Map<string, Box3>();
   private faded = false;
   private casting = true;
 
@@ -55,6 +57,7 @@ export class ShellBatch {
   add(kind: 'cell' | 'facade', key: string, batch: BuildingMeshes): void {
     const id = `${kind}|${key}`;
     const made: { batch: Batch; id: number; geometryId: number }[] = [];
+    const box = new Box3();
     for (const child of [...batch.group.children]) {
       const mesh = child as Mesh;
       if (!mesh.isMesh || mesh.name !== SHELL_MESH) continue;
@@ -75,6 +78,8 @@ export class ShellBatch {
       const geometry = worldGeometry(mesh);
       const vertices = geometry.getAttribute('position').count;
       const indices = geometry.getIndex()?.count ?? vertices;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      box.union(geometry.boundingBox!);
       this.ensure(target, vertices, indices);
       const geometryId = target.mesh.addGeometry(geometry);
       const instanceId = target.mesh.addInstance(geometryId);
@@ -86,7 +91,7 @@ export class ShellBatch {
       source.dispose();
       if (geometry !== source) geometry.dispose();
     }
-    if (made.length) this.cells.set(id, made);
+    if (made.length) { this.cells.set(id, made); this.boxes.set(id, box); }
   }
 
   /** A cell's shells taken out: its geometries (and their instances) deleted from their batch. */
@@ -96,6 +101,7 @@ export class ShellBatch {
     if (!made) return;
     this.cells.delete(id);
     this.visible.delete(id);
+    this.boxes.delete(id);
     for (const entry of made) { entry.batch.mesh.deleteGeometry(entry.geometryId); castChanged(entry.batch.mesh); }
     for (const batch of new Set(made.map((entry) => entry.batch))) this.squeeze(batch);
   }
@@ -121,6 +127,26 @@ export class ShellBatch {
     for (const entry of this.cells.get(id) ?? []) { entry.batch.mesh.setVisibleAt(entry.id, visible); castChanged(entry.batch.mesh); }
   }
 
+  /** The colour pass about to be drawn from `camera`: the shells of every cell shown whose box `hidden` says is behind the walls laid
+   *  (`render/occlusion.ts`) left out of its draws alone, the shadows' draws untouched (`GpuBatchedMesh.colourHidden`); how many cells. */
+  hideOccluded(camera: Camera, hidden: (box: Box3) => boolean): number {
+    for (const batch of this.batches) batch.mesh.colourHidden = { camera, ids: [] };
+    let n = 0;
+    for (const [id, made] of this.cells) {
+      if (this.visible.get(id) === false) continue;
+      const box = this.boxes.get(id);
+      if (!box || !hidden(box)) continue;
+      n++;
+      for (const entry of made) entry.batch.mesh.colourHidden!.ids.push(entry.id);
+    }
+    return n;
+  }
+
+  /** The colour pass drawn: every shell drawn again from any camera. */
+  restoreOccluded(): void {
+    for (const batch of this.batches) batch.mesh.colourHidden = null;
+  }
+
   /** The far cascades take the buildings by their masses alone: the walls cast nothing into them. */
   castShadow(cast: boolean): void {
     if (cast === this.casting) return;
@@ -143,6 +169,7 @@ export class ShellBatch {
     this.facadeGroup.clear();
     this.cells.clear();
     this.visible.clear();
+    this.boxes.clear();
     this.batches = this.makeBatches();
     this.casting = true;
     if (this.faded) this.setFaded(true);
@@ -154,6 +181,7 @@ export class ShellBatch {
     this.facadeGroup.clear();
     this.cells.clear();
     this.visible.clear();
+    this.boxes.clear();
   }
 
   private makeBatches(): Batch[] {

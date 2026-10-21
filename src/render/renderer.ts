@@ -123,6 +123,8 @@ import type { SharedGroundAt } from './sharedGround';
 import { WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
+import { OcclusionBuffer, type OcclusionStats } from './occlusion';
+import { BATCH_CELL } from './buildings/layerCells';
 import { buildingFloors } from '@world/buildings/floors';
 import { FLOOR_READ_REACH } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
@@ -208,6 +210,9 @@ interface DrawOptions {
   readonly holdRoads?: boolean;
 }
 
+/** How many frames the buildings' occlusion rests after a frame it hid nothing in (`occlusionIdle`). */
+const OCCLUSION_RETRY_FRAMES = 15;
+
 export interface SceneHandle {
   /** Loads what shots and blows leave behind */
   effects(): Promise<void>;
@@ -238,6 +243,9 @@ export interface SceneHandle {
   readonly stats: RenderStats;
   /** The GPU time of each frame drawn (`gpuTimer.ts`): the F9 monitor and the performance gate read it. */
   readonly gpu: GpuTimer;
+  /** The buildings' occlusion culling on the page (`occlusion.ts`): on or off, and the last frame's numbers (walls laid, boxes tested and
+   *  hidden, ms to lay them, the buildings' objects left out of the colour pass). */
+  readonly occlusion: { enabled: boolean; readonly stats: Readonly<OcclusionStats & { objectsHidden: number; active: boolean }> };
   /** The solved road height field, for the editor's own previews. */
   elevationAt(x: number, y: number, structure?: RoadStructure): number;
   /** The editor's building ghost; null removes it. */
@@ -1043,13 +1051,47 @@ export function createSceneRenderer(
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
   // And every layer that registered its meshes by size (`shadowCasters.ts`): cellInstances, flags, signals, things in the hand.
   // The far cascades (1 and 2) take the buildings by their masses only (`BuildingLayer.castInto` coarse).
-  environment.setCasters((texel, cascade) => {
+  environment.setCasters((texel, cascade, half) => {
     // The effects panel's buildings without shadows: out of every cascade's pass (`buildingSwitches.ts`).
     buildingSwitcher.casters(effectSwitches, texel);
     // The lab's optimisations: the parts cast by a wider texel, the masses from another cascade (`optimizationsApply.ts`).
-    buildings.castInto(texel === null ? null : texel * optimizer.castTexel, cascade >= optimizer.coarseFrom);
+    // Past the first cascade, the parts also by their size in it (`CAST_RADIUS_SHARE`); the first keeps every part as wide as its texel.
+    buildings.castInto(texel === null ? null : texel * optimizer.castTexel, cascade >= optimizer.coarseFrom, cascade > 0 ? half : 0);
     castCastersInto(texel);
   });
+  /** THE BUILDINGS' OCCLUSION CULLING (`occlusion.ts`): the walls that surely stand round the eye laid on the page before the colour
+   *  pass, the buildings' objects wholly behind them left out of that pass alone (`BuildingLayer.hideOccluded`). Never out of a shadow:
+   *  three draws the sun's cascades inside the colour pass's render (r186 `WebGLRenderer.render` calls `shadowMap.render`), and this
+   *  wrap of the cascades' own wrap (`sunCascades.ts`) shows what was hidden for their draw. Built after the casters' signature, which
+   *  never sees what is hidden (the cascades' stores would be drawn again every frame). */
+  const occlusion = new OcclusionBuffer();
+  const occlusionProbe = { enabled: true, stats: { ...occlusion.stats, objectsHidden: 0, active: false } };
+  /** Whether each cell's walls may hide (`BuildingLayer.occluderCell`), asked once a cell a frame. */
+  const occluderCells = new Map<number, boolean>();
+  const occluderDrawn = (x: number, y: number): boolean => {
+    const i = Math.floor(x / BATCH_CELL), j = Math.floor(y / BATCH_CELL);
+    const key = (i + 32768) * 65536 + (j + 32768);
+    let drawn = occluderCells.get(key);
+    if (drawn === undefined) occluderCells.set(key, drawn = buildings.occluderCell(i, j));
+    return drawn;
+  };
+  const occlusionHidden = (x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): boolean => occlusion.hidden(x0, y0, x1, y1, z0, z1);
+  let occludedNow = false;
+  /** Frames left before the walls are laid again after a frame they hid nothing in (a view from above looks over them): the ms of laying them
+   *  spared where they pay nothing. Conservative either way: a frame not laid hides nothing. */
+  let occlusionIdle = 0;
+  {
+    const cascadesRender = renderer.shadowMap.render.bind(renderer.shadowMap);
+    renderer.shadowMap.render = (lights, shadowScene, camera) => {
+      if (!occludedNow) { cascadesRender(lights, shadowScene, camera); return; }
+      buildings.revealOccluded(true);
+      try {
+        cascadesRender(lights, shadowScene, camera);
+      } finally {
+        buildings.revealOccluded(false);
+      }
+    };
+  }
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     refillArrays(scene);
@@ -2510,6 +2552,7 @@ export function createSceneRenderer(
       return view.compare(renderer, scene, rig.camera, options);
     },
     webgpuLeftOut: () => gpuView?.leftOut() ?? {},
+    occlusion: occlusionProbe,
     viewport: rig.viewport,
     scene,
     gl: renderer,
@@ -3393,9 +3436,31 @@ export function createSceneRenderer(
         }
         optimizer.beforeRender();
         if (backend === 'webgl') {
+          // The walls round the eye laid from the camera as this frame draws it (its shake included), the buildings behind them out of the colour pass.
+          // Only where the town is drawn as it stands (no effect switched off, the camera low enough for the solids to be filed: `solidsNeeded`).
+          const wanted = occlusionProbe.enabled && townSolids !== null && rig.perspective && effectSwitches === ALL_EFFECTS_ON && buildingChoices === DEFAULT_BUILDING_CHOICES;
+          const occluding = wanted && occlusionIdle === 0;
+          if (wanted && occlusionIdle > 0) occlusionIdle--;
+          occludedNow = false;
+          occlusionProbe.stats.objectsHidden = 0;
+          occlusionProbe.stats.active = occluding;
+          if (occluding) {
+            occluderCells.clear();
+            const camera = rig.camera as PerspectiveCamera;
+            occlusion.build(camera, camera.aspect, townSolids!(), occluderDrawn, camera.near);
+            occlusionProbe.stats.objectsHidden = buildings.hideOccluded(camera, occlusionHidden);
+            occludedNow = occlusionProbe.stats.objectsHidden > 0;
+            if (!occludedNow) occlusionIdle = OCCLUSION_RETRY_FRAMES;
+          } else occlusion.clear();
           gpuTimer.begin();
-          post.render(delta);
+          try {
+            post.render(delta);
+          } finally {
+            if (occluding) buildings.restoreOccluded();
+            occludedNow = false;
+          }
           gpuTimer.end();
+          if (occluding) Object.assign(occlusionProbe.stats, occlusion.stats);
         // Under WebGPU, the frame its renderer can draw so far: the scene without the post chain nor the shadows (stages 3 and 4); nothing until its device stands.
         } else gpuView?.render(scene, rig.camera);
         // What came into the scene given the optimisations on, a few times a second: built off the draw when that changed programs.

@@ -1,4 +1,4 @@
-import { BatchedMesh, type BufferAttribute, BufferGeometry, GLBufferAttribute, type Intersection, type InterleavedBufferAttribute, type Material, type Raycaster } from 'three';
+import { BatchedMesh, type BufferAttribute, BufferGeometry, type Camera, GLBufferAttribute, type Group, type Intersection, type InterleavedBufferAttribute, type Material, type Raycaster, type Scene, type WebGLRenderer } from 'three';
 
 /** A BATCHED MESH WHOSE BUFFERS LIVE ON THE GPU ONLY */
 // three's BatchedMesh keeps every attribute and its index as arrays of the batch's whole size and sends the ranges it writes from
@@ -31,6 +31,7 @@ interface Inner {
   _geometryInitialized: boolean;
   _visibilityChanged: boolean;
   _validateGeometry(geometry: BufferGeometry): void;
+  _instanceInfo: { visible: boolean; active: boolean }[];
 }
 
 /** The context the batches write with, given by the renderer (`renderer.ts`); none in tests, where a batch keeps three's arrays. */
@@ -71,8 +72,36 @@ export class GpuBatchedMesh extends BatchedMesh {
   /** The buffers this batch made, let go with it. */
   private readonly made = new Set<WebGLBuffer>();
 
+  /** Instances left out of the draws seen from one camera alone (`render/occlusion.ts`: behind the walls standing before the eye). The
+   *  shadow passes draw them: three's `onBeforeShadow` lists the batch's draws through `onBeforeRender` with the shadow camera (r186
+   *  `BatchedMesh.onBeforeShadow`), which is not this one. */
+  colourHidden: { camera: Camera; readonly ids: number[] } | null = null;
+  /** The instances `onBeforeRender` turned off for its listing, turned back on after it. */
+  private readonly flipped: number[] = [];
+
   constructor(maxInstanceCount: number, maxVertexCount: number, maxIndexCount: number, material: Material) {
     super(maxInstanceCount, maxVertexCount, maxIndexCount, material);
+  }
+
+  /** three's listing of the multi-draw (frustum, visibility), with the instances hidden from this camera left out of it. */
+  override onBeforeRender(renderer: WebGLRenderer, scene: Scene | null, camera: Camera, geometry: BufferGeometry, material: Material, group: Group | null): void {
+    const hide = this.colourHidden;
+    // three passes no scene when it lists the draws for a shadow (r186 `BatchedMesh.onBeforeShadow`).
+    const list = (): void => super.onBeforeRender(renderer, scene as Scene, camera, geometry, material, group as Group);
+    if (hide === null || hide.camera !== camera || hide.ids.length === 0) { list(); return; }
+    const info = this.inner._instanceInfo, flipped = this.flipped;
+    for (const id of hide.ids) {
+      const one = info[id];
+      if (one?.visible && one.active) { one.visible = false; flipped.push(id); }
+    }
+    try {
+      list();
+    } finally {
+      for (const id of flipped) info[id]!.visible = true;
+      flipped.length = 0;
+      // The next listing (another camera: a shadow cascade) made whole again, whatever three's own culling settings.
+      this.inner._visibilityChanged = true;
+    }
   }
 
   private get inner(): Inner {
