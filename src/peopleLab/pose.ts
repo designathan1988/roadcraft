@@ -117,10 +117,13 @@ export class ClipPlayer {
 
   get playing(): boolean { return !!this.transfer; }
 
+  /** Holds the clip still at `t` seconds (a ready pose), or plays it again with null. */
+  hold: number | null = null;
+
   /** The pose at `now` (seconds); a clip that does not loop holds its last frame. */
   apply(now: number): void {
     if (!this.transfer || !this.clip) return;
-    const t = now - this.started;
+    const t = this.hold ?? now - this.started;
     this.transfer.pose(this.clip.loop ? t % this.clip.duration : Math.min(t, this.clip.duration - 1e-3));
   }
 }

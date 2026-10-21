@@ -2,6 +2,7 @@ import type { PersonSpec } from '@people/spec';
 import type { HairStyle } from '@people/hair/procedural';
 import type { CartoonStyle } from '@render/people/cartoon';
 import type { HairSculpt } from './sculpt';
+import type { Motion } from './posing';
 import { yearsFromAge } from '@people/body/macro';
 
 /** A PERSON MADE IN THE LAB, as saved: the game's own `PersonSpec` plus what the game does not yet keep per person */
@@ -18,6 +19,8 @@ export interface LabPerson {
   readonly sculpt?: HairSculpt;
   /** Any worn piece reshaped with the sculptor (a garment, shoes, a hat), each by its item name (`sculpt.base`). */
   readonly sculpts?: readonly HairSculpt[];
+  /** The rig as reshaped, the pose held and the animation made in the pose tab (`posing.ts`). */
+  readonly motion?: Motion;
 }
 
 export interface LabRoster {
@@ -52,6 +55,7 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.hair && spec.look.hairCut?.startsWith(PROC_PREFIX) ? { hair: person.hair } : {}),
     ...(person.sculpt && person.sculpt.base === spec.look.hairCut ? { sculpt: person.sculpt } : {}),
     ...(person.sculpts?.length ? { sculpts: person.sculpts } : {}),
+    ...(person.motion && Object.keys(person.motion).length ? { motion: person.motion } : {}),
   };
 }
 

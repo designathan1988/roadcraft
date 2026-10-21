@@ -27,7 +27,7 @@ import { makePanels } from './panels';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
 import { sculptPanel } from './sculptPanel';
 import { PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
-import { HAIR_CATALOGUE, NICE_HAIR, ROADCRAFT } from './choices';
+import { HAIR_CATALOGUE, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
 import { el, widgets } from './widgets';
 
 /** THE PERSON CREATOR LAB (`people-lab.html`): people made one by one, saved for the game; the game's own build, nothing of the game changed */
@@ -45,6 +45,8 @@ function startLab(): void {
   let poser: Poser | null = null;
   /** The captured clip the body plays (`ClipPlayer`), and the player on the person built now. */
   let clipName: LibraryClipName = 'idle';
+  /** A ready pose: the clip held at this moment, kept across rebuilds. */
+  let heldAt: number | null = null;
   let player: ClipPlayer | null = null;
   let tab = 'pessoa';
   let showAll = false;
@@ -153,6 +155,7 @@ function startLab(): void {
   controls.maxDistance = 6;
   controls.maxPolarAngle = Math.PI * 0.55;
   const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
+  posing.onChange = () => { person = { ...person, motion: posing.motion() }; };
   let view: 'face' | 'body' = 'body';
   let height = 1.7;
 
@@ -254,6 +257,7 @@ function startLab(): void {
         if (built !== next || !next.meshes[0]) return;
         player = new ClipPlayer(next.scene, next.meshes[0], clips);
         player.play(clipName, (performance.now() - clock0) / 1000);
+        player.hold = heldAt;
       }, (error: unknown) => { console.warn('[people-lab] the motion library could not be loaded; the lab poses instead', error); });
       if (!shaping) dragWeights = null;
       shaper = nextShaper;
@@ -317,7 +321,7 @@ function startLab(): void {
     setStyle: (st) => { setStyle(st); if (st === ROADCRAFT) void fitFace(); },
     setMood: (v) => { person = { ...person, spec: { ...person.spec, mood: v } }; },
     setShowAll: (v) => { showAll = v; render(); },
-    act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
+    act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; heldAt = null; if (player) player.hold = null; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
     render, openSculptor: (item) => { void openSculptor(item); }, fitFace: () => { void fitFace(); },
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
@@ -393,7 +397,7 @@ function startLab(): void {
         void persist(); renderGallery();
       };
       card.append(x);
-      card.onclick = () => { person = structuredClone(p); activity = undefined; pose = 'idle'; render(); rebuild(0); renderGallery(); };
+      card.onclick = () => { person = structuredClone(p); posing.load(person.motion); activity = undefined; pose = 'idle'; render(); rebuild(0); renderGallery(); };
       return card;
     }));
   }
@@ -447,8 +451,24 @@ function startLab(): void {
     play.onclick = () => { if (posing.playing) posing.stop(); else posing.play(now()); render(); };
     const reset = el('button', { cls: 'big alt', textContent: 'Limpar' });
     reset.onclick = () => { posing.reset(); render(); };
+    const mode = el('div', { cls: 'seg' }, ...([['rotate', 'Girar'], ['translate', 'Mover (rig)']] as const).map(([m, label]) => {
+      const b = el('button', { textContent: label, cls: posing.mode === m ? 'on' : '' });
+      b.onclick = () => { posing.setMode(m); render(); };
+      return b;
+    }));
     return [
-      el('h3', { textContent: 'Articulação' }),
+      el('h3', { textContent: 'Poses' }),
+      el('div', { cls: 'grid' }, ...READY_POSES.map(([emoji, label, clip, at]) => {
+        const t = el('button', { cls: `tile${clipName === clip && player?.hold === at ? ' on' : ''}` }, el('span', { cls: 'glyph', textContent: emoji }), label);
+        t.onclick = () => {
+          clipName = clip; stool.visible = clip === 'sitIdle';
+          heldAt = at;
+          if (player) { player.play(clip, now()); player.hold = at; }
+          render();
+        };
+        return t;
+      })),
+      el('h3', { textContent: 'Articulação' }), mode,
       el('div', { cls: 'chips' }, ...JOINTS.map(([label, name]) => {
         const b = el('button', { textContent: label, cls: posing.bone === name ? 'on' : '' });
         b.onclick = () => { posing.stop(); posing.select(posing.bone === name ? null : name); render(); };

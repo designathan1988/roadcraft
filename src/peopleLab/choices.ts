@@ -47,6 +47,14 @@ export const FACE: readonly (readonly [string, string, readonly (readonly [strin
 export const HEAD_SHAPES: readonly (readonly [string, string])[] = [['head-oval', 'Oval'], ['head-round', 'Redonda'], ['head-square', 'Quadrada'],
   ['head-rectangular', 'Retangular'], ['head-diamond', 'Diamante'], ['head-triangular', 'Triangular'], ['head-invertedtriangular', 'Coração']];
 
+/** Ready poses: a captured clip held at a moment (`ClipPlayer.hold`), its name and emoji. */
+export const READY_POSES: readonly (readonly [string, string, LibraryClipName, number])[] = [
+  ['🧍', 'Em pé', 'idle', 0.5], ['👋', 'Tchau', 'wave', 0.9], ['🙌', 'Vitória', 'cheer', 1.0], ['💃', 'Dança', 'dance', 1.2],
+  ['📱', 'Celular', 'phone', 1.5], ['📷', 'Foto', 'photo', 1.4], ['📖', 'Leitura', 'read', 1.5], ['🥤', 'Brinde', 'drink', 1.1],
+  ['😂', 'Gargalhada', 'laugh', 0.8], ['😠', 'Bronca', 'angry', 1.0], ['🗯️', 'Discussão', 'argue', 1.2], ['🤔', 'Pensando', 'look', 1.6],
+  ['🪑', 'Sentada', 'sitIdle', 0.5], ['🧎', 'Agachada', 'crouchIdle', 0.5], ['🏃', 'Corrida', 'run', 0.3], ['🚶', 'Passo', 'walkStroll', 0.4],
+];
+
 /** The actions: an emoji, a name, what the face does (`faceAt`), and the captured clip the body plays (`citizenWalk.ts` library). */
 export const MOODS: readonly (readonly [string, string, string | undefined, PoseName, LibraryClipName])[] = [
   ['🧍', 'Parado', undefined, 'idle', 'idle'], ['💬', 'Conversando', 'talk', 'idle', 'talk'], ['👂', 'Ouvindo', 'listen', 'idle', 'listen'],
