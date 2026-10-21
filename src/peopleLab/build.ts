@@ -5,12 +5,13 @@ import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
 import { expressionShapes } from '@people/body/expressions';
 import { generateHair, type HairBase, type HairStyle } from '@people/hair/procedural';
 import { wornItems } from '@people/spec';
-import { cartoonBody } from '@render/people/cartoon';
+import { cartoonBody, type CartoonStyle } from '@render/people/cartoon';
 import { createPersonRig, personSimplifier } from '@render/people/personRig';
 import { attachFacialMorphs } from '@render/people/facialMorphs';
 import { channelShapes } from '@render/people/faceExpression';
 import { captureBind, captureBindRotations } from '@render/citizenWalk';
 import { PROC_PREFIX, type LabPerson } from './record';
+import { FaceProportions } from './proportions';
 import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
 
 /** A LAB PERSON BUILT THE GAME'S WAY: `buildPersonScene` (`render/people/personBuild.ts`), with the hair studio's hairstyle worn as an item */
@@ -18,11 +19,16 @@ import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
 const hairBase = (a: PeopleAssets, mo: Morpher): HairBase => ({ positions: mo.base, vertexCount: a.mesh.vertexCount,
   bodyRange: a.bodyRange, joints: a.mesh.joints, weights: a.mesh.weights, boneNames: a.mesh.boneNames, faces: a.mesh.faces });
 
+/** The style as the lab draws it: the eyes never swollen by `cartoonBody` (its sphere round each eye leaves a crater round the socket, an alien's face); big eyes come from the face's own `eye-scale` slider. */
+const labStyle = (style: CartoonStyle): CartoonStyle => ({ ...style, eyes: 1 });
+
 export interface BuiltPerson {
   readonly scene: Object3D;
   readonly meshes: readonly SkinnedMesh[];
   readonly triangles: number;
   readonly morphs: number;
+  /** A changed body shape (decimetres, `shape`) as relative moves of the mesh's vertices: live dragging (`PersonRig.morph`); absent on the tailored shells. */
+  readonly morph?: (positions: Float32Array) => Float32Array;
 }
 
 /** Builds the lab's people; keeps the MakeHuman packs and the grown hairstyles between builds. */
@@ -44,6 +50,15 @@ export class LabBuilder {
     return item;
   }
 
+  private faces: FaceProportions | null = null;
+
+  /** The face's proportions, measured and set to the canon (`proportions.ts`). */
+  async proportions(): Promise<FaceProportions> {
+    const { assets: a, morpher: mo } = await this.setup();
+    this.faces ??= new FaceProportions(a, mo, (spec) => mo.shape(spec.body, spec.features));
+    return this.faces;
+  }
+
   /** The MakeHuman packs, loaded once. */
   async setup(): Promise<{ assets: PeopleAssets; morpher: Morpher }> {
     this.assets ??= await loadPeopleAssets();
@@ -62,8 +77,14 @@ export class LabBuilder {
   /** The person's body as the sculptor shows it: shaped and styled, in its bind posture. */
   async sculptBody(person: LabPerson): Promise<SculptBody> {
     const { assets: a, morpher: mo } = await this.setup();
-    return { positions: cartoonBody(mo.shape(person.spec.body, person.spec.features), a.mesh, person.style),
+    return { positions: cartoonBody(mo.shape(person.spec.body, person.spec.features), a.mesh, labStyle(person.style)),
       faces: a.mesh.faces, faceGroup: a.mesh.faceGroup, skinGroup: a.mesh.faceGroups.indexOf('body') };
+  }
+
+  /** The body's shape for a person (decimetres): what `BuiltPerson.morph` reads. */
+  async shape(person: LabPerson): Promise<Float32Array> {
+    const { assets: a, morpher: mo } = await this.setup();
+    return cartoonBody(mo.shape(person.spec.body, person.spec.features), a.mesh, labStyle(person.style));
   }
 
   async build(person: LabPerson): Promise<BuiltPerson> {
@@ -91,7 +112,7 @@ export class LabBuilder {
       proxies,
       texturedSkin: true,
       data: a.mesh, skeleton: a.skeleton, bodyRange: a.bodyRange,
-      positions: cartoonBody(mo.shape(spec.body, spec.features), a.mesh, person.style), look: spec.look,
+      positions: cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), look: spec.look,
       capture: captureBind(sex), captureAxes: captureBindRotations(sex),
     };
     await personSimplifier;
@@ -107,6 +128,6 @@ export class LabBuilder {
     await Promise.all(waits);
     let triangles = 0;
     for (const m of meshes) triangles += (m.geometry.index?.count ?? m.geometry.getAttribute('position').count) / 3;
-    return { scene: rig.scene, meshes, triangles, morphs: Object.keys(rig.mesh.morphTargetDictionary ?? {}).length };
+    return { scene: rig.scene, meshes, triangles, morphs: Object.keys(rig.mesh.morphTargetDictionary ?? {}).length, ...(rig.morph ? { morph: rig.morph } : {}) };
   }
 }

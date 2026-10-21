@@ -87,3 +87,7 @@ input[type=text], select { width: 100%; padding: 7px 10px; border: 1px solid var
 .card .x { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,.45); color: #fff; cursor: pointer; font-size: 12px; line-height: 20px; padding: 0; }
 .toast { position: fixed; bottom: 24px; right: 260px; background: #0b4f86; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.on { opacity: 1; }
+
+/* The part under the pointer, while shaping by hand. */
+.tip { position: absolute; pointer-events: none; background: rgba(11, 79, 134, .92); color: #fff; font-size: 12px; line-height: 1.45; padding: 6px 10px; border-radius: 10px; display: none; white-space: nowrap; }
+.tip.on { display: block; }

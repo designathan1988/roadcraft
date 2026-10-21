@@ -1,74 +1,37 @@
 import {
-  ACESFilmicToneMapping, MOUSE, Vector2, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
+  ACESFilmicToneMapping, MOUSE, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
   PMREMGenerator, PerspectiveCamera, Scene, ShadowMaterial, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D, type SkinnedMesh,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ageFromYears, yearsFromAge, type MacroParams } from '@people/body/macro';
-import { proxyUrl } from '@people/body/proxy';
-import PROXY_FILES from 'virtual:model-urls/people/proxies?ext=json,bin,webp';
 import { HAIR_STYLES, type HairStyle } from '@people/hair/procedural';
-import { CLOTH_COLOURS, EYE_COLOURS, WARDROBE, randomPerson, type PersonLook, type PersonSpec } from '@people/spec';
+import { EYE_COLOURS, WARDROBE, randomPerson, type PersonLook, type PersonSpec } from '@people/spec';
 import { communityItem, itemsOf, type WardrobeItem } from '@people/wardrobe';
-import { PIXAR, REALISTIC, type CartoonStyle } from '@render/people/cartoon';
+import { PIXAR, type CartoonStyle } from '@render/people/cartoon';
 import { applyFace, faceAt } from '@render/people/faceExpression';
+import { applySkinAppearance, createPersonLayers, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from '@render/people/skinAppearance';
+import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
 import { Poser, type PoseName } from './pose';
-import { HairSculptor, decodeSculpt, encodeSculpt, type BrushName } from './sculpt';
+import { BIG_EYES, BODIES, FACES, LOOKS, PARTS, currentPreset, withBody, withFace, withPart } from './presets';
+import { HandShaper, addDragMorphs, type Region } from './direct';
+import { evenHairSheen, paintedSkin, polishPerson } from './polish';
+import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
+import { sculptPanel } from './sculptPanel';
 import { PROC_PREFIX, readRoster, rosterOf, savedBytes, type LabPerson } from './record';
+import { CLOTH, FACE, HAIR_COLOURS, HAIR_NAMES, HEAD_SHAPES, MOODS, SKIN, STYLE_PRESETS } from './choices';
+import { el, widgets } from './widgets';
 
 /** THE PERSON CREATOR LAB (`people-lab.html`): people made one by one, saved for the game; the game's own build, nothing of the game changed */
-
-// ---------------------------------------------------------------- choices
-
-const SKIN = [0xf6dccb, 0xf0cdb2, 0xe5b898, 0xd9a47f, 0xc68b62, 0xb07349, 0x8f5b3a, 0x6f452b, 0x553220, 0x3d2417];
-const HAIR_COLOURS = [0x1a1410, 0x2e2018, 0x4a3022, 0x6b4428, 0x8c5a2e, 0xa8743c, 0xc9a165, 0xe0c58f, 0x9a9a98, 0xdedcd8, 0x8a2f1f,
-  0xc23b22, 0xe86aa6, 0x6a5acd, 0x2fa3c7, 0x3cb371];
-const CLOTH = [...CLOTH_COLOURS, 0xe05a8a, 0x2f9d8f, 0x3b6fd1, 0xffd166, 0x9b5de5, 0x00bbf9];
-
-const STYLE_PRESETS: readonly (readonly [string, CartoonStyle])[] = [
-  ['Realista', REALISTIC],
-  ['Desenho', { head: 1.2, eyes: 1.22, legs: 0.93, hands: 1.08, feet: 1.06 }],
-  ['Pixar', PIXAR],
-  ['Exagerado', { head: 1.65, eyes: 1.7, legs: 0.78, hands: 1.22, feet: 1.18 }],
-];
-
-const HAIR_NAMES: Record<string, string> = {
-  longStraight: 'Longo liso', longWavy: 'Longo ondulado', midLayered: 'Médio repicado', bob: 'Chanel', bobFringe: 'Chanel com franja',
-  ponytail: 'Rabo de cavalo', bun: 'Coque', ponytailFringe: 'Rabo com franja', longFringe: 'Longo com franja', longHeadband: 'Longo com tiara',
-  shoulderBob: 'Chanel longo', fade: 'Degradê', buzz: 'Raspado', slickedBack: 'Para trás', quiff: 'Topete', manBun: 'Coque masculino',
-  longMale: 'Longo masculino', curlyShort: 'Cacheado curto', afro: 'Black power', shortCrop: 'Curto', pigtails: 'Maria-chiquinha',
-  braid: 'Trança', twinBraids: 'Duas tranças', curly: 'Cacheado', sideSwept: 'Jogado de lado', pixie: 'Joãozinho', topKnot: 'Coque alto',
-  shortSide: 'Curto de lado',
-};
-
-const FACE: readonly (readonly [string, string, readonly (readonly [string, string])[]])[] = [
-  ['Cabeça', '🙂', [['head-fat-decr-incr', 'Bochechuda'], ['head-scale-horiz-decr-incr', 'Largura'], ['head-scale-vert-decr-incr', 'Altura'],
-    ['forehead-scale-vert-decr-incr', 'Testa']]],
-  ['Olhos', '👁️', [['eye-scale-decr-incr', 'Tamanho'], ['eye-trans-in-out', 'Distância'], ['eye-corner1-down-up', 'Canto'],
-    ['eye-height2-decr-incr', 'Abertura'], ['eyebrows-angle-down-up', 'Sobrancelha'], ['eyebrows-trans-down-up', 'Altura sobr.']]],
-  ['Nariz', '👃', [['nose-scale-horiz-decr-incr', 'Largura'], ['nose-scale-vert-decr-incr', 'Comprimento'], ['nose-point-width-decr-incr', 'Ponta'],
-    ['nose-point-down-up', 'Arrebitado'], ['nose-hump-decr-incr', 'Calombo'], ['nose-volume-decr-incr', 'Volume']]],
-  ['Boca', '👄', [['mouth-scale-horiz-decr-incr', 'Largura'], ['mouth-upperlip-volume-decr-incr', 'Lábio sup.'], ['mouth-lowerlip-volume-decr-incr', 'Lábio inf.'],
-    ['mouth-cupidsbow-decr-incr', 'Arco'], ['mouth-angles-down-up', 'Cantos'], ['mouth-laugh-lines-in-out', 'Covinhas']]],
-  ['Queixo', '🧔', [['chin-width-decr-incr', 'Largura'], ['chin-prominent-decr-incr', 'Projeção'], ['chin-height-decr-incr', 'Altura'],
-    ['chin-cleft-decr-incr', 'Furinho'], ['cheek-bones-decr-incr', 'Maçãs'], ['cheek-volume-decr-incr', 'Bochechas']]],
-  ['Orelhas', '👂', [['ear-scale-decr-incr', 'Tamanho'], ['ear-lobe-decr-incr', 'Lóbulo'], ['ear-flap-decr-incr', 'Abano']]],
-];
-const HEAD_SHAPES: readonly (readonly [string, string])[] = [['head-oval', 'Oval'], ['head-round', 'Redonda'], ['head-square', 'Quadrada'],
-  ['head-rectangular', 'Retangular'], ['head-diamond', 'Diamante'], ['head-triangular', 'Triangular'], ['head-invertedtriangular', 'Coração']];
-
-const MOODS: readonly (readonly [string, string, string | undefined, PoseName])[] = [
-  ['😐', 'Parado', undefined, 'idle'], ['💬', 'Conversando', 'talk', 'idle'], ['😂', 'Gargalhada', 'laugh', 'idle'],
-  ['👋', 'Acenando', 'wave', 'wave'], ['🙌', 'Comemorando', 'cheer', 'cheer'], ['💃', 'Animado', 'dance', 'hips'],
-  ['😠', 'Bravo', 'angry', 'hips'], ['🗯️', 'Discutindo', 'argue', 'idle'], ['😢', 'Chorando', 'cry', 'idle'], ['😱', 'Assustado', 'panic', 'idle'],
-];
 
 /** The whole page: its state lives here, owned by the lab, not loose in the module. */
 function startLab(): void {
   // ---------------------------------------------------------------- state
 
-  let person: LabPerson = { spec: { ...randomPerson(1, 11, { body: { age: ageFromYears(26), gender: 0.06 } }), name: '' }, style: PIXAR };
+  const first = randomPerson(1, 11, { body: { age: ageFromYears(26), gender: 0.06 } });
+  // The first person shows a face: no glasses over the eyes.
+  let person: LabPerson = { spec: { ...first, name: '', features: { ...first.features, ...BIG_EYES }, look: { ...first.look, makeup: 0, extras: (first.look.extras ?? []).filter((x) => communityItem(x)?.kind !== 'glasses') } }, style: PIXAR };
   let activity: string | undefined;
   let pose: PoseName = 'idle';
   let built: BuiltPerson | null = null;
@@ -79,11 +42,13 @@ function startLab(): void {
   const thumbs: Record<string, string> = loadThumbs();
   /** The hair sculptor while it is open, the person hidden. */
   let sculptor: HairSculptor | null = null;
+  /** Click-and-drag shaping of the person built now. */
+  let shaper: HandShaper | null = null;
 
   function freshPerson(seed: number): LabPerson {
     const id = Math.floor(Math.random() * 2 ** 30);
     const spec = randomPerson(id, seed + id);
-    return { spec: { ...spec, name: '' }, style: PIXAR };
+    return { spec: { ...spec, name: '', features: { ...spec.features, ...BIG_EYES }, look: { ...spec.look, makeup: 0 } }, style: PIXAR };
   }
 
   const years = (): number => yearsFromAge(person.spec.body.age);
@@ -120,14 +85,7 @@ function startLab(): void {
   // ---------------------------------------------------------------- scene
 
   const app = document.getElementById('app')!;
-  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { cls?: string } = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
-    const e = document.createElement(tag);
-    const { cls, ...rest } = props;
-    if (cls) e.className = cls;
-    Object.assign(e, rest);
-    e.append(...kids);
-    return e;
-  };
+  const { slider, swatches, seg, tiles } = widgets(() => render());
 
   const rail = el('nav', { cls: 'rail' });
   const panel = el('section', { cls: 'panel' });
@@ -222,6 +180,10 @@ function startLab(): void {
   // ---------------------------------------------------------------- building
 
   const builder = new LabBuilder();
+  /** The texture arrays every person's eyes, hair cards and garments are drawn from (`skinAppearance.ts`), as the game keeps them. */
+  const layers = createPersonLayers();
+  let appearance: SkinAppearance | null = null;
+  let paintedTexture: Texture | null = null;
   let generation = 0;
   /** When the waiting rebuild starts (ms, `performance.now`), or 0: sliders dragged are built once they rest, in the frame loop. */
   let buildAt = 0;
@@ -246,9 +208,35 @@ function startLab(): void {
       if (mine !== generation) { dispose(next.scene); return; }
       if (built) { scene.remove(built.scene); dispose(built.scene); }
       built = next;
+      polishPerson(next.meshes, effective(person).spec.look);
+      // The game's second step (`riggedCitizens.ts`): skin, irises, hair strands and fabrics drawn from their textures.
+      const skin = await loadSkinAppearance(effective(person).spec);
+      if (mine !== generation) { releaseSkinAppearance(skin); dispose(next.scene); return; }
+      const painted = paintedSkin(skin.texture, 1);
+      if (painted) { paintedTexture?.dispose(); paintedTexture = painted; skin.texture = painted; }
+      // Solid hair, as The Sims draws it: one colour, shaded, no strand texture (its strands read as stripes up close).
+      delete skin.hairTexture;
+      for (const m of next.meshes) {
+        const materials = (Array.isArray(m.material) ? m.material : [m.material]).map((source) => {
+          const material = (source as MeshStandardMaterial).clone();
+          material.color.setHex(0xffffff);
+          material.roughness = 0.82;
+          material.metalness = 0;
+          applySkinAppearance(material, m.geometry, skin, layers);
+          evenHairSheen(material);
+          return material;
+        });
+        m.material = Array.isArray(m.material) ? materials : materials[0]!;
+      }
+      if (appearance) releaseSkinAppearance(appearance);
+      appearance = skin;
       for (const m of next.meshes) { m.castShadow = true; m.frustumCulled = false; }
       scene.add(next.scene);
       poser = new Poser(next.scene);
+      if (!shaping) dragWeights = null;
+      const faces = await builder.proportions();
+      const spec = person.spec;
+      shaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
       next.scene.updateWorldMatrix(true, true);
       // Standing height from the head bone (a skinned geometry's own box is in its bind space, not the scene's).
       let headY = 1.5;
@@ -267,62 +255,6 @@ function startLab(): void {
   }
 
   // ---------------------------------------------------------------- controls
-
-  function slider(label: string, min: number, max: number, step: number, value: number, set: (v: number) => void, show: (v: number) => string = (v) => v.toFixed(2)): HTMLElement {
-    const input = el('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(value) });
-    const out = el('output', { textContent: show(value) });
-    input.addEventListener('input', () => { out.textContent = show(+input.value); set(+input.value); });
-    return el('label', { cls: 'row' }, el('span', { textContent: label }), input, out);
-  }
-
-  function swatches(colours: readonly number[], current: number, set: (c: number) => void): HTMLElement {
-    const box = el('div', { cls: 'swatches' });
-    for (const c of colours) {
-      const b = el('button', { title: `#${c.toString(16).padStart(6, '0')}` });
-      b.style.background = `#${c.toString(16).padStart(6, '0')}`;
-      if (c === current) b.classList.add('on');
-      b.onclick = () => { set(c); render(); };
-      box.append(b);
-    }
-    const free = el('input', { type: 'color', value: `#${current.toString(16).padStart(6, '0')}`, title: 'Qualquer cor' });
-    free.addEventListener('change', () => { set(parseInt(free.value.slice(1), 16)); render(); });
-    box.append(free);
-    return box;
-  }
-
-  function seg<T extends string>(options: readonly (readonly [T, string])[], current: T, set: (v: T) => void): HTMLElement {
-    const box = el('div', { cls: 'seg' });
-    for (const [v, label] of options) {
-      const b = el('button', { textContent: label });
-      if (v === current) b.classList.add('on');
-      b.onclick = () => { set(v); render(); };
-      box.append(b);
-    }
-    return box;
-  }
-
-  const hasThumb = (name: string): boolean => `${name}-thumb.webp` in PROXY_FILES;
-  function thumbOf(name: string): string | null {
-    // Not every item ships a thumbnail: drawn as a glyph instead.
-    return hasThumb(name) ? proxyUrl(`${name}-thumb.webp`) : null;
-  }
-
-  const pretty = (name: string): string => name.replace(/^(female|male)_/, '').replace(/^[a-z0-9]+_(?=[a-z])/i, (m) => (communityItem(name) ? '' : m))
-    .replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 26);
-
-  function tiles(names: readonly string[], current: string | undefined, set: (name: string) => void, none?: string): HTMLElement {
-    const grid = el('div', { cls: 'grid' });
-    const add = (name: string, label: string, glyph?: string): void => {
-      const t = el('button', { cls: `tile${name === current ? ' on' : ''}`, title: name });
-      const src = glyph ? null : thumbOf(name);
-      t.append(src ? el('img', { src, loading: 'lazy', alt: '' }) : el('span', { cls: 'glyph', textContent: glyph ?? '•' }), label);
-      t.onclick = () => { set(name); render(); };
-      grid.append(t);
-    };
-    if (none) add('none', none, '∅');
-    for (const n of names) add(n, pretty(n));
-    return grid;
-  }
 
   const kindOf = (name: string): WardrobeItem['kind'] | undefined => communityItem(name)?.kind;
 
@@ -352,7 +284,7 @@ function startLab(): void {
     for (const b of rail.querySelectorAll('button')) b.classList.toggle('on', (b as HTMLElement).dataset['tab'] === tab);
     nameInput.value = person.spec.name;
     const scroll = panel.scrollTop;
-    panel.replaceChildren(...(sculptor ? sculptPanel(sculptor) : PANELS[tab]!()));
+    panel.replaceChildren(...(sculptor ? sculptPanel(sculptor, { slider, render, close: closeSculptor }) : PANELS[tab]!()));
     panel.scrollTop = scroll;
   }
 
@@ -366,12 +298,19 @@ function startLab(): void {
       };
       return [
         el('h2', { textContent: 'Quem é' }),
+        el('div', { cls: 'note', textContent: '✋ Clique e arraste no corpo da pessoa para modelar (barriga, quadril, peito, braços, pernas…).' }),
         seg([['f', 'Feminino'], ['m', 'Masculino']] as const, female() ? 'f' : 'm', (v) => {
           const gender = v === 'f' ? 0.08 : 0.92;
           const keep = person.spec.look.outfit && (communityItem(person.spec.look.outfit)?.sex ?? (person.spec.look.outfit.startsWith('female') ? 'female' : 'male'));
           const outfit = keep === 'any' || keep === (v === 'f' ? 'female' : 'male') ? person.spec.look.outfit : v === 'f' ? 'female_casualsuit02' : 'male_casualsuit02';
           setSpec({ body: { ...b, gender }, look: { ...person.spec.look, ...(outfit ? { outfit } : {}) } });
         }),
+        el('h3', { textContent: 'Corpos prontos' }),
+        el('div', { cls: 'grid' }, ...BODIES.map((preset) => {
+          const t = el('button', { cls: 'tile' }, el('span', { cls: 'glyph', textContent: preset.glyph }), preset.label);
+          t.onclick = () => { setSpec(withBody(person.spec.body, person.spec.features, preset)); render(); };
+          return t;
+        })),
         el('h3', { textContent: 'Corpo' }),
         slider('Idade', 3, 90, 1, Math.round(years()), (v) => setBody('age', ageFromYears(v)), (v) => `${v} a`),
         slider('Feminino ↔ Masc.', 0, 1, 0.01, b.gender, (v) => setBody('gender', v)),
@@ -393,6 +332,18 @@ function startLab(): void {
       const shape = HEAD_SHAPES.find(([k]) => (f[k] ?? 0) > 0)?.[0] ?? 'head-oval';
       const out: Node[] = [
         el('h2', { textContent: 'Rosto' }),
+        el('div', { cls: 'note', textContent: '✋ Clique e arraste no rosto da pessoa para modelar: para os lados muda uma coisa, para cima e para baixo muda outra.' }),
+        (() => {
+          const fit = el('button', { cls: 'big save', textContent: '📐 Proporção correta' });
+          fit.onclick = () => { void fitFace(); };
+          return fit;
+        })(),
+        el('h3', { textContent: 'Rostos prontos' }),
+        el('div', { cls: 'grid' }, ...FACES.map((face) => {
+          const t = el('button', { cls: 'tile' }, el('span', { cls: 'glyph', textContent: face.glyph }), face.label);
+          t.onclick = () => { setSpec({ features: withFace(f, face) }); render(); };
+          return t;
+        })),
         el('h3', { textContent: 'Formato da cabeça' }),
         el('div', { cls: 'chips' }, ...HEAD_SHAPES.map(([k, label]) => {
           const b = el('button', { textContent: label, cls: k === shape ? 'on' : '' });
@@ -405,9 +356,22 @@ function startLab(): void {
           return b;
         })),
       ];
-      for (const [group, ico, sliders] of FACE) {
-        out.push(el('h3', { textContent: `${ico} ${group}` }));
-        for (const [k, label] of sliders) out.push(slider(label, -1, 1, 0.01, f[k] ?? 0, (v) => setFeature(k, v)));
+      const labelOf = new Map(FACE.flatMap(([, , sliders]) => sliders.map(([k, label]) => [k, label] as const)));
+      const owned = new Set(PARTS.flatMap((p) => p.sliders));
+      // The head's own sliders: the ones no part owns.
+      for (const [, , sliders] of FACE) for (const [k, label] of sliders) if (!owned.has(k)) out.push(slider(label, -1, 1, 0.01, f[k] ?? 0, (v) => setFeature(k, v)));
+      for (const part of PARTS) {
+        const on = currentPreset(f, part);
+        out.push(el('h3', { textContent: `${part.glyph} ${part.label}` }),
+          el('div', { cls: 'chips' }, ...part.presets.map((preset) => {
+            const b = el('button', { textContent: `${preset.glyph} ${preset.label}`, cls: preset.label === on ? 'on' : '' });
+            b.onclick = () => { setSpec({ features: withPart(f, part, preset) }); render(); };
+            return b;
+          })));
+        for (const k of part.sliders) {
+          const label = labelOf.get(k);
+          if (label) out.push(slider(label, -1, 1, 0.01, f[k] ?? 0, (v) => setFeature(k, v)));
+        }
       }
       out.push(
         el('h3', { textContent: 'Olhos' }), swatches(EYE_COLOURS.concat([0x2e8b57, 0x6a9fd8, 0x8b5a2b]), person.spec.look.eyes, (c) => setLook({ eyes: c })),
@@ -433,7 +397,6 @@ function startLab(): void {
         })),
         el('h3', { textContent: 'Ajuste fino' }),
         slider('Cabeça', 0.8, 1.8, 0.01, s.head, (v) => set('head', v)),
-        slider('Olhos', 0.8, 1.9, 0.01, s.eyes, (v) => set('eyes', v)),
         slider('Pernas', 0.7, 1.15, 0.01, s.legs, (v) => set('legs', v)),
         slider('Mãos', 0.8, 1.4, 0.01, s.hands, (v) => set('hands', v)),
         slider('Pés', 0.8, 1.4, 0.01, s.feet, (v) => set('feet', v)),
@@ -510,7 +473,14 @@ function startLab(): void {
       const all = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: showAll }), 'Mostrar todas as peças (inclui fantasias)');
       all.querySelector('input')!.addEventListener('change', (e) => { showAll = (e.target as HTMLInputElement).checked; render(); });
       return [
-        el('h2', { textContent: 'Roupas' }), all,
+        el('h2', { textContent: 'Roupas' }),
+        el('h3', { textContent: 'Looks prontos' }),
+        el('div', { cls: 'grid' }, ...LOOKS.map((preset) => {
+          const t = el('button', { cls: 'tile' }, el('span', { cls: 'glyph', textContent: preset.glyph }), preset.label);
+          t.onclick = () => { setLook(female() ? preset.female : preset.male); render(); };
+          return t;
+        })),
+        all,
         el('h3', { textContent: 'Visual' }),
         tiles([...sys, ...opts('top'), ...opts('dress'), ...opts('suit')], l.outfit, (n) => setLook({ outfit: n })),
         ...(separateTop ? [el('h3', { textContent: 'Calça / saia' }), tiles([...opts('bottom'), ...opts('skirt')], extraOf(['bottom', 'skirt']), (n) => setExtra(['bottom', 'skirt'], n), 'Nada')] : []),
@@ -623,8 +593,8 @@ function startLab(): void {
     renderGallery();
     say(`${saved.spec.name} salva (${savedBytes(saved)} bytes)`);
   };
-  fresh.onclick = () => { person = freshPerson(1); person = { ...person, spec: randomPerson(person.spec.id, 1) }; render(); rebuild(0); renderGallery(); };
-  dice.onclick = () => { const keepName = person.spec.name; person = freshPerson(Math.floor(Math.random() * 1e6)); person = { ...person, spec: { ...person.spec, name: keepName } }; render(); rebuild(0); };
+  fresh.onclick = () => { person = freshPerson(1); render(); void fitFace(); renderGallery(); };
+  dice.onclick = () => { const keepName = person.spec.name; person = freshPerson(Math.floor(Math.random() * 1e6)); person = { ...person, spec: { ...person.spec, name: keepName } }; render(); void fitFace(); };
   exportBtn.onclick = () => {
     const blob = new Blob([JSON.stringify(rosterOf(roster), null, 1)], { type: 'application/json' });
     const a = el('a', { href: URL.createObjectURL(blob), download: 'roadcraft-people.json' });
@@ -645,12 +615,15 @@ function startLab(): void {
     input.click();
   };
 
-  // ---------------------------------------------------------------- the hair sculptor
+  /** The face set to the classical proportions (`proportions.ts`), the person's own look kept. */
+  async function fitFace(): Promise<void> {
+    const faces = await builder.proportions();
+    person = { ...person, spec: faces.fit(person.spec) };
+    render();
+    rebuild(0);
+  }
 
-  const BRUSHES: readonly (readonly [BrushName, string, string])[] = [
-    ['grab', '✋', 'Puxar'], ['inflate', '🎈', 'Volume'], ['smooth', '🪮', 'Alisar'],
-    ['flatten', '🧱', 'Achatar'], ['pinch', '🤏', 'Apertar'], ['shorten', '✂️', 'Encurtar'],
-  ];
+  // ---------------------------------------------------------------- the hair sculptor
 
   async function openSculptor(): Promise<void> {
     const cut = person.spec.look.hairCut;
@@ -682,42 +655,76 @@ function startLab(): void {
     if (keep) rebuild(0);
   }
 
-  function sculptPanel(s: HairSculptor): Node[] {
-    const undo = el('button', { cls: 'big alt', textContent: '↶ Desfazer' });
-    undo.onclick = () => s.undoStep();
-    const redo = el('button', { cls: 'big alt', textContent: '↷ Refazer' });
-    redo.onclick = () => s.redoStep();
-    const reset = el('button', { cls: 'big alt', textContent: 'Voltar ao original' });
-    reset.onclick = () => s.reset();
-    const done = el('button', { cls: 'big save', textContent: '✔ Concluir' });
-    done.onclick = () => closeSculptor(true);
-    const cancel = el('button', { cls: 'big alt', textContent: 'Cancelar' });
-    cancel.onclick = () => closeSculptor(false);
-    const mirror = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: s.mirror }), 'Espelhar nos dois lados');
-    mirror.querySelector('input')!.addEventListener('change', (e) => { s.mirror = (e.target as HTMLInputElement).checked; });
-    return [
-      el('h2', { textContent: 'Esculpir cabelo' }),
-      el('div', { cls: 'note', textContent: 'Botão esquerdo esculpe; botão direito gira a vista; roda do mouse aproxima. Shift inverte o pincel. Ctrl+Z desfaz.' }),
-      el('h3', { textContent: 'Pincel' }),
-      el('div', { cls: 'grid' }, ...BRUSHES.map(([b, glyph, label]) => {
-        const t = el('button', { cls: `tile${s.brush === b ? ' on' : ''}` }, el('span', { cls: 'glyph', textContent: glyph }), label);
-        t.onclick = () => { s.brush = b; render(); };
-        return t;
-      })),
-      el('h3', { textContent: 'Ajuste' }),
-      slider('Tamanho', 1, 20, 0.5, s.radius * 10, (v) => { s.radius = v / 10; }, (v) => `${v} cm`),
-      slider('Força', 0.05, 1, 0.01, s.strength, (v) => { s.strength = v; }),
-      mirror,
-      el('div', { cls: 'pair' }, undo, redo), reset,
-      el('h3', { textContent: 'Pronto?' }), done, cancel,
-    ];
-  }
-
   const ndc = (e: PointerEvent): Vector2 => {
     const r = renderer.domElement.getBoundingClientRect();
     return new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   };
   let carving = false;
+  // ---- shaping by hand: the part under the pointer, dragged
+  const tip = el('div', { cls: 'tip' });
+  stage.append(tip);
+  const shapeTabs = new Set(['pessoa', 'rosto']);
+  let shaping: { region: Region; x0: number; y0: number; fx: number; fy: number } | null = null;
+  /** While dragging: each drag direction's morph weight, drawn every frame on top of the face (`loop`). */
+  let dragWeights: Record<string, number> | null = null;
+  /** How far each drag morph reaches, in slider units. */
+  const DRAG_REACH = 0.6;
+  /** The four drag morphs (each slider up and down) added to the person built now: the drag is seen at once, the rebuild comes on release. */
+  async function prepareDrag(region: Region, fx: number, fy: number): Promise<void> {
+    const b = built;
+    if (b && await addDragMorphs(b, region, fx, fy, DRAG_REACH, (slider, to) => builder.shape({ ...person, spec: { ...person.spec, features: { ...person.spec.features, [slider]: to } } }), () => built === b)) dragWeights = {};
+  }
+  let lastPick = 0;
+  const feature = (k: string): number => person.spec.features[k] ?? 0;
+  const showTip = (e: PointerEvent, region: Region | null): void => {
+    if (!region) { tip.classList.remove('on'); renderer.domElement.style.cursor = ''; return; }
+    const r = stage.getBoundingClientRect();
+    tip.style.left = `${e.clientX - r.left + 16}px`;
+    tip.style.top = `${e.clientY - r.top + 12}px`;
+    tip.innerHTML = `<b>${region.label}</b><br>↔ ${region.x.label} ${feature(region.x.slider).toFixed(2)} · ↕ ${region.y.label} ${feature(region.y.slider).toFixed(2)}`;
+    tip.classList.add('on');
+    renderer.domElement.style.cursor = shaping ? 'grabbing' : 'grab';
+  };
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (sculptor || e.button !== 0 || !shaper || !shapeTabs.has(tab)) return;
+    const region = shaper.pick(ndc(e), camera);
+    if (!region) return;
+    shaping = { region, x0: e.clientX, y0: e.clientY, fx: feature(region.x.slider), fy: feature(region.y.slider) };
+    void prepareDrag(region, shaping.fx, shaping.fy);
+    controls.enabled = false;
+    renderer.domElement.setPointerCapture(e.pointerId);
+    showTip(e, region);
+  });
+  renderer.domElement.addEventListener('pointermove', (e) => {
+    if (sculptor || !shaper || !shapeTabs.has(tab)) { tip.classList.remove('on'); return; }
+    if (shaping) {
+      const s = shaping;
+      const clamp = (x: number): number => Math.max(-1, Math.min(1, x));
+      const vx = clamp(s.fx + (e.clientX - s.x0) / 180), vy = clamp(s.fy - (e.clientY - s.y0) / 180);
+      person = { ...person, spec: { ...person.spec, features: { ...person.spec.features, [s.region.x.slider]: vx, [s.region.y.slider]: vy } } };
+      if (dragWeights) {
+        // Seen at once: each axis's morph towards the side it is dragged.
+        const dx = (vx - s.fx) / DRAG_REACH, dy = (vy - s.fy) / DRAG_REACH;
+        dragWeights = { 'drag:x+': Math.max(0, dx), 'drag:x-': Math.max(0, -dx), 'drag:y+': Math.max(0, dy), 'drag:y-': Math.max(0, -dy) };
+      } else rebuild(120);
+      showTip(e, s.region);
+      return;
+    }
+    const now = performance.now();
+    if (now - lastPick < 70) return;
+    lastPick = now;
+    showTip(e, shaper.pick(ndc(e), camera));
+  });
+  const endShape = (): void => {
+    if (!shaping) return;
+    shaping = null;
+    controls.enabled = true;
+    // The exact shape, built once the hand lets go; the drag morphs stay drawn until it is ready.
+    rebuild(0);
+    render();
+  };
+  renderer.domElement.addEventListener('pointerup', endShape);
+  renderer.domElement.addEventListener('pointerleave', () => { if (!shaping) tip.classList.remove('on'); });
   renderer.domElement.addEventListener('pointerdown', (e) => {
     if (!sculptor || e.button !== 0) return;
     if (sculptor.begin(ndc(e), camera)) {
@@ -753,10 +760,17 @@ function startLab(): void {
       poser?.apply(pose, t);
       const face = faceAt(person.spec.id, t, activity, person.spec.mood ?? 0);
       for (const m of built.meshes as SkinnedMesh[]) {
-        if (m.morphTargetInfluences && m.morphTargetDictionary) applyFace(m.morphTargetInfluences, m.morphTargetDictionary, face);
+        if (m.morphTargetInfluences && m.morphTargetDictionary) {
+          applyFace(m.morphTargetInfluences, m.morphTargetDictionary, face);
+          if (dragWeights) for (const [name, w] of Object.entries(dragWeights)) {
+            const i = m.morphTargetDictionary[name];
+            if (i !== undefined) m.morphTargetInfluences[i] = w;
+          }
+        }
       }
     }
     controls.update();
+    drainUploads(renderer);
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }
@@ -766,11 +780,17 @@ function startLab(): void {
   resize();
   render();
   renderGallery();
-  rebuild(0);
+  void fitFace();
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
   (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, setHair, setStyle, frame, get built() { return built; },
-    pick(tabId: string) { tab = tabId; render(); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
+    pick(tabId: string) { tab = tabId; render(); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
+    closeUp(dist = 0.5, x = 0) {
+      const head = new Vector3();
+      built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });
+      controls.target.copy(head).add(new Vector3(0, 0.02, 0.05));
+      camera.position.copy(controls.target).add(new Vector3(x, 0, dist));
+    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
 }
 
 startLab();
