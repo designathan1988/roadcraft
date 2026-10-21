@@ -637,6 +637,7 @@ const simLanes = (service: 'bays' | 'conflicts'): MessagePort[] => Array.from({ 
 void sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges',
   typeof MessageChannel === 'undefined' || typeof Worker === 'undefined' ? null : { bays: simLanes('bays'), conflicts: simLanes('conflicts') })
   .then(() => performance.mark('boot:sim-started'));
+performance.mark('boot:sim-asked');
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
 const engine = new Engine();
 performance.mark('boot:scene-asked');

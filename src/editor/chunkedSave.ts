@@ -564,6 +564,7 @@ export class TiledSaves {
     const got = await this.store.get([
       ...blobs.map((b) => this.blobKey(b.layer, b.square)), ...wearSquares.map((s) => this.wearKey(s)), ...manifest.globals.map((p) => this.globalKey(p)),
     ]);
+    performance.mark('save:files-read');
     const globals: Record<string, unknown> = {};
     for (let i = 0; i < manifest.globals.length; i++) {
       const blob = got[blobs.length + wearSquares.length + i];
@@ -593,6 +594,7 @@ export class TiledSaves {
       }
       texts.push(...await Promise.all(batch));
     }
+    performance.mark('save:unzipped');
     for (let i = 0; i < blobs.length; i++) {
       const value: unknown = JSON.parse(texts[i]!);
       if (!isSquareBlob(value)) return null;
@@ -612,6 +614,7 @@ export class TiledSaves {
         value.r.forEach((item, k) => out.push({ item, ord: value.o![k]!, square }));
       }
     }
+    performance.mark('save:parsed');
     for (const [name, out] of keyedRead) out.sort(name === 'lots' ? (a, b) => a.order - b.order || a.id - b.id : (a, b) => a.id - b.id);
     for (const out of listRead.values()) out.sort((a, b) => a.ord - b.ord);
     const records = (name: KeyedName): unknown[] => (keyedRead.get(name) ?? []).map((e) => e.record);
