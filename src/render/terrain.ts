@@ -106,6 +106,8 @@ let shapePasses = 0;
 const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 /** A plate's grid as its patches read it (`terrainLod.ts`). */
 const LAND_GRID: LandGrid = { seg: TERRAIN_SEGMENTS, cell: TERRAIN_CELL, half: TERRAIN_HALF };
+/** The ground's place in three's opaque order (`renderOrder`): after the layers standing on it, whose order is 0 (a faded building 1, a ghost 2). */
+export const GROUND_AFTER = 10;
 
 /** Where the grass field stands this frame (`grassField.ts`): world x, y, how far it reaches, and 1 when it is drawn. */
 const GRASS_FIELD: { value: [number, number, number, number] } = { value: [0, 0, 0, 0] };
@@ -1369,6 +1371,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     mesh.castShadow = false;
     // Culled patch by patch (`LandLod.select`): the mesh's own bounds are one patch's.
     mesh.frustumCulled = false;
+    // Drawn after the opaque layers standing on it (roads, lots, buildings, plants): what they cover fails the depth test before its fragments are shaded. DO NOT leave it at three's order by distance: its centre is near the eye, so it went first and every pixel the town then covered was shaded for nothing (1.5-1.7 ms of a large city's frame by its draws' GPU time; close view 66.0 -> 73.3 fps drawn last, 2026-10-21).
+    mesh.renderOrder = GROUND_AFTER;
     mesh.matrixAutoUpdate = false;
     mesh.position.set(origin.x, 0, -origin.y);
     mesh.updateMatrix();
