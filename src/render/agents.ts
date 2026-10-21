@@ -2,6 +2,7 @@ import { gaitSpeed, type BodyPart, type PersonAgeClass, type Severable } from '@
 import { fitInstances } from './instanceBounds';
 import { simplified } from './mesh/simplify';
 import { createPanelJoiner, panelGeometry, panelPaint, type JoinedPanels } from './vehiclePanels';
+import { WINDOW_DROP, windowGlass, windowGlassMaterial } from './vehicleWindows';
 import {
   BoxGeometry,
   Color,
@@ -287,7 +288,7 @@ export interface VehicleLook {
   readonly blackRoof: boolean;
 }
 
-/** How a door's window is drawn with a share `drop` of it lowered (0 shut, 1 fully down), written into `out` (the frame's own, `drawCar`). */
+/** How a door's window is drawn with a share `drop` of it lowered (0 shut, 1 fully down), written into `out`: what the glazing's program does to a pane (`vehicleWindows.ts`). */
 export function windowPane(door: { glass: BufferGeometry }, drop: number,
   out: { visible: boolean; up: number; sy: number } = { visible: true, up: 0, sy: 1 }): { visible: boolean; up: number; sy: number } {
   if (drop >= 0.98) { out.visible = false; out.up = 0; out.sy = 0; return out; }
@@ -470,11 +471,13 @@ interface Part {
   castLast: boolean;
   /** A body joined with its panel (`vehiclePanels.ts`): the panel's colour per instance, on the mesh's geometry; null for every other part. */
   panel: InstancedBufferAttribute | null;
+  /** A body's glazing (`vehicleWindows.ts`): each instance's two windows' drop, on the mesh's geometry; null for every other part. */
+  windows: InstancedBufferAttribute | null;
 }
 
 /** A part over `mesh`: nothing drawn, every upload clearing what was waiting to go. */
 function partOf(mesh: InstancedMesh, casts = false): Part {
-  const part: Part = { mesh, kept: 0, n: 0, holders: [], holderAt: [], tinted: false, lo: 0, hi: 0, listed: false, casts, shown: 0, castLast: false, panel: null };
+  const part: Part = { mesh, kept: 0, n: 0, holders: [], holderAt: [], tinted: false, lo: 0, hi: 0, listed: false, casts, shown: 0, castLast: false, panel: null, windows: null };
   watchUploads(part);
   return part;
 }
@@ -572,6 +575,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     forceSinglePass: true,
     depthWrite: false,
   });
+  // The shut glazing, its door windows lowered by each car's drop (`vehicleWindows.ts`).
+  const windowMaterial = windowGlassMaterial(glassMaterial);
   // The cabin: seats, dashboard, wheel.
   const cabinMaterial = new MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, vertexColors: true });
   const rubber = new MeshStandardMaterial({ roughness: 0.92, metalness: 0.05 });
@@ -682,7 +687,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         const geometry = all[k];
         if (!geometry) made.route[k] = -1;
         else if (geometry === all[k - 1]) made.route[k] = made.route[k - 1]!;
-        else { parts[k]!.mesh.geometry = geometry; made.route[k] = k; }
+        else {
+          parts[k]!.mesh.geometry = geometry;
+          // A level's own geometry carries its own part's drops (the base's is the model's).
+          const drops = parts[k]!.windows;
+          if (drops) geometry.setAttribute(WINDOW_DROP, drops);
+          made.route[k] = k;
+        }
       }
       levelsVersion++;
       onAssetsReady();
@@ -733,6 +744,16 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     }, (error: unknown) => console.error(`[vehicles] ${name}: levels not made, drawn whole`, error));
     return made;
   };
+  /** A body's glazing at every level, each part with its instances' window drops (`vehicleWindows.ts`): the coarser levels' own geometries get theirs when made (`ladder`). */
+  const glazing = (base: Part): Ladder => {
+    const made = ladder(base, 'smooth');
+    for (const part of made.parts) {
+      part.windows = new InstancedBufferAttribute(new Float32Array(part.mesh.instanceMatrix.count * 2), 2);
+      part.windows.setUsage(DynamicDrawUsage);
+    }
+    base.mesh.geometry.setAttribute(WINDOW_DROP, base.windows!);
+    return made;
+  };
   const wheelLevels = ladder(wheels, 'boxes');
   const hubLevels = ladder(hubs, 'boxes');
   // One set per class and body style: a sedan may be drawn as an estate and an SUV as a pick-up
@@ -745,7 +766,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   }
   for (const { key, model } of bodies) {
     const id = key.replace(':', '-');
-    const own = new Set<BufferGeometry>([model.shell, model.glass, model.interior, model.openShell, model.openGlass,
+    const glazed = windowGlass(model);
+    const own = new Set<BufferGeometry>([model.shell, model.glass, glazed, model.interior, model.openShell, model.openGlass,
       model.openInterior, model.trim, model.far, ...model.doors.flatMap((d) => [d.panel, d.glass, ...(d.card ? [d.card] : [])])]);
     if (model.roof) own.add(model.roof);
     if (model.accent) own.add(model.accent);
@@ -754,7 +776,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     carParts.set(key, {
       model,
       shell: ladder(instanced(`car-${id}-shell`, model.shell, paint), 'smooth'),
-      glass: ladder(instanced(`car-${id}-glass`, model.glass, glassMaterial, false), 'smooth'),
+      glass: glazing(instanced(`car-${id}-glass`, glazed, windowMaterial, false)),
       interior: ladder(instanced(`car-${id}-interior`, model.interior, cabinMaterial, false), 'boxes'),
       openShell: instanced(`car-${id}-openshell`, model.openShell, paint),
       openGlass: instanced(`car-${id}-openglass`, model.openGlass, glassMaterial, false),
@@ -1268,6 +1290,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const p = part.panel.array as Float32Array;
       p[to * 3] = p[from * 3]!; p[to * 3 + 1] = p[from * 3 + 1]!; p[to * 3 + 2] = p[from * 3 + 2]!;
     }
+    if (part.windows) { const w = part.windows.array as Float32Array; w[to * 2] = w[from * 2]!; w[to * 2 + 1] = w[from * 2 + 1]!; }
     touch(part, to, to + 1);
   };
   const listed = (part: Part): void => {
@@ -1409,6 +1432,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       part.panel = panel;
       mesh.geometry.setAttribute('panelColor', panel);
     }
+    if (part.windows) {
+      const windows = new InstancedBufferAttribute(new Float32Array(capacity * 2), 2);
+      windows.array.set(part.windows.array);
+      windows.setUsage(DynamicDrawUsage);
+      part.windows = windows;
+      mesh.geometry.setAttribute(WINDOW_DROP, windows);
+    }
     // DO NOT `dispose` the mesh to let its old buffers go: three's releaseStatesOfObject walks every geometry the renderer knows (WebGLBindingStates), ms a call; the old buffers stay on the GPU till the context goes (less than the new one's size, a doubling at a time).
     mesh.instanceMatrix = matrices;
     mesh.instanceColor = colours;
@@ -1489,8 +1519,16 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const p = part.panel!.array as Float32Array;
     p[at * 3] = panelTint.r; p[at * 3 + 1] = panelTint.g; p[at * 3 + 2] = panelTint.b;
   };
-  /** A door's lowered window this frame (`windowPane`), written in place. */
-  const pane = { visible: true, up: 0, sy: 1 };
+  /** A body's shut glazing at the level `detail` allows (`vehicleWindows.ts`): the vehicle's own frame, and how far its left and right windows are down. */
+  const wholeGlass = (l: Ladder, detail: number, left: number, right: number): void => {
+    const part = rung(l, detail);
+    if (!part || (castOnly && !part.casts)) return;
+    const at = slotOf(part);
+    const m = part.mesh.instanceMatrix.array as Float32Array, o = at * 16;
+    for (let i = 0; i < 16; i++) m[o + i] = F[i]!;
+    const w = part.windows!.array as Float32Array;
+    w[at * 2] = left; w[at * 2 + 1] = right;
+  };
 
   /** Hatchback, sedan, SUV and van, from the class's model (`vehicleModels.ts`) */
   const drawCar = (vehicle: SimVehicle, s: VehicleDraw, band: number): void => {
@@ -1516,19 +1554,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const panelTint = car.roof ? (look.blackRoof ? T_BLACK_ROOF : paint) : s.accent;
     const doors = model.doors;
     if (joined) wholePanels(joined, detail, paint, panelTint);
-    if (!doorsMoving && look.windowsDown === 0) {
+    if (!doorsMoving) {
       if (!joined) wholeAt(shell, detail, paint);
-      wholeAt(car.glass, detail, null);
-    } else if (!doorsMoving) {
-      // A window down: the fixed glazing, then each door's window, lowered into its door
-      if (!joined) wholeAt(shell, detail, paint);
-      placeWhole(car.openGlass, null);
-      for (let i = 0; i < doors.length; i++) {
-        const door = doors[i]!;
-        const down = (look.windowsDown & (door.side === -1 ? 1 : 2)) !== 0 && door.kind === 'hinge';
-        windowPane(door, down ? look.windowDrop : 0, pane);
-        if (pane.visible) place(car.doorGlass[i]!, door.hingeX, -door.hingeZ, pane.up, 1, pane.sy, 1, null);
-      }
+      // The shut glazing, a window down lowered into its door by the glass's own program (`vehicleWindows.ts`).
+      wholeGlass(car.glass, detail, (look.windowsDown & 1) !== 0 ? look.windowDrop : 0, (look.windowsDown & 2) !== 0 ? look.windowDrop : 0);
     } else {
       placeWhole(car.openShell, paint);
       placeWhole(car.openGlass, null);
@@ -2540,6 +2569,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         send(mesh.instanceMatrix, part.lo, hi, 16);
         if (part.tinted) send(mesh.instanceColor!, part.lo, hi, 3);
         if (part.panel) send(part.panel, part.lo, hi, 3);
+        if (part.windows) send(part.windows, part.lo, hi, 2);
         if (part === lamps) send(lampGlow, part.lo, hi, 1);
       }
       live.length = drawn;

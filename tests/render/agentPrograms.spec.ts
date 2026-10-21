@@ -37,9 +37,9 @@ describe('the programs of the agents', () => {
   beforeAll(() => { vi.stubGlobal('window', { setInterval: () => 0, clearInterval: () => {} }); vi.stubGlobal('location', { search: '?bodies=cooked' }); });
   afterAll(() => { vi.unstubAllGlobals(); });
 
-  it("vehicles: the meshes of every body and part ask 10 programs of three (the 10th the body joined with its roof, `vehiclePanels.ts`)", () => {
+  it("vehicles: the meshes of every body and part ask 11 programs of three (the 10th the body joined with its roof, `vehiclePanels.ts`; the 11th the glazing that lowers its windows, `vehicleWindows.ts`)", () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
-    expect(programKeys(agents.meshes).size).toBe(10);
+    expect(programKeys(agents.meshes).size).toBe(11);
     agents.dispose();
   });
 
