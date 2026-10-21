@@ -11,7 +11,7 @@ import { layPowerLines } from './powerLine';
 /** A STREET'S POWER LINE AND FURNITURE CARRIED THROUGH AN EDIT OF ITS ROAD: widened, narrowed or moved, the road takes them along instead of leaving them in its lanes or the grass */
 
 /** The pieces a street is furnished with (`furnitureSets.ts`): what an edit carries; a sign or a name plate stays where it was put. */
-const CARRIED: ReadonlySet<LandscapeKind> = new Set(FURNITURE_CATALOG.map((e) => e.kind));
+const carried = (kind: LandscapeKind): boolean => FURNITURE_CATALOG.some((e) => e.kind === kind);
 /** Past the outer edge of the footway, what still belongs to the street (a pole or a tree pit at its edge). */
 const BEYOND = m(1.5);
 /** Inside the kerb, what still counts as the footway's (a lamp leaning on the kerb face). */
@@ -53,14 +53,15 @@ function kitOf(doc: RoadDoc, net: Network, segments: readonly SegmentId[]): Kit 
     const pad = m(30);
     const rect = [box.minX - pad, box.minY - pad, box.maxX + pad, box.maxY + pad] as const;
     for (const pole of doc.polesIn(rect)) if (!poles.includes(pole.id) && owned(pole)) poles.push(pole.id);
-    for (const item of doc.landscapeIn(rect)) if (CARRIED.has(item.kind) && !items.includes(item.id) && owned(item)) items.push(item.id);
+    for (const item of doc.landscapeIn(rect)) if (carried(item.kind) && !items.includes(item.id) && owned(item)) items.push(item.id);
   }
   return { poles, items, line: poles.length > 0 };
 }
 
 /** Runs an edit that takes `segments` away (`edit`, true when it changed the map), and their power line and furniture with them: nothing of a street left standing in the grass. */
 export function removeWithStreetKit(doc: RoadDoc, net: Network, segments: readonly SegmentId[], edit: () => boolean): boolean {
-  if (net.revision !== doc.revision) net.rebuild();
+  // The network brought up to the diary (`Network.rebuild` builds only what changed).
+  net.rebuild();
   const kit = kitOf(doc, net, segments);
   if (!edit()) return false;
   for (const id of kit.poles) doc.removePole(id);
@@ -71,13 +72,15 @@ export function removeWithStreetKit(doc: RoadDoc, net: Network, segments: readon
 /** Runs a road edit of `segments` (`edit`, true when it changed the map), then lays their power line and furniture again on the roads it left (`after`: their ids then, the same by default) */
 export function carryStreetKit(doc: RoadDoc, net: Network, segments: readonly SegmentId[], edit: () => boolean,
   after: () => readonly SegmentId[] = () => segments.filter((id) => doc.segment(id) !== undefined)): boolean {
-  if (net.revision !== doc.revision) net.rebuild();
+  // The network brought up to the diary (`Network.rebuild` builds only what changed).
+  net.rebuild();
   const kit = kitOf(doc, net, segments);
   if (!edit()) return false;
   if (!kit.poles.length && !kit.items.length) return true;
   for (const id of kit.poles) doc.removePole(id);
   for (const id of kit.items) doc.removeLandscape(id);
-  if (net.revision !== doc.revision) net.rebuild();
+  // The network brought up to the diary (`Network.rebuild` builds only what changed).
+  net.rebuild();
   const streets = after();
   const power = kit.line && layPowerLines(doc, net, streets) > 0;
   // The complete set came with the line; pieces alone were the basic set.

@@ -11,6 +11,9 @@
    "timeout": 60000
   },
   {
+   "key": "Enter"
+  },
+  {
    "wait": 2000
   },
   {
@@ -127,6 +130,9 @@
   {
    "reload": "Boolean(window.__roadcraft) && !window.__roadcraft.scene().opening",
    "timeout": 120000
+  },
+  {
+   "key": "Enter"
   },
   {
    "wait": 4000

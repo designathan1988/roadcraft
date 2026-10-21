@@ -388,3 +388,19 @@
 @media (max-width: 780px) {
   .v2-compass { right: 8px; bottom: calc(8px + var(--v-dock-h) + 8px); width: 44px; height: 44px; }
 }
+
+/* ---------------------------------------------------------------- title screen */
+.v2-start { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; pointer-events: auto;
+  background: radial-gradient(ellipse at 50% 40%, rgba(8, 14, 16, 0.35), rgba(8, 14, 16, 0.82)); }
+.v2-start-card { display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); padding: 32px 28px 22px; border-radius: 18px;
+  background: var(--v-bg); border: 1px solid var(--v-line); box-shadow: var(--v-shadow); text-align: center; }
+.v2-start-card h1 { margin: 0; font-size: 40px; font-weight: 800; letter-spacing: 0.01em; }
+.v2-start-tag { margin: 0 0 14px; color: var(--v-muted); font-size: 14px; }
+.v2-start-b { height: 46px; border: 1px solid var(--v-line); border-radius: 12px; background: var(--v-raise); font-size: 16px; font-weight: 600; }
+.v2-start-b:hover { background: var(--v-raise-2); border-color: var(--v-accent-line); }
+.v2-start-b.primary { background: var(--v-accent); color: var(--v-accent-ink); border-color: var(--v-accent); font-size: 17px; }
+.v2-start-b.primary:hover { filter: brightness(1.08); }
+.v2-start-langs { display: flex; justify-content: center; gap: 6px; margin-top: 8px; }
+.v2-start-lang { padding: 6px 12px; border: 1px solid var(--v-line); border-radius: 999px; background: none; color: var(--v-muted); }
+.v2-start-lang.on { color: var(--v-accent-ink); background: var(--v-accent); border-color: var(--v-accent); }
+.v2-start-about { justify-self: center; margin-top: 4px; border: 0; background: none; color: var(--v-muted); font-size: 13px; text-decoration: underline; }
