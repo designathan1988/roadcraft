@@ -31,40 +31,40 @@ export const HAIR_NAMES: Record<string, string> = {
   shortSide: 'Curto de lado',
 };
 
-export const FACE: readonly (readonly [string, string, readonly (readonly [string, string])[]])[] = [
-  ['Cabeça', '🙂', [['head-fat-decr-incr', 'Bochechuda'], ['head-scale-horiz-decr-incr', 'Largura'], ['head-scale-vert-decr-incr', 'Altura'],
+export const FACE: readonly (readonly [string, readonly (readonly [string, string])[]])[] = [
+  ['Cabeça', [['head-fat-decr-incr', 'Bochechuda'], ['head-scale-horiz-decr-incr', 'Largura'], ['head-scale-vert-decr-incr', 'Altura'],
     ['forehead-scale-vert-decr-incr', 'Testa']]],
-  ['Olhos', '👁️', [['eye-scale-decr-incr', 'Tamanho'], ['eye-trans-in-out', 'Distância'], ['eye-corner1-down-up', 'Canto'],
+  ['Olhos', [['eye-scale-decr-incr', 'Tamanho'], ['eye-trans-in-out', 'Distância'], ['eye-corner1-down-up', 'Canto'],
     ['eye-height2-decr-incr', 'Abertura'], ['eyebrows-angle-down-up', 'Sobrancelha'], ['eyebrows-trans-down-up', 'Altura sobr.']]],
-  ['Nariz', '👃', [['nose-scale-horiz-decr-incr', 'Largura'], ['nose-scale-vert-decr-incr', 'Comprimento'], ['nose-point-width-decr-incr', 'Ponta'],
+  ['Nariz', [['nose-scale-horiz-decr-incr', 'Largura'], ['nose-scale-vert-decr-incr', 'Comprimento'], ['nose-point-width-decr-incr', 'Ponta'],
     ['nose-point-down-up', 'Arrebitado'], ['nose-hump-decr-incr', 'Calombo'], ['nose-volume-decr-incr', 'Volume']]],
-  ['Boca', '👄', [['mouth-scale-horiz-decr-incr', 'Largura'], ['mouth-upperlip-volume-decr-incr', 'Lábio sup.'], ['mouth-lowerlip-volume-decr-incr', 'Lábio inf.'],
+  ['Boca', [['mouth-scale-horiz-decr-incr', 'Largura'], ['mouth-upperlip-volume-decr-incr', 'Lábio sup.'], ['mouth-lowerlip-volume-decr-incr', 'Lábio inf.'],
     ['mouth-cupidsbow-decr-incr', 'Arco'], ['mouth-angles-down-up', 'Cantos'], ['mouth-laugh-lines-in-out', 'Covinhas']]],
-  ['Queixo', '🧔', [['chin-width-decr-incr', 'Largura'], ['chin-prominent-decr-incr', 'Projeção'], ['chin-height-decr-incr', 'Altura'],
+  ['Queixo', [['chin-width-decr-incr', 'Largura'], ['chin-prominent-decr-incr', 'Projeção'], ['chin-height-decr-incr', 'Altura'],
     ['chin-cleft-decr-incr', 'Furinho'], ['cheek-bones-decr-incr', 'Maçãs'], ['cheek-volume-decr-incr', 'Bochechas']]],
-  ['Orelhas', '👂', [['ear-scale-decr-incr', 'Tamanho'], ['ear-lobe-decr-incr', 'Lóbulo'], ['ear-flap-decr-incr', 'Abano']]],
+  ['Orelhas', [['ear-scale-decr-incr', 'Tamanho'], ['ear-lobe-decr-incr', 'Lóbulo'], ['ear-flap-decr-incr', 'Abano']]],
 ];
 export const HEAD_SHAPES: readonly (readonly [string, string])[] = [['head-oval', 'Oval'], ['head-round', 'Redonda'], ['head-square', 'Quadrada'],
   ['head-rectangular', 'Retangular'], ['head-diamond', 'Diamante'], ['head-triangular', 'Triangular'], ['head-invertedtriangular', 'Coração']];
 
-/** Ready poses: a captured clip held at a moment (`ClipPlayer.hold`), its name and emoji. */
-export const READY_POSES: readonly (readonly [string, string, LibraryClipName, number])[] = [
-  ['🧍', 'Em pé', 'idle', 0.5], ['👋', 'Tchau', 'wave', 0.9], ['🙌', 'Vitória', 'cheer', 1.0], ['💃', 'Dança', 'dance', 1.2],
-  ['📱', 'Celular', 'phone', 1.5], ['📷', 'Foto', 'photo', 1.4], ['📖', 'Leitura', 'read', 1.5], ['🥤', 'Brinde', 'drink', 1.1],
-  ['😂', 'Gargalhada', 'laugh', 0.8], ['😠', 'Bronca', 'angry', 1.0], ['🗯️', 'Discussão', 'argue', 1.2], ['🤔', 'Pensando', 'look', 1.6],
-  ['🪑', 'Sentada', 'sitIdle', 0.5], ['🧎', 'Agachada', 'crouchIdle', 0.5], ['🏃', 'Corrida', 'run', 0.3], ['🚶', 'Passo', 'walkStroll', 0.4],
+/** Ready poses: a name, and a captured clip held at a moment (`ClipPlayer.hold`). */
+export const READY_POSES: readonly (readonly [string, LibraryClipName, number])[] = [
+  ['Em pé', 'idle', 0.5], ['Tchau', 'wave', 0.9], ['Vitória', 'cheer', 1.0], ['Dança', 'dance', 1.2],
+  ['Celular', 'phone', 1.5], ['Foto', 'photo', 1.4], ['Leitura', 'read', 1.5], ['Brinde', 'drink', 1.1],
+  ['Gargalhada', 'laugh', 0.8], ['Bronca', 'angry', 1.0], ['Discussão', 'argue', 1.2], ['Pensando', 'look', 1.6],
+  ['Sentada', 'sitIdle', 0.5], ['Agachada', 'crouchIdle', 0.5], ['Corrida', 'run', 0.3], ['Passo', 'walkStroll', 0.4],
 ];
 
-/** The actions: an emoji, a name, what the face does (`faceAt`), and the captured clip the body plays (`citizenWalk.ts` library). */
-export const MOODS: readonly (readonly [string, string, string | undefined, PoseName, LibraryClipName])[] = [
-  ['🧍', 'Parado', undefined, 'idle', 'idle'], ['💬', 'Conversando', 'talk', 'idle', 'talk'], ['👂', 'Ouvindo', 'listen', 'idle', 'listen'],
-  ['😂', 'Rindo', 'laugh', 'idle', 'laugh'], ['👋', 'Acenando', 'wave', 'wave', 'wave'], ['🙌', 'Comemorando', 'cheer', 'cheer', 'cheer'],
-  ['💃', 'Dançando', 'dance', 'hips', 'dance'], ['📱', 'Ao telefone', 'phone', 'idle', 'phone'], ['📷', 'Fotografando', undefined, 'idle', 'photo'],
-  ['📖', 'Lendo', undefined, 'idle', 'read'], ['🥤', 'Bebendo', undefined, 'idle', 'drink'], ['🎧', 'Música', 'listen', 'idle', 'headphones'],
-  ['👀', 'Olhando', undefined, 'idle', 'look'], ['😬', 'Nervoso', 'look', 'idle', 'nervous'], ['😠', 'Bravo', 'angry', 'hips', 'angry'],
-  ['🗯️', 'Discutindo', 'argue', 'idle', 'argue'], ['🚶', 'Passeando', undefined, 'idle', 'walkStroll'], ['😎', 'Andar estiloso', undefined, 'idle', 'walkCool'],
-  ['🏃', 'Correndo', undefined, 'idle', 'run'], ['🪑', 'Sentado', 'talk', 'idle', 'sitIdle'], ['🧎', 'Agachado', undefined, 'idle', 'crouchIdle'],
-  ['😢', 'Chorando', 'cry', 'idle', 'idle'], ['😱', 'Assustado', 'panic', 'idle', 'nervous'],
+/** The actions: a name, what the face does (`faceAt`), and the captured clip the body plays (`citizenWalk.ts` library). */
+export const MOODS: readonly (readonly [string, string | undefined, PoseName, LibraryClipName])[] = [
+  ['Parado', undefined, 'idle', 'idle'], ['Conversando', 'talk', 'idle', 'talk'], ['Ouvindo', 'listen', 'idle', 'listen'],
+  ['Rindo', 'laugh', 'idle', 'laugh'], ['Acenando', 'wave', 'wave', 'wave'], ['Comemorando', 'cheer', 'cheer', 'cheer'],
+  ['Dançando', 'dance', 'hips', 'dance'], ['Ao telefone', 'phone', 'idle', 'phone'], ['Fotografando', undefined, 'idle', 'photo'],
+  ['Lendo', undefined, 'idle', 'read'], ['Bebendo', undefined, 'idle', 'drink'], ['Música', 'listen', 'idle', 'headphones'],
+  ['Olhando', undefined, 'idle', 'look'], ['Nervoso', 'look', 'idle', 'nervous'], ['Bravo', 'angry', 'hips', 'angry'],
+  ['Discutindo', 'argue', 'idle', 'argue'], ['Passeando', undefined, 'idle', 'walkStroll'], ['Andar estiloso', undefined, 'idle', 'walkCool'],
+  ['Correndo', undefined, 'idle', 'run'], ['Sentado', 'talk', 'idle', 'sitIdle'], ['Agachado', undefined, 'idle', 'crouchIdle'],
+  ['Chorando', 'cry', 'idle', 'idle'], ['Assustado', 'panic', 'idle', 'nervous'],
 ];
 
 /** Solid hairstyles that read well up close (the MakeHuman system cards, `people` studio's choices), by sex: what a new person wears. */

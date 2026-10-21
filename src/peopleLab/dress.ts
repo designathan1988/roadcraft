@@ -3,7 +3,7 @@ import type { PersonSpec } from '@people/spec';
 import { applySkinAppearance, loadSkinAppearance, type PersonLayers, type SkinAppearance } from '@render/people/skinAppearance';
 import type { BuiltPerson } from './build';
 import { evenHairSheen, paintedSkin, polishPerson, sharpEyes } from './polish';
-import { PROC_PREFIX } from './record';
+import { GROOM, PROC_PREFIX } from './record';
 
 /** A BUILT PERSON DRESSED AS THE LAB DRAWS THEM: the lab's finish (`polish.ts`), then the game's textures (skin, irises, fabrics, `skinAppearance.ts`) with the lab's changes */
 
@@ -11,7 +11,7 @@ import { PROC_PREFIX } from './record';
 export async function dressPerson(person: BuiltPerson, spec: PersonSpec, layers: PersonLayers, painted: WeakMap<Texture, Texture>, sculpted = false): Promise<SkinAppearance> {
   polishPerson(person.meshes, spec.look, sculpted);
   // A grown hairstyle is no catalogue file: its card texture is not loaded (the lab draws hair solid anyway).
-  const skin = await loadSkinAppearance(spec.look.hairCut?.startsWith(PROC_PREFIX) ? { ...spec, look: { ...spec.look, hairCut: 'none' } } : spec);
+  const skin = await loadSkinAppearance(spec.look.hairCut?.startsWith(PROC_PREFIX) || spec.look.hairCut === GROOM ? { ...spec, look: { ...spec.look, hairCut: 'none' } } : spec);
   let soft = painted.get(skin.texture);
   if (!soft) {
     soft = paintedSkin(skin.texture, 1) ?? skin.texture;

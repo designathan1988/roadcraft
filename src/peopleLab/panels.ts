@@ -9,6 +9,7 @@ import { BODIES, FACES, LOOKS, PARTS, mannequin, currentPreset, withBody, withFa
 import type { LabPerson } from './record';
 import type { Framing, Thumbs } from './thumbs';
 import { el, type widgets } from './widgets';
+import { icon } from './icons';
 
 /** THE CREATOR'S PANELS, as Create-a-Sim lays them out: pictures of every choice first, the fine sliders folded away under them */
 
@@ -38,21 +39,44 @@ export interface PanelContext {
   setExtra(kinds: readonly WardrobeItem['kind'][], name: string): void;
   sex(): 'female' | 'male';
   setSex(v: 'female' | 'male'): void;
+  /** The hair studio (`hairStudio.ts`). */
+  openHairStudio(): void;
+  /** The garment atelier (`atelier.ts`). */
+  openAtelier(): void;
 }
 
 interface Pic { readonly id: string; readonly label: string; readonly variant: LabPerson }
 
-export function makePanels(c: PanelContext): Record<string, () => Node[]> {
+/** A category's groups, in order: each an id, a label and what it shows. */
+export type Groups = readonly (readonly [string, string, () => Node[]])[];
+
+/** Regional body sliders by group, with their names (`modifiers.json` regional). */
+const BODY_SLIDERS: Readonly<Record<string, readonly (readonly [string, string])[]>> = {
+  tronco: [['measure-shoulder-dist-decr-incr', 'Ombros'], ['measure-bust-circ-decr-incr', 'Peito'], ['measure-underbust-circ-decr-incr', 'Sob o busto'],
+    ['measure-waist-circ-decr-incr', 'Cintura'], ['stomach-pregnant-decr-incr', 'Barriga'], ['measure-hips-circ-decr-incr', 'Quadril'],
+    ['buttocks-volume-decr-incr', 'Glúteos'], ['torso-vshape-decr-incr', 'Forma em V'], ['torso-scale-vert-decr-incr', 'Altura do tronco'],
+    ['measure-neck-circ-decr-incr', 'Pescoço'], ['measure-neck-height-decr-incr', 'Altura do pescoço']],
+  bracos: [['measure-upperarm-length-decr-incr', 'Comprimento'], ['measure-upperarm-circ-decr-incr', 'Braço'], ['upperarm-muscle-decr-incr', 'Bíceps'],
+    ['upperarm-fat-decr-incr', 'Gordura'], ['lowerarm-muscle-decr-incr', 'Antebraço'], ['hand-scale-decr-incr', 'Mãos'], ['hand-fingers-length-decr-incr', 'Dedos']],
+  pernas: [['upperlegs-height-decr-incr', 'Coxas (altura)'], ['lowerlegs-height-decr-incr', 'Canelas (altura)'], ['measure-thigh-circ-decr-incr', 'Coxas'],
+    ['measure-calf-circ-decr-incr', 'Panturrilhas'], ['upperleg-muscle-decr-incr', 'Músculo'], ['measure-knee-circ-decr-incr', 'Joelhos'],
+    ['foot-scale-decr-incr', 'Pés'], ['measure-ankle-circ-decr-incr', 'Tornozelos']],
+};
+
+/** Each face part's pictures framed on the part itself. */
+const FRAMES: Readonly<Record<string, Framing>> = { eyes: 'eyes', brows: 'brows', nose: 'nose', mouth: 'mouth', cheeks: 'cheeks', jaw: 'jaw', ears: 'ears' };
+
+export function makePanels(c: PanelContext): Record<string, Groups> {
   const { slider, swatches, seg } = c.ui;
   const p = (): LabPerson => c.person;
-  const female = (): boolean => c.sex() === 'female';
 
   /** A grid of pictures, each the person wearing that choice. */
   const pics = (entries: readonly Pic[], current: string | null | undefined, pick: (id: string) => void, framing: Framing): HTMLElement => {
     const grid = el('div', { cls: 'pics' });
     for (const e of entries) {
       const key = `${framing}:${JSON.stringify([e.variant.spec.body, e.variant.spec.features, e.variant.spec.look, e.variant.style, e.variant.sculpt?.deltas.length])}`;
-      const t = el('button', { cls: `pic${e.id === current ? ' on' : ''}`, title: e.label }, c.pictures.image(key, e.variant, framing), el('span', { textContent: e.label }));
+      // The picture says it; the name is only the tooltip.
+      const t = el('button', { cls: `pic${e.id === current ? ' on' : ''}`, title: e.label }, c.pictures.image(key, e.variant, framing));
       t.onclick = () => { pick(e.id); c.render(); };
       grid.append(t);
     }
@@ -64,17 +88,12 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
   const withFeatures = (features: Record<string, number>): LabPerson => ({ ...m(), spec: { ...m().spec, features } });
   /** A face preset on the mannequin's own face. */
   const mf = (): Readonly<Record<string, number>> => m().spec.features;
-  /** Fine sliders, folded away. */
-  const fine = (title: string, ...kids: Node[]): HTMLElement => {
-    const d = el('details', { cls: 'fine' }, el('summary', { textContent: title }), ...kids);
-    return d;
-  };
-  const sliderLabel = new Map(FACE.flatMap(([, , sliders]) => sliders.map(([k, label]) => [k, label] as const)));
+  const sliderLabel = new Map(FACE.flatMap(([, sliders]) => sliders.map(([k, label]) => [k, label] as const)));
   const featureSlider = (k: string, label = sliderLabel.get(k) ?? k): HTMLElement => slider(label, -1, 1, 0.01, p().spec.features[k] ?? 0, (v) => c.setFeature(k, v));
   /** A worn piece's sculpt buttons: open the sculptor on it, or take its sculpt off. */
   const carvePiece = (item: string | undefined, label: string): HTMLElement[] => {
     if (!item || item === 'none') return [];
-    const carve = el('button', { cls: 'big alt', textContent: label });
+    const carve = el('button', { cls: 'big alt' }, icon('sculpt', 15), label);
     carve.onclick = () => c.openSculptor(item);
     const sculpted = p().sculpts?.some((x) => x.base === item);
     if (!sculpted) return [carve];
@@ -84,155 +103,182 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
   };
   const nameOf = (n: string): string => n.replace(/^(female|male)_/, '').replace(/^[a-z0-9]+_(?=[a-z])/i, '').replace(/_/g, ' ').slice(0, 18);
 
+  const b = (): LabPerson['spec']['body'] => p().spec.body;
+  const shares = (k: 'african' | 'asian' | 'caucasian', v: number): void => {
+    const bb = b();
+    const others = (['african', 'asian', 'caucasian'] as const).filter((o) => o !== k);
+    const rest = others.reduce((s, o) => s + bb[o], 0) || 1;
+    c.setSpec({ body: { ...bb, [k]: v, [others[0]!]: (bb[others[0]!] / rest) * (1 - v), [others[1]!]: (bb[others[1]!] / rest) * (1 - v) } });
+  };
+  const sliderList = (list: readonly (readonly [string, string])[]): HTMLElement[] => list.map(([k, label]) => featureSlider(k, label));
+  const partGroup = (id: string): (() => Node[]) => () => {
+    const part = PARTS.find((x) => x.id === id)!;
+    const f = p().spec.features;
+    return [
+      pics(part.presets.map((pr) => ({ id: pr.label, label: pr.label, variant: withFeatures(withPart(mf(), part, pr)) })), currentPreset(f, part),
+        (pid) => c.setSpec({ features: withPart(f, part, part.presets.find((x) => x.label === pid)!) }), FRAMES[part.id] ?? 'face'),
+      el('div', { cls: 'gap' }),
+      ...part.sliders.filter((k) => sliderLabel.has(k)).map((k) => featureSlider(k)),
+    ];
+  };
+  const sex = (): 'female' | 'male' => c.sex();
+  const outfitPics = (names: readonly string[]): HTMLElement =>
+    pics(names.map((n) => ({ id: n, label: nameOf(n), variant: withLook({ outfit: n }) })), p().spec.look.outfit, (id) => c.setLook({ outfit: id }), 'body');
+  const allToggle = (label: string): HTMLElement => {
+    const all = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: c.showAll }), label);
+    all.querySelector('input')!.addEventListener('change', (e) => { c.setShowAll((e.target as HTMLInputElement).checked); });
+    return all;
+  };
+  const opts = (kind: WardrobeItem['kind']): readonly string[] => itemsOf(kind, { street: !c.showAll, sex: sex() });
+  const child = (): boolean => yearsFromAge(b().age) < 16;
+  const extraPics = (kind: WardrobeItem['kind'], none: string): HTMLElement =>
+    pics(['none', ...itemsOf(kind, { street: true, sex: sex() })].map((n) => ({ id: n, label: n === 'none' ? none : nameOf(n), variant: withLook({ extras: n === 'none' ? [] : [n] }) })),
+      c.extraOf([kind]), (id) => c.setExtra([kind], id), kind === 'beard' ? 'jaw' : kind === 'glasses' ? 'eyes' : kind === 'jewelry' ? 'head' : 'body');
+
   return {
-    pessoa: () => {
-      const b = p().spec.body;
-      const shares = (k: 'african' | 'asian' | 'caucasian', v: number): void => {
-        const others = (['african', 'asian', 'caucasian'] as const).filter((o) => o !== k);
-        const rest = others.reduce((s, o) => s + b[o], 0) || 1;
-        c.setSpec({ body: { ...b, [k]: v, [others[0]!]: (b[others[0]!] / rest) * (1 - v), [others[1]!]: (b[others[1]!] / rest) * (1 - v) } });
-      };
-      return [
-        seg([['female', 'Mulher'], ['male', 'Homem']] as const, c.sex(), (v) => c.setSex(v)),
-        el('h3', { textContent: 'Corpo' }),
+    pessoa: [
+      ['tipo', 'Tipo', () => [
+        seg([['female', 'Mulher'], ['male', 'Homem']] as const, sex(), (v) => c.setSex(v)),
         pics(BODIES.map((pr) => ({ id: pr.label, label: pr.label, variant: { ...m(), spec: { ...m().spec, ...withBody(m().spec.body, m().spec.features, pr) } } })), null,
-          (id) => c.setSpec(withBody(b, p().spec.features, BODIES.find((x) => x.label === id)!)), 'body'),
-        el('h3', { textContent: 'Pele' }),
+          (id) => c.setSpec(withBody(b(), p().spec.features, BODIES.find((x) => x.label === id)!)), 'body'),
+      ]],
+      ['medidas', 'Medidas', () => [
+        slider('Idade', 3, 90, 1, Math.round(yearsFromAge(b().age)), (v) => c.setBody('age', ageFromYears(v)), (v) => `${v} a`),
+        slider('Altura', 0, 1, 0.01, b().height, (v) => c.setBody('height', v)),
+        slider('Peso', 0, 1, 0.01, b().weight, (v) => c.setBody('weight', v)),
+        slider('Músculos', 0, 1, 0.01, b().muscle, (v) => c.setBody('muscle', v)),
+        slider('Proporções', 0, 1, 0.01, b().proportions, (v) => c.setBody('proportions', v)),
+        ...(sex() === 'female' ? [slider('Busto', 0, 1, 0.01, b().cupsize, (v) => c.setBody('cupsize', v)), slider('Firmeza', 0, 1, 0.01, b().firmness, (v) => c.setBody('firmness', v))] : []),
+      ]],
+      ['tronco', 'Tronco', () => sliderList(BODY_SLIDERS['tronco']!)],
+      ['bracos', 'Braços', () => sliderList(BODY_SLIDERS['bracos']!)],
+      ['pernas', 'Pernas', () => sliderList(BODY_SLIDERS['pernas']!)],
+      ['pele', 'Pele', () => [
         swatches(SKIN, p().spec.look.skin, (col) => c.setLook({ skin: col, melanin: undefined, undertone: undefined })),
-        fine('Ajuste do corpo',
-          slider('Idade', 3, 90, 1, Math.round(yearsFromAge(b.age)), (v) => c.setBody('age', ageFromYears(v)), (v) => `${v} a`),
-          slider('Altura', 0, 1, 0.01, b.height, (v) => c.setBody('height', v)),
-          slider('Peso', 0, 1, 0.01, b.weight, (v) => c.setBody('weight', v)),
-          slider('Músculos', 0, 1, 0.01, b.muscle, (v) => c.setBody('muscle', v)),
-          ...(female() ? [slider('Busto', 0, 1, 0.01, b.cupsize, (v) => c.setBody('cupsize', v))] : []),
-          slider('Africana', 0, 1, 0.01, b.african, (v) => shares('african', v)),
-          slider('Asiática', 0, 1, 0.01, b.asian, (v) => shares('asian', v)),
-          slider('Europeia', 0, 1, 0.01, b.caucasian, (v) => shares('caucasian', v))),
-      ];
-    },
-    rosto: () => {
-      const f = p().spec.features;
-      const out: Node[] = [
-        el('h3', { textContent: 'Rostos' }),
-        pics(FACES.map((face) => ({ id: face.label, label: face.label, variant: withFeatures(withFace(mf(), face)) })), null,
-          (id) => c.setSpec({ features: withFace(f, FACES.find((x) => x.label === id)!) }), 'face'),
-        el('h3', { textContent: 'Cabeça' }),
-        pics(HEAD_SHAPES.map(([k, label]) => {
-          const next: Record<string, number> = { ...mf() };
-          for (const [h] of HEAD_SHAPES) delete next[h];
-          next[k] = 0.35;
-          return { id: k, label, variant: withFeatures(next) };
-        }), HEAD_SHAPES.find(([k]) => (f[k] ?? 0) > 0)?.[0], (id) => {
-          const next: Record<string, number> = { ...f };
-          for (const [h] of HEAD_SHAPES) delete next[h];
-          next[id] = 0.35;
-          c.setSpec({ features: next });
-        }, 'face'),
-      ];
-      for (const part of PARTS) {
-        out.push(el('h3', { textContent: part.label }),
-          pics(part.presets.map((pr) => ({ id: pr.label, label: pr.label, variant: withFeatures(withPart(mf(), part, pr)) })), currentPreset(f, part),
-            (id) => c.setSpec({ features: withPart(f, part, part.presets.find((x) => x.label === id)!) }), part.id === 'ears' ? 'head' : 'face'),
-          fine('Ajuste', ...part.sliders.filter((k) => sliderLabel.has(k)).map((k) => featureSlider(k))));
-      }
-      const fit = el('button', { cls: 'big alt', textContent: '📐 Proporção do cânone' });
-      fit.onclick = () => c.fitFace();
-      out.push(
-        el('h3', { textContent: 'Cor dos olhos' }), swatches(EYE_COLOURS.concat([0x2e8b57, 0x6a9fd8, 0x8b5a2b]), p().spec.look.eyes, (col) => c.setLook({ eyes: col })),
-        el('h3', { textContent: 'Sobrancelhas' }),
-        pics([...WARDROBE.brows, ...itemsOf('eyebrows')].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ brows: n }) })), p().spec.look.brows, (id) => c.setLook({ brows: id }), 'face'),
-        el('h3', { textContent: 'Maquiagem' }), slider('Intensidade', 0, 1, 0.01, p().spec.look.makeup ?? 0, (v) => c.setLook({ makeup: v })),
-        fine('Cabeça', ...FACE[0]![2].map(([k, label]) => featureSlider(k, label))),
-        fit,
-      );
-      if (!female()) {
-        out.push(el('h3', { textContent: 'Barba' }),
-          pics(['none', ...itemsOf('beard')].map((n) => ({ id: n, label: n === 'none' ? 'Sem barba' : nameOf(n),
-            variant: withLook({ extras: n === 'none' ? [] : [n] }) })),
-          c.extraOf(['beard']), (id) => { c.setExtra(['beard'], id); }, 'face'));
-      }
-      return out;
-    },
-    estilo: () => {
-      const s = p().style;
-      const set = (k: keyof CartoonStyle, v: number): void => c.setStyle({ ...s, [k]: v });
-      return [
-        el('h3', { textContent: 'Estilo' }),
-        pics(STYLE_PRESETS.map(([label, preset]) => ({ id: label, label, variant: { ...m(), style: preset } })),
-          STYLE_PRESETS.find(([, pr]) => (Object.keys(pr) as (keyof CartoonStyle)[]).every((k) => Math.abs(pr[k] - s[k]) < (k === 'head' ? 0.08 : 0.01)))?.[0], (id) => c.setStyle(STYLE_PRESETS.find(([l]) => l === id)![1]), 'body'),
-        fine('Ajuste',
+        el('div', { cls: 'gap' }),
+        slider('Africana', 0, 1, 0.01, b().african, (v) => shares('african', v)),
+        slider('Asiática', 0, 1, 0.01, b().asian, (v) => shares('asian', v)),
+        slider('Europeia', 0, 1, 0.01, b().caucasian, (v) => shares('caucasian', v)),
+      ]],
+    ],
+    rosto: [
+      ['rosto', 'Rosto', () => {
+        const f = p().spec.features;
+        const fit = el('button', { cls: 'big alt', textContent: 'Proporção do cânone' });
+        fit.onclick = () => c.fitFace();
+        return [
+          pics(FACES.map((face) => ({ id: face.label, label: face.label, variant: withFeatures(withFace(mf(), face)) })), null,
+            (id) => c.setSpec({ features: withFace(f, FACES.find((x) => x.label === id)!) }), 'face'),
+          fit,
+        ];
+      }],
+      ['cabeca', 'Cabeça', () => {
+        const f = p().spec.features;
+        return [
+          pics(HEAD_SHAPES.map(([k, label]) => {
+            const next: Record<string, number> = { ...mf() };
+            for (const [h] of HEAD_SHAPES) delete next[h];
+            next[k] = 0.35;
+            return { id: k, label, variant: withFeatures(next) };
+          }), HEAD_SHAPES.find(([k]) => (f[k] ?? 0) > 0)?.[0], (id) => {
+            const next: Record<string, number> = { ...f };
+            for (const [h] of HEAD_SHAPES) delete next[h];
+            next[id] = 0.35;
+            c.setSpec({ features: next });
+          }, 'face'),
+          el('div', { cls: 'gap' }),
+          ...FACE[0]![1].map(([k, label]) => featureSlider(k, label)),
+        ];
+      }],
+      ['olhos', 'Olhos', () => [...partGroup('eyes')(), el('div', { cls: 'gap' }), swatches(EYE_COLOURS.concat([0x2e8b57, 0x6a9fd8, 0x8b5a2b]), p().spec.look.eyes, (col) => c.setLook({ eyes: col }))]],
+      ['sobrancelhas', 'Sobrancelhas', () => [
+        pics([...WARDROBE.brows, ...itemsOf('eyebrows')].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ brows: n }) })), p().spec.look.brows, (id) => c.setLook({ brows: id }), 'brows'),
+        ...partGroup('brows')(),
+      ]],
+      ['nariz', 'Nariz', partGroup('nose')],
+      ['boca', 'Boca', partGroup('mouth')],
+      ['bochechas', 'Bochechas', partGroup('cheeks')],
+      ['queixo', 'Queixo', partGroup('jaw')],
+      ['orelhas', 'Orelhas', partGroup('ears')],
+      ['maquiagem', 'Maquiagem', () => [slider('Intensidade', 0, 1, 0.01, p().spec.look.makeup ?? 0, (v) => c.setLook({ makeup: v }))]],
+    ],
+    estilo: [
+      ['estilo', 'Estilo', () => {
+        const s = p().style;
+        const set = (k: keyof CartoonStyle, v: number): void => c.setStyle({ ...s, [k]: v });
+        return [
+          pics(STYLE_PRESETS.map(([label, preset]) => ({ id: label, label, variant: { ...m(), style: preset } })),
+            STYLE_PRESETS.find(([, pr]) => (Object.keys(pr) as (keyof CartoonStyle)[]).every((k) => Math.abs(pr[k] - s[k]) < (k === 'head' ? 0.08 : 0.01)))?.[0],
+            (id) => c.setStyle(STYLE_PRESETS.find(([l]) => l === id)![1]), 'body'),
+          el('div', { cls: 'gap' }),
           slider('Cabeça', 0.8, 1.8, 0.01, s.head, (v) => set('head', v)),
           slider('Pernas', 0.7, 1.15, 0.01, s.legs, (v) => set('legs', v)),
           slider('Mãos', 0.8, 1.4, 0.01, s.hands, (v) => set('hands', v)),
-          slider('Pés', 0.8, 1.4, 0.01, s.feet, (v) => set('feet', v))),
-      ];
-    },
-    cabelo: () => {
-      const l = p().spec.look;
-      const list = c.showAll ? [...HAIR_CATALOGUE[c.sex()], ...HAIR_CATALOGUE[c.sex() === 'female' ? 'male' : 'female']] : HAIR_CATALOGUE[c.sex()];
-      const sculpted = !!p().sculpt && p().sculpt?.base === l.hairCut;
-      const carve = el('button', { cls: 'big save', textContent: sculpted ? '✋ Continuar esculpindo' : '✋ Esculpir o cabelo' });
-      carve.disabled = !l.hairCut || l.hairCut === 'none';
-      carve.onclick = () => c.openSculptor();
-      const all = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: c.showAll }), 'Todos');
-      all.querySelector('input')!.addEventListener('change', (e) => { c.setShowAll((e.target as HTMLInputElement).checked); });
-      const out: Node[] = [
-        el('h3', { textContent: 'Cor' }), swatches(HAIR_COLOURS, l.hair, (col) => c.setLook({ hair: col })),
-        el('h3', { textContent: 'Penteado' }), all,
-        pics(['none', ...list].map((n) => ({ id: n, label: n === 'none' ? 'Careca' : HAIR_LABELS[n] ?? nameOf(n), variant: withLook({ hairCut: n }) })), l.hairCut, (id) => c.setLook({ hairCut: id }), 'head'),
-        carve,
-      ];
-      if (sculpted) {
-        const drop = el('button', { cls: 'big alt', textContent: 'Desfazer escultura' });
-        drop.onclick = () => c.dropSculpt();
-        out.push(drop);
-      }
-      out.push(el('h3', { textContent: 'Chapéu' }),
+          slider('Pés', 0.8, 1.4, 0.01, s.feet, (v) => set('feet', v)),
+        ];
+      }],
+    ],
+    cabelo: [
+      ['penteado', 'Penteado', () => {
+        const l = p().spec.look;
+        const list = c.showAll ? [...HAIR_CATALOGUE[sex()], ...HAIR_CATALOGUE[sex() === 'female' ? 'male' : 'female']] : HAIR_CATALOGUE[sex()];
+        return [
+          allToggle('Mostrar tudo'),
+          pics(['none', ...list].map((n) => ({ id: n, label: n === 'none' ? 'Careca' : HAIR_LABELS[n] ?? nameOf(n), variant: withLook({ hairCut: n }) })), l.hairCut, (id) => c.setLook({ hairCut: id }), 'head'),
+        ];
+      }],
+      ['cor', 'Cor', () => [swatches(HAIR_COLOURS, p().spec.look.hair, (col) => c.setLook({ hair: col }))]],
+      ['criar', 'Criar', () => {
+        const make = el('button', { cls: 'big save' }, icon('hair', 16), 'Estúdio de cabelo');
+        make.onclick = () => c.openHairStudio();
+        return [make];
+      }],
+      ['barba', 'Barba', () => [extraPics('beard', 'Sem barba')]],
+      ['chapeu', 'Chapéu', () => [
         pics(['none', ...WARDROBE.hats, ...itemsOf('hat', { street: true })].map((n) => ({ id: n, label: n === 'none' ? 'Sem' : nameOf(n), variant: withLook({ hat: n }) })),
-          l.hat ?? 'none', (id) => c.setLook({ hat: id }), 'head'));
-      return out;
-    },
-    roupas: () => {
-      const l = p().spec.look;
-      if (yearsFromAge(p().spec.body.age) < 16) {
+          p().spec.look.hat ?? 'none', (id) => c.setLook({ hat: id }), 'head'),
+      ]],
+    ],
+    roupas: child() ? [
+      ['roupa', 'Roupa', () => {
+        const l = p().spec.look;
         return [
           el('h3', { textContent: 'Em cima' }), seg([['tank', 'Regata'], ['tshirt', 'Camiseta'], ['longsleeve', 'Manga longa']] as const, l.top === 'none' ? 'tshirt' : l.top, (v) => c.setLook({ top: v })),
           swatches(CLOTH, l.topColour, (col) => c.setLook({ topColour: col })),
           el('h3', { textContent: 'Embaixo' }), seg([['shorts', 'Bermuda'], ['trousers', 'Calça'], ['skirt', 'Saia']] as const, l.bottom, (v) => c.setLook({ bottom: v })),
           swatches(CLOTH, l.bottomColour, (col) => c.setLook({ bottomColour: col })),
         ];
-      }
-      const sex = c.sex();
-      const outfits = [...WARDROBE.outfits[sex], ...itemsOf('top', { street: !c.showAll, sex }), ...itemsOf('dress', { street: !c.showAll, sex }), ...itemsOf('suit', { street: !c.showAll, sex })];
-      const all = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: c.showAll }), 'Todas as peças');
-      all.querySelector('input')!.addEventListener('change', (e) => { c.setShowAll((e.target as HTMLInputElement).checked); });
-      return [
-        el('h3', { textContent: 'Looks' }),
-        pics(LOOKS.map((lk) => ({ id: lk.label, label: lk.label, variant: withLook(sex === 'female' ? lk.female : lk.male) })), null,
-          (id) => { const lk = LOOKS.find((x) => x.label === id)!; c.setLook(sex === 'female' ? lk.female : lk.male); }, 'body'),
-        el('h3', { textContent: 'Roupa' }), all,
-        pics(outfits.map((n) => ({ id: n, label: nameOf(n), variant: withLook({ outfit: n }) })), l.outfit, (id) => c.setLook({ outfit: id }), 'body'),
-        el('h3', { textContent: 'Cor' }),
-        swatches(CLOTH, l.outfitTint ?? -1, (col) => c.setLook({ outfitTint: col })),
-        ...carvePiece(l.outfit, '✋ Esculpir a roupa'),
-        el('h3', { textContent: 'Sapatos' }),
-        pics(SHOES_CATALOGUE[sex].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ footwear: n }) })), l.footwear, (id) => c.setLook({ footwear: id }), 'feet'),
-        ...carvePiece(l.footwear, '✋ Esculpir os sapatos'),
-        el('h3', { textContent: 'Óculos' }),
-        pics(['none', ...itemsOf('glasses', { street: true, sex })].map((n) => ({ id: n, label: n === 'none' ? 'Sem' : nameOf(n),
-          variant: withLook({ extras: n === 'none' ? [] : [n] }) })),
-        c.extraOf(['glasses']), (id) => c.setExtra(['glasses'], id), 'face'),
-      ];
-    },
-    expressao: () => [
-      el('h3', { textContent: 'Humor' }),
-      slider('Triste ↔ Feliz', -1, 1, 0.01, p().spec.mood ?? 0, (v) => c.setMood(v)),
-      el('h3', { textContent: 'Ações' }),
-      el('div', { cls: 'grid' }, ...MOODS.map(([emoji, label, act, pose, clip]) => {
-        const t = el('button', { cls: `tile${act === c.activity && clip === c.clip ? ' on' : ''}` }, el('span', { cls: 'glyph', textContent: emoji }), label);
-        t.onclick = () => c.act(act, pose, clip);
-        return t;
-      })),
+      }],
+    ] : [
+      ['looks', 'Looks', () => [
+        pics(LOOKS.map((lk) => ({ id: lk.label, label: lk.label, variant: withLook(sex() === 'female' ? lk.female : lk.male) })), null,
+          (id) => { const lk = LOOKS.find((x) => x.label === id)!; c.setLook(sex() === 'female' ? lk.female : lk.male); }, 'body'),
+      ]],
+      ['inteira', 'Conjuntos', () => [allToggle('Mostrar tudo'), outfitPics([...WARDROBE.outfits[sex()], ...opts('suit'), ...opts('dress')]), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
+      ['cima', 'Parte de cima', () => [allToggle('Mostrar tudo'), outfitPics(opts('top')), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
+      ['baixo', 'Parte de baixo', () => [extraPics('bottom', 'Nenhuma'), el('div', { cls: 'gap' }), extraPics('skirt', 'Nenhuma')]],
+      ['cor', 'Cor', () => [swatches(CLOTH, p().spec.look.outfitTint ?? -1, (col) => c.setLook({ outfitTint: col }))]],
+      ['sapatos', 'Sapatos', () => [
+        pics(SHOES_CATALOGUE[sex()].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ footwear: n }) })), p().spec.look.footwear, (id) => c.setLook({ footwear: id }), 'feet'),
+        ...carvePiece(p().spec.look.footwear, 'Editar sapatos'),
+      ]],
+      ['oculos', 'Óculos', () => [extraPics('glasses', 'Sem')]],
+      ['joias', 'Joias', () => [extraPics('jewelry', 'Sem')]],
+      ['criar', 'Criar', () => {
+        const make = el('button', { cls: 'big save' }, icon('pattern', 16), 'Ateliê');
+        make.onclick = () => c.openAtelier();
+        return [make];
+      }],
+    ],
+    expressao: [
+      ['acoes', 'Ações', () => [
+        el('div', { cls: 'grid' }, ...MOODS.map(([label, act, pose, clip]) => {
+          const t = el('button', { cls: `tile${act === c.activity && clip === c.clip ? ' on' : ''}` }, label);
+          t.onclick = () => c.act(act, pose, clip);
+          return t;
+        })),
+      ]],
+      ['humor', 'Humor', () => [slider('Humor', -1, 1, 0.01, p().spec.mood ?? 0, (v) => c.setMood(v))]],
     ],
   };
 }

@@ -3,6 +3,7 @@ import type { HairStyle } from '@people/hair/procedural';
 import type { CartoonStyle } from '@render/people/cartoon';
 import type { HairSculpt } from './sculpt';
 import type { Motion } from './posing';
+import type { GroomRecord } from './groom';
 import { yearsFromAge } from '@people/body/macro';
 
 /** A PERSON MADE IN THE LAB, as saved: the game's own `PersonSpec` plus what the game does not yet keep per person */
@@ -21,6 +22,8 @@ export interface LabPerson {
   readonly sculpts?: readonly HairSculpt[];
   /** The rig as reshaped, the pose held and the animation made in the pose tab (`posing.ts`). */
   readonly motion?: Motion;
+  /** Hair made in the hair studio (`groom.ts`), worn when `spec.look.hairCut` is `groom`. */
+  readonly groom?: GroomRecord;
 }
 
 export interface LabRoster {
@@ -30,6 +33,9 @@ export interface LabRoster {
 
 /** The hair studio's hairstyles are named `proc:<id>`, never a catalogue item. */
 export const PROC_PREFIX = 'proc:';
+
+/** The hair studio's hair, as `spec.look.hairCut`. */
+export const GROOM = 'groom';
 
 const round = (x: number, places = 3): number => {
   const k = 10 ** places;
@@ -56,6 +62,7 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.sculpt && person.sculpt.base === spec.look.hairCut ? { sculpt: person.sculpt } : {}),
     ...(person.sculpts?.length ? { sculpts: person.sculpts } : {}),
     ...(person.motion && Object.keys(person.motion).length ? { motion: person.motion } : {}),
+    ...(person.groom && spec.look.hairCut === GROOM ? { groom: person.groom } : {}),
   };
 }
 

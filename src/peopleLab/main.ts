@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, BufferAttribute, CylinderGeometry, MOUSE, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
+  ACESFilmicToneMapping, BufferAttribute, CylinderGeometry, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
   PMREMGenerator, PerspectiveCamera, Scene, ShadowMaterial, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D, type SkinnedMesh,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -14,6 +14,7 @@ import { createPersonLayers, releaseSkinAppearance, type SkinAppearance } from '
 import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
 import { JOINTS, PoseEditor } from './posing';
+import { setupNavigation } from './navigation';
 import { ClipPlayer, Poser, spreadArms, uprightHead, type PoseName } from './pose';
 import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
 import { variedFace } from './presets';
@@ -25,10 +26,13 @@ import { regionGlow } from './polish';
 import { Thumbs } from './thumbs';
 import { makePanels } from './panels';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
+import { HairStudio } from './hairStudio';
+import { hairPanel } from './hairPanel';
 import { sculptPanel } from './sculptPanel';
-import { PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
-import { HAIR_CATALOGUE, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
+import { GROOM, PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
+import { HAIR_CATALOGUE, HAIR_COLOURS, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
 import { el, widgets } from './widgets';
+import { icon } from './icons';
 
 /** THE PERSON CREATOR LAB (`people-lab.html`): people made one by one, saved for the game; the game's own build, nothing of the game changed */
 
@@ -49,11 +53,17 @@ function startLab(): void {
   let heldAt: number | null = null;
   let player: ClipPlayer | null = null;
   let tab = 'pessoa';
+  /** The group open in each category. */
+  const subOf: Record<string, string> = {};
   let showAll = false;
   let roster: LabPerson[] = loadRoster();
   const thumbs: Record<string, string> = loadThumbs();
   /** The hair sculptor while it is open, the person hidden. */
   let sculptor: HairSculptor | null = null;
+  /** The hair studio while it is open. */
+  let studio: HairStudio | null = null;
+  /** The editor taking the pointer: the sculptor or the hair studio. */
+  const editor = (): HairSculptor | HairStudio | null => sculptor ?? studio;
   /** Click-and-drag shaping of the person built now. */
   let shaper: HandShaper | null = null;
 
@@ -132,7 +142,7 @@ function startLab(): void {
   const rim = new DirectionalLight(0xbfe3ff, 1.4);
   rim.position.set(-2, 2.4, -2.5);
   scene.add(rim);
-  const pedestal = new Mesh(new CircleGeometry(0.75, 64), new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }));
+  const pedestal = new Mesh(new CircleGeometry(0.75, 64), new MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.85 }));
   pedestal.rotation.x = -Math.PI / 2;
   pedestal.receiveShadow = true;
   scene.add(pedestal);
@@ -150,10 +160,14 @@ function startLab(): void {
   scene.add(stool);
   const camera = new PerspectiveCamera(30, 1, 0.05, 50);
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
   controls.minDistance = 0.4;
   controls.maxDistance = 6;
   controls.maxPolarAngle = Math.PI * 0.55;
+  // Navigation as editors do it (`navigation.ts`): right orbits, middle pans, wheel zooms to the cursor, Alt with any button, F frames.
+  setupNavigation(controls, camera, renderer.domElement, {
+    targets: () => [built?.scene, sculptor?.group, studio?.group].filter((o): o is Object3D => !!o),
+    frame: () => frame(view),
+  });
   const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
   posing.onChange = () => { person = { ...person, motion: posing.motion() }; };
   let view: 'face' | 'body' = 'body';
@@ -164,7 +178,7 @@ function startLab(): void {
     const head = new Vector3(0, height * 0.92, 0);
     built?.scene.traverse((o) => { if (o.name === 'head' || o.name === 'Bip01_Head') o.getWorldPosition(head); });
     const target = which === 'face' ? head.clone().add(new Vector3(0, 0.06, 0)) : new Vector3(0, height * 0.52, 0);
-    const dist = which === 'face' ? (sculptor ? 1.25 : 1.15) : height * 2.3;
+    const dist = which === 'face' ? (editor() ? 1.25 : 1.15) : height * 2.3;
     const dir = camera.position.clone().sub(controls.target);
     if (dir.lengthSq() < 1e-6 || instant) dir.set(0.35, 0.12, 1);
     camera.position.copy(target).add(dir.normalize().multiplyScalar(dist));
@@ -293,11 +307,11 @@ function startLab(): void {
   // ---------------------------------------------------------------- the panels
 
   const TABS: readonly (readonly [string, string, string])[] = [
-    ['pessoa', '🧍', 'Pessoa'], ['rosto', '🙂', 'Rosto'], ['estilo', '✨', 'Estilo'], ['cabelo', '💇', 'Cabelo'],
-    ['roupas', '👕', 'Roupas'], ['expressao', '😄', 'Expressão'], ['pose', '🕺', 'Pose'],
+    ['pessoa', 'body', 'Corpo'], ['rosto', 'face', 'Rosto'], ['estilo', 'style', 'Estilo'], ['cabelo', 'hair', 'Cabelo'],
+    ['roupas', 'cloth', 'Roupas'], ['expressao', 'drama', 'Ações'], ['pose', 'bones', 'Rig e animação'],
   ];
   for (const [id, ico, label] of TABS) {
-    const b = el('button', {}, el('span', { cls: 'ico', textContent: ico }), label);
+    const b = el('button', {}, icon(ico, 20), el('span', { cls: 'tip-label', textContent: label }));
     b.dataset['tab'] = id;
     b.onclick = () => { tab = id; render(); if (id === 'rosto' || id === 'cabelo' || id === 'expressao') frame('face'); };
     rail.append(b);
@@ -309,7 +323,20 @@ function startLab(): void {
     const scroll = panel.scrollTop;
     pictures.clearQueue();
     if (tab !== 'pose') posing.select(null);
-    panel.replaceChildren(...(sculptor ? sculptPanel(sculptor, { slider, render, close: closeSculptor }) : tab === 'pose' ? posePanel() : PANELS[tab]!()));
+    if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
+    else if (studio) panel.replaceChildren(...hairPanel(studio, { ui: { slider, swatches, seg, tiles }, render, close: closeHairStudio, colours: HAIR_COLOURS }));
+    else if (tab === 'pose') panel.replaceChildren(...posePanel());
+    else {
+      // The category's groups along the top (Create-a-Sim's sub tabs), the chosen one below.
+      const groups = PANELS[tab]!;
+      const current = groups.find(([id]) => id === subOf[tab]) ?? groups[0]!;
+      const bar = el('div', { cls: 'subtabs' }, ...groups.map(([id, label]) => {
+        const g = el('button', { textContent: label, cls: id === current[0] ? 'on' : '' });
+        g.onclick = () => { subOf[tab] = id; panel.scrollTop = 0; render(); };
+        return g;
+      }));
+      panel.replaceChildren(groups.length > 1 ? bar : el('span'), ...current[2]());
+    }
     panel.scrollTop = scroll;
   }
 
@@ -326,6 +353,7 @@ function startLab(): void {
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
+    openHairStudio: () => { void openHairStudio(); }, openAtelier: () => { say('Ateliê em construção'); },
     setSex: (v) => {
       // The hair and the outfit go with the sex unless they suit both.
       const look = person.spec.look;
@@ -346,13 +374,13 @@ function startLab(): void {
   let toastUntil = 0;
   function say(text: string): void { toast.textContent = text; toast.classList.add('on'); toastUntil = performance.now() + 2400; }
 
-  const save = el('button', { cls: 'big save', textContent: '💾 Salvar pessoa' });
-  const fresh = el('button', { cls: 'big alt', textContent: '＋ Nova' });
-  const dice = el('button', { cls: 'big alt', textContent: '🎲 Sortear' });
+  const save = el('button', { cls: 'big save' }, icon('save', 16), 'Salvar');
+  const fresh = el('button', { cls: 'big alt' }, icon('plus', 16), 'Nova');
+  const dice = el('button', { cls: 'big alt' }, icon('shuffle', 16), 'Sortear');
   const revokeAt: [number, string][] = [];
-  const exportBtn = el('button', { cls: 'big alt', textContent: '⬇ Exportar' });
-  const importBtn = el('button', { cls: 'big alt', textContent: '⬆ Importar' });
-  side.append(el('h2', { textContent: 'Minhas pessoas' }), save, el('div', { cls: 'pair' }, fresh, dice), gallery, el('div', { cls: 'pair' }, exportBtn, importBtn));
+  const exportBtn = el('button', { cls: 'big alt' }, icon('download', 16), 'Exportar');
+  const importBtn = el('button', { cls: 'big alt' }, icon('upload', 16), 'Importar');
+  side.append(el('h2', { textContent: 'Pessoas' }), save, el('div', { cls: 'pair' }, fresh, dice), gallery, el('div', { cls: 'pair' }, exportBtn, importBtn));
 
 
   /** The face, small, for the gallery. */
@@ -445,11 +473,11 @@ function startLab(): void {
   function posePanel(): Node[] {
     const now = (): number => (performance.now() - clock0) / 1000;
     const keyAt = el('input', { type: 'number', min: '0', step: '0.25', value: String(posing.keys.length ? posing.keys[posing.keys.length - 1]!.t + 1 : 0) });
-    const add = el('button', { cls: 'big save', textContent: '＋ Quadro' });
+    const add = el('button', { cls: 'big save' }, icon('key', 15), 'Quadro');
     add.onclick = () => { posing.addKey(+keyAt.value); render(); };
-    const play = el('button', { cls: 'big alt', textContent: posing.playing ? '■ Parar' : '▶ Tocar' });
+    const play = el('button', { cls: 'big alt' }, icon(posing.playing ? 'stop' : 'play', 15), posing.playing ? 'Parar' : 'Tocar');
     play.onclick = () => { if (posing.playing) posing.stop(); else posing.play(now()); render(); };
-    const reset = el('button', { cls: 'big alt', textContent: 'Limpar' });
+    const reset = el('button', { cls: 'big alt' }, icon('trash', 15), 'Limpar');
     reset.onclick = () => { posing.reset(); render(); };
     const mode = el('div', { cls: 'seg' }, ...([['rotate', 'Girar'], ['translate', 'Mover (rig)']] as const).map(([m, label]) => {
       const b = el('button', { textContent: label, cls: posing.mode === m ? 'on' : '' });
@@ -458,8 +486,8 @@ function startLab(): void {
     }));
     return [
       el('h3', { textContent: 'Poses' }),
-      el('div', { cls: 'grid' }, ...READY_POSES.map(([emoji, label, clip, at]) => {
-        const t = el('button', { cls: `tile${clipName === clip && player?.hold === at ? ' on' : ''}` }, el('span', { cls: 'glyph', textContent: emoji }), label);
+      el('div', { cls: 'grid' }, ...READY_POSES.map(([label, clip, at]) => {
+        const t = el('button', { cls: `tile${clipName === clip && player?.hold === at ? ' on' : ''}` }, label);
         t.onclick = () => {
           clipName = clip; stool.visible = clip === 'sitIdle';
           heldAt = at;
@@ -481,6 +509,31 @@ function startLab(): void {
     ];
   }
 
+  // ---------------------------------------------------------------- the hair studio
+
+  async function openHairStudio(): Promise<void> {
+    const body = await builder.studioBody(person);
+    studio = new HairStudio(body, person.spec.look.hairCut === GROOM ? person.groom ?? null : null, person.spec.look.hair, person.spec.look.skin);
+    if (!studio.count) studio.preset('bob');
+    scene.add(studio.group);
+    if (built) built.scene.visible = false;
+    frame('face');
+    render();
+  }
+
+  function closeHairStudio(keep: boolean): void {
+    const s = studio;
+    if (!s) return;
+    if (keep && s.count) person = { ...person, groom: s.record(), spec: { ...person.spec, look: { ...person.spec.look, hairCut: GROOM, hairStyle: 'long' } } };
+    scene.remove(s.group);
+    s.dispose();
+    studio = null;
+    if (built) built.scene.visible = true;
+    controls.enabled = true;
+    render();
+    if (keep) rebuild(0);
+  }
+
   // ---------------------------------------------------------------- the hair sculptor
 
   /** The item the sculptor has open: the hair, or any worn piece by name. */
@@ -498,8 +551,6 @@ function startLab(): void {
     sculptor = new HairSculptor(item.pack, body, start, hair ? person.spec.look.hair : (person.spec.look.outfitTint ?? 0x8a96a3), person.spec.look.skin, item.texture);
     scene.add(sculptor.group);
     if (built) built.scene.visible = false;
-    // The left button sculpts, never turns the view: the right one turns it, the wheel zooms.
-    controls.mouseButtons = { LEFT: null, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
     frame(hair ? 'face' : 'body');
     render();
   }
@@ -517,7 +568,6 @@ function startLab(): void {
     sculptor = null;
     if (built) built.scene.visible = true;
     controls.enabled = true;
-    controls.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
     render();
     if (keep) rebuild(0);
   }
@@ -550,12 +600,12 @@ function startLab(): void {
     const r = stage.getBoundingClientRect();
     tip.style.left = `${e.clientX - r.left + 16}px`;
     tip.style.top = `${e.clientY - r.top + 12}px`;
-    tip.innerHTML = `<b>${region.label}</b><br>↔ ${region.x.label} ${feature(region.x.slider).toFixed(2)} · ↕ ${region.y.label} ${feature(region.y.slider).toFixed(2)}`;
+    tip.innerHTML = `<b>${region.label}</b><br>${region.x.label} ${feature(region.x.slider).toFixed(2)} · ${region.y.label} ${feature(region.y.slider).toFixed(2)}`;
     tip.classList.add('on');
     renderer.domElement.style.cursor = shaping ? 'grabbing' : 'grab';
   };
   renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (sculptor || e.button !== 0 || !shaper || !shapeTabs.has(tab)) return;
+    if (editor() || e.button !== 0 || !shaper || !shapeTabs.has(tab)) return;
     const region = shaper.pick(ndc(e), camera);
     if (!region) return;
     shaping = { region, x0: e.clientX, y0: e.clientY, fx: feature(region.x.slider), fy: feature(region.y.slider) };
@@ -566,7 +616,7 @@ function startLab(): void {
     showTip(e, region);
   });
   renderer.domElement.addEventListener('pointermove', (e) => {
-    if (sculptor || !shaper || !shapeTabs.has(tab)) { tip.classList.remove('on'); return; }
+    if (editor() || !shaper || !shapeTabs.has(tab)) { tip.classList.remove('on'); return; }
     if (shaping) {
       const s = shaping;
       const clamp = (x: number): number => Math.max(-1, Math.min(1, x));
@@ -596,36 +646,42 @@ function startLab(): void {
   renderer.domElement.addEventListener('pointerup', endShape);
   renderer.domElement.addEventListener('pointerleave', () => { if (!shaping) { tip.classList.remove('on'); glow.hover.value = 0; } });
   renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (!sculptor || e.button !== 0) return;
-    if (sculptor.begin(ndc(e), camera)) {
+    const ed = editor();
+    if (!ed || e.button !== 0 || e.altKey) return;
+    if (ed instanceof HairStudio ? ed.begin(ndc(e), camera, e.shiftKey) : ed.begin(ndc(e), camera)) {
       carving = true;
       controls.enabled = false;
       renderer.domElement.setPointerCapture(e.pointerId);
     }
   });
   renderer.domElement.addEventListener('pointermove', (e) => {
-    if (!sculptor) return;
-    if (carving) sculptor.move(ndc(e), camera, e.shiftKey);
-    else sculptor.hover(ndc(e), camera);
+    const ed = editor();
+    if (!ed) return;
+    if (carving) ed.move(ndc(e), camera, e.shiftKey);
+    else ed.hover(ndc(e), camera);
   });
-  const stop = (): void => { if (!carving) return; carving = false; sculptor?.end(); controls.enabled = true; };
+  const stop = (): void => { if (!carving) return; carving = false; editor()?.end(); controls.enabled = true; if (studio) render(); };
   renderer.domElement.addEventListener('pointerup', stop);
   renderer.domElement.addEventListener('pointercancel', stop);
   window.addEventListener('keydown', (e) => {
-    if (!sculptor || !(e.ctrlKey || e.metaKey)) return;
-    if (e.key === 'z') { e.preventDefault(); sculptor.undoStep(); }
-    if (e.key === 'y') { e.preventDefault(); sculptor.redoStep(); }
+    const ed = editor();
+    if (!ed || !(e.ctrlKey || e.metaKey)) return;
+    if (e.key === 'z') { e.preventDefault(); ed.undoStep(); }
+    if (e.key === 'y') { e.preventDefault(); ed.redoStep(); }
   });
 
   // ---------------------------------------------------------------- the loop
 
   const clock0 = performance.now();
+  let lastTick = clock0;
   /** How much stronger the lab draws a feeling than the street. */
   const EXPRESSIVE = 1.6;
   const CALM = new Set(['faceBlink', 'lookLeft', 'lookRight']);
   function loop(): void {
     const now = performance.now();
     const t = (now - clock0) / 1000;
+    studio?.tick(Math.min(0.05, (now - lastTick) / 1000));
+    lastTick = now;
     glow.time.value = t;
     if (buildAt && now >= buildAt) { buildAt = 0; void runBuild(); }
     if (toastUntil && now >= toastUntil) { toastUntil = 0; toast.classList.remove('on'); }
@@ -674,7 +730,7 @@ function startLab(): void {
       const keep = person;
       for (const sex of ['female', 'male'] as const) {
         person = { ...person, spec: { ...person.spec, body: { ...person.spec.body, gender: sex === 'female' ? 0.06 : 0.92 } } };
-        for (const t of ['pessoa', 'rosto', 'estilo', 'cabelo', 'roupas']) { tab = t; panel.replaceChildren(...PANELS[t]!()); }
+        for (const t of ['pessoa', 'rosto', 'estilo', 'cabelo', 'roupas']) { tab = t; for (const [, , show] of PANELS[t]!) panel.replaceChildren(...show()); }
       }
       const out = await pictures.drained();
       person = keep; pictures.baking = false; tab = 'pessoa'; render();
@@ -685,7 +741,7 @@ function startLab(): void {
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });
       controls.target.copy(head).add(new Vector3(0, 0.02, 0.05));
       camera.position.copy(controls.target).add(new Vector3(x, 0, dist));
-    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
+    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, openHairStudio, closeHairStudio, get studio() { return studio; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
 }
 
 startLab();

@@ -10,7 +10,9 @@ import { createPersonRig, personSimplifier } from '@render/people/personRig';
 import { attachFacialMorphs } from '@render/people/facialMorphs';
 import { channelShapes } from '@render/people/faceExpression';
 import { captureBind, captureBindRotations } from '@render/citizenWalk';
-import { PROC_PREFIX, type LabPerson } from './record';
+import { GROOM, PROC_PREFIX, type LabPerson } from './record';
+import { GroomBody, decodeGroom, groomPack } from './groom';
+import type { StudioBody } from './hairStudio';
 import { FaceProportions } from './proportions';
 import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
 
@@ -74,6 +76,29 @@ export class LabBuilder {
     return cut.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : loadProxyItem(cut);
   }
 
+  /** The person's body for the hair studio: shaped, in the bind posture, its skin and the head and neck vertices hair is pinned to. */
+  async studioBody(person: LabPerson): Promise<StudioBody> {
+    const { assets: a } = await this.setup();
+    const positions = await this.shape(person);
+    const skin: number[] = [];
+    for (const [lo, hi] of a.bodyRange) for (let v = lo; v <= hi; v++) skin.push(v);
+    const m = a.mesh;
+    const head = m.boneNames.indexOf('head'), neck = m.boneNames.indexOf('neck_01');
+    const anchors = skin.filter((v) => {
+      let w = 0;
+      for (let k = 0; k < 4; k++) { const j = m.joints[v * 4 + k]; if (j === head || j === neck) w += m.weights[v * 4 + k]! / 65535; }
+      return w >= 0.5;
+    });
+    return { positions, faces: m.faces, faceGroup: m.faceGroup, skinGroup: m.faceGroups.indexOf('body'), skin, anchors };
+  }
+
+  /** The hair studio's hair as an item on this person's body. */
+  async groomItem(person: LabPerson): Promise<ProxyItem> {
+    const body = await this.studioBody(person);
+    const gb = new GroomBody(body.positions, body.skin, body.faces, body.faceGroup, body.skinGroup);
+    return { pack: groomPack(decodeGroom(person.groom!, gb), gb, body.anchors), texture: null, transparent: false, textureFile: null };
+  }
+
   /** Any worn item by name, before its sculpt. */
   async item(person: LabPerson, name: string): Promise<ProxyItem | null> {
     if (name === person.spec.look.hairCut) return this.hairItem(person);
@@ -99,7 +124,7 @@ export class LabBuilder {
     const proxies = new Map<string, ProxyItem>();
     try {
       for (const [name, item] of await Promise.all(wornItems(spec.look).map(async (n) =>
-        [n, n.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : await loadProxyItem(n)] as const))) proxies.set(name, item);
+        [n, n === GROOM && person.groom ? await this.groomItem(person) : n.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : await loadProxyItem(n)] as const))) proxies.set(name, item);
     } catch (error) {
       // Drawn in the tailored shells rather than not at all, as the game does.
       console.warn('[people-lab] an item could not be loaded; drawn in the tailored shells', error);

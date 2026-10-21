@@ -9,7 +9,8 @@ import type { LabPerson } from './record';
 
 /** PICTURES OF CHOICES, as Create-a-Sim's tiles: each preset shown on the person themself, built and photographed off screen, one at a time, kept for the page's life */
 
-export type Framing = 'face' | 'head' | 'body' | 'feet';
+/** What a picture shows: the whole body, the feet, the head, the face, or one feature of it up close. */
+export type Framing = 'face' | 'head' | 'body' | 'feet' | 'eyes' | 'brows' | 'nose' | 'mouth' | 'cheeks' | 'jaw' | 'ears';
 
 const SIZE = 112;
 /** The baked pictures, by file (`src/peopleLab/pics/<hash of the picture's key>.webp`). */
@@ -111,10 +112,27 @@ export class Thumbs {
     const head = new Vector3(0, 1.5, 0);
     built.scene.traverse((o) => { if (o.name === 'Bip01_Head' || o.name === 'head') o.getWorldPosition(head); });
     const tall = head.y * 1.13;
-    const [target, dist] = framing === 'face' ? [head.clone().add(new Vector3(0, 0.05, 0)), 0.75]
+    // The features found on the mesh itself: the eyes' middle (their vertices, `eyeMask`), the others from it.
+    const eye = head.clone().add(new Vector3(0, 0.07, 0.08));
+    const mesh = built.meshes[0];
+    const mask = mesh?.geometry.getAttribute('eyeMask');
+    if (mesh && mask) {
+      const sum = new Vector3(), v = new Vector3();
+      let n = 0;
+      for (let i = 0; i < mask.count; i++) if (mask.getX(i) > 0.5) { mesh.getVertexPosition(i, v); sum.add(v.applyMatrix4(mesh.matrixWorld)); n++; }
+      if (n) eye.copy(sum.divideScalar(n));
+    }
+    const u = 0.1;
+    const up = (k: number, fwd = 0): Vector3 => eye.clone().add(new Vector3(0, k * u, fwd));
+    const close: Partial<Record<Framing, [Vector3, number, Vector3?]>> = {
+      eyes: [up(0), 0.3], brows: [up(0.28), 0.3], nose: [up(-0.35, 0.01), 0.28], mouth: [up(-0.7), 0.28],
+      cheeks: [up(-0.35), 0.4], jaw: [up(-0.95), 0.36], ears: [up(-0.15, -0.08), 0.32, new Vector3(1, 0.05, 0.1)],
+    };
+    const near = close[framing];
+    const [target, dist, dir] = near ?? (framing === 'face' ? [head.clone().add(new Vector3(0, 0.05, 0)), 0.75]
       : framing === 'head' ? [head.clone().add(new Vector3(0, 0.03, 0)), 1.05]
-        : framing === 'feet' ? [new Vector3(0, 0.12, 0), 1.1] : [new Vector3(0, tall * 0.5, 0), tall * 2.55];
-    this.camera.position.copy(target).add(new Vector3(0.28, 0.06, 1).normalize().multiplyScalar(dist));
+        : framing === 'feet' ? [new Vector3(0, 0.12, 0), 1.1] : [new Vector3(0, tall * 0.5, 0), tall * 2.55]);
+    this.camera.position.copy(target).add((dir ?? (near ? new Vector3(0.12, 0.02, 1) : new Vector3(0.28, 0.06, 1))).normalize().multiplyScalar(dist));
     this.camera.lookAt(target);
     this.renderer.render(this.scene, this.camera);
     const src = this.renderer.domElement.toDataURL('image/webp', 0.85);
