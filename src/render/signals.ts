@@ -296,6 +296,8 @@ export function createSignalHeads(
 
     /** A cell's instances appended: its run, and the sphere they stand in. */
     add(key: number, matrices: Float32Array, colours: Float32Array | null, glows: Float32Array | null, sphere: Sphere): void {
+      // The same instances the cell's run holds: nothing to send. DO NOT write them again: the simulation tells a junction's layout again with nothing changed, the cell was built again, and the frames' and visors' matrices sent anew moved the casters' signature - every sun cascade drawn whole two or three times a second in a still view (the frames over 25 ms at the close view, 2026-10-21).
+      if (this.holds(key, matrices, colours, glows)) return;
       this.remove(key);
       const n = matrices.length / 16;
       if (!n) return;
@@ -306,6 +308,19 @@ export function createSignalHeads(
       this.runs.set(key, { start: this.count, count: n, sphere });
       this.count += n;
       this.dirty = true;
+    }
+
+    /** Whether the cell's run holds these very instances (matrices, colours and glows alike). */
+    private holds(key: number, matrices: Float32Array, colours: Float32Array | null, glows: Float32Array | null): boolean {
+      const run = this.runs.get(key);
+      if (!run || run.count * 16 !== matrices.length) return false;
+      const same = (store: Float32Array | null, given: Float32Array | null, size: number): boolean => {
+        if (!store || !given) return !given;
+        const from = run.start * size;
+        for (let i = 0; i < given.length; i++) if (store[from + i] !== given[i]) return false;
+        return true;
+      };
+      return same(this.data, matrices, 16) && same(this.colours, colours, 3) && same(this.glows, glows, 4);
     }
 
     /** A cell's instances let go: the runs after its own move down. */

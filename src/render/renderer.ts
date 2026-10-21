@@ -581,6 +581,9 @@ export function createSceneRenderer(
     return h;
   };
   let lastCasterSignature = 0;
+  /** The camera at the last shadow pass: whether the view stood still since (`ShadowPassInput.keep`). */
+  const shadowView = new Matrix4();
+  const shadowProjection = new Matrix4();
   const swaying: Movers = {
     get roots() {
       if (swayChanged) { swayList = [...swayMeshes]; swayChanged = false; }
@@ -3354,9 +3357,13 @@ export function createSceneRenderer(
         // while a level changes only past a threshold, which the signature sees; every cascade was drawn whole at every frame for ~20 s after each move.
         const signature = casterSignature();
         const still = signature === lastCasterSignature && !castersStirred;
+        // Where the view stands, a cascade drawn whole is kept for the frames after (`ShadowPassInput.keep`).
+        const viewStill = shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
+        shadowView.copy(rig.camera.matrixWorld);
+        shadowProjection.copy(rig.camera.projectionMatrix);
         lastCasterSignature = signature;
         castersStirred = false;
-        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still })) {
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still, keep: viewStill })) {
           renderer.shadowMap.needsUpdate = true;
         }
         shadowMoved = false;

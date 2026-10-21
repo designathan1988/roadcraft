@@ -88,6 +88,8 @@ export interface ShadowPassInput {
   readonly effects: boolean;
   /** Nothing that casts and stands still changed since the last pass, as the caller knows it (the view, what landed, came or went): a cascade's store may stand for its town. Absent: it may not. */
   readonly still?: boolean;
+  /** The view stands where it stood (the camera unmoved): a cascade drawn whole now is kept as its store though its casters changed, the next frames standing on it. Absent: only a still pass keeps its store. */
+  readonly keep?: boolean;
 }
 
 export interface SunCascades {
@@ -578,7 +580,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       for (const k of Object.keys(stats.why) as (keyof typeof stats.why)[]) stats.why[k] = 0;
       return out;
     },
-    pass({ changed, effects, still = false }) {
+    pass({ changed, effects, still = false, keep = false }) {
       if (!enabled) return false;
       stats.passes++;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
@@ -610,7 +612,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           if (refitted[i]) stats.why.refit++; else if (changed || wasCarried) stats.why.changed++; else if (effects) stats.why.effects++; else if (framesSince[i]! >= SAFETY_FRAMES) stats.why.safety++; else stats.why.noStore++;
           lights[i]!.shadow.needsUpdate = true;
           // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame): the movers drawn in the same pass, no copy, no second pass over them.
-          whole[i] = renderer !== null && still;
+          // Kept where the view stands (`keep`) as well: DO NOT draw the town whole twice for one change of a caster in a still view (once unkept, then again to keep it, the next frame): two cascade passes of 11 M triangles each for a signal head written again (2026-10-21).
+          whole[i] = renderer !== null && (still || keep);
           // Drawn for safety alone: its turn kept; drawn with the others (a change, a refit, effects): its turn set apart from theirs.
           const safetyAlone = !refitted[i] && !changed && !wasCarried && !effects && framesSince[i]! >= SAFETY_FRAMES;
           refitted[i] = false;
