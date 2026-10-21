@@ -35,7 +35,7 @@ function feedOf(node: NodeId, segments: readonly SegmentId[], states: SignalStat
 }
 
 describe('signal heads batched over the map', () => {
-  it('draws two junctions a kilometre apart with the same four batches: frame, visors, every lens, halos', () => {
+  it('draws two junctions apart with four batches a block of the plane: frame, visors, every lens, halos', () => {
     const doc = new RoadDoc();
     const layouts = new Map<NodeId, SignalLayout>();
     const all: SegmentId[] = [];
@@ -65,13 +65,19 @@ describe('signal heads batched over the map', () => {
     const heads = createSignalHeads(new Scene());
     heads.sync(feed, net, true);
     const meshes = heads.group.children.filter((c): c is InstancedMesh => c instanceof InstancedMesh);
-    expect(meshes.map((m) => m.name).sort()).toEqual(['signal-frame', 'signal-halos', 'signal-lenses', 'signal-visors']);
-    const by = Object.fromEntries(meshes.map((m) => [m.name, m]));
+    // The four kinds in each block their heads stand in (one batch a kind for the town was never culled, 2026-10-20).
+    const names = meshes.map((m) => m.name);
+    expect([...new Set(names)].sort()).toEqual(['signal-frame', 'signal-halos', 'signal-lenses', 'signal-visors']);
+    const blocks = names.filter((name) => name === 'signal-frame').length;
+    expect(blocks).toBeGreaterThanOrEqual(1);
+    expect(blocks).toBeLessThanOrEqual(2);
+    expect(meshes).toHaveLength(blocks * 4);
+    const count = (name: string): number => meshes.filter((m) => m.name === name).reduce((sum, m) => sum + m.count, 0);
     const n = layouts.size * 2;
-    expect(by['signal-frame']!.count).toBe(n);
-    expect(by['signal-visors']!.count).toBe(n * 6);
-    expect(by['signal-lenses']!.count).toBe(n * 6);
-    expect(by['signal-halos']!.count).toBe(n * 2);
+    expect(count('signal-frame')).toBe(n);
+    expect(count('signal-visors')).toBe(n * 6);
+    expect(count('signal-lenses')).toBe(n * 6);
+    expect(count('signal-halos')).toBe(n * 2);
     expect(heads.group.userData.litLamps).toBe(n * 2);
     heads.dispose();
   });

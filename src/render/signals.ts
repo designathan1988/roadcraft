@@ -274,7 +274,7 @@ export function createSignalHeads(
   /** Each casting batch taken off the casters chosen by cascade when it goes (`castBySize`). */
   const uncast = new Map<InstancedMesh, () => void>();
 
-  /** One kind's instances over every cell: a master array, one InstancedMesh, a run a cell (`buildCell`).
+  /** One kind's instances over a block of cells (`BLOCK`): a master array, one InstancedMesh, a run a cell (`buildCell`).
    *  DO NOT draw a mesh a cell: a city's thirty cells were a hundred and twenty draws (the lab's frame, 2026-10-20). */
   class SignalBatch {
     private mesh: InstancedMesh | null = null;
@@ -432,7 +432,20 @@ export function createSignalHeads(
       }
     }
   }
-  const batches = Object.fromEntries(NAMES.map((name) => [name, new SignalBatch(name)])) as Record<BatchName, SignalBatch>;
+  /** THE HEADS IN BLOCKS OF THE PLANE: each kind's batch a block, its bounds the block's heads, culled by three out of the view. DO NOT keep one batch a kind for the town: its bounds were the city's, never culled, and every head of a large city drawn at every frame (7,638 lenses, 20,196 visors, 1 M triangles at a close view and as many cast, 2026-10-20). */
+  const BLOCK = m(768);
+  const blocks = new Map<string, Record<BatchName, SignalBatch>>();
+  /** Each cell's block, taken at its first heads and kept: its runs never split between two. */
+  const cellBlock = new Map<number, Record<BatchName, SignalBatch>>();
+  const batchesOf = (key: number, sphere: Sphere): Record<BatchName, SignalBatch> => {
+    let batches = cellBlock.get(key);
+    if (batches) return batches;
+    const at = `${Math.floor(sphere.center.x / BLOCK)},${Math.floor(-sphere.center.z / BLOCK)}`;
+    batches = blocks.get(at);
+    if (!batches) blocks.set(at, batches = Object.fromEntries(NAMES.map((name) => [name, new SignalBatch(name)])) as Record<BatchName, SignalBatch>);
+    cellBlock.set(key, batches);
+    return batches;
+  };
 
   const root = new Matrix4();
   const place = new Matrix4();
@@ -462,8 +475,11 @@ export function createSignalHeads(
   const landRead = new JournalCursor(['terrain', 'elevation']);
 
   const dropCell = (cell: Cell): void => {
+    const batches = cellBlock.get(cell.key);
+    if (!batches) return;
     for (const name of NAMES) batches[name].remove(cell.key);
     for (const name of NAMES) batches[name].flush();
+    cellBlock.delete(cell.key);
   };
   const dropCells = (): void => {
     for (const cell of cells.values()) dropCell(cell);
@@ -503,6 +519,7 @@ export function createSignalHeads(
         }
       }
     }
+    const batches = batchesOf(cell.key, cell.sphere);
     batches.lenses.add(cell.key, matrices, colours, glows, cell.sphere);
     batches.halos.add(cell.key, Float32Array.from(haloMatrices), Float32Array.from(haloColours), null, cell.sphere);
     for (const name of LENSES) batches[name].flush();
@@ -560,6 +577,7 @@ export function createSignalHeads(
       f += 16;
       for (const visor of visors) { put(shields, v, visor); v += 16; }
     }
+    const batches = batchesOf(key, sphere);
     batches.frame.add(key, frames, null, null, sphere);
     batches.visors.add(key, shields, null, null, sphere);
     for (const name of FIXED) batches[name].flush();
@@ -669,7 +687,8 @@ export function createSignalHeads(
     dispose() {
       scene.remove(group);
       dropCells();
-      for (const name of NAMES) batches[name].dispose();
+      for (const batches of blocks.values()) for (const name of NAMES) batches[name].dispose();
+      blocks.clear();
       group.clear();
       shown.clear();
       for (const geometry of [
