@@ -274,6 +274,22 @@ export class PartCell {
     }
   }
 
+  private box: Box3 | null = null;
+  /** Every piece the cell may draw, in three's world: its bands' sub-cell boxes that hold any instance (what the occlusion tests, `layer.ts` hideOccluded). */
+  get bounds(): Box3 {
+    if (this.box) return this.box;
+    const box = new Box3();
+    for (const band of this.bands) {
+      for (let m = 0; m < LEAVES; m++) {
+        if (band.start[m + 1] === band.start[m]) continue;
+        const o = m * 6, b = band.box;
+        box.expandByPoint(new Vector3(b[o], b[o + 1], b[o + 2]));
+        box.expandByPoint(new Vector3(b[o + 3], b[o + 4], b[o + 5]));
+      }
+    }
+    return (this.box = box);
+  }
+
   /** What the cell draws now. */
   get triangles(): number {
     let sum = 0;
