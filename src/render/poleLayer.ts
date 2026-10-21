@@ -18,6 +18,7 @@ import type { RoadDoc } from '@world/doc';
 import type { PoleId, SpanId } from '@world/ids';
 import type { Network } from '@world/network';
 import { PoleIndex } from '@world/poleIndex';
+import { cellRect } from '@world/cells';
 import { m } from '@world/units';
 import type { PoleArms, UtilityPole, UtilitySpan } from '@world/utilities';
 import type { ActiveTiles } from './activeTiles';
@@ -80,6 +81,8 @@ const POLE_REACH = m(12);
 
 
 interface PoleState {
+  /** The block it is drawn in (`blockKey`). */
+  readonly block: string;
   readonly x: number;
   readonly y: number;
   readonly top: number;
@@ -138,6 +141,17 @@ class ScreenScale {
     return this.atPoint(sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius);
   }
 
+  /** Pixels a unit spans at a box's nearest corner (three's axes: x0, y0, z0, x1, y1, z1): Infinity when the eye is in it or level with it. */
+  atBox(box: ArrayLike<number>): number {
+    if (!this.perspective) return this.pixels;
+    if (!(box[0]! <= box[3]!)) return 0;
+    const e = this.eye, a = this.ahead;
+    if (e.x >= box[0]! && e.x <= box[3]! && e.y >= box[1]! && e.y <= box[4]! && e.z >= box[2]! && e.z <= box[5]!) return Infinity;
+    // The corner nearest along the view: each axis's end the view's direction comes to first.
+    const depth = ((a.x >= 0 ? box[0]! : box[3]!) - e.x) * a.x + ((a.y >= 0 ? box[1]! : box[4]!) - e.y) * a.y + ((a.z >= 0 ? box[2]! : box[5]!) - e.z) * a.z;
+    return depth > 1e-3 ? this.pixels / depth : Infinity;
+  }
+
   atPoint(x: number, y: number, z: number, radius: number): number {
     if (!this.perspective) return this.pixels;
     const e = this.eye, a = this.ahead;
@@ -146,7 +160,7 @@ class ScreenScale {
   }
 }
 
-/** A part's instances over the whole layer: a mesh with room for `capacity`, the first `count` drawn, and which pole holds each slot (DO NOT draw a mesh a cell: a city's cells were forty meshes a part, `poleLayer.ts` before 2026-10-20). */
+/** A part's instances over a block of the layer (`BLOCK`): a mesh with room for `capacity`, the first `count` drawn, and which pole holds each slot. */
 class PartStore {
   private mesh: InstancedMesh | null = null;
   private capacity = 0;
@@ -265,6 +279,11 @@ class PartStore {
     }
   }
 
+  /** Its pieces' box (three's axes): where its block is nearest the eye with no pole of the page to say so (a bake's). */
+  get box(): ArrayLike<number> {
+    return this.bounds.box;
+  }
+
   /** As the camera sees the nearest pole: a piece covering under a pixel (times its brightness) not drawn, nor cast where it covers under a shadow texel; the coarsest shape off by under a pixel. */
   view(scale: ScreenScale, nearest: number): void {
     const mesh = this.mesh, spec = this.spec;
@@ -288,7 +307,7 @@ class PartStore {
   }
 }
 
-/** One cell's spans' wires: `SPAN_WIRES` instances a span in a block of their own, drawn with the template the view asks for. */
+/** One block's spans' wires: `SPAN_WIRES` instances a span in a block of their own, drawn with the template the view asks for. */
 class WireStore {
   private mesh: Mesh | null = null;
   private data = new Float32Array(0);
@@ -416,6 +435,11 @@ class WireStore {
     }
   }
 
+  /** Its wires' box (three's axes, before their sag). */
+  get box(): ArrayLike<number> {
+    return this.bounds.box;
+  }
+
   /** As the camera sees the nearest pole: the template its wires need (`wireLevel`), none once faded; cast while a texel or wider. */
   view(scale: ScreenScale, nearest: number): void {
     const mesh = this.mesh;
@@ -447,15 +471,24 @@ class ViewedRoot extends LOD {
   }
 }
 
+/** THE LAYER IN BLOCKS OF THE PLANE: a store a part and one for the wires in each, so a block out of the view is culled by three and each is drawn at the detail its own nearest pole asks. DO NOT keep one store a part for the whole layer: its bounds were the city's, never culled, and its levels chosen by the pole nearest the eye, every wire, insulator and lamp of a large city drawn at that detail at every frame (26,145 wires of 64 triangles, 3 M triangles at a close view, 2026-10-20). DO NOT make them a world cell (256 m) either: forty meshes a part over a city, drawn. */
+const BLOCK = m(768);
+const blockKey = (x: number, y: number): string => `${Math.floor(x / BLOCK)},${Math.floor(y / BLOCK)}`;
+
+interface Block {
+  readonly parts: PartStore[];
+  readonly wires: WireStore;
+  /** The poles placed in it here (none for a bake's): where it is nearest the eye. */
+  readonly poles: Set<PoleId>;
+}
+
 export class PoleLayer implements Utilities {
   readonly group: ViewedRoot;
   private readonly specs: readonly PolePartSpec[];
-  /** A store a part for the whole layer: one draw a part, wherever its poles stand. */
-  private readonly parts: PartStore[];
-  private readonly wires: WireStore;
+  private readonly blocks = new Map<string, Block>();
   private readonly poles = new Map<PoleId, PoleState>();
-  /** Each span strung here, with its block in the wires' store. */
-  private readonly spans = new Map<SpanId, { readonly span: UtilitySpan; block: number }>();
+  /** Each span strung here, with its block of the plane and its place in that block's wires. */
+  private readonly spans = new Map<SpanId, { readonly span: UtilitySpan; readonly key: string; block: number }>();
   /** The poles drawn here by place, and the spans strung to each: what an edit takes away is found here. */
   private readonly index = new PoleIndex();
   private readonly scratch: Placement[][] = Array.from({ length: POLE_PART_COUNT }, () => []);
@@ -465,13 +498,21 @@ export class PoleLayer implements Utilities {
     this.group = new ViewedRoot((camera) => this.view(camera));
     this.group.name = name;
     this.specs = polePartSpecs(kit);
-    this.parts = this.specs.map((spec) => new PartStore(spec, this.group));
-    this.wires = new WireStore(this.group);
+  }
+
+  /** The block of key `key`, made when first asked. */
+  private block(key: string): Block {
+    let block = this.blocks.get(key);
+    if (!block) {
+      block = { parts: this.specs.map((spec) => new PartStore(spec, this.group)), wires: new WireStore(this.group), poles: new Set() };
+      this.blocks.set(key, block);
+    }
+    return block;
   }
 
   get triangles(): number {
     let triangles = 0;
-    for (const part of this.parts) triangles += part.perInstance * part.count;
+    for (const block of this.blocks.values()) for (const part of block.parts) triangles += part.perInstance * part.count;
     return triangles;
   }
 
@@ -543,19 +584,24 @@ export class PoleLayer implements Utilities {
     pole: UtilityPole, kept: { x: number; y: number } | null | undefined): void {
     const { top, kerb, frame } = framePole(net, groundAt, source, pole, kept);
     const slots: number[][] = Array.from({ length: POLE_PART_COUNT }, () => []);
+    const key = blockKey(pole.x, pole.y);
+    const block = this.block(key);
     if (source.draws?.(pole) ?? true) {
       const out = this.scratch;
       for (const list of out) list.length = 0;
       placePole(pole, top, frame, kerb, groundAt, out);
-      out.forEach((list, part) => { for (const placement of list) slots[part]!.push(this.parts[part]!.add(pole.id, placement)); });
+      out.forEach((list, part) => { for (const placement of list) slots[part]!.push(block.parts[part]!.add(pole.id, placement)); });
     }
-    this.poles.set(pole.id, { x: pole.x, y: pole.y, top, kerb, frame, slots });
+    block.poles.add(pole.id);
+    this.poles.set(pole.id, { block: key, x: pole.x, y: pole.y, top, kerb, frame, slots });
     this.index.putPole(pole);
   }
 
   private unplace(id: PoleId, state: PoleState): void {
+    const block = this.blocks.get(state.block)!;
+    block.poles.delete(id);
     state.slots.forEach((slots, part) => {
-      const store = this.parts[part];
+      const store = block.parts[part];
       if (!store) return;
       // Highest first: the last slot is then never one of this pole's still to go.
       for (const slot of [...slots].sort((a, b) => b - a)) {
@@ -574,15 +620,17 @@ export class PoleLayer implements Utilities {
     if (this.spans.has(span.id)) return;
     const a = this.poles.get(span.a), b = this.poles.get(span.b);
     if (!a || !b) return;
-    const block = this.wires.add(span, wireEnd(span, a), wireEnd(span, b));
-    this.spans.set(span.id, { span, block });
+    // In the block of its first pole.
+    const key = a.block;
+    const block = this.block(key).wires.add(span, wireEnd(span, a), wireEnd(span, b));
+    this.spans.set(span.id, { span, key, block });
     this.index.putSpan(span);
   }
 
   private unstring(id: SpanId): void {
     const held = this.spans.get(id);
     if (!held) return;
-    const moved = this.wires.remove(held.block);
+    const moved = this.blocks.get(held.key)!.wires.remove(held.block);
     if (moved !== null) this.spans.get(moved)!.block = held.block;
     this.spans.delete(id);
     this.index.deleteSpan(held.span);
@@ -590,29 +638,41 @@ export class PoleLayer implements Utilities {
 
   /** Every store's changes sent. */
   private flush(): void {
-    for (const part of this.parts) part.flush();
-    this.wires.flush();
+    for (const block of this.blocks.values()) {
+      for (const part of block.parts) part.flush();
+      block.wires.flush();
+    }
   }
 
-  /** The nearest pole as this camera sees it, each time three draws the layer: what the parts fade and coarsen by. */
+  /** Each block's nearest pole as this camera sees it, each time three draws the layer: what its parts fade and coarsen by. */
   private view(camera: Camera): void {
     this.scale.set(camera);
     wireScreen.uWirePixels.value = screen.halfHeight;
-    let nearest = -Infinity;
-    if (this.poles.size > 0) {
-      // A pole's own reach, the top of its mast standing at (x, top, -y) in three's axes.
-      for (const pole of this.poles.values()) {
-        nearest = Math.max(nearest, this.scale.atPoint(pole.x, pole.top / 2, -pole.y, pole.top / 2));
+    for (const block of this.blocks.values()) {
+      let nearest = -Infinity;
+      if (block.poles.size > 0) {
+        // A pole's own reach, the top of its mast standing at (x, top, -y) in three's axes.
+        for (const id of block.poles) {
+          const pole = this.poles.get(id)!;
+          nearest = Math.max(nearest, this.scale.atPoint(pole.x, pole.top / 2, -pole.y, pole.top / 2));
+        }
+      } else {
+        // A bake's block: the nearest corner of what it holds.
+        for (const part of block.parts) if (part.count > 0) nearest = Math.max(nearest, this.scale.atBox(part.box));
+        if (block.wires.count > 0) nearest = Math.max(nearest, this.scale.atBox(block.wires.box));
       }
+      for (const part of block.parts) part.view(this.scale, nearest);
+      block.wires.view(this.scale, nearest);
     }
-    for (const part of this.parts) part.view(this.scale, nearest);
-    this.wires.view(this.scale, nearest);
   }
 
   dispose(): void {
     // The instances and the wires are this layer's; the parts' shapes and materials are shared (`PARTS`).
-    for (const part of this.parts) part.dispose();
-    this.wires.dispose();
+    for (const block of this.blocks.values()) {
+      for (const part of block.parts) part.dispose();
+      block.wires.dispose();
+    }
+    this.blocks.clear();
     this.group.clear();
   }
 
@@ -620,8 +680,11 @@ export class PoleLayer implements Utilities {
   static fromBake(kit: SceneryKit, bake: PoleBake, name = 'utilities'): PoleLayer {
     const layer = new PoleLayer(kit, name);
     for (const baked of bake.cells) {
-      baked.parts.forEach((part, k) => { if (part) layer.parts[k]!.load(part); });
-      if (baked.wires) layer.wires.load(baked.wires);
+      // The block holding the cell's middle (a tile's own cell key falls in one too: its pieces kept together).
+      const r = cellRect(baked.key);
+      const block = layer.block(blockKey((r[0] + r[2]) / 2, (r[1] + r[3]) / 2));
+      baked.parts.forEach((part, k) => { if (part) block.parts[k]!.load(part); });
+      if (baked.wires) block.wires.load(baked.wires);
     }
     layer.flush();
     return layer;

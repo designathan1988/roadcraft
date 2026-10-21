@@ -7,7 +7,7 @@ import { buildUtilities } from '@render/poleLayer';
 import { WIRE_FADE, WIRE_WIDTH, wireLevel } from '@render/utilities';
 import { m } from '@world/units';
 
-/** THE POLE LAYER AS THE CAMERA SEES IT: one mesh a part over the whole layer (not a cell), pieces under a pixel not drawn, wires coarser and gone far away */
+/** THE POLE LAYER AS THE CAMERA SEES IT: one mesh a part a block of the plane (not a world cell, not the whole layer), each block by its own nearest pole: pieces under a pixel not drawn, wires coarser and gone far away */
 
 /** Two lines of poles in cells a kilometre apart. */
 function twoLines(): RoadDoc {
@@ -38,23 +38,27 @@ function named(root: Object3D, name: string): Mesh[] {
 }
 
 describe('the pole layer as the camera sees it', () => {
-  it('draws the whole layer by its nearest pole: every piece near, the small ones gone and the wires faded far away', () => {
+  it('draws each block by its own nearest pole: every piece near, the small ones gone and the wires faded far away', () => {
     const doc = twoLines();
     const net = new Network(doc);
     net.rebuild();
     const kit = createSceneryKit();
     const layer = buildUtilities(net, () => 0, kit);
-    // A mesh a part for the whole layer, not a cell's: the page's city drew a mesh a cell (2026-10-20).
-    expect(named(layer.group, 'utility-insulators')).toHaveLength(1);
-    expect(named(layer.group, 'utility-wires')).toHaveLength(1);
+    // A mesh a part a block of the plane: the two lines a kilometre apart stand in two (one mesh a part for the whole layer was never culled, and drew every wire of a city at its nearest pole's detail, 2026-10-20).
+    expect(named(layer.group, 'utility-insulators')).toHaveLength(2);
+    expect(named(layer.group, 'utility-wires')).toHaveLength(2);
 
     layer.group.update(camera(m(20)));
-    expect(named(layer.group, 'utility-insulators')[0]!.visible).toBe(true);
-    const wires = named(layer.group, 'utility-wires')[0]!;
-    // Near, the tube over every span of both lines.
-    expect(wires.visible).toBe(true);
-    expect((wires.geometry as InstancedBufferGeometry).index!.count).toBe(8 * 24);
-    expect((wires.geometry as InstancedBufferGeometry).instanceCount).toBe(9 * 4 * 2);
+    const [nearInsulators, farInsulators] = named(layer.group, 'utility-insulators');
+    expect(nearInsulators!.visible).toBe(true);
+    // The line a kilometre off, by its own nearest pole: its insulators under a pixel, not drawn.
+    expect(farInsulators!.visible).toBe(false);
+    const [wires, farWires] = named(layer.group, 'utility-wires');
+    // Near, the tube over every span of the near line; the far line's wires by a coarser template, their own.
+    expect(wires!.visible).toBe(true);
+    expect((wires!.geometry as InstancedBufferGeometry).index!.count).toBe(8 * 24);
+    expect((wires!.geometry as InstancedBufferGeometry).instanceCount).toBe(9 * 4);
+    expect((farWires!.geometry as InstancedBufferGeometry).index!.count).toBeLessThan(8 * 24);
     // Near, the finest mast.
     const masts = named(layer.group, 'utility-poles')[0]!;
     expect(masts.visible).toBe(true);
@@ -72,8 +76,9 @@ describe('the pole layer as the camera sees it', () => {
     kit.setNight(1);
     layer.group.update(camera(m(1400)));
     const atNight = named(layer.group, 'utility-lamp-lenses').map((mesh) => mesh.visible);
-    expect(byDay).toEqual([false]);
-    expect(atNight).toEqual([true]);
+    // The near line's lenses.
+    expect(byDay[0]).toBe(false);
+    expect(atNight[0]).toBe(true);
     kit.setNight(0);
     // Back close: drawn again.
     layer.group.update(camera(m(20)));
