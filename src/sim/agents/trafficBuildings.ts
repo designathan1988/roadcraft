@@ -79,6 +79,8 @@ export const trafficBuilding: (b: Building) => TrafficBuilding = project;
 export interface TrafficBuildings {
   get(id: BuildingId): TrafficBuilding | undefined;
   all(): Iterable<TrafficBuilding>;
+  /** Every building's id, in the order of `all()`, none read. */
+  ids(): Iterable<BuildingId>;
   /** The buildings whose box may reach the rectangle, in the store's order. */
   near(minX: number, minY: number, maxX: number, maxY: number): TrafficBuilding[];
   /** The buildings `meets` keeps for one of `rects`, asked of those within `pad` of it, each once, in the store's order. */
@@ -109,6 +111,7 @@ export function docBuildings(doc: RoadDoc): TrafficBuildings {
     *all() {
       for (const b of doc.buildings.all()) yield trafficBuilding(b);
     },
+    ids: () => doc.buildings.idList(),
     near: (minX, minY, maxX, maxY) => doc.buildings.near(minX, minY, maxX, maxY).map(trafficBuilding),
     nearAny: (rects, pad, meets) => doc.buildings.nearAny(rects, pad, (b, r) => meets(trafficBuilding(b), r)).map(trafficBuilding),
   };
@@ -155,6 +158,10 @@ export class TrafficBuildingTable implements TrafficBuildings {
 
   all(): IterableIterator<TrafficBuilding> {
     return this.items.values();
+  }
+
+  ids(): IterableIterator<BuildingId> {
+    return this.items.keys();
   }
 
   /** @rebuild Another map: every record taken, the diary told the whole set changed. */

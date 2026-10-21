@@ -8,6 +8,8 @@ import { warmFull } from '../uploads';
 /** THE BUILDINGS' LEVELS ABOVE THE CELLS: a 1,024 m tile (L2) and a 2,048 m plate (L3) of masses, one mesh each (`massCells.ts` chooses them) */
 
 const KIND: Readonly<Record<MassLevel, JobKind>> = { tile: 'massTile', plate: 'massPlate' };
+/** DO NOT ask every plate of the map at once (the opening, a town filed whole): each job holds its entries (an object a building) until it is answered, so the whole city's were alive together. At most this many plates asked and not answered, nearest the eye first (`away`), the rest waiting in `stale`. */
+const PLATES_IN_FLIGHT = 3;
 
 /** DO NOT ask a tile or a plate again for each cell an edit touched: the cells are touched, their levels asked once (`flush`) */
 export class MassLevels {
@@ -20,6 +22,8 @@ export class MassLevels {
   private readonly asked = new Map<string, number>();
   /** Called whenever what it answers may change (`layer.ts` levelOfDetail chooses the levels again then). */
   changed: () => void = () => {};
+  /** How far a level is from the eye (`layer.ts`): the plates waiting are asked nearest first. */
+  away: (key: string) => number = () => 0;
 
   /** `land`: a level's masses come (null: none of its buildings has any); `remove`: a level with no building left; `plan`: a level that has buildings (its place known before its masses);
    *  `wanted`: whether a tile is wanted now (its plate refined for the view) - DO NOT ask every tile of the map: a plate stands for them from afar (Cesium asks a tile's children only when it refines). */
@@ -43,7 +47,7 @@ export class MassLevels {
     if (edited) { this.edited.add(tileOf(i, j)); this.edited.add(plateOf(i, j)); }
   }
 
-  /** Every plate touched asked once, made of its cells' entries; a tile touched asked once it is wanted (`pump`); a level with none left removed. */
+  /** Every plate touched asked once (`PLATES_IN_FLIGHT` at a time, `pump`), made of its cells' entries; a tile touched asked once it is wanted (`pump`); a level with none left removed. */
   flush(env: CellEnv): void {
     if (this.dirty.size) this.changed();
     for (const key of this.dirty) {
@@ -56,8 +60,8 @@ export class MassLevels {
         continue;
       }
       this.plan(key);
-      // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains.
-      if ((key[0] === 'p' || this.wanted(key)) && (!warmFull() || this.edited.has(key))) this.ask(key, this.listOf(key), env);
+      // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains. A plate not edited waits its turn (`pump`).
+      if ((key[0] === 'p' || this.wanted(key)) && (this.edited.has(key) || (key[0] !== 'p' && !warmFull()))) this.ask(key, this.listOf(key), env);
       else {
         // Its old masses, if any, are no longer its buildings': asked again once a view wants it.
         const was = this.asked.get(key);
@@ -66,17 +70,34 @@ export class MassLevels {
       }
     }
     this.dirty.clear();
+    this.pump(env);
   }
 
   /** The tiles changed since last asked that a view now wants (a plate refined): asked (each frame, `layer.ts`; as many as tiles changed, never the map). */
   pump(env: CellEnv): void {
+    const plates: string[] = [];
     for (const key of this.stale) {
       // DO NOT ask masses to upload while the upload queue is full: their arrays waited on the page (conf77, 2026-10-17); asked once it drains.
       if (warmFull() && !this.edited.has(key)) continue;
+      if (key[0] === 'p' && !this.edited.has(key)) { plates.push(key); continue; }
       if (key[0] !== 'p' && !this.wanted(key)) continue;
       this.stale.delete(key);
       const list = this.listOf(key);
       if (list.length) this.ask(key, list, env);
+    }
+    if (!plates.length) return;
+    let flying = 0;
+    for (const key of this.asked.keys()) if (key[0] === 'p') flying++;
+    if (flying >= PLATES_IN_FLIGHT) return;
+    const away = new Map(plates.map((key) => [key, this.away(key)]));
+    plates.sort((a, b) => away.get(a)! - away.get(b)! || (a < b ? -1 : a > b ? 1 : 0));
+    for (const key of plates) {
+      if (flying >= PLATES_IN_FLIGHT) break;
+      this.stale.delete(key);
+      const list = this.listOf(key);
+      if (!list.length) continue;
+      this.ask(key, list, env);
+      if (this.asked.has(key)) flying++;
     }
   }
 

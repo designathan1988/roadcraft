@@ -236,14 +236,17 @@ export class TableReader {
   // DO NOT fill these at the ids met, from empty: a row read first meets ids far past the array's end, and V8 turns such an array into a dictionary (each look-up hashed: the cell jobs' decoding, wprof4). Sized and filled once.
   private readonly strings: (string | undefined)[];
   private readonly shapes: (string[] | undefined)[];
-  /** Each shared member decoded; in a weak reader an object member is held by a `WeakRef` (MDN "WeakRef"), decoded again once nobody holds it. */
+  /** Each shared member decoded (a strong reader's: sized and filled once); empty in a weak reader. */
   private readonly nodes: unknown[];
-  /** Whether each shared member was decoded (a member may decode to null). */
+  /** Whether each shared member was decoded (a member may decode to null): a strong reader's. */
   private readonly decoded: Uint8Array;
+  /** A weak reader's shared members held somewhere now, by id (`WeakRef`, MDN "WeakRef"): an entry while its member lives, let go by `collected` once the collector takes it. DO NOT size an array a member nor leave a dead `WeakRef` in it: a slot a member and a `WeakRef` each one ever decoded stayed for the table's life (~9 members a building). A member that is no object is decoded again each time. */
+  private readonly weakNodes: Map<number, WeakRef<object>> | null;
+  private readonly collected: FinalizationRegistry<number> | null;
   private pos = 0;
 
   /** `weak`: a reader that lives as long as its table (`tableRows.ts`, the page's whole city) - DO NOT hold every shared member it ever decoded: a walk of the whole map left them all decoded and held (13.8 MB of the large city of 8 102 buildings, 2026-10-21); held weakly, they live while a record read holds them. */
-  constructor(readonly table: RecordTable, private readonly weak = false) {
+  constructor(readonly table: RecordTable, weak = false) {
     const { buffer, at } = table;
     this.view = new DataView(buffer, at.streamAt, at.stream);
     this.rootAt = new Uint32Array(buffer, at.rootAt, at.rows);
@@ -254,8 +257,12 @@ export class TableReader {
     this.shapeKeys = new Uint32Array(buffer, at.shapeKeys, at.keys);
     this.strings = new Array<string | undefined>(at.strings).fill(undefined);
     this.shapes = new Array<string[] | undefined>(at.shapes).fill(undefined);
-    this.nodes = new Array<unknown>(at.nodes).fill(undefined);
-    this.decoded = new Uint8Array(at.nodes);
+    this.nodes = weak ? [] : new Array<unknown>(at.nodes).fill(undefined);
+    this.decoded = new Uint8Array(weak ? 0 : at.nodes);
+    const held = weak ? new Map<number, WeakRef<object>>() : null;
+    this.weakNodes = held;
+    // A member collected: its entry let go, unless it was decoded again since (a new `WeakRef` in its place).
+    this.collected = held ? new FinalizationRegistry<number>((id) => { if (held.get(id)?.deref() === undefined) held.delete(id); }) : null;
   }
 
   /** A row's record: a fresh object of its own, its shared members the reader's. */
@@ -312,21 +319,18 @@ export class TableReader {
       }
       case T_NODE: {
         const id = view.getUint32(this.pos, true); this.pos += 4;
-        if (this.decoded[id]) {
-          const kept = this.nodes[id];
-          const node = this.weak && kept instanceof WeakRef ? kept.deref() as unknown : kept;
-          // Let go by every record that held it (a weak reader): decoded again below.
-          if (node !== undefined || !(kept instanceof WeakRef)) {
-            // The first meeting is followed by the member's body: stepped over when it was decoded before.
-            if (this.pos === this.nodeAt[id]) this.skip();
-            return node;
-          }
+        const held = this.weakNodes;
+        const live = held ? held.get(id)?.deref() : undefined;
+        if (live !== undefined || (!held && this.decoded[id])) {
+          // The first meeting is followed by the member's body: stepped over when it was decoded before.
+          if (this.pos === this.nodeAt[id]) this.skip();
+          return held ? live : this.nodes[id];
         }
         const back = this.pos;
         this.pos = this.nodeAt[id]!;
         const node = this.value();
-        this.nodes[id] = this.weak && typeof node === 'object' && node !== null ? new WeakRef(node) : node;
-        this.decoded[id] = 1;
+        if (!held) { this.nodes[id] = node; this.decoded[id] = 1; }
+        else if (typeof node === 'object' && node !== null) { held.set(id, new WeakRef(node)); this.collected!.register(node, id); }
         if (back !== this.nodeAt[id]) this.pos = back;
         return node;
       }

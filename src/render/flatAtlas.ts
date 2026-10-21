@@ -29,6 +29,7 @@ import {
   type TerrainSurface,
 } from './terrain';
 import { m } from '@world/units';
+import { Digest } from '@core/digest';
 import type { Aabb } from '@core/aabb';
 import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
@@ -811,11 +812,21 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     // With the shared plates it reads, for a worker to read the same ground (`cellPool.ts`).
     renderedHeightAt: Object.assign((x: number, y: number): number => ask(x, y, (s, lx, ly) => s.renderedHeightAt(lx, ly), bareAt), { share }) satisfies SharedGroundAt,
     wetAt: (x, y) => ask(x, y, (s, lx, ly) => s.wetAt(lx, ly), () => false),
+    // Every plate the box reaches, each read over its own part (a box across a plate's edge read one plate before: the other's ground was left out).
     digest(minX, minY, maxX, maxY) {
-      const key = plateOf((minX + maxX) / 2, (minY + maxY) / 2);
-      const p = plates.get(key);
-      if (!p?.surface) return key * 7919 + (seenRelief ?? 0) * 31 + 1;
-      return p.surface.digest(minX - p.cx, minY - p.cy, maxX - p.cx, maxY - p.cy) + p.key;
+      const one = (key: number, x0: number, y0: number, x1: number, y1: number): number => {
+        const p = plates.get(key);
+        if (!p?.surface) return key * 7919 + (seenRelief ?? 0) * 31 + 1;
+        return p.surface.digest(x0 - p.cx, y0 - p.cy, x1 - p.cx, y1 - p.cy) + p.key;
+      };
+      const keys = platesOver([minX, minY, maxX, maxY]);
+      if (keys.length === 1) return one(keys[0]!, minX, minY, maxX, maxY);
+      const out = new Digest();
+      for (const key of keys) {
+        const r = plateRegion(key);
+        out.add(one(key, Math.max(minX, r.cx - r.half), Math.max(minY, r.cy - r.half), Math.min(maxX, r.cx + r.half), Math.min(maxY, r.cy + r.half)));
+      }
+      return out.value();
     },
     update(doc, stroking) {
       sync(doc);
