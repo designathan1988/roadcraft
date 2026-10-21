@@ -1,6 +1,6 @@
 import {
-  ACESFilmicToneMapping, Color, HalfFloatType, Mesh, SphereGeometry, SRGBColorSpace, Scene, Vector2, WebGLRenderTarget,
-  type Camera, type Light, type Material, type Object3D, type Texture, type WebGLRenderer,
+  ACESFilmicToneMapping, BufferAttribute, BufferGeometry, Color, HalfFloatType, InstancedBufferAttribute, InstancedBufferGeometry, Mesh, SphereGeometry, SRGBColorSpace, Scene, Vector2, WebGLRenderTarget,
+  type Camera, type InterleavedBufferAttribute, type Light, type Material, type Object3D, type Texture, type WebGLRenderer,
 } from 'three';
 import { PMREMGenerator, RenderTarget, WebGPURenderer, type NodeMaterial } from 'three/webgpu';
 import { createCompatibility, isDrawable } from './compatibility';
@@ -123,6 +123,79 @@ export async function createWebGpuView(canvas: HTMLCanvasElement): Promise<WebGp
     seen.colour = mesh.instanceColor;
     mesh.dispatchEvent({ type: 'dispose' });
   };
+  /** THE WEBGPU RENDERER'S OWN COPY OF A SMALL-INTEGER ATTRIBUTE: three r186 (`WebGPUAttributeUtils.createAttribute`) puts a Uint32Array in
+   *  place of the array of every 8- or 16-bit integer attribute (and index) it sends. Shared with WebGL, that array then read UNSIGNED_INT,
+   *  bound by WebGL with vertexAttribIPointer, and the ground's patches (`terrainLod.ts`, their corners in bytes, read as a float `position`)
+   *  failed every draw: GL_INVALID_OPERATION "vertex shader input type does not match" (2026-10-21). This renderer draws a geometry of its
+   *  own: the game's attributes as they are, those copied, kept up with the game's writes. */
+  const ownGeometries = new WeakMap<BufferGeometry, { geometry: BufferGeometry; copies: Map<string, { from: BufferAttribute; to: BufferAttribute; version: number }> }>();
+  // An array let go once sent (`cellInstances.ts` letGo: null) is never copied: there is nothing to copy, and three sends it no more.
+  const smallInteger = (a: BufferAttribute | InterleavedBufferAttribute | null): a is BufferAttribute =>
+    !!a && !(a as InterleavedBufferAttribute).isInterleavedBufferAttribute && !a.normalized && !!a.array
+    && (a.array instanceof Uint8Array || a.array instanceof Uint16Array || a.array instanceof Int8Array || a.array instanceof Int16Array);
+  const copyOf = (from: BufferAttribute): BufferAttribute => {
+    const instanced = from as InstancedBufferAttribute;
+    const to = instanced.isInstancedBufferAttribute
+      ? new InstancedBufferAttribute(from.array.slice(), from.itemSize, false, instanced.meshPerAttribute)
+      : new BufferAttribute(from.array.slice(), from.itemSize, false);
+    to.setUsage(from.usage);
+    return to;
+  };
+  const geometryFor = (source: BufferGeometry): BufferGeometry => {
+    let own = ownGeometries.get(source);
+    // Made again when the game gave the geometry other attributes (none of its own copied any more, or another copied).
+    if (own) {
+      for (const name in source.attributes) {
+        const a = source.attributes[name]!, copy = own.copies.get(name);
+        if (copy ? copy.from !== a || copy.to.array.length !== (a.array?.length ?? -1) : own.geometry.attributes[name] !== a) { own = undefined; break; }
+      }
+      const index = source.index, copy = own?.copies.get('index');
+      if (own && (copy ? copy.from !== index || copy.to.array.length !== (index?.array?.length ?? -1) : own.geometry.index !== index)) own = undefined;
+    }
+    if (!own) {
+      const names = Object.keys(source.attributes).filter((name) => smallInteger(source.attributes[name] as BufferAttribute));
+      if (names.length === 0 && !smallInteger(source.index)) return source;
+      const geometry = source instanceof InstancedBufferGeometry ? new InstancedBufferGeometry() : new BufferGeometry();
+      const copies = new Map<string, { from: BufferAttribute; to: BufferAttribute; version: number }>();
+      for (const name in source.attributes) {
+        const a = source.attributes[name] as BufferAttribute;
+        if (!names.includes(name)) { geometry.setAttribute(name, a); continue; }
+        const to = copyOf(a);
+        copies.set(name, { from: a, to, version: a.version });
+        geometry.setAttribute(name, to);
+      }
+      if (source.index && smallInteger(source.index)) {
+        const to = copyOf(source.index);
+        copies.set('index', { from: source.index, to, version: source.index.version });
+        geometry.setIndex(to);
+      } else geometry.setIndex(source.index);
+      ownGeometries.get(source)?.geometry.dispose();
+      own = { geometry, copies };
+      ownGeometries.set(source, own);
+    }
+    // The game's writes since: copied whole (three r186 converts what it sends anyway).
+    for (const copy of own.copies.values()) {
+      if (copy.version === copy.from.version || !copy.from.array) continue;
+      copy.to.array.set(copy.from.array);
+      copy.to.needsUpdate = true;
+      copy.version = copy.from.version;
+    }
+    const g = own.geometry;
+    g.drawRange.start = source.drawRange.start;
+    g.drawRange.count = source.drawRange.count;
+    g.groups = source.groups;
+    g.boundingBox = source.boundingBox;
+    g.boundingSphere = source.boundingSphere;
+    if (source instanceof InstancedBufferGeometry) (g as InstancedBufferGeometry).instanceCount = source.instanceCount;
+    return g;
+  };
+  const regeared: { mesh: Mesh; geometry: BufferGeometry }[] = [];
+  /** This renderer's own geometry put in for its frame (`geometryFor`), the game's given back after it (`restoreTwins`). */
+  const regear = (mesh: Mesh): void => {
+    if (!mesh.geometry) return;
+    const own = geometryFor(mesh.geometry);
+    if (own !== mesh.geometry) { regeared.push({ mesh, geometry: mesh.geometry }); mesh.geometry = own; }
+  };
   /** Walks what is visible: hides what cannot be drawn and (`twins`) puts the node twins in, or (`faithfulOnly`) hides what only a simple twin draws. */
   const prepare = (scene: Scene, twins: boolean, faithfulOnly = false): void => {
     // The sky's light from the dome's twin, made once: what reflects it lit by the same sky as the dome drawn.
@@ -145,14 +218,14 @@ export async function createWebGpuView(canvas: HTMLCanvasElement): Promise<WebGp
       if (twin && faithfulOnly && twin.kind === 'simple') { o.visible = false; hidden.push(o); continue; }
       if (twin) {
         count(tally.twins, `${mesh.name} (${twin.kind})`);
-        if (twins) { swapped.push({ mesh, material }); mesh.material = twin.material; }
+        if (twins) { swapped.push({ mesh, material }); mesh.material = twin.material; regear(mesh); }
         continue;
       }
       const blocker = compatibility.drawable(o);
       if (blocker) { note(blocker, o); count(tally.leftOut, blocker); o.visible = false; hidden.push(o); continue; }
       tally.asIs++;
       if (tally.asIsNames.size < 12) tally.asIsNames.add(o.name || o.type);
-      if (twins) rebuildIfGrown(mesh);
+      if (twins) { rebuildIfGrown(mesh); regear(mesh); }
     }
     if (twins) {
       keptEnvironment = scene.environment;
@@ -163,6 +236,8 @@ export async function createWebGpuView(canvas: HTMLCanvasElement): Promise<WebGp
     }
   };
   const restoreTwins = (scene: Scene): void => {
+    for (const { mesh, geometry } of regeared) mesh.geometry = geometry;
+    regeared.length = 0;
     if (swapped.length === 0 && keptEnvironment === null && keptBackground === null) return;
     for (const { mesh, material } of swapped) mesh.material = material;
     swapped.length = 0;

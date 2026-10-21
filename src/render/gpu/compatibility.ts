@@ -45,7 +45,10 @@ function materialBlocker(material: Material, materialVerdicts: WeakMap<Material,
   else if (!NODE_LIBRARY_TYPES.includes(m.type)) verdict = m.type;
   else {
     for (const slot of TEXTURE_SLOTS) {
-      if (m[slot]?.isRenderTargetTexture) { verdict = `${slot} drawn by WebGL`; break; }
+      const texture = m[slot] as { isRenderTargetTexture?: boolean; image?: { width?: number } | null } | null | undefined;
+      if (texture?.isRenderTargetTexture) { verdict = `${slot} drawn by WebGL`; break; }
+      // A picture the game emptied once WebGL had it (`signs.ts` sheetTexture: a canvas of no size holds no backing store): nothing left to send.
+      if (texture?.image && texture.image.width === 0) { verdict = `${slot} emptied after its WebGL upload`; break; }
     }
   }
   materialVerdicts.set(material, verdict);

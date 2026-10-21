@@ -7,6 +7,7 @@ import {
   type Texture,
 } from 'three';
 
+import { chosenBackend } from './gpu/backendChoice';
 import type { Vec2 } from '@core/vec2';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { SignType } from '@world/landscape';
@@ -243,7 +244,12 @@ function sheetTexture(width: number, height: number): CanvasTexture {
   texture.anisotropy = 4;
   // DO NOT keep the canvas once uploaded: its pixels are on the GPU; a canvas of no size holds no backing store.
   // Its size as uploaded kept first, with its chain (`anisotropy` needs mipmaps): an emptied canvas was counted as 0 bytes (report TST-09).
-  texture.onUpdate = () => { texture.userData['uploadedBytes'] = Math.round((canvas.width * canvas.height * 4 * 4) / 3); canvas.width = 0; canvas.height = 0; };
+  // Kept under the WebGPU renderer (`gpu/backendChoice.ts`): the WebGL one sends it first (`uploads.ts`), and an emptied canvas reached WebGPU as no picture at all (CopyExternalImageToTexture, 2026-10-21).
+  const keep = chosenBackend() === 'webgpu';
+  texture.onUpdate = () => {
+    texture.userData['uploadedBytes'] = Math.round((canvas.width * canvas.height * 4 * 4) / 3);
+    if (!keep) { canvas.width = 0; canvas.height = 0; }
+  };
   return texture;
 }
 
