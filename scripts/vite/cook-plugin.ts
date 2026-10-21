@@ -31,6 +31,8 @@ const DERIVED = [
   { entry: 'src/render/farWoods.ts', also: [] as string[], define: '__FAR_WOODS_HASH__' },
   // A generated city of a seed, prepared (`cityGen.worker.ts`, kept by `main.ts` cityData).
   { entry: 'src/cityGen.worker.ts', also: [] as string[], define: '__CITY_GEN_HASH__' },
+  // A cell's masses and far level as its job makes them (`cellWork.ts`, kept by `cellPool.ts`).
+  { entry: 'src/render/buildings/cellWork.ts', also: [] as string[], define: '__CELL_WORK_HASH__' },
 ] as const;
 /** The path aliases of `tsconfig.json`. */
 const ALIASES: readonly [string, string][] = [

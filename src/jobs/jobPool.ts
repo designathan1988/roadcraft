@@ -465,6 +465,8 @@ export interface JobWorkerStats {
   readonly inPage: boolean;
   /** The service of the queued job it runs now; null: none. */
   readonly running: string | null;
+  /** That job's key (`JobSpec.key`): which cell, tile or city it is. */
+  readonly runningKey: string | null;
   /** The services it hosts lanes of, and how many lanes each. */
   readonly lanes: readonly (readonly [string, number])[];
   /** Messages its lanes posted and not yet answered. */
@@ -488,6 +490,7 @@ export function jobPoolStats(): { readonly most: number; readonly longMost: numb
       long: h.long,
       inPage: h.inPage,
       running: h.job ? h.job.spec.service : null,
+      runningKey: h.job?.spec.key ?? null,
       lanes: [...h.services],
       laneWork: h.laneWork,
       failed: h.failed,

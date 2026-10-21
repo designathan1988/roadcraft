@@ -5,6 +5,8 @@ const STORE = 'entries';
 const RELAXED: IDBTransactionOptions = Object.freeze({ durability: 'relaxed' });
 
 let opening: Promise<IDBDatabase | null> | null = null;
+/** The database once open (`database`): what a write that must clone its value now reads (`keepDerivedNow`). */
+let opened: IDBDatabase | null = null;
 
 function database(): Promise<IDBDatabase | null> {
   opening ??= new Promise((resolve) => {
@@ -28,8 +30,9 @@ function database(): Promise<IDBDatabase | null> {
     request.onsuccess = () => {
       const db = request.result;
       // Another tab of a newer build asks to upgrade: let it.
-      db.onversionchange = () => { db.close(); forget(); };
-      db.onclose = forget;
+      db.onversionchange = () => { db.close(); forget(); opened = null; };
+      db.onclose = () => { forget(); opened = null; };
+      opened = db;
       resolve(db);
     };
     request.onerror = () => { forget(); resolve(null); };
@@ -154,6 +157,20 @@ export async function keepDerivedDurably(key: string, value: unknown): Promise<{
 }
 
 /** Keeps `entries` in one transaction, resolved once the write is queued, not committed: a read asked after it, from any thread, sees it (IndexedDB starts a read-only transaction only once the read/write transactions created before it on its store are finished, W3C IndexedDB "transaction scheduling"); DO NOT wait for the commit where nothing needs it (a tile's maker held its lane 5-8 s a tile for it, 2026-10-16), nor queue without bound (`budget`, the V8 cage), nor commit a tile's far levels key by key (its masses, its plate, its boxes, its roads: four commits a tile, the generator's lanes waiting on them, 2026-10-17). Resolved once queued; the budget freed on the commit. */
+/** Kept now, relaxed: the value cloned by the store in this call (IndexedDB clones at `put`), so its arrays may be handed on or let go right after; false when the store is not open yet (nothing kept: made again next time). DO NOT keep through an await a value its caller hands on at once: by then its arrays were adopted (a cell's result, `cellPool.ts`). */
+export function keepDerivedNow(key: string, value: unknown): boolean {
+  const db = opened;
+  if (!db) { void database(); return false; }
+  try {
+    const tx = db.transaction(STORE, 'readwrite', RELAXED);
+    tx.objectStore(STORE).put(value, key).onerror = (event) => event.preventDefault();
+    return true;
+  } catch (error) {
+    console.error('[derived] not kept', error);
+    return false;
+  }
+}
+
 export async function keepDerivedQueuedMany(entries: readonly (readonly [string, unknown])[], budget: WriteBudget): Promise<void> {
   if (!entries.length) return;
   let bytes = 0;

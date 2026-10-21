@@ -10,6 +10,16 @@ import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkReply, runCellJob } from './cellWork';
 import { levelCells } from './levelKeys';
 import { groundAround } from '../sharedGround';
+import { Digest } from '../../core/digest';
+import { forgetOtherDerived, keepDerivedNow, readDerived } from '../derivedCache';
+
+declare const __CELL_WORK_HASH__: string | undefined;
+/** The cells' jobs kept from one session to the next, by this build's fingerprint of their code (`cook-plugin.ts` DERIVED). */
+const CELL_HASH = typeof __CELL_WORK_HASH__ !== 'undefined' && __CELL_WORK_HASH__ ? __CELL_WORK_HASH__ : null;
+const CELL_PREFIX = CELL_HASH ? `cellWork:${CELL_HASH}:` : null;
+/** The kinds kept: the masses and the far level, what the opening waits for (`layer.ts` coarsePending, viewPending). DO NOT make them again at every launch: the same buildings on the same ground made the same masses, 117 jobs and ~3 s of every worker before a reopened city showed (2026-10-21). The detail ('cell') is the largest and lands after the curtain. */
+const KEPT_KINDS: ReadonlySet<JobKind> = new Set(['facade', 'mass', 'massTile', 'massPlate']);
+let forgotOthers = false;
 
 /** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`), through the job system's one queue (`jobPool.ts` `submitJob`) */
 
@@ -77,6 +87,8 @@ interface Asked {
   /** Taken by a worker (`write` called): it runs through as asked. */
   sent: boolean;
   readonly place: readonly [number, number] | null;
+  /** Where its result is kept between sessions (`CELL_PREFIX`); null: not kept. */
+  readonly stored: string | null;
   /** The roads handed with it, and the ground's plates to a job process (`groundAround`): the cell and its reach, wider once the worker said so. */
   rect: [number, number, number, number] | null;
   widened: number;
@@ -132,14 +144,21 @@ export class CellPool {
     // A cell the player's edit changed (`edited`, `layer.ts` editedCells: a building demolished in a tile next to a road's) goes with the cut-open one: it draws what was just done.
     const first = edited || entries.some((e) => e.key.includes('|'));
     const priority = cellPriority(kind, 0, first, this.coarse);
+    const offPage = this.offPage(env);
     const asked: Asked = {
       id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority, first, sent: false, place,
-      rect: pavingRect(cell), widened: 0, ticket: null,
+      stored: offPage && !first ? this.storedKey(kind, cell, entries, env) : null, rect: pavingRect(cell), widened: 0, ticket: null,
     };
-    if (!this.offPage(env)) { this.onPage(asked); return asked.id; }
+    if (!offPage) { this.onPage(asked); return asked.id; }
     this.asked.set(asked.id, asked);
     if (key !== null) this.byKey.set(key, asked);
-    this.submit(asked);
+    if (asked.stored === null) { this.submit(asked); return asked.id; }
+    // Kept by an earlier session: taken as its job would answer it, the job never asked.
+    readDerived<CellResult>(asked.stored).catch(() => undefined).then((kept) => {
+      if (this.asked.get(asked.id) !== asked) return;
+      if (kept && typeof kept === 'object' && 'summaries' in kept) { this.forget(asked); this.learn(asked, kept); asked.done(kept); return; }
+      this.submit(asked);
+    }, () => {});
     return asked.id;
   }
 
@@ -231,7 +250,13 @@ export class CellPool {
       return;
     }
     this.forget(asked);
-    if (reply.kind === 'done') { this.learn(asked, reply.result); asked.done(reply.result); return; }
+    if (reply.kind === 'done') {
+      // Kept before it is handed on: the store clones it now, its arrays are the layer's after (`keepDerivedNow`).
+      if (asked.stored !== null) keepDerivedNow(asked.stored, reply.result);
+      this.learn(asked, reply.result);
+      asked.done(reply.result);
+      return;
+    }
     if (reply.kind === 'error') console.warn('[buildings] a cell worker failed on a cell; put together on the page', reply.message);
     this.onPage(asked);
   }
@@ -268,6 +293,25 @@ export class CellPool {
   forgetFloors(keep: (key: string) => boolean): void {
     for (const key of this.floors.keys()) if (!keep(key)) this.floors.delete(key);
   }
+
+  /** Where a job's result is kept between sessions: its kind, its cell and all it is made from (each building's record and the ground under it, `CellEntry`; the paving read or not; the kit's boxes and tones). Null for a kind not kept, or with no fingerprint of the code. */
+  private storedKey(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv): string | null {
+    if (!CELL_PREFIX || !CELL_HASH || !KEPT_KINDS.has(kind)) return null;
+    if (!forgotOthers) { forgotOthers = true; forgetOtherDerived('cellWork', CELL_HASH); }
+    const d = new Digest().add(this.kitDigest()).add(env.pavedAt !== undefined ? 1 : 0).add(env.naturalAt === env.groundAt ? 1 : 0);
+    for (const e of entries) d.addText(e.key).add(e.sig).add(e.digest);
+    return `${CELL_PREFIX}${kind}|${cell}|${d.value()}`;
+  }
+
+  /** The kit's boxes and tones as one number, worked out once a set of boxes. */
+  private kitDigest(): number {
+    const boxes = this.boxes();
+    if (this.kitSeen?.boxes === boxes) return this.kitSeen.digest;
+    const digest = new Digest().addPlain(boxes).addPlain(this.tone ?? null).value();
+    this.kitSeen = { boxes, digest };
+    return digest;
+  }
+  private kitSeen: { readonly boxes: KitBoxes; readonly digest: number } | null = null;
 
   /** The floors a job stood its buildings on, kept for their next jobs. */
   private learn(asked: Asked, result: CellResult): void {
