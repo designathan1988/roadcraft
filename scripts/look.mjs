@@ -37,9 +37,10 @@ const jsFlags = process.env.LOOK_JS_FLAGS ? [`--js-flags=${process.env.LOOK_JS_F
 const chromeArgs = process.env.LOOK_CHROME_ARGS ? process.env.LOOK_CHROME_ARGS.split(' ').filter(Boolean) : [];
 /** `--electron`: the desktop build as the player runs it (`desktop/main.cjs`, the game from `dist/`: build it first, `--mode development` for the probes the steps call), its window hidden at 1920x1080 (`ROADCRAFT_LOOK`), no Steam. */
 const electron = flags.includes('--electron');
-// ONE LOOK AT A TIME ON THIS MACHINE: sessions working side by side share the GPU and the CPU, and two cities opened at once made each other's frame times worthless. A run waits for the one before it (a lock file holding its pid; a dead holder's lock is taken over). LOOK_NO_LOCK=1 skips it.
+// ONE TIMED LOOK AT A TIME ON THIS MACHINE: sessions working side by side share the GPU and the CPU, and two cities opened at once made each other's frame times worthless. A run that times anything (record, usage, trace) waits for the one before it (a lock file holding its pid; a dead holder's lock is taken over); a run of shots and counts (memory, draws, the console) goes at once: those do not depend on what else runs. LOOK_NO_LOCK=1 skips it.
+const timed = (steps) => (steps ?? []).some((step) => step.record || step.usage || step.usageStart || step.trace || (step.steps && timed(step.steps)));
 const lockFile = join(tmpdir(), 'roadcraft-look.lock');
-if (!process.env.LOOK_NO_LOCK) {
+if (!process.env.LOOK_NO_LOCK && timed(plan.steps)) {
   let said = false;
   for (;;) {
     try { writeFileSync(lockFile, String(process.pid), { flag: 'wx' }); break; } catch { /* held */ }
