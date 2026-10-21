@@ -189,6 +189,7 @@ let booted = false;
 const surface = new CanvasSurface(canvas, () => { if (booted) requestDraw(); });
 const history = new History();
 /** On the desktop the map is kept as files Steam Cloud syncs (`desktopSaves.ts`); in a browser, IndexedDB. */
+performance.mark('boot:module');
 const desktopStores = desktopSaves();
 const persistence = desktopStores ? new Persistence(undefined, desktopStores.store, desktopStores.parts) : new Persistence();
 /** DO NOT read or write the desktop's tiles through the page: each job worker is handed a port of its own to the saves writer, before its first job (`editor/workerParts.ts`), and a new one when the writer started again. */
@@ -220,7 +221,9 @@ const STREAMED_MARK = 'roadcraft.streamedWorld';
 try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
 const streamedAtBoot: string | null = null;
 // The autosave: the small key, or IndexedDB for a map too large for it (`Persistence.loadSessionAsync`); not read under a streamed world (its tiles are its save).
+performance.mark('boot:session-asked');
 const savedSession = streamedAtBoot ? null : await persistence.loadSessionAsync();
+performance.mark('boot:session-read');
 // The game opens on an empty map - zoning starts from nothing - unless the player has a map of their own.
 const saved = savedSession?.document && !isUntouchedStarter(savedSession.document)
   ? savedSession.document
@@ -247,7 +250,9 @@ let bootFailed = false;
 if (saved) {
   try {
     doc.changes.causeNext('saved map loaded');
+    performance.mark('boot:restore');
     restoreInto(doc, saved, net);
+    performance.mark('boot:restored');
     doc.changes.causeNext('jogo');
     // Opened from the map's parts: those parts are this document, the next save writes only what changes.
     persistence.adoptLoaded(doc);
@@ -621,16 +626,22 @@ const effects = createEffectsWiring();
 /** The city's milestones told to Steam when the desktop shell runs under it (`steamAchievements.ts`). */
 const achievements = createSteamAchievements();
 // The graphics are what the player chose: the game lowers only the resolution, and only with "dynamic resolution" on.
+performance.mark('boot:surfaces-asked');
 primeSurfaceBake(await surfaceBake);
+performance.mark('boot:surfaces-read');
 // The traffic's worker, given the map as it opened and the conflict zones measured in earlier sessions.
 const engineFlags = new URLSearchParams(location.search);
 // Its lots' bays and conflict pairs on this page's pool, talked to straight (DO NOT let the worker open a pool of its own: more isolates in the one V8 cage).
 const simLanes = (service: 'bays' | 'conflicts'): MessagePort[] => Array.from({ length: jobLanes(4) }, () => jobChannel(service, () => sim.laneLost(service)));
-await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges',
-  typeof MessageChannel === 'undefined' || typeof Worker === 'undefined' ? null : { bays: simLanes('bays'), conflicts: simLanes('conflicts') });
+// DO NOT wait for the traffic's worker to stand before the world is built: its map read and its traffic laid out took 1.8 s of a reopened city's boot, the page idle meanwhile (2026-10-21). Its messages queue behind its `init` and each frame waits for its answer (`SimClient.frame`): the town is built while it starts, the traffic comes in when it stands.
+void sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges',
+  typeof MessageChannel === 'undefined' || typeof Worker === 'undefined' ? null : { bays: simLanes('bays'), conflicts: simLanes('conflicts') })
+  .then(() => performance.mark('boot:sim-started'));
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
 const engine = new Engine();
+performance.mark('boot:scene-asked');
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, graphics.level, requestDraw, engine, graphics.settings);
+performance.mark('boot:scene-made');
 // A WebGL context lost for good leaves a black canvas with the game still running behind it (Chrome after hours in a tab, a driver reset): a tab the browser does not give its context back comes back by itself, the session saved first.
 function comesBackFromLostContext(canvas: HTMLCanvasElement): void {
   const RELOAD_MS = 4000;
