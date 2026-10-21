@@ -1,6 +1,7 @@
+import { MeshoptSimplifier } from 'meshoptimizer';
 import { jobLanes, jobPort } from '../jobs/jobPool';
 import type { Tile } from './mesh/tileMesh';
-import { type BlockArrays, blockBuffers } from './mesh/roadLodPure';
+import { type BlockArrays, blockBuffers, coarseArrays } from './mesh/roadLodPure';
 import type { TileRect } from './mesh/tileShape';
 import type { SurfaceData, TileMeshes } from './roadTileMesh';
 import type { PassDesc } from './roadSurfaceReads';
@@ -59,7 +60,8 @@ export class RoadTilePool implements RoadTiler {
 
   coarsen(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null> {
     const lanes = (this.unseen ? this.start() : null) ?? this.startCoarse();
-    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
+    // Where no worker can be made (Node, the specs that open a city: `tests/census/sceneCensus.spec.ts`), made here as the worker makes it, once the simplifier's WebAssembly is in (`roadTile.worker.ts` serve).
+    if (!lanes) return MeshoptSimplifier.ready.then(() => coarseArrays(arrays, lock));
     const lane = lanes[this.nextLane++ % lanes.length]!;
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
