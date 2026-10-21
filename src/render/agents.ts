@@ -663,18 +663,18 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** Moves when levels arrive: a parked car's kept instances name the parts it was drawn with (`VehicleDraw` kept). */
   let levelsVersion = 0;
   const ladderParts: Part[] = [];
-  /** The levels of `source`, made once. */
-  const levelsFor = (source: BufferGeometry, weld: Weld): Promise<(BufferGeometry | null)[]> => {
+  /** The levels of `source`, made once; `copies` of it on a vehicle (`partLevels`). */
+  const levelsFor = (source: BufferGeometry, weld: Weld, copies = 1): Promise<(BufferGeometry | null)[]> => {
     let levels = levelsOf.get(source);
     if (!levels) {
-      levels = partLevels(source, weld);
+      levels = partLevels(source, weld, copies);
       levelsOf.set(source, levels);
       void levels.then((all) => { for (const g of new Set(all)) if (g && g !== source) modelGeometries.push(g); });
     }
     return levels;
   };
   /** `base` and a part per coarser level, empty until drawn (they grow, `growPart`), routed to `base` until the levels are made. */
-  const ladder = (base: Part, weld: Weld): Ladder => {
+  const ladder = (base: Part, weld: Weld, copies = 1): Ladder => {
     const parts = [base];
     for (let k = 1; k < LEVELS; k++) {
       const part = instanced(`${base.mesh.name}@${k}`, base.mesh.geometry, base.mesh.material as Material, base.mesh.castShadow);
@@ -682,7 +682,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       ladderParts.push(part);
     }
     const made: Ladder = { parts, route: new Array<number>(LEVELS).fill(0) };
-    void levelsFor(base.mesh.geometry, weld).then((all) => {
+    void levelsFor(base.mesh.geometry, weld, copies).then((all) => {
       for (let k = 1; k < all.length; k++) {
         const geometry = all[k];
         if (!geometry) made.route[k] = -1;
@@ -754,8 +754,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     base.mesh.geometry.setAttribute(WINDOW_DROP, base.windows!);
     return made;
   };
-  const wheelLevels = ladder(wheels, 'boxes');
-  const hubLevels = ladder(hubs, 'boxes');
+  // A car's four tyres and rims: what a level sheds, it sheds four times a car.
+  const wheelLevels = ladder(wheels, 'boxes', 4);
+  const hubLevels = ladder(hubs, 'boxes', 4);
   // One set per class and body style: a sedan may be drawn as an estate and an SUV as a pick-up
   const bodies: { key: string; model: VehicleModel }[] = [];
   for (const archetype of ARCHETYPES) {

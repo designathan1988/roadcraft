@@ -12,6 +12,12 @@ export { LEVEL_ERRORS, type Weld } from './partLevelsWork';
 export const ERROR_PIXELS = VEHICLE_ERROR_PIXELS;
 /** Levels of a part: 0 is the model's own geometry, `i + 1` the one within `LEVEL_ERRORS[i]`. */
 export const LEVELS = LEVEL_ERRORS.length + 1;
+/** A coarser level is a draw of its own only where it sheds at least this many triangles a vehicle: each level is a draw for every body
+ *  style (glass, trim and cabin at a street's distances), and a few triangles a car never paid for one. A car's glazing went 1008, 42, 24,
+ *  14, 8, 2: five draws for 40 triangles (2026-10-20). The finer level is drawn instead, never a worse shape. */
+export const SHED = 64;
+
+const trianglesOf = (g: BufferGeometry): number => (g.index ? g.index.count : g.getAttribute('position').count) / 3;
 
 /** The coarsest level whose error stays under `ERROR_PIXELS` for a part drawn at `pixelsPerUnit` (pixels a unit of its own geometry). */
 export function levelFor(pixelsPerUnit: number): number {
@@ -26,8 +32,9 @@ const copyOf = (geometry: BufferGeometry, name: string): ArrayOf | null => {
   return a ? { array: a.array.slice(), itemSize: a.itemSize, normalized: a.normalized } : null;
 };
 
-/** The levels of `source` (0 is `source` itself; null: nothing left to draw at that level): welded, simplified and creased in the levels' worker (`partLevelsWork.ts`), the page only putting the geometries together. */
-export async function partLevels(source: BufferGeometry, weld: Weld): Promise<(BufferGeometry | null)[]> {
+/** The levels of `source` (0 is `source` itself; null: nothing left to draw at that level): welded, simplified and creased in the levels' worker (`partLevelsWork.ts`), the page only putting the geometries together.
+ *  `copies`: how many a vehicle draws (a car's four tyres), for what a level sheds a vehicle (`SHED`). */
+export async function partLevels(source: BufferGeometry, weld: Weld, copies = 1): Promise<(BufferGeometry | null)[]> {
   try {
     await MeshoptSimplifier.ready;
   } catch (error) {
@@ -62,6 +69,14 @@ export async function partLevels(source: BufferGeometry, weld: Weld): Promise<(B
     if (l.index) level.setIndex(new BufferAttribute(l.index, 1));
     level.boundingSphere = new Sphere(new Vector3(l.sphere[0], l.sphere[1], l.sphere[2]), l.sphere[3]);
     levels.push(level);
+  }
+  // A level that sheds too little a vehicle is the finer one again: one draw fewer for every body style.
+  let finer = trianglesOf(source);
+  for (let k = 1; k < levels.length; k++) {
+    const level = levels[k], before = levels[k - 1];
+    if (!level || level === before) continue;
+    if (before && (finer - trianglesOf(level)) * copies < SHED) { levels[k] = before; continue; }
+    finer = trianglesOf(level);
   }
   return levels;
 }

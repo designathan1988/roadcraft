@@ -39,7 +39,8 @@ describe('vehicle part levels', () => {
         const level = levels[i + 1];
         if (l === null) expect(level).toBeNull();
         else if (l === 'same') expect(level).toBe(levels[i]);
-        else expect(triangles(level!)).toBe(l.index ? l.index.length / 3 : l.position!.array.length / 9);
+        // Or the finer one again where it sheds too little (`SHED`).
+        else if (level !== levels[i]) expect(triangles(level!)).toBe(l.index ? l.index.length / 3 : l.position!.array.length / 9);
       });
       const moved = new Set(levelBuffers(made));
       for (const l of made.levels) if (l && l !== 'same') {
@@ -72,9 +73,26 @@ describe('vehicle part levels', () => {
   it('simplifies a welded box assembly (a tyre) and gives it normals again', async () => {
     const tyre = tyreGeometry();
     const levels = await partLevels(tyre, 'boxes');
-    const coarse = levels[levels.length - 2]!;
+    const coarse = levels[levels.length - 1]!;
     expect(triangles(coarse)).toBeLessThan(triangles(tyre) * 0.2);
     expect(coarse.getAttribute('normal')).toBeDefined();
     expect(coarse.getAttribute('color')).toBeDefined();
+  });
+
+  it('draws a coarser level of its own only where each vehicle sheds a draw worth of triangles', async () => {
+    const model = buildCarModel(archetypeById('hatch'), 'hatch');
+    for (const [geometry, weld] of [[model.shell, 'smooth'], [model.glass, 'smooth'], [model.trim, 'boxes'], [model.interior, 'boxes'], [tyreGeometry(), 'boxes']] as const) {
+      const levels = await partLevels(geometry, weld);
+      let finer = triangles(levels[0]!);
+      for (let k = 1; k < levels.length; k++) {
+        const level = levels[k];
+        if (!level || level === levels[k - 1]) continue;
+        expect(finer - triangles(level)).toBeGreaterThanOrEqual(64);
+        finer = triangles(level);
+      }
+    }
+    // A car's glazing: the whole and one coarse level, not six levels a few triangles apart.
+    const glass = await partLevels(model.glass, 'smooth');
+    expect(new Set(glass.filter((g) => g)).size).toBe(2);
   });
 });
