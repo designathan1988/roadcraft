@@ -79,6 +79,8 @@ export interface Movers {
   readonly fixedSize?: boolean;
   /** The last cascade it is drawn into (cascades are 0 near to the farthest): the people and the vehicles stop at the mid one, where their shadows are under a texel's spread (the far cascades redraw a million of their triangles a frame). */
   readonly maxCascade?: number;
+  /** Past `maxCascade` it casts as it stands, kept in the store with the still casters (what the wind sways: a far texel blurs the swing, never the tree), not left out. */
+  readonly keptPast?: boolean;
 }
 
 export interface ShadowPassInput {
@@ -316,6 +318,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       for (const mover of movers) {
         // Past its last cascade a mover casts nothing: hidden from the still casters' store and drawn over none (`drawOver`).
         const past = i > (mover.maxCascade ?? Infinity);
+        // Kept in the store past its last cascade (`keptPast`): drawn with the still casters, as it stands.
+        if (past && mover.keptPast) continue;
         for (const root of mover.roots) {
           // Kept in a store this frame (`whole`): every mover is drawn over it after the still casters (`drawOver`); else drawn with them, those too small for the texels left out.
           if (!root.visible || (!past && !whole[i] && drawnIn(root, i, mover.fixedSize))) continue;
@@ -591,7 +595,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       for (let i = 0; i < SUN_CASCADES; i++) {
         let moved = false;
         for (const mover of movers) {
-          if (moved || !mover.moving()) continue;
+          // Past its last cascade a mover is drawn over none (`drawOver`): DO NOT take it for one moving there - the far cascade had its store copied back and a pass over it every frame with nothing to draw (2026-10-21).
+          if (moved || !mover.moving() || i > (mover.maxCascade ?? Infinity)) continue;
           for (const root of mover.roots) if (root.visible && drawnIn(root, i, mover.fixedSize)) { moved = true; break; }
         }
         framesSince[i]!++;

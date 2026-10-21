@@ -584,7 +584,10 @@ export function createSceneRenderer(
   /** The camera at the last shadow pass: whether the view stood still since (`ShadowPassInput.keep`). */
   const shadowView = new Matrix4();
   const shadowProjection = new Matrix4();
+  // What the wind sways is drawn over the near cascade alone; past it, kept in the stores as it stands (`keptPast`). DO NOT draw every tree, flag and blade into the three cascades each frame for a swing a far texel of metres blurs away: ~1-1.5 ms of the GPU a frame drew the movers over the stores in a large city's close view (2026-10-21).
   const swaying: Movers = {
+    maxCascade: 0,
+    keptPast: true,
     get roots() {
       if (swayChanged) { swayList = [...swayMeshes]; swayChanged = false; }
       return swayList;
