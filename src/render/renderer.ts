@@ -44,7 +44,7 @@ import { Network, type SegmentRibbon } from '@world/network';
 import { FLAT_GROUND, GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
 import { RoadsRead } from './roadsRead';
 import { RoadStations } from './roadStations';
-import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
+import { FOOTWAY_RISE, LANE_LINE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
@@ -71,6 +71,7 @@ import { createOptimizer } from './optimizationsApply';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
+import { roadProgramStandIns } from './roadProgramStandIns';
 import { forgetDerivedKeys, forgetDerivedKinds, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { DerivedWriterLane } from './derivedWriterLane';
 import { disposeMesh } from './mesh/surfaceMesh';
@@ -699,6 +700,9 @@ export function createSceneRenderer(
   scene.add(world);
   /** The roads' paint catalogue, shared by every block of the roads (`SurfaceReuse.paint`). */
   const roadPaint = paintCatalogue();
+  // Every program a block of the roads can be drawn with, built by the opening's catalogue before the curtain lifts (`roadProgramStandIns`): the blocks' own look (`roadSurfaces.ts` dress), the same materials.
+  const roadPrograms = roadProgramStandIns(materials, terrain.vergeMaterial, (color) => roadPaint.get(color) ?? roadPaint.get(LANE_LINE) ?? materials.asphalt);
+  world.add(roadPrograms.group);
   /** A road just built drawn at once (`roadStandIn.ts`) until the world's build of its commit lands. */
   const roadStandIn = new RoadStandIn();
   world.add(roadStandIn.group);
@@ -3512,6 +3516,7 @@ export function createSceneRenderer(
       agents.dispose();
       signals.dispose();
       buildings.dispose();
+      roadPrograms.dispose();
       blinkMaterial.dispose();
       worldJob = null;
       roads?.dispose();
