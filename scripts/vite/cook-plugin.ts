@@ -29,6 +29,8 @@ const DERIVED = [
   // A plate's ecosystem and a far plate's woods (`world/ecology.ts`, `render/farWoods.ts`, kept by `ecologyKept.ts`).
   { entry: 'src/world/ecology.ts', also: [] as string[], define: '__ECOLOGY_HASH__' },
   { entry: 'src/render/farWoods.ts', also: [] as string[], define: '__FAR_WOODS_HASH__' },
+  // A generated city of a seed, prepared (`cityGen.worker.ts`, kept by `main.ts` cityData).
+  { entry: 'src/cityGen.worker.ts', also: [] as string[], define: '__CITY_GEN_HASH__' },
 ] as const;
 /** The path aliases of `tsconfig.json`. */
 const ALIASES: readonly [string, string][] = [

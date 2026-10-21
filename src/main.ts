@@ -5,6 +5,7 @@ import { watchDesktopShown } from './desktopShown';
 import { canQueueJobs, jobChannel, jobLanes, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
 import type { CityGenAsk, CityGenReply } from './cityGen.worker';
 import { type OpenedCity, preparedCity } from './editor/preparedCity';
+import { tableBytes, tableIn } from '@world/buildings/recordTable';
 import { desktopJobWorkers } from './desktopJobs';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
@@ -72,9 +73,10 @@ import { countMemory } from '@render/memoryCounters';
 import { formatInventory, sceneInventory } from '@render/inventory';
 import { cityBudgetTable, VIEW_BUDGETS, type CityView } from '@core/perfBudget';
 import { primeSurfaceBake, startSurfaceBake } from '@render/surfaceBakeClient';
-import { forgetOtherDerived, writeDerivedMany } from '@render/derivedCache';
+import { forgetOtherDerived, keepDerivedDurably, readDerived, writeDerivedMany } from '@render/derivedCache';
 
 declare const __CONFLICT_ZONES_HASH__: string | undefined;
+declare const __CITY_GEN_HASH__: string | undefined;
 import { DEFAULT_AZIMUTH, DEFAULT_ELEVATION, isoZoomBounds } from '@render/isoViewport';
 
 import { DT, NARROW_SCREEN_SHARE, NARROW_SCREEN_WIDTH } from '@sim/params';
@@ -1987,19 +1989,33 @@ let generatingCity = false;
 let cityOpening: Promise<void> | null = null;
 let cityAskId = 1;
 
-/** The city's document made by the worker (the game's own generator); without a job queue (a test) it is made on the page, as before. */
-function cityData(ask: CityGenAsk): Promise<OpenedCity> {
+/** The generated cities kept from earlier sessions, by the generator's code (`cook-plugin.ts` DERIVED: its whole import closure): the same seed makes the same city with the same code, so one made before is read, not made again. */
+const CITY_PREFIX = typeof __CITY_GEN_HASH__ !== 'undefined' && __CITY_GEN_HASH__ ? `city:${__CITY_GEN_HASH__}:` : null;
+if (CITY_PREFIX) forgetOtherDerived('city', CITY_PREFIX.slice('city:'.length, -1));
+/** A kept city: its document without buildings and its buildings' table (`prepareCity`), as the worker answered them. */
+interface KeptCity { readonly data: OpenedCity['data']; readonly buildings: ArrayBuffer }
+
+/** The city's document made by the worker (the game's own generator), or read as an earlier session kept it (`CITY_PREFIX`); without a job queue (a test) it is made on the page, as before. */
+async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
   if (!canQueueJobs()) {
-    return Promise.resolve({ data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7), prepared: false });
+    return { data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7), prepared: false };
   }
+  // DO NOT grow the city again each time it is opened: the large city's generation was 6.4 s of the desktop's 7.4 s opening (2026-10-21), for a city the same seed and the same code make byte for byte.
+  const key = CITY_PREFIX ? `${CITY_PREFIX}${ask.kind}:${ask.seed ?? 7}` : null;
+  const kept = key ? await readDerived<KeptCity>(key).catch(() => undefined) : undefined;
+  if (kept?.data && kept.buildings instanceof ArrayBuffer) { performance.mark('city:kept'); return preparedCity(kept.data, tableIn(kept.buildings)); }
+  if (key) performance.mark('city:made');
   return new Promise((done, fail) => {
     submitJob({
       service: 'cityGen', key: 'cityGen', priority: 0,
       write: () => ({ data: ask, transfer: [] }),
       done: (answer) => {
         const reply = answer as CityGenReply;
-        if (reply.data) done(reply.buildings ? preparedCity(reply.data, reply.buildings) : { data: reply.data, prepared: false });
-        else fail(new Error(reply.error ?? 'the city was not made'));
+        if (!reply.data) { fail(new Error(reply.error ?? 'the city was not made')); return; }
+        // Kept as it came (the store copies it now), for the next opening of this seed: committed to the disk (one write of some 12 MB, rare). DO NOT keep it relaxed: a game closed soon after lost it, and the city was grown again at the next opening.
+        // The table is in shared memory where the page is isolated (`recordTable.ts` allocate), which no store keeps: a plain copy of it (`tableBytes`). DO NOT keep only a plain buffer as it came: the desktop's never was one, and no city was ever kept (2026-10-21).
+        if (key && reply.buildings) void keepDerivedDurably(key, { data: reply.data, buildings: tableBytes(reply.buildings) } satisfies KeptCity);
+        done(reply.buildings ? preparedCity(reply.data, reply.buildings) : { data: reply.data, prepared: false });
       },
       failed: (message) => fail(new Error(message)),
     });

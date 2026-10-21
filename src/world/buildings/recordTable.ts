@@ -14,9 +14,24 @@ const align8 = (n: number): number => Math.ceil(n / 8) * 8;
 
 /** Shared memory where the page is cross-origin isolated (and in workers and tests); a plain buffer otherwise (only read on its own thread). */
 /** DO NOT trust the constructor alone: a context not isolated may still define it, and posting its buffer throws (MDN "crossOriginIsolated"; Node's tests have no such flag). */
-function allocate(bytes: number): ArrayBufferLike {
+export function allocate(bytes: number): ArrayBufferLike {
   const isolated = (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated !== false;
   return isolated && typeof SharedArrayBuffer !== 'undefined' ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+}
+
+/** A table's bytes in a buffer of their own (shared where the thread is isolated, `allocate`): one read back from a store, which keeps plain buffers only (IndexedDB refuses shared memory, HTML "StructuredSerialize"). */
+export function tableIn(bytes: ArrayBufferLike): ArrayBufferLike {
+  const out = allocate(bytes.byteLength);
+  new Uint8Array(out).set(new Uint8Array(bytes));
+  return out;
+}
+
+/** A table's bytes as a store keeps them: a plain buffer, copied when the table is in shared memory. */
+export function tableBytes(table: ArrayBufferLike): ArrayBuffer {
+  if (table instanceof ArrayBuffer) return table;
+  const out = new ArrayBuffer(table.byteLength);
+  new Uint8Array(out).set(new Uint8Array(table));
+  return out;
 }
 
 /** Where each section starts, from the header's counts. */
