@@ -220,6 +220,8 @@ export interface RoadSurfaces {
 const CHUNK = 8;
 /** Tiles a batch asked of the workers at once (`roadTilePool.ts`) */
 const SHAPE_BATCH = 64;
+/** Batches of tiles asked of the workers ahead of the one being taken (`buildAll`): each worker's next share waits in its queue. */
+const IN_FLIGHT = 3;
 
 /** Linear-space tints per road class, so the asphalt mesh can vary by class. */
 const CLASS_TINT: readonly Color[] = ROAD_TYPES.map((type) =>
@@ -515,15 +517,25 @@ export function* roadSurfaceSteps(
         return { from, answer };
       };
       // DO NOT ask for every tile at once: a whole city's tiles held together, before any was merged, took the page past 7 GB
-      let job = offPage && list.length ? ask(0) : null;
+      // DO NOT ask one batch at a time either: a batch is shared out to the workers and answered once its slowest share is, so the others stood idle at every batch's end (a downtown share costs many times an empty one) and the road surfaces were 6 s of a large city's opening (2026-10-21). `IN_FLIGHT` batches asked ahead keep each worker's next share waiting in its queue.
+      const jobs: ReturnType<typeof ask>[] = [];
+      let asked = 0;
+      const askNext = (): void => {
+        if (asked >= list.length) return;
+        jobs.push(ask(asked));
+        asked += SHAPE_BATCH;
+      };
+      if (offPage && list.length) for (let k = 0; k < IN_FLIGHT; k++) askNext();
       let failed = false;
       for (let from = 0; from < list.length; from += SHAPE_BATCH) {
         let made: Map<string, Tile>[] | null = null;
+        const job = jobs[0]?.from === from ? jobs[0] : null;
         if (job && !failed) {
           while (!job.answer.tiles && !job.answer.failed) { offPage!.check(); yield 'wait'; }
           made = job.answer.tiles ?? null;
+          jobs.shift();
           if (!made) failed = true;
-          job = !failed && from + SHAPE_BATCH < list.length ? ask(from + SHAPE_BATCH) : null;
+          else askNext();
         }
         for (let k = from; k < Math.min(list.length, from + SHAPE_BATCH); k++) {
           const tile = list[k]!;
