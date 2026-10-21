@@ -682,6 +682,9 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       // Another ground: what moved since each key is asked again (the sets were up to the ground before).
       if (lastGround?.groundKey !== groundKey) movedSince.clear();
       lastGround = { groundAt, groundKey, pavedAt, naturalAt };
+      // The plants' cover follows the buildings' diary cell by cell, and is derived ahead round the eye (`layerCells.ts`, `viewCells.ts`).
+      cover.follow(doc);
+      if (eye) cover.look(eye.x, eye.y);
       movedUnder = groundMovedUnder;
       const env: CellEnv = { groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) };
       const hides = preview?.hides ?? null;
@@ -733,8 +736,7 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
           const gone = new Set<string>();
           for (const id of ids) {
             const b = doc.buildings.get(id);
-            if (b) cover.set(b);
-            else { cover.remove(id); dropKept(id); sent.delete(String(id)); groundDigests.delete(id); gone.add(String(id)); }
+            if (!b) { dropKept(id); sent.delete(String(id)); groundDigests.delete(id); gone.add(String(id)); }
             const shown = b && town.has(id) ? b : undefined;
             if (!shown) { lastShown.delete(id); flagsFor(id); signatures.remove(id); continue; }
             lastShown.set(id, shown);
@@ -793,7 +795,6 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
           // Signature buildings: their bodies, drawn with parts of their own (`signature.ts`).
           for (const b of solid) signatures.set(b, keptFor(b)?.summary.signatureFloor ?? signatureFloorOf(b, naturalAt, pavedAt));
           signatures.keepOnly(new Set(solid.map((b) => b.id)));
-          cover.index(doc.buildings.all());
           lastShown.clear();
           for (const b of shown) lastShown.set(b.id, b);
           for (const id of [...flagsOf.keys()]) flagsFor(id);

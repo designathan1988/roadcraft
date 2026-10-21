@@ -71,7 +71,7 @@ import { DEFAULT_OPTIMIZATIONS, qualityOptionsDiffer, withOptimizations, type Op
 import { createOptimizer } from './optimizationsApply';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
-import { SurfaceInputs } from './roadSurfaceInputs';
+import { ROAD_INPUT_RESIDENCY, SurfaceInputs } from './roadSurfaceInputs';
 import { roadProgramStandIns } from './roadProgramStandIns';
 import { forgetDerivedKeys, forgetDerivedKinds, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { DerivedWriterLane } from './derivedWriterLane';
@@ -816,7 +816,9 @@ export function createSceneRenderer(
     // The near roads stop at the opening's view (`openingBuild`): the rest of a large city's roads is filled after the curtain.
     within: (rect) => openingWithin === null || openingWithin === undefined || openingWithin(rect),
     chunks: new Map(),
-    inputs: new SurfaceInputs(),
+    // The inputs held round the view (`InputResidency`): derived where a build visits, let go far from the eye; DO NOT derive the whole map's rings (82 MB of the large city's heap, 2026-10-21).
+    inputs: new SurfaceInputs(null, ROAD_INPUT_RESIDENCY),
+    inputsEye: () => roadFocus,
     retired: [],
     // DO NOT read the whole store at the opening: it grows with every place the camera went (CLAUDE.md, "Streaming world").
     stored: {
