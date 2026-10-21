@@ -8,7 +8,8 @@
 //  4. the game itself: the small city opened in headless Chrome (`scripts/look/verify.json`), map, district and street photographed,
 //     failing on any page error, console error or lost WebGL context, each photo compared with the reference (`lab-reports/verify-ref`).
 // `--game`: also step 4 (the browser, the photos); `--ref` with it: the photos taken now become the reference (after a change seen and approved).
-// The big city, the timings and the whole suite are not here: they are for the milestones, not for every change.
+// The big city, the timings and the whole suite are not here: they are for the milestones, not for every change; nor the tiers' draws,
+// triangles and heap (`npm run budgets`, tests/perf/budgets.spec.ts: the small city on all four tiers, 50-75 s, past this check's seconds).
 import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
