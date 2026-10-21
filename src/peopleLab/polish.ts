@@ -177,8 +177,8 @@ function evenHem(mesh: SkinnedMesh): void {
     const ys = vs.map((v) => position.getY(v)).sort((a, b) => a - b);
     const lowest = ys[0]!;
     // Trousers reach the ankles, tops end at the waist: only a garment whose bottom lies between knee and mid thigh is a skirt.
-    if (lowest < top * 0.25 || lowest > top * 0.5) continue;
-    const lower = ys.filter((y) => y < top * 0.5);
+    if (lowest < top * 0.08 || lowest > top * 0.5) continue;
+    const lower = ys.filter((y) => y < Math.min(top * 0.5, lowest + top * 0.15));
     const hem = lower[Math.floor(lower.length * 0.12)] ?? lowest;
     if (hem - lowest < 0.015) continue;
     for (const v of vs) if (position.getY(v) < hem) position.setY(v, hem - (hem - position.getY(v)) * 0.15);
@@ -188,8 +188,9 @@ function evenHem(mesh: SkinnedMesh): void {
 
 export function polishPerson(meshes: readonly SkinnedMesh[], look: PersonLook, sculpted = false): void {
   for (const mesh of meshes) {
-    // A hem the player shaped is left as shaped.
-    if (!sculpted) evenHem(mesh);
+    // Lengthened or not, the fitting's stray hem point is evened out (a sculpt moves the whole hem, the point stays an outlier).
+    void sculpted;
+    evenHem(mesh);
     foldSpikes(mesh);
     clearScalpPaint(mesh, look);
     solidHair(mesh, look);
