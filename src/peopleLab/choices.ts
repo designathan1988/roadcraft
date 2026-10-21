@@ -10,7 +10,12 @@ export const HAIR_COLOURS = [0x1a1410, 0x2e2018, 0x4a3022, 0x6b4428, 0x8c5a2e, 0
   0xc23b22, 0xe86aa6, 0x6a5acd, 0x2fa3c7, 0x3cb371];
 export const CLOTH = [...CLOTH_COLOURS, 0xe05a8a, 0x2f9d8f, 0x3b6fd1, 0xffd166, 0x9b5de5, 0x00bbf9];
 
+/** The lab's own style, the one approved by eye (2026-10-21): real legs and eyes, the head a touch large (about 6.3 heads tall), hands and feet true to size (enlarged, the feet read clownish).
+ *  The body fit (`bodyFit.ts`) tunes the head per person to reach the height in heads. */
+export const ROADCRAFT: CartoonStyle = { head: 1.12, eyes: 1, legs: 1, hands: 1, feet: 0.95 };
+
 export const STYLE_PRESETS: readonly (readonly [string, CartoonStyle])[] = [
+  ['Roadcraft', ROADCRAFT],
   ['Realista', REALISTIC],
   ['Desenho', { head: 1.2, eyes: 1.22, legs: 0.93, hands: 1.08, feet: 1.06 }],
   ['Pixar', PIXAR],

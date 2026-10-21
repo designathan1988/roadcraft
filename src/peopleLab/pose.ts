@@ -124,3 +124,45 @@ export class ClipPlayer {
     this.transfer.pose(this.clip.loop ? t % this.clip.duration : Math.min(t, this.clip.duration - 1e-3));
   }
 }
+
+const spreadAxis = new Vector3(), spreadQ = new Quaternion(), wq = new Quaternion(), pq = new Quaternion();
+
+/** The upper arms turned out from the body by `angle` (radians) in world space, after any clip: a narrow figure's arms otherwise sink into the hips. */
+export function spreadArms(root: Object3D, angle: number): void {
+  for (const [name, side] of [['Bip01_L_UpperArm', 1], ['Bip01_R_UpperArm', -1], ['upperarm_l', 1], ['upperarm_r', -1]] as const) {
+    const bone = root.getObjectByName(name);
+    if (!bone) continue;
+    bone.updateWorldMatrix(true, false);
+    // Out to the side: about the body's forward axis, away from the middle by which side the bone is on.
+    const out = Math.sign(bone.getWorldPosition(spreadAxis).x) || side;
+    spreadQ.setFromAxisAngle(spreadAxis.set(0, 0, 1), out * angle);
+    bone.getWorldQuaternion(wq);
+    if (bone.parent) bone.parent.getWorldQuaternion(pq); else pq.identity();
+    bone.quaternion.copy(pq.invert().multiply(spreadQ.multiply(wq)));
+    bone.updateWorldMatrix(false, true);
+  }
+}
+
+const up = new Vector3(0, 1, 0), uv = new Vector3(), uw = new Vector3();
+
+/** An upright neck after any clip: the capture's head juts forward (a hunch), so the neck is turned until the head sits over the shoulders, blended by `amount`. */
+export function uprightHead(root: Object3D, amount = 0.8): void {
+  const neck = root.getObjectByName('Bip01_Neck') ?? root.getObjectByName('neck_01');
+  const head = root.getObjectByName('Bip01_Head') ?? root.getObjectByName('head');
+  if (!neck || !head) return;
+  neck.updateWorldMatrix(true, true);
+  // The face keeps exactly the turn the clip gave it: only where it sits moves back over the shoulders.
+  const faceTurn = head.getWorldQuaternion(new Quaternion());
+  const from = head.getWorldPosition(uv).sub(neck.getWorldPosition(uw)).normalize();
+  // Only the forward lean is taken out (pitch), the side to side kept.
+  const target = new Vector3(from.x, from.y, 0).normalize().lerp(up, 0.15).normalize();
+  const delta = new Quaternion().setFromUnitVectors(from, target);
+  delta.slerp(new Quaternion(), 1 - amount);
+  const world = neck.getWorldQuaternion(new Quaternion());
+  const parent = neck.parent ? neck.parent.getWorldQuaternion(new Quaternion()) : new Quaternion();
+  neck.quaternion.copy(parent.invert().multiply(delta.multiply(world)));
+  neck.updateWorldMatrix(false, true);
+  const hp = head.parent ? head.parent.getWorldQuaternion(new Quaternion()) : new Quaternion();
+  head.quaternion.copy(hp.invert().multiply(faceTurn));
+  head.updateWorldMatrix(false, true);
+}

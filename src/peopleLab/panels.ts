@@ -142,7 +142,7 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
       return [
         el('h3', { textContent: 'Estilo' }),
         pics(STYLE_PRESETS.map(([label, preset]) => ({ id: label, label, variant: { ...p(), style: preset } })),
-          STYLE_PRESETS.find(([, pr]) => JSON.stringify(pr) === JSON.stringify(s))?.[0], (id) => c.setStyle(STYLE_PRESETS.find(([l]) => l === id)![1]), 'body'),
+          STYLE_PRESETS.find(([, pr]) => (Object.keys(pr) as (keyof CartoonStyle)[]).every((k) => Math.abs(pr[k] - s[k]) < (k === 'head' ? 0.08 : 0.01)))?.[0], (id) => c.setStyle(STYLE_PRESETS.find(([l]) => l === id)![1]), 'body'),
         fine('Ajuste',
           slider('Cabeça', 0.8, 1.8, 0.01, s.head, (v) => set('head', v)),
           slider('Pernas', 0.7, 1.15, 0.01, s.legs, (v) => set('legs', v)),

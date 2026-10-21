@@ -231,5 +231,5 @@ export function variedFace(sex: 'female' | 'male', r: () => number): Record<stri
 /** A woman's body as she is drawn by default (the player, 2026-10-21: no builder in a dress): narrow shoulders, a small waist, fuller hips, a slim neck and arms. */
 export const FEMALE_FIGURE: Readonly<Record<string, number>> = {
   'measure-shoulder-dist-decr-incr': -0.45, 'measure-waist-circ-decr-incr': -0.4, 'measure-hips-circ-decr-incr': 0.3, 'buttocks-volume-decr-incr': 0.25,
-  'measure-neck-circ-decr-incr': -0.35, 'upperarm-fat-decr-incr': -0.2, 'measure-upperarm-circ-decr-incr': -0.3, 'torso-scale-horiz-decr-incr': -0.25,
+  'measure-neck-circ-decr-incr': -0.35, 'upperarm-fat-decr-incr': -0.2, 'foot-scale-decr-incr': -0.35, 'hand-scale-decr-incr': -0.15, 'measure-upperarm-circ-decr-incr': -0.3, 'torso-scale-horiz-decr-incr': -0.25,
 };

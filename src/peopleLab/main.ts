@@ -8,12 +8,12 @@ import { ageFromYears, yearsFromAge, type MacroParams } from '@people/body/macro
 import type { HairStyle } from '@people/hair/procedural';
 import { randomPerson, type PersonLook, type PersonSpec } from '@people/spec';
 import { communityItem, type WardrobeItem } from '@people/wardrobe';
-import { PIXAR, type CartoonStyle } from '@render/people/cartoon';
+import type { CartoonStyle } from '@render/people/cartoon';
 import { applyFace, faceAt } from '@render/people/faceExpression';
 import { createPersonLayers, releaseSkinAppearance, type SkinAppearance } from '@render/people/skinAppearance';
 import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
-import { ClipPlayer, Poser, type PoseName } from './pose';
+import { ClipPlayer, Poser, spreadArms, uprightHead, type PoseName } from './pose';
 import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
 import { variedFace } from './presets';
 import { HandShaper, REGION_IDS, addDragMorphs, type Region } from './direct';
@@ -26,7 +26,7 @@ import { makePanels } from './panels';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
 import { sculptPanel } from './sculptPanel';
 import { PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
-import { HAIR_CATALOGUE, NICE_HAIR } from './choices';
+import { HAIR_CATALOGUE, NICE_HAIR, ROADCRAFT } from './choices';
 import { el, widgets } from './widgets';
 
 /** THE PERSON CREATOR LAB (`people-lab.html`): people made one by one, saved for the game; the game's own build, nothing of the game changed */
@@ -37,7 +37,7 @@ function startLab(): void {
 
   const first = randomPerson(1, 11, { body: { age: ageFromYears(26), gender: 0.06 } });
   // The first person shows a face: no glasses over the eyes.
-  let person: LabPerson = { spec: { ...first, name: '', body: { ...first.body, weight: 0.4, muscle: 0.4, proportions: 1 }, features: variedFace('female', () => 0.5), look: { ...first.look, makeup: 0, hairCut: 'long01', hairStyle: 'long', outfit: 'female_elegantsuit01', outfitTint: 0x3b6fd1, footwear: 'elvs_flatshoe_pointy1', brows: 'eyebrow010', extras: (first.look.extras ?? []).filter((x) => communityItem(x)?.kind !== 'glasses') } }, style: PIXAR };
+  let person: LabPerson = { spec: { ...first, name: '', body: { ...first.body, weight: 0.4, muscle: 0.4, proportions: 1 }, features: variedFace('female', () => 0.5), look: { ...first.look, makeup: 0, hairCut: 'long01', hairStyle: 'long', outfit: 'female_elegantsuit01', outfitTint: 0x3b6fd1, footwear: 'elvs_flatshoe_pointy1', brows: 'eyebrow010', extras: (first.look.extras ?? []).filter((x) => communityItem(x)?.kind !== 'glasses') } }, style: ROADCRAFT };
   let activity: string | undefined;
   let pose: PoseName = 'idle';
   let built: BuiltPerson | null = null;
@@ -59,7 +59,7 @@ function startLab(): void {
     const spec = randomPerson(id, seed + id);
     const hairs = NICE_HAIR[spec.body.gender < 0.5 ? 'female' : 'male'];
     const hairCut = hairs[Math.floor(Math.random() * hairs.length)]!;
-    return { spec: { ...spec, name: '', features: variedFace(spec.body.gender < 0.5 ? 'female' : 'male', Math.random), look: { ...spec.look, makeup: 0, hairCut, ...(spec.body.gender < 0.5 ? { brows: 'eyebrow010' } : {}) } }, style: PIXAR };
+    return { spec: { ...spec, name: '', features: variedFace(spec.body.gender < 0.5 ? 'female' : 'male', Math.random), look: { ...spec.look, makeup: 0, hairCut, ...(spec.body.gender < 0.5 ? { brows: 'eyebrow010' } : {}) } }, style: ROADCRAFT };
   }
 
   const female = (): boolean => person.spec.body.gender < 0.5;
@@ -307,7 +307,9 @@ function startLab(): void {
   const PANELS = makePanels({
     get person() { return person; }, get showAll() { return showAll; }, get activity() { return activity; }, get pose() { return pose; }, get clip() { return clipName; },
     ui: { slider, swatches, seg, tiles }, pictures,
-    setSpec, setLook: (patch) => setLook(patch as Loose<PersonLook>), setBody, setFeature, setStyle,
+    setSpec, setLook: (patch) => setLook(patch as Loose<PersonLook>), setBody, setFeature,
+    // The Roadcraft style is the fitted one: picking it refits the body (the head to ~6.3 heads tall).
+    setStyle: (st) => { setStyle(st); if (st === ROADCRAFT) void fitFace(); },
     setMood: (v) => { person = { ...person, spec: { ...person.spec, mood: v } }; },
     setShowAll: (v) => { showAll = v; render(); },
     act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
@@ -569,6 +571,8 @@ function startLab(): void {
     while (revokeAt.length && revokeAt[0]![0] <= now) URL.revokeObjectURL(revokeAt.shift()![1]);
     if (built) {
       if (player?.playing) player.apply(t); else poser?.apply(pose, t);
+      // Arms clear of the body in the standing clips (not when they reach for something).
+      if (['idle', 'talk', 'listen', 'look', 'nervous', 'laugh', 'walkStroll', 'walkCool'].includes(clipName)) { spreadArms(built.scene, 0.14); uprightHead(built.scene); }
       if (stool.visible) {
         // Under the pelvis wherever the clip puts it, its top just below the seat.
         built.scene.traverse((o) => { if (o.name === 'Bip01_Pelvis') { o.updateWorldMatrix(true, false); const at = o.getWorldPosition(new Vector3()); stool.scale.y = Math.max(0.2, (at.y - 0.1) / 0.44); stool.position.set(at.x, stool.scale.y * 0.22, at.z - 0.04); } });
@@ -602,7 +606,7 @@ function startLab(): void {
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
   (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, setHair, setStyle, frame, get built() { return built; },
-    pick(tabId: string) { tab = tabId; render(); }, pictures, withLook(patch: Partial<PersonLook>) { return { ...person, spec: { ...person.spec, look: { ...person.spec.look, ...patch } } }; }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async body() { return measureBody((await builder.setup()).assets, await builder.shape(person)); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
+    pick(tabId: string) { tab = tabId; render(); }, sideView() { const d = camera.position.distanceTo(controls.target); camera.position.copy(controls.target).add(new Vector3(d, 0, 0)); }, pictures, withLook(patch: Partial<PersonLook>) { return { ...person, spec: { ...person.spec, look: { ...person.spec.look, ...patch } } }; }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async body() { return measureBody((await builder.setup()).assets, await builder.shape(person)); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
     closeUp(dist = 0.5, x = 0) {
       const head = new Vector3();
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });

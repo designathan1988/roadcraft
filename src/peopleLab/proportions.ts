@@ -209,7 +209,8 @@ export class FaceProportions {
 export interface BodyMeasure { readonly heads: number; readonly shoulders: number; readonly neck: number }
 
 /** Heads tall as a stylized game figure is drawn (The Sims' adults ~6-6.5; a real adult's 7.5 left the head small and plain, 2026-10-21). */
-export const BODY_CANON = { female: { heads: 6.3, shoulders: 1.15, neck: 0.6 }, male: { heads: 6.5, shoulders: 1.35, neck: 0.75 } } as const;
+/** The neck slimmer than the anthropometric mean (0.6, 0.75): a stylized figure's neck at the mean read thick, 'a horse's' (the player, 2026-10-21). */
+export const BODY_CANON = { female: { heads: 6.3, shoulders: 1.15, neck: 0.48 }, male: { heads: 6.5, shoulders: 1.35, neck: 0.66 } } as const;
 
 export function measureBody(assets: PeopleAssets, p: Float32Array): BodyMeasure {
   const m = assets.mesh;
