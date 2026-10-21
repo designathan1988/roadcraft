@@ -37,7 +37,7 @@ export interface PoleLines {
 }
 
 /** The edges of a set of contours filed by place: each edge (contour, index) in every bucket its bounds reach. */
-interface ContourEdges { readonly buckets: ReadonlyMap<number, readonly number[]> }
+interface ContourEdges { readonly buckets: ReadonlyMap<number, readonly number[]>; readonly scratch: ContourScratch }
 /** Bucket edge of the contour index, world units: about the reach of the questions asked of it. */
 const EDGE_BUCKET = m(8);
 const edgeBucket = (bx: number, by: number): number => (bx + 1048576) * 2097152 + (by + 1048576);
@@ -57,7 +57,8 @@ function contourEdges(contours: readonly Polyline[]): ContourEdges {
       }
     }
   });
-  return { buckets };
+  const n = contours.length;
+  return { buckets, scratch: { distSq: new Float64Array(n), edge: new Int32Array(n), t: new Float64Array(n), stamp: new Uint32Array(n), met: [], round: 0 } };
 }
 
 /** A place on a contour. */
@@ -68,12 +69,33 @@ export interface OnContour {
   readonly distance: number;
 }
 
+/** What `nearestOnContour` keeps of each contour while it answers, by contour, made with the lines' edges (`contourEdges`): written over at each question (`stamp` tells this question's from an older one's), DO NOT make a map and an object for every contour met at every question - asked for every station of every street a city's power lines are routed over. */
+interface ContourScratch {
+  readonly distSq: Float64Array;
+  readonly edge: Int32Array;
+  readonly t: Float64Array;
+  readonly stamp: Uint32Array;
+  readonly met: number[];
+  round: number;
+}
+
+/** The scratch of a set of lines, its stamps started again before their count wraps (four billion questions of one set of lines). */
+function scratchOf(lines: PoleLines): ContourScratch {
+  const scratch = lines.edges.scratch;
+  if (scratch.round >= 0xfffffff0) { scratch.stamp.fill(0); scratch.round = 0; }
+  return scratch;
+}
+
 /** DO NOT go back to scanning the contours: the question is local. */
 export function nearestOnContour(lines: PoleLines, at: Vec2, reach: number): OnContour | null {
   const { buckets } = lines.edges;
   const px = at.x, py = at.y;
-  // Per contour: the least squared distance found, the first edge giving it, and its parameter.
-  const bestOf = new Map<number, { distSq: number; edge: number; t: number }>();
+  // Per contour: the least squared distance found, the first edge giving it, and its parameter - in the scratch of the lines (`ContourScratch`), the contours met listed.
+  const scratch = scratchOf(lines);
+  const { distSq: bestSq, edge: bestEdge, t: bestT, stamp } = scratch;
+  const round = ++scratch.round;
+  const met = scratch.met;
+  met.length = 0;
   for (let cx = Math.floor((px - reach) / EDGE_BUCKET); cx <= Math.floor((px + reach) / EDGE_BUCKET); cx++) {
     for (let cy = Math.floor((py - reach) / EDGE_BUCKET); cy <= Math.floor((py + reach) / EDGE_BUCKET); cy++) {
       const list = buckets.get(edgeBucket(cx, cy));
@@ -94,14 +116,20 @@ export function nearestOnContour(lines: PoleLines, at: Vec2, reach: number): OnC
         }
         const ex = px - qx, ey = py - qy;
         const distSq = ex * ex + ey * ey;
-        const was = bestOf.get(contour);
-        if (!was || distSq < was.distSq || (distSq === was.distSq && i < was.edge)) bestOf.set(contour, { distSq, edge: i, t });
+        if (stamp[contour] !== round) {
+          stamp[contour] = round;
+          met.push(contour);
+          bestSq[contour] = distSq; bestEdge[contour] = i; bestT[contour] = t;
+        } else if (distSq < bestSq[contour]! || (distSq === bestSq[contour]! && i < bestEdge[contour]!)) {
+          bestSq[contour] = distSq; bestEdge[contour] = i; bestT[contour] = t;
+        }
       }
     }
   }
   let best: OnContour | null = null;
-  for (const contour of [...bestOf.keys()].sort((a, b) => a - b)) {
-    const { distSq, edge, t } = bestOf.get(contour)!;
+  if (met.length > 1) met.sort((a, b) => a - b);
+  for (const contour of met) {
+    const distSq = bestSq[contour]!, edge = bestEdge[contour]!, t = bestT[contour]!;
     const distance = Math.sqrt(distSq);
     if (distance > reach || (best && !(distance < best.distance))) continue;
     const line = lines.contours[contour]!;
@@ -290,10 +318,22 @@ interface FootRings { readonly paving: WindingRing[]; readonly kerbed: WindingRi
 function insideLevels(net: Network, p: Vec2): { readonly paving: boolean; readonly kerbed: boolean } {
   const x = p.x * CLIPPER_SCALE, y = p.y * CLIPPER_SCALE;
   let paving = 0, kerbed = 0;
-  for (const rings of localRings(net, [p.x, p.y, p.x, p.y])) {
+  const add = (rings: FootRings): void => {
     for (const r of rings.paving) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) paving += windingOf(r, x, y);
     for (const r of rings.kerbed) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) kerbed += windingOf(r, x, y);
-  }
+  };
+  // The filings' one cell under the point read in place (`localRings` of the point, no list made): the windings are whole numbers, summed in any order.
+  const include = polesInclude(net);
+  net.segmentCells.someAt(p.x, p.y, (id) => {
+    const ribbon = net.ribbons.get(id);
+    if (ribbon) add(ribbonRings(net, ribbon, include));
+    return false;
+  });
+  net.junctionCells.someAt(p.x, p.y, (id) => {
+    const byLevel = net.junctions.get(id);
+    if (byLevel) add(junctionRings(net, id, byLevel, include));
+    return false;
+  });
   return { paving: paving !== 0, kerbed: kerbed !== 0 };
 }
 

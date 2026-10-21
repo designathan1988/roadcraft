@@ -98,6 +98,17 @@ export class CellFiling<Id extends number, T extends object> {
 
   /** The ids whose bounds meet `rect`, each once, in increasing order */
   idsMeeting(rect: ChangeRect): Id[] {
+    // One cell (most questions: a point, a building's rectangle): its set holds each id once, no set to make.
+    const side = this.side;
+    const cx = Math.floor(rect[0] / side), cy = Math.floor(rect[1] / side);
+    if (cx === Math.floor(rect[2] / side) && cy === Math.floor(rect[3] / side)) {
+      cellWork.cellsRead++;
+      const set = this.byCell.get(cellKey(cx, cy));
+      if (!set) return [];
+      const one: Id[] = [];
+      for (const id of set) if (rectsMeet(this.entries.get(id)!.rect, rect)) one.push(id);
+      return one.length > 1 ? one.sort((a, b) => a - b) : one;
+    }
     const out = new Set<Id>();
     forCellsOver(rect, (key) => {
       cellWork.cellsRead++;
