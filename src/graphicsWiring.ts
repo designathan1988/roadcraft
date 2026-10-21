@@ -114,7 +114,8 @@ export interface GraphicsWiring {
   frame(): void;
 }
 
-export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void): GraphicsWiring {
+/** `onLevel`: the tier in use changed, by the automatic governor (`auto`) or the player's pick (`player`); told for the field's session summary (`fieldReport.ts`). */
+export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void, onLevel: (level: QualityLevel, by: 'auto' | 'player') => void = () => {}): GraphicsWiring {
   const saved = readStorage(PRESET_KEY);
   /** The tier this GPU can hold: where `auto` starts, and the most it climbs to. A run playing a weaker machine (`core/weakMachine.ts`) plays `auto` from that machine's tier, whatever this one kept. */
   const hardware = tierForGpu(gpuName());
@@ -175,6 +176,7 @@ export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void):
       preset = next;
       level = next === 'auto' ? hardware : next;
       governor.set(level);
+      onLevel(level, 'player');
       const { shadows: _s, ambientOcclusion: _a, smaa: _m, ...lasting } = kept;
       kept = lasting;
       writeStorage(PRESET_KEY, next);
@@ -211,6 +213,7 @@ export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void):
         if (next !== null && next !== level) {
           level = next;
           governor.set(level);
+          onLevel(level, 'auto');
           apply();
           return;
         }

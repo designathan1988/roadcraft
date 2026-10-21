@@ -102,6 +102,8 @@ import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
 import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
 import { SampleRing, STUTTER_MS } from '@core/sampleRing';
+import { problems } from '@core/assert';
+import { SessionSummary, fieldReport, problemBridge, shaderErrorHook, watchContext, wireFieldReport } from './fieldReport';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { exportToFile } from '@editor/mapExport';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
@@ -155,6 +157,12 @@ type Alignment = 'straight' | 'curve' | 'free';
 // The interface language is resolved and applied BEFORE anything reads a label
 setGlobalParams(roadKeyParams);
 initLanguage();
+
+// FIELD PROBLEMS (`fieldReport.ts`) wired before anything can fail: to the desktop shell's local log when it runs in one, the console in a browser.
+const problemShell = problemBridge(window);
+wireFieldReport({ page: window, bridge: problemShell, problems });
+/** The JS heap now, where the browser tells it (Chromium's `performance.memory`). */
+const heapBytes = (): number | undefined => (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 
@@ -626,7 +634,11 @@ canvas3d.setAttribute('aria-hidden', 'true');
 canvas3d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
 canvas.parentElement?.insertBefore(canvas3d, canvas);
 /** The graphics options (`graphicsWiring.ts`): the tier the player chose, or the one this GPU holds at the first start, and their settings on it. */
-const graphics = createGraphicsWiring((preset) => gameState.set('quality', preset, 'quality menu'));
+/** The session's summary told to the field log as the page closes (`fieldReport.ts`): the GPU, the tiers, the frames' times, the heap's peak. */
+const fieldSession = new SessionSummary(() => performance.now(), () => frameTimes, () => scene.gpu.label);
+const graphics = createGraphicsWiring((preset) => gameState.set('quality', preset, 'quality menu'), (level, by) => fieldSession.level(level, by));
+fieldSession.level(graphics.level, 'start');
+window.addEventListener('pagehide', () => fieldSession.send(fieldReport, heapBytes()));
 /** The effects panel (F7, `effectsWiring.ts`): every effect and heavy system switched live, to measure what each costs. */
 const effects = createEffectsWiring();
 /** The city's milestones told to Steam when the desktop shell runs under it (`steamAchievements.ts`). */
@@ -669,6 +681,9 @@ function comesBackFromLostContext(canvas: HTMLCanvasElement): void {
   canvas.addEventListener('webglcontextrestored', () => { clearTimeout(reload); reload = undefined; });
 }
 comesBackFromLostContext(canvas3d);
+// The context lost and back, and a shader that failed (reported while three checks them: `debug.checkShaderErrors`, development builds), told to the field log.
+watchContext(canvas3d);
+scene.gl.debug.onShaderError = shaderErrorHook();
 // The surgical profiler (`core/profiler.ts`)
 // Decision 5.4: the profiler, the F9 monitor and the console's hooks in a development build only (`scripts/look.mjs` runs on the dev server).
 const profileFrameEnd = import.meta.env.DEV ? wireProfiler() : (): void => {};
@@ -2662,6 +2677,8 @@ function frame(now: number): void {
   frameTimer.mark('panels');
   const timed = frameTimer.end();
   frameTimes.push(timed.end - timed.start);
+  // The heap's peak and the worst 40 s of frames for the session's summary, looked at every 15 s.
+  fieldSession.tick(heapBytes);
   healthWatch.frameEnded(timed.start, timed.end);
   effects.frameEnded(timed.end - timed.start);
   lab.frameEnded(timed);

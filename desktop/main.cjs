@@ -1,11 +1,12 @@
 /** ROADCRAFT ON THE DESKTOP: the production build */
-const { app, BrowserWindow, MessageChannelMain, ipcMain, protocol, net, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, MessageChannelMain, crashReporter, ipcMain, protocol, net, shell, utilityProcess } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { setTimeout, clearTimeout } = require('node:timers');
+const { setTimeout, clearTimeout, setInterval } = require('node:timers');
 const ISOLATED = require('./isolation.cjs');
+const { createProblemLog, fromPage } = require('./problems.cjs');
 
 // The player's folder named here, not by the package's name: the saves' place is what Steam Auto-Cloud is told (`scripts/package-desktop.mjs`).
 app.setPath('userData', path.join(app.getPath('appData'), 'Roadcraft'));
@@ -15,6 +16,28 @@ if (process.env.ROADCRAFT_LOOK === '1' && path.isAbsolute(process.env.ROADCRAFT_
 const xdgDataHome = () => (path.isAbsolute(process.env.XDG_DATA_HOME ?? '') ? process.env.XDG_DATA_HOME : path.join(os.homedir(), '.local', 'share'));
 /** The map's files, synced by Steam Auto-Cloud: `%APPDATA%/Roadcraft/saves` (root `WinAppDataRoaming`), `$XDG_DATA_HOME/Roadcraft/saves` on Linux (Electron's userData there is the config home, which Auto-Cloud has no root for). */
 const SAVES = process.platform === 'linux' ? path.join(xdgDataHome(), 'Roadcraft', 'saves') : path.join(app.getPath('userData'), 'saves');
+
+/** FIELD PROBLEMS, kept on this machine only (nothing is uploaded; a remote reporter is plugged in later with `problemLog.addSink` and `crashReporter`'s `submitURL`).
+ *  Native crashes: Crashpad's minidumps in `<userData>/Crashpad` (`app.getPath('crashDumps')`). DO NOT start it after a window exists: a renderer made
+ *  before `crashReporter.start` is never watched (Electron crashReporter docs: as early as possible, before `ready`; `submitURL` optional since v13 with `uploadToServer: false`). */
+crashReporter.start({ uploadToServer: false, globalExtra: { roadcraftVersion: app.getVersion() } });
+/** The problems log (`problems.cjs`): `<userData>/problems/problems.log`, rotated, a few MB at most. */
+const PROBLEMS = path.join(app.getPath('userData'), 'problems');
+const problemLog = createProblemLog({ folder: PROBLEMS });
+problemLog.write({ kind: 'start', message: `Roadcraft ${app.getVersion()} started`, data: { electron: process.versions.electron, chrome: process.versions.chrome, platform: process.platform, arch: process.arch, osRelease: os.release(), memoryMb: Math.round(os.totalmem() / 1048576), crashDumps: app.getPath('crashDumps') } });
+/** The problems' folder opened in the system's file manager (the console's `roadcraftDesktop.openProblems()`, Shift+F12). */
+const openProblems = () => {
+  fs.mkdirSync(PROBLEMS, { recursive: true });
+  return shell.openPath(PROBLEMS);
+};
+// A process of the game gone (Electron `app` events): the page's renderer (`render-process-gone`), the GPU or a utility process (`child-process-gone`, renderers excluded). A clean exit is no problem.
+app.on('render-process-gone', (event, webContents, details) => {
+  problemLog.write({ kind: 'render-process-gone', message: `renderer ${details.reason}`, data: { reason: details.reason, exitCode: details.exitCode } });
+});
+app.on('child-process-gone', (event, details) => {
+  if (details.reason === 'clean-exit') return;
+  problemLog.write({ kind: 'child-process-gone', message: `${details.type} process ${details.reason}`, data: { type: details.type, reason: details.reason, exitCode: details.exitCode, ...(details.serviceName ? { serviceName: details.serviceName } : {}), ...(details.name ? { name: details.name } : {}) } });
+});
 
 app.commandLine.appendSwitch('force_high_performance_gpu');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -142,6 +165,8 @@ function createWindow() {
   window.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     if (input.key === 'F11') { window.setFullScreen(!window.isFullScreen()); event.preventDefault(); }
+    // Shift+F12 the problems' folder (`problems.cjs`), for a player asked by support to send it.
+    if (input.key === 'F12' && input.shift) { void openProblems(); event.preventDefault(); return; }
     if (input.key === 'F12') { window.webContents.toggleDevTools(); event.preventDefault(); }
   });
   // Full screen kept for the next start, however it was reached (F11, the options, the page's own request).
@@ -186,6 +211,17 @@ function serveIpc() {
     }
     writeSettings();
     return true;
+  });
+  // The page's problems (`src/fieldReport.ts`): checked, cut to size and written here; nothing leaves the machine.
+  ipcMain.on('problems:report', (event, raw) => {
+    if (!fromGame(event)) return;
+    const entry = fromPage(raw);
+    if (entry) problemLog.write(entry);
+  });
+  ipcMain.handle('problems:open', async (event) => {
+    if (!fromGame(event)) return null;
+    const failed = await openProblems();
+    return failed ? null : PROBLEMS;
   });
   ipcMain.handle('steam:unlock', (event, id) => {
     if (!fromGame(event) || !steam || typeof id !== 'string' || !NAME.test(id)) return false;
@@ -296,6 +332,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => app.quit());
+app.once('will-quit', () => problemLog.write({ kind: 'exit', message: 'Roadcraft closed', data: { dropped: problemLog.dropped } }));
 /** How long the exit waits for the saves' writer to finish what it was asked (the page waits as long for its own writes, `main.ts` saveOnClose). */
 const QUIT_WAIT_MS = 8000;
 let savesDrained = false;

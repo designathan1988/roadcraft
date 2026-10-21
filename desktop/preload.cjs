@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld('roadcraftDesktop', {
   connectJobs: () => ipcRenderer.send('jobs:connect'),
   // The lab recorder's report written into the data folder (`src/lab/recorder/deliver.ts`): the folder it went to, or null.
   saveLabReport: (stamp, json, md) => ipcRenderer.invoke('lab:report', { stamp, json, md }),
+  // A field problem written to the local log by the main process (`src/fieldReport.ts`, `problems.cjs`): fire and forget, so it still goes out as the page closes.
+  reportProblem: (problem) => ipcRenderer.send('problems:report', problem),
+  // The problems' folder opened in the file manager: its path, or null.
+  openProblems: () => ipcRenderer.invoke('problems:open'),
 });
 
 // Electron, "MessagePorts", main world of a context-isolated page: the port handed on with `window.postMessage`, the page checks the source is its own window.
