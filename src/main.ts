@@ -4,6 +4,7 @@ import { measureHitch } from '@core/hitch';
 import { watchDesktopShown } from './desktopShown';
 import { canQueueJobs, jobChannel, jobLanes, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
 import type { CityGenAsk, CityGenReply } from './cityGen.worker';
+import { type OpenedCity, preparedCity } from './editor/preparedCity';
 import { desktopJobWorkers } from './desktopJobs';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
@@ -866,11 +867,12 @@ function mutateBuilt(fn: () => boolean): boolean {
 }
 
 /** `snapshot`: the model's own undo/redo state, restored exactly. */
-function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot'): void {
+/** `prepared`: an imported map's buildings prepared by the city's worker (`editor/preparedCity.ts`). */
+function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot', prepared = false): void {
   if (!data) return;
   roadTool.cancel();
   if (source === 'import') {
-    caused('map opened', () => restoreInto(doc, data, net));
+    caused('map opened', () => restoreInto(doc, data, net, prepared));
     // A different map: nothing of the old simulation may carry over.
     sim.load();
   } else {
@@ -1986,9 +1988,9 @@ let cityOpening: Promise<void> | null = null;
 let cityAskId = 1;
 
 /** The city's document made by the worker (the game's own generator); without a job queue (a test) it is made on the page, as before. */
-function cityData(ask: CityGenAsk): Promise<ReturnType<typeof buildSmallCityMap>> {
+function cityData(ask: CityGenAsk): Promise<OpenedCity> {
   if (!canQueueJobs()) {
-    return Promise.resolve(ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7));
+    return Promise.resolve({ data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7), prepared: false });
   }
   return new Promise((done, fail) => {
     submitJob({
@@ -1996,7 +1998,7 @@ function cityData(ask: CityGenAsk): Promise<ReturnType<typeof buildSmallCityMap>
       write: () => ({ data: ask, transfer: [] }),
       done: (answer) => {
         const reply = answer as CityGenReply;
-        if (reply.data) done(reply.data);
+        if (reply.data) done(reply.buildings ? preparedCity(reply.data, reply.buildings) : { data: reply.data, prepared: false });
         else fail(new Error(reply.error ?? 'the city was not made'));
       },
       failed: (message) => fail(new Error(message)),
@@ -2017,10 +2019,10 @@ async function openCityNow(ask: CityGenAsk): Promise<void> {
   requestDraw();
   performance.mark('city:asked');
   try {
-    const data = await cityData(ask);
+    const { data, prepared } = await cityData(ask);
     performance.mark('city:data');
     generatingCity = false;
-    openCity(data, (data.buildings?.length ?? 0) > 5_000);
+    openCity(data, (data.buildings?.length ?? 0) > 5_000, prepared);
     performance.mark('city:applied');
   } catch (error) {
     console.error('The city could not be made.', error);
@@ -2042,12 +2044,13 @@ function openLargeCity(seed: number): Promise<void> {
   return openCityOffPage({ id: cityAskId++, kind: 'large', seed });
 }
 
-function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false): void {
+/** `prepared`: its buildings prepared by the city's worker (`editor/preparedCity.ts`). */
+function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, prepared = false): void {
   history.begin(doc);
   // A large city opens at a district, its first world covering the view alone (`renderer.ts` openingBuild): the whole map's roads took tens of seconds the curtain showed nothing of.
   deferSessionSave = large;
   if (large) scene.scopeOpening(true);
-  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
+  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import', prepared);
   // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).
   history.end(doc);
   roadTool.reset();

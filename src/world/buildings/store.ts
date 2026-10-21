@@ -248,6 +248,8 @@ export class BuildingStore {
     this.grid = null;
     for (const building of data) {
       if (this.items.has(building.id)) continue;
+      // Settled where it was prepared (`prepareCity`), as a tile's read from its table (`placeAll`).
+      this.settled.add(building);
       this.items.set(building.id, building);
       this.ids.reserve(building.id);
     }
@@ -333,7 +335,9 @@ export class BuildingStore {
         return;
       }
       // The source's record itself, as `shareFrom` does: read-only once stored (OWNERSHIP above).
-      const kept = settleBuilding(now, this.settled, undefined, this.internShared);
+      // One the source settled already (a map opened, `fromJSON`) taken as it is: DO NOT walk and intern every building of the map a second time.
+      const kept = source.settled.has(now) && (source.internShared || !this.internShared) ? (this.settled.add(now), now)
+        : settleBuilding(now, this.settled, undefined, this.internShared);
       this.items.set(id, kept);
       if (!was) {
         this.grid?.insert(kept);

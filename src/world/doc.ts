@@ -2042,7 +2042,8 @@ export class RoadDoc {
   }
 
   /** Replaces this instance in place while restoring allocator invariants. */
-  replaceFromJSON(data: SerializedDoc, options: { readonly repair?: boolean } = {}): void {
+  /** `preparedBuildings`: its buildings prepared by a worker (`editor/preparedCity.ts`), filed as they are. */
+  replaceFromJSON(data: SerializedDoc, options: { readonly repair?: boolean; readonly preparedBuildings?: boolean } = {}): void {
     const restored = RoadDoc.fromJSON(data, options);
     this.replaceWith(restored);
   }
