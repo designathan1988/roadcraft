@@ -20,8 +20,8 @@ export function buildSmallCityMap(seed: number): SerializedDoc {
 }
 
 /** THE LARGE CITY, WHOLE, AS ONE MAP: the small city's plan over a larger radius (`largeCity.ts`), laid out the same way. */
-export function buildLargeCityMap(seed: number): SerializedDoc {
-  return buildCityMap(largeCityPlan(seed));
+export function buildLargeCityMap(seed: number, radius?: number): SerializedDoc {
+  return buildCityMap(largeCityPlan(seed, radius));
 }
 
 /** A planned city laid out as one map: its footways, lots, green and zones, and every lot grown, on the flat ground of a new map. The size is the plan's (`cityGen/plan.ts`): the probes' larger cities test the renderer's scale. */

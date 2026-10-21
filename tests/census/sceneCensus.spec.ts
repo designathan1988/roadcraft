@@ -442,7 +442,7 @@ describe('scene census', () => {
           "lines": 0,
           "objects": 283,
           "points": 4000,
-          "triangles": 4606368,
+          "triangles": 4667808,
         },
         "street": {
           "byName": {
@@ -776,7 +776,7 @@ describe('scene census', () => {
           "lines": 0,
           "objects": 508,
           "points": 4000,
-          "triangles": 4692182,
+          "triangles": 4753622,
         },
       }
     `);

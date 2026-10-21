@@ -2036,17 +2036,17 @@ interface KeptCity { readonly data: OpenedCity['data']; readonly buildings: Arra
 /** The city's document made by the worker (the game's own generator), or read as an earlier session kept it (`CITY_PREFIX`); without a job queue (a test) it is made on the page, as before. */
 async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
   if (!canQueueJobs()) {
-    return { data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7), table: null };
+    return { data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7, ask.radius) : buildSmallCityMap(ask.seed ?? 7), table: null };
   }
   // DO NOT grow the city again each time it is opened: the large city's generation was 6.4 s of the desktop's 7.4 s opening (2026-10-21), for a city the same seed and the same code make byte for byte.
-  const key = CITY_PREFIX ? `${CITY_PREFIX}${ask.kind}:${ask.seed ?? 7}` : null;
+  const key = CITY_PREFIX ? `${CITY_PREFIX}${ask.kind}:${ask.seed ?? 7}${ask.radius !== undefined ? `:r${Math.round(ask.radius)}` : ''}` : null;
   // Being made ahead (`cityAhead`): that job's answer, never a second one for the same city.
   const making = key ? citiesAhead.get(key) : undefined;
   if (making) { performance.mark('city:ahead'); return openedOf(await making); }
   const kept = key ? await readDerived<KeptCity>(key).catch(() => undefined) : undefined;
   if (kept?.data && kept.buildings instanceof ArrayBuffer) { performance.mark('city:kept'); return preparedCity(kept.data, tableIn(kept.buildings)); }
   // Shipped with the game (the first new city of its size, `cookedCities.ts`): read, and kept as one grown here would be.
-  const cooked = (ask.kind === 'large' || ask.kind === 'small') ? await readCookedCity(import.meta.env.BASE_URL, CITY_HASH, ask.kind, ask.seed ?? 7) : null;
+  const cooked = (ask.kind === 'large' || ask.kind === 'small') && ask.radius === undefined ? await readCookedCity(import.meta.env.BASE_URL, CITY_HASH, ask.kind, ask.seed ?? 7) : null;
   if (cooked) {
     performance.mark('city:cooked');
     if (key) void keepDerivedDurably(key, { data: cooked.data, buildings: cooked.buildings } satisfies KeptCity);
@@ -2159,8 +2159,8 @@ function openSmallCity(seed: number): Promise<void> {
 }
 
 /** The large city of a seed put in place of the map (the menu's, and the probes'). */
-function openLargeCity(seed: number): Promise<void> {
-  return openCityOffPage({ id: cityAskId++, kind: 'large', seed });
+function openLargeCity(seed: number, radius?: number): Promise<void> {
+  return openCityOffPage({ id: cityAskId++, kind: 'large', seed, ...(radius !== undefined ? { radius } : {}) });
 }
 
 /** `table`: its buildings' table, prepared by the city's worker (`editor/preparedCity.ts`). */
@@ -4026,7 +4026,8 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
     requestDraw();
   },
   /** A generated city: the small city of Roadcraft 2.0 as one map (`smallCity`). DO NOT open the world by tiles: the player, 2026-10-18, wants no city by tiles. */
-  generateCity: (options: { seed?: number; size?: 'small' | 'large' } = {}) => (options.size === 'large' ? openLargeCity(options.seed ?? 7) : openSmallCity(options.seed ?? 7)),
+  /** `radiusMetres`: the large city over another radius, its density kept (the scale steps). */
+  generateCity: (options: { seed?: number; size?: 'small' | 'large'; radiusMetres?: number } = {}) => (options.size === 'large' ? openLargeCity(options.seed ?? 7, options.radiusMetres !== undefined ? m(options.radiusMetres) : undefined) : openSmallCity(options.seed ?? 7)),
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   /** Probe: one building grown as the game grows them - asked of the growth's worker, written when its answer comes - and the ms from the ask to the building written. DO NOT time the page's own grower: the game never grows there (report UI-15 g). */
   growTimed: (): Promise<{ grown: readonly number[]; ms: number } | { grown: null; why: string }> => {

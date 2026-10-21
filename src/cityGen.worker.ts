@@ -10,6 +10,8 @@ export interface CityGenAsk {
   /** The small city, or the same city made larger (`largeCity.ts`). */
   readonly kind: 'small' | 'large';
   readonly seed?: number;
+  /** The large city over another radius, world units (the scale steps); absent, the large city's own. */
+  readonly radius?: number;
 }
 
 /** `buildings`: the city's buildings as one shared table (`prepareCity`), its `data` holding none: the page reads them from it (`preparedCity`). */
@@ -19,7 +21,7 @@ export function serve(scope: JobScope): void {
   scope.onmessage = (event: MessageEvent<CityGenAsk>) => {
     const ask = event.data;
     try {
-      const { data, buildings } = prepareCity(ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7));
+      const { data, buildings } = prepareCity(ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7, ask.radius) : buildSmallCityMap(ask.seed ?? 7));
       scope.postMessage({ id: ask.id, data, buildings } satisfies CityGenReply);
     } catch (error) {
       scope.postMessage({ id: ask.id, error: String((error as Error)?.stack ?? error) } satisfies CityGenReply);
