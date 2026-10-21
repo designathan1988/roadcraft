@@ -542,7 +542,8 @@ export function createSceneRenderer(
   const onChildAdded = (event: { child: Object3D; target?: Object3D }): void => {
     watchShadowDepth(event.child);
     // Out of the door into the drawn layers: a caster from now on, drawn into the next frame's shadow (`uploads.ts` gateUntilBuilt). What comes under a mover (people, vehicles, trains) is drawn over the stores every frame (`sunCascades.ts` movers).
-    gateUntilBuilt(event.child, inMover(event.target) ? undefined : () => askDraw());
+    // DO NOT hold it for WebGL's programs under the WebGPU renderer: WebGL does not draw the scene there, its compiles were work for nothing that kept what came in off the WebGPU frame and crowded the driver's compile threads (a group given up on after 10 s, 15 compiles in flight, 2026-10-21).
+    if (backend === 'webgl') gateUntilBuilt(event.child, inMover(event.target) ? undefined : () => askDraw());
   };
   const onChildRemoved = (event: { child: Object3D }): void => {
     event.child.traverse((o) => noteSway(o, false));
@@ -3619,7 +3620,8 @@ export function createSceneRenderer(
       if (shake > 0) { rig.camera.position.sub(shakeOffset); rig.camera.updateMatrixWorld(); }
       // And those queued while the frame drew: on the GPU before the next one draws.
       drainUploads(renderer);
-      drainCompiles(renderer, rig.camera, scene, post.target);
+      // Under WebGPU nothing is built ahead for WebGL (`uploads.ts` then waits for no program: `compilesAhead` false).
+      if (backend === 'webgl') drainCompiles(renderer, rig.camera, scene, post.target);
       // From the second frame on, the compiler answers: warm the road shaders.
       warmRoadShaders();
       warmBlastShaders();
