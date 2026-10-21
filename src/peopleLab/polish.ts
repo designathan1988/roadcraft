@@ -91,7 +91,7 @@ function upperLashesOnly(mesh: SkinnedMesh): void {
   }
   index.needsUpdate = true;
   // Short lashes hugging the lid: each upper lash drawn halfway back to its root, the lid line (the lowest lash point in its 2 mm slice across the eye).
-  const BIN = 0.002, KEEP = 0.34;
+  const BIN = 0.002, KEEP = 0.22;
   const roots = new Map<number, [number, number]>();
   for (let v = 0; v < hairMask.count; v++) {
     if (Math.round(hairMask.getX(v)) !== LASH_SLOT || position.getY(v) < middle(position.getX(v))) continue;
@@ -198,7 +198,7 @@ export function evenHairSheen(material: MeshStandardMaterial): void {
       .replace('vec3 along = dp2 * du1.x - dp1 * du2.x;', 'vec3 along = vec3(0.0, 1.0, 0.0);')
       // No lash cards: their thin strands read as grey spikes round the eye.
       // Lashes as one dark, full line (The Sims draws them so): their strands' alpha thickened, never thinned.
-      .replace('cardTexel.a *= 0.65;', 'cardTexel.a = min(1.0, cardTexel.a * 0.75);')
+      .replace('cardTexel.a *= 0.65;', 'cardTexel.a = min(1.0, cardTexel.a * 0.6);')
       .replace('diffuseColor.a = cardTexel.a;', 'diffuseColor.a = cardTexel.a; if (slot > 2.5 && slot < 3.5) diffuseColor.rgb = vec3(0.02);');
   };
   material.customProgramCacheKey = () => `${key}-lab-even-sheen`;

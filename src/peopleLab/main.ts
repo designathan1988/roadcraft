@@ -31,7 +31,7 @@ function startLab(): void {
 
   const first = randomPerson(1, 11, { body: { age: ageFromYears(26), gender: 0.06 } });
   // The first person shows a face: no glasses over the eyes.
-  let person: LabPerson = { spec: { ...first, name: '', body: { ...first.body, weight: 0.4, muscle: 0.4, proportions: 1 }, features: variedFace('female', () => 0.5), look: { ...first.look, makeup: 0, hairCut: 'long01', hairStyle: 'long', outfit: 'female_elegantsuit01', outfitTint: 0x3b6fd1, footwear: 'shoes03', extras: (first.look.extras ?? []).filter((x) => communityItem(x)?.kind !== 'glasses') } }, style: PIXAR };
+  let person: LabPerson = { spec: { ...first, name: '', body: { ...first.body, weight: 0.4, muscle: 0.4, proportions: 1 }, features: variedFace('female', () => 0.5), look: { ...first.look, makeup: 0, hairCut: 'long01', hairStyle: 'long', outfit: 'female_elegantsuit01', outfitTint: 0x3b6fd1, footwear: 'shoes03', brows: 'eyebrow010', extras: (first.look.extras ?? []).filter((x) => communityItem(x)?.kind !== 'glasses') } }, style: PIXAR };
   let activity: string | undefined;
   let pose: PoseName = 'idle';
   let built: BuiltPerson | null = null;
@@ -50,7 +50,7 @@ function startLab(): void {
     const spec = randomPerson(id, seed + id);
     const hairs = NICE_HAIR[spec.body.gender < 0.5 ? 'female' : 'male'];
     const hairCut = hairs[Math.floor(Math.random() * hairs.length)]!;
-    return { spec: { ...spec, name: '', features: variedFace(spec.body.gender < 0.5 ? 'female' : 'male', Math.random), look: { ...spec.look, makeup: 0, hairCut } }, style: PIXAR };
+    return { spec: { ...spec, name: '', features: variedFace(spec.body.gender < 0.5 ? 'female' : 'male', Math.random), look: { ...spec.look, makeup: 0, hairCut, ...(spec.body.gender < 0.5 ? { brows: 'eyebrow010' } : {}) } }, style: PIXAR };
   }
 
   const years = (): number => yearsFromAge(person.spec.body.age);
