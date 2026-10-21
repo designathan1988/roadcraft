@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 // LOOK AT THE GAME AS THE PLAYER SEES IT, at full resolution, without taking anyone's window
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { _electron, chromium } from '@playwright/test';
@@ -37,6 +37,23 @@ const jsFlags = process.env.LOOK_JS_FLAGS ? [`--js-flags=${process.env.LOOK_JS_F
 const chromeArgs = process.env.LOOK_CHROME_ARGS ? process.env.LOOK_CHROME_ARGS.split(' ').filter(Boolean) : [];
 /** `--electron`: the desktop build as the player runs it (`desktop/main.cjs`, the game from `dist/`: build it first, `--mode development` for the probes the steps call), its window hidden at 1920x1080 (`ROADCRAFT_LOOK`), no Steam. */
 const electron = flags.includes('--electron');
+// ONE LOOK AT A TIME ON THIS MACHINE: sessions working side by side share the GPU and the CPU, and two cities opened at once made each other's frame times worthless. A run waits for the one before it (a lock file holding its pid; a dead holder's lock is taken over). LOOK_NO_LOCK=1 skips it.
+const lockFile = join(tmpdir(), 'roadcraft-look.lock');
+if (!process.env.LOOK_NO_LOCK) {
+  let said = false;
+  for (;;) {
+    try { writeFileSync(lockFile, String(process.pid), { flag: 'wx' }); break; } catch { /* held */ }
+    let holder = NaN;
+    try { holder = Number(readFileSync(lockFile, 'utf8')); } catch { continue; }
+    let alive = false;
+    try { process.kill(holder, 0); alive = true; } catch { /* gone */ }
+    if (!alive) { try { rmSync(lockFile); } catch { /* taken by another */ } continue; }
+    if (!said) { console.log(`waiting for the look run of pid ${holder} to end (one at a time)`); said = true; }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  process.on('exit', () => { try { if (readFileSync(lockFile, 'utf8') === String(process.pid)) rmSync(lockFile); } catch { /* gone */ } });
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => process.exit(130));
+}
 const browser = electron ? await desktopBrowser() : await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', ...jsFlags, ...chromeArgs] });
 
 /** The desktop app as a browser of one page (Playwright `_electron`): its window the page; closing it ends the app. */
