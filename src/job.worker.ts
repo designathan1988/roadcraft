@@ -30,6 +30,8 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   garmentPadding: () => import('./render/people/garmentPadding.worker'),
   peopleLod: () => import('./render/people/lodWorker'),
   roadTiles: () => import('./render/roadTile.worker'),
+  // The road blocks' far levels (`roadTilePool.ts` coarsen): the same worker, on the page's own workers.
+  roadCoarse: () => import('./render/roadTile.worker'),
   farRoads: () => import('./render/farRoads.worker'),
   roadStations: () => import('./render/roadStations.worker'),
   nearTiles: () => import('./render/nearTiles.worker'),

@@ -49,12 +49,16 @@ export interface RoadTiler {
 
 export class RoadTilePool implements RoadTiler {
   private lanes: Lane[] | null = null;
+  /** The far levels' lanes (`coarsen`), on the page's own workers. DO NOT make them on the tiles' (`jobPool.ts` PROCESS_LANES, the desktop's job processes): a block's arrays were copied on the page both ways (`processWorker.ts` send), 270 ms of the page's every 5 s in a large city's close view (2026-10-21); a worker of the page takes them moved. */
+  private coarseLanes: Lane[] | null = null;
+  /** No frame is seen (the opening's curtain, `renderer.ts`): the far levels go to the tiles' lanes, the page's copies paid behind it. DO NOT put them on the page's lane then: it is the worker the building cells of the view queue on (`jobPool.ts` hostFor), and the opening's buildings in view waited for it (7.9 s or 10.7 s, by where the lane fell, 2026-10-21). */
+  unseen = true;
   private broken = false;
   private nextId = 1;
   private nextLane = 0;
 
   coarsen(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null> {
-    const lanes = this.start();
+    const lanes = (this.unseen ? this.start() : null) ?? this.startCoarse();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
     const lane = lanes[this.nextLane++ % lanes.length]!;
     const id = this.nextId++;
@@ -90,7 +94,7 @@ export class RoadTilePool implements RoadTiler {
   }
 
   check(now = performance.now()): void {
-    for (const lane of this.lanes ?? []) {
+    for (const lane of [...(this.lanes ?? []), ...(this.coarseLanes ?? [])]) {
       if (lane.told || !(lane.waiting.size || lane.coarsening.size) || now - lane.heard <= SILENCE_MS) continue;
       // Said once a stretch, and waited for: the page building the tiles itself would stall every frame after it.
       lane.told = true;
@@ -100,15 +104,26 @@ export class RoadTilePool implements RoadTiler {
 
   private start(): Lane[] | null {
     if (this.lanes || this.broken) return this.lanes;
+    this.lanes = this.open('roadTiles', jobLanes(MOST_LANES, 'roadTiles'));
+    return this.lanes;
+  }
+
+  private startCoarse(): Lane[] | null {
+    if (this.coarseLanes || this.broken) return this.coarseLanes;
+    this.coarseLanes = this.open('roadCoarse', jobLanes(MOST_LANES));
+    return this.coarseLanes;
+  }
+
+  private open(service: 'roadTiles' | 'roadCoarse', count: number): Lane[] | null {
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const count = jobLanes(MOST_LANES, 'roadTiles');
     const lanes: Lane[] = [];
+    const live = (): boolean => this.lanes === lanes || this.coarseLanes === lanes;
     try {
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('roadTiles');
+        const worker = jobPort(service);
         const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now(), told: false };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; kept?: number[]; error?: string; coarse?: BlockArrays | null }>) => {
-          if (this.lanes !== lanes) return;
+          if (!live()) return;
           lane.heard = performance.now();
           lane.told = false;
           const { id, beat, need, tiles, error } = event.data;
@@ -139,15 +154,14 @@ export class RoadTilePool implements RoadTiler {
         worker.onmessageerror = () => this.fail('a road tile worker sent a message that cannot be read');
         lanes.push(lane);
       }
-      this.lanes = lanes;
     } catch (error) {
       console.warn('[roads] the road tile workers are unavailable; the tiles are built on the page', error);
       // The lanes made before the one that failed let go: none is left holding its place on a worker of the job pool.
       for (const lane of lanes) lane.worker.terminate();
       this.broken = true;
-      this.lanes = null;
+      return null;
     }
-    return this.lanes;
+    return lanes;
   }
 
   /** The pool fails: every job waiting on any worker rejected (built on the page), every worker ended. */
@@ -165,7 +179,7 @@ export class RoadTilePool implements RoadTiler {
   }
 
   private end(error: Error): void {
-    for (const lane of this.lanes ?? []) {
+    for (const lane of [...(this.lanes ?? []), ...(this.coarseLanes ?? [])]) {
       for (const job of lane.waiting.values()) job.reject(error);
       lane.waiting.clear();
       for (const block of lane.coarsening.values()) block.reject(error);
@@ -173,5 +187,6 @@ export class RoadTilePool implements RoadTiler {
       lane.worker.terminate();
     }
     this.lanes = null;
+    this.coarseLanes = null;
   }
 }
