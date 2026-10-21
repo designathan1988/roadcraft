@@ -4,7 +4,7 @@ import { measureHitch } from '@core/hitch';
 import { watchDesktopShown } from './desktopShown';
 import { canQueueJobs, jobChannel, jobLanes, jobPoolStats, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
 import type { CityGenAsk, CityGenReply } from './cityGen.worker';
-import { type OpenedCity, preparedCity } from './editor/preparedCity';
+import { type OpenedCity, prepareCity, preparedCity } from './editor/preparedCity';
 import { tableBytes, tableIn } from '@world/buildings/recordTable';
 import { desktopJobWorkers } from './desktopJobs';
 import { profileOf } from '@world/roads/profile';
@@ -245,13 +245,17 @@ function clearOldMapsOnce(): void {
     // Storage blocked: nothing was kept to clear.
   }
 }
+/** Buildings from which a saved map is restored through one table (`prepareCity`): a small map loads as it did. */
+const TABLE_RESTORE_BUILDINGS = 1000;
 // A saved map that validates and still fails to load must not take the game down with it - on every reload.
 let bootFailed = false;
 if (saved) {
   try {
     doc.changes.causeNext('saved map loaded');
     performance.mark('boot:restore');
-    restoreInto(doc, saved, net);
+    // A large map's buildings made one table, as a generated city's are (`prepareCity`), and filed from it: DO NOT load them one object at a time - each was migrated and interned again (0.83 s of the large city's boot), and each written to a row of its own for the traffic's worker after (`refOf`, 0.5 s more).
+    const asTable = (saved.buildings?.length ?? 0) >= TABLE_RESTORE_BUILDINGS ? (() => { const made = prepareCity(saved); return preparedCity(made.data, made.buildings); })() : null;
+    restoreInto(doc, asTable?.data ?? saved, net, asTable !== null);
     performance.mark('boot:restored');
     doc.changes.causeNext('jogo');
     // Opened from the map's parts: those parts are this document, the next save writes only what changes.
