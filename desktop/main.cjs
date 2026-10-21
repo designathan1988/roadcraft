@@ -9,6 +9,8 @@ const ISOLATED = require('./isolation.cjs');
 
 // The player's folder named here, not by the package's name: the saves' place is what Steam Auto-Cloud is told (`scripts/package-desktop.mjs`).
 app.setPath('userData', path.join(app.getPath('appData'), 'Roadcraft'));
+// A look run's own profile (`scripts/look.mjs --electron`, ROADCRAFT_LOOK_PROFILE: an absolute folder): a first opening measured as a new player has it, nothing kept from before, the player's own folder untouched.
+if (process.env.ROADCRAFT_LOOK === '1' && path.isAbsolute(process.env.ROADCRAFT_LOOK_PROFILE ?? '')) app.setPath('userData', process.env.ROADCRAFT_LOOK_PROFILE);
 /** XDG data home (XDG Base Directory spec: ignored unless absolute), the Linux root Steam Auto-Cloud offers (`LinuxXdgDataHome`). */
 const xdgDataHome = () => (path.isAbsolute(process.env.XDG_DATA_HOME ?? '') ? process.env.XDG_DATA_HOME : path.join(os.homedir(), '.local', 'share'));
 /** The map's files, synced by Steam Auto-Cloud: `%APPDATA%/Roadcraft/saves` (root `WinAppDataRoaming`), `$XDG_DATA_HOME/Roadcraft/saves` on Linux (Electron's userData there is the config home, which Auto-Cloud has no root for). */
