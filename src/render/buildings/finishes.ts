@@ -112,6 +112,11 @@ if (vDecay > 0.001 && shellKind.z < 0.5) {
   }
 }`;
 
+/** GLSL after the map, the far program's (`createShellMaterial` far): its finish's colour from afar for its texture (`finishAlbedo`), the wear's mean for its stains; its roughness and its glass's metal the means of its maps' (`finishFar`). */
+const FAR_FINISH = `
+shellFar = shellTones[vShellFinish * 2 + 1];
+diffuseColor.rgb *= shellTones[vShellFinish * 2].rgb * (1.0 - 0.3 * vDecay);`;
+
 /** GLSL: a shell vertex's normal, octahedral in two normalised shorts (\`octNormal\`, Cigolle et al. 2014), unfolded. */
 export const SHELL_NORMAL_GLSL = `attribute vec2 ${SHELL_NORMAL};
 vec3 shellUnfold(vec2 e) {
@@ -122,8 +127,9 @@ vec3 shellUnfold(vec2 e) {
 }`;
 
 /** The shell's program: each pixel's finish picks its layer of the maps and its rows of the look table; `weathered` adds the wear. A shell's vertex carries its paint and finish (`PAINT_ATTRIBUTE`), its uv worked out here from its place and normal as `Shell.face` laid it; instanced, the shell's parts (`shellParts.ts`) their finish, wear and ground per instance; `carried`: a ruin's pieces, which move, their uv, colour and finish carried per vertex (`fracture.ts`). */
-function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBake | undefined, looks: { value: Float32Array }, weathered: boolean, carried: boolean): void {
+function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBake | undefined, looks: { value: Float32Array }, weathered: boolean, carried: boolean, tones: Float32Array | null = null): void {
   shader.uniforms['shellLooks'] = looks;
+  if (tones) shader.uniforms['shellTones'] = { value: tones };
   if (maps) {
     shader.uniforms['shellMaps'] = { value: maps.map };
     shader.uniforms['shellNormals'] = { value: maps.normalMap };
@@ -177,20 +183,23 @@ vDecay = float(int(${PAINT_ATTRIBUTE}.w * ${PAINT_UNIT}.0 + 0.5) >> 8) / ${WEAR_
   vDecayNormal = normalize(mat3(modelMatrix) * shellNormal);
 }` : ''}`);
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', `#include <common>\n${FINISH_PARS}\n${maps ? MAP_PARS : ''}\n${weathered ? WEATHER_PARS : ''}`)
+    .replace('#include <common>', `#include <common>\n${FINISH_PARS}\n${maps ? MAP_PARS : ''}\n${weathered ? WEATHER_PARS : ''}\n${tones ? `uniform vec4 shellTones[${FINISHES.length * 2}];
+vec4 shellFar = vec4(1.0);` : ''}`)
     .replace('#include <envmap_physical_pars_fragment>', ShaderChunk.envmap_physical_pars_fragment.replace(/\benvMapIntensity\b/g, '( envMapIntensity * shellEnvScale )'))
     .replace('#include <map_fragment>', `#include <map_fragment>
 shellLook = shellLooks[vShellFinish * ${LOOK_ROWS}];
 shellKind = shellLooks[vShellFinish * ${LOOK_ROWS} + 1];
 shellEnvScale = shellLook.w;
 ${maps ? `diffuseColor *= texture(shellMaps, ${layer});` : ''}
-${weathered ? WEATHERING : ''}`)
+${tones ? FAR_FINISH : weathered ? WEATHERING : ''}`)
     .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-${maps ? `shellRoughTexel = texture(shellRough, ${layer});\nroughnessFactor *= shellRoughTexel.g;` : ''}`)
+${maps ? `shellRoughTexel = texture(shellRough, ${layer});\nroughnessFactor *= shellRoughTexel.g;` : ''}
+${tones ? 'roughnessFactor *= shellFar.x;' : ''}`)
     // The glass's metal (its mullions) read from the roughness map's blue, as three reads a metalness map.
     .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
 metalnessFactor *= shellLook.z;
-${maps ? 'if (shellKind.x > 0.5) metalnessFactor *= shellRoughTexel.b;' : ''}`)
+${maps ? 'if (shellKind.x > 0.5) metalnessFactor *= shellRoughTexel.b;' : ''}
+${tones ? 'if (shellKind.x > 0.5) metalnessFactor *= shellFar.y;' : ''}`)
     .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 ${maps ? `{
   mat3 shellTbn = shellTangentFrame(- vViewPosition, normal, vShellUv);
@@ -209,42 +218,90 @@ ${maps ? `{
  * `plain`: the faded copy's look ("Ocultar outros"): the finishes' maps and scalars without the wear or the lots, as the per-finish clones drew it.
  * `carried`: a ruin's (`destruction.ts`): its pieces move, so each vertex carries its uv, colour and finish (`shellShader`).
  */
-export function createShellMaterial(options: { readonly plain?: boolean; readonly carried?: boolean } = {}, anisotropy = 4): MeshStandardMaterial {
+export function createShellMaterial(options: { readonly plain?: boolean; readonly carried?: boolean; readonly far?: boolean } = {}, anisotropy = 4): MeshStandardMaterial {
   const plain = options.plain === true;
   const carried = options.carried === true;
-  const maps = surfaceMaps('building-finishes', anisotropy);
+  // The far program: no maps, each finish its colour from afar (`FAR_FINISH`).
+  const far = options.far === true;
+  const maps = far ? undefined : surfaceMaps('building-finishes', anisotropy);
+  const tones = far ? farTones() : null;
   // Cast by its back faces (the walls turned from the sun, the roofs' undersides): the silhouette is the same, and a face the sun lights never shades itself. DO NOT cast both sides: a lit wall at a grazing sun shadowed itself in diagonal bands of acne whatever the offset (the street views, 2026-10-20).
-  const material = new MeshStandardMaterial({ vertexColors: true, roughness: maps ? 1 : 0.9, metalness: 1, envMapIntensity: 1, shadowSide: BackSide });
+  const material = new MeshStandardMaterial({ vertexColors: true, roughness: maps || far ? 1 : 0.9, metalness: 1, envMapIntensity: 1, shadowSide: BackSide });
   material.name = plain ? 'building-shell-plain' : carried ? 'building-ruin' : 'building-shell';
   const looks = { value: finishLookTable(maps !== undefined) };
-  material.onBeforeCompile = (shader) => shellShader(shader, maps, looks, !plain, carried);
-  const key = `building-shell-v2-${plain ? 'plain' : 'weathered'}-${carried ? 'carried' : 'laid'}-${maps ? 'maps' : 'none'}`;
+  material.onBeforeCompile = (shader) => shellShader(shader, maps, looks, !plain, carried, tones);
+  const key = `building-shell-v2-${plain ? 'plain' : 'weathered'}-${carried ? 'carried' : 'laid'}-${maps ? 'maps' : 'none'}${far ? '-far' : ''}`;
   material.customProgramCacheKey = () => key;
   // A built lot's yard - the paving and paths are this shell's level faces at the lot's ground
   if (!plain) applyLotOverlay(material, { building: true });
   return material;
 }
 
-/** Each finish's colour as it reads from afar, three numbers to multiply a wall's tint by: the mean of its texture */
+/** Each finish's colour as it reads from afar, three linear numbers to multiply a wall's linear tint by (`massing.ts` `rgbOf`): its texture's mean light scattered (`finishFar` diffuse). */
 export function finishAlbedo(): Record<Finish, readonly [number, number, number]> {
   const out = {} as Record<Finish, readonly [number, number, number]>;
-  const STEPS = 48;
+  for (const finish of FINISHES) out[finish] = finishFar()[finish].diffuse;
+  return out;
+}
+
+/** An sRGB-encoded value as linear (IEC 61966-2-1): the finish map is a colour texture, decoded so before it is lit. */
+function linearOf(c: number): number {
+  return c < 0.04045 ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4);
+}
+
+/** The base reflectance three gives a dielectric (r186 `lights_physical_fragment`: specularColor 0.04 at ior 1.5). */
+const DIELECTRIC_F0 = 0.04;
+
+/**
+ * Each finish from afar, its texture's texels summed as the light treats them:
+ * - in linear, as the shader reads the sRGB map; DO NOT average the encoded bytes: a dark pane and a bright mullion so averaged come out half as bright again and wash every far level out (the black glass grey-blue, seen 2026-10-20);
+ * - the light scattered (albedo x (1 - metal)) and the base reflectance (mix(0.04, albedo, metal)) each averaged, both linear in the BRDF, and the one albedo and metal that give both back worked out (`albedo`, `metal`, for a program with metal, `createShellMaterial` far); a program without it takes the scattered light alone (`diffuse`). DO NOT average albedo and metal apart: the mullions' bright metal then scatters, doubling the glass's diffuse;
+ * - its roughness its texels' median, not their mean: a glossy lobe and a matte one do not blend to a lobe, the glass's panes and mullions averaged went matte.
+ */
+type FarLook = { readonly diffuse: readonly [number, number, number]; readonly albedo: readonly [number, number, number]; readonly rough: number; readonly metal: number };
+let farLooks: Record<Finish, FarLook> | null = null;
+function finishFar(): Record<Finish, FarLook> {
+  if (farLooks) return farLooks;
+  const out = {} as Record<Finish, FarLook>;
   for (const finish of FINISHES) {
     const look = LOOKS[finish];
     const shade = look.shade(look.size);
     const texel = { r: 0, g: 0, b: 0, h: 0, rough: 0, metal: 0 };
-    let r = 0, g = 0, b = 0;
-    for (let i = 0; i < STEPS; i++) {
-      for (let j = 0; j < STEPS; j++) {
+    const scattered = [0, 0, 0], reflected = [0, 0, 0];
+    const roughs: number[] = [];
+    // Every texel the bake writes (`textureBaker.ts` `surfaceTexels`, 1.2 million in all, 0.1 s once). DO NOT sample a grid of its own: 48 steps across a brick bond beat with its mortar, the brick read 20% off a 32-step grid.
+    for (let y = 0; y < look.size; y++) {
+      for (let x = 0; x < look.size; x++) {
         texel.metal = 0;
-        shade(((i + 0.5) / STEPS) * look.size, ((j + 0.5) / STEPS) * look.size, texel);
-        r += texel.r; g += texel.g; b += texel.b;
+        shade(x, y, texel);
+        // A finish without a metal map is its metalness all over (the look table's), the same weight in every texel: its colour's mean is the whole of it.
+        const metal = look.metallic ? texel.metal : 0;
+        [texel.r, texel.g, texel.b].forEach((c, k) => {
+          const albedo = linearOf(c);
+          scattered[k]! += albedo * (1 - metal);
+          reflected[k]! += DIELECTRIC_F0 * (1 - metal) + albedo * metal;
+        });
+        roughs.push(texel.rough);
       }
     }
-    const n = STEPS * STEPS;
+    const n = look.size * look.size;
     const weathered = finish === 'glass' || finish === 'metal' ? 1 : WEATHERED_MEAN;
-    out[finish] = [(r / n) * weathered, (g / n) * weathered, (b / n) * weathered];
+    const d = scattered.map((v) => (v / n) * weathered) as [number, number, number];
+    const f = reflected.map((v) => v / n);
+    // The metal whose albedo d / (1 - m) gives the mean reflectance back: 0.04 (1 - m) + d m / (1 - m) rises with m from 0.04, solved by halves on the channels' mean.
+    const dm = (d[0] + d[1] + d[2]) / 3, fm = (f[0]! + f[1]! + f[2]!) / 3;
+    let lo = 0, hi = 0.95;
+    if (look.metallic && fm > DIELECTRIC_F0) {
+      for (let k = 0; k < 30; k++) {
+        const m = (lo + hi) / 2;
+        if (DIELECTRIC_F0 * (1 - m) + (dm * m) / (1 - m) < fm) lo = m; else hi = m;
+      }
+    } else hi = 0;
+    const metal = look.metallic ? (lo + hi) / 2 : 0;
+    const albedo = d.map((v) => Math.min(1, v / (1 - metal))) as [number, number, number];
+    out[finish] = { diffuse: d, albedo, rough: roughs.sort((x, y) => x - y)[n >> 1]!, metal };
   }
+  farLooks = out;
   return out;
 }
 
@@ -282,6 +339,18 @@ vShellTone = vec3(1.0);
   material.customProgramCacheKey = () => 'building-shell-far-v1';
   applyLotOverlay(material, { building: true });
   return material;
+}
+
+/** Each finish's colour from afar, in finish order (the far programs' table). */
+function farTones(): Float32Array {
+  const looks = finishFar();
+  const tones = new Float32Array(FINISHES.length * 8);
+  FINISHES.forEach((finish, id) => {
+    tones.set(looks[finish].albedo, id * 8);
+    tones[id * 8 + 4] = looks[finish].rough;
+    tones[id * 8 + 5] = looks[finish].metal;
+  });
+  return tones;
 }
 
 /** How dark the light weathering of every wall leaves it on average (`WEATHERING`, `d` of 0.3: 0.3 x (0.18 + 0.12 x 0.75 + a few streaks)). */

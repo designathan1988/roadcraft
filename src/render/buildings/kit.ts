@@ -591,7 +591,8 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   const massBox = unitMassBox();
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
-  const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight, roomDaylight });
+  // The facade level stands past the detail's reach (`massCells.ts` FINE_PIXELS, ~280 m at 1080p), where a finish's 15 cm features are half a pixel: its walls drawn by the shell's far program, its windows, frames and panes as they are. DO NOT give it the near program: its maps, normal frame and wear weighed on every wall of every facade cell of the view for texture no pixel resolved.
+  const facade = createFacadeMaterial(createShellMaterial({ far: true }, anisotropy), panes, { roomsAwake, massingNight, roomDaylight });
   const unique = new Set<Material>([...Object.values(material), shell, ruinShell, farShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBoxes, massBoxDepth]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
