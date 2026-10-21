@@ -1,5 +1,6 @@
 import type { MacroParams } from '@people/body/macro';
 import type { PersonLook } from '@people/spec';
+import type { LabPerson } from './record';
 
 /** READY-MADE CHOICES for each part of a person, as The Sims' Create-a-Sim offers them: a tap sets the part, the sliders and the click-and-drag refine it */
 
@@ -233,3 +234,22 @@ export const FEMALE_FIGURE: Readonly<Record<string, number>> = {
   'measure-shoulder-dist-decr-incr': -0.45, 'measure-waist-circ-decr-incr': -0.4, 'measure-hips-circ-decr-incr': 0.3, 'buttocks-volume-decr-incr': 0.25,
   'measure-neck-circ-decr-incr': -0.35, 'upperarm-fat-decr-incr': -0.2, 'foot-scale-decr-incr': -0.35, 'hand-scale-decr-incr': -0.15, 'measure-upperarm-circ-decr-incr': -0.3, 'torso-scale-horiz-decr-incr': -0.25,
 };
+
+/** THE MANNEQUIN the choices are pictured on (as Create-a-Sim shows its items): one fixed neutral person a sex, grey skin, the approved base face,
+ *  so a picture shows the item and is made once for good, whatever the person being made looks like. */
+export function mannequin(sex: 'female' | 'male'): LabPerson {
+  const female = sex === 'female';
+  return {
+    spec: {
+      id: female ? 1 : 2, name: '',
+      body: { gender: female ? 0.06 : 0.92, age: 0.5, muscle: 0.5, weight: 0.45, height: 0.5, proportions: 1, african: 1 / 3, asian: 1 / 3, caucasian: 1 / 3, cupsize: 0.5, firmness: 0.6 },
+      features: variedFace(sex, () => 0.5),
+      look: {
+        skin: 0xd8d4cf, eyes: 0x5a3a22, hair: 0x4a3022, hairStyle: female ? 'long' : 'short', top: 'tshirt', topColour: 0x9aa3ad, bottom: 'trousers',
+        bottomColour: 0x7d8690, shoes: 0x5c5c5c, outfit: female ? 'female_casualsuit02' : 'male_casualsuit02', outfitTint: 0xb9c0c8,
+        footwear: female ? 'elvs_flatshoe_plain1' : 'shoes02', hairCut: 'none', brows: female ? 'eyebrow010' : 'eyebrow002', lashes: 'eyelashes01', hat: 'none', extras: [], makeup: 0,
+      },
+    },
+    style: { head: 1.12, eyes: 1, legs: 1, hands: 1, feet: 0.95 },
+  };
+}

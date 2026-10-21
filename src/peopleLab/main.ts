@@ -13,6 +13,7 @@ import { applyFace, faceAt } from '@render/people/faceExpression';
 import { createPersonLayers, releaseSkinAppearance, type SkinAppearance } from '@render/people/skinAppearance';
 import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
+import { JOINTS, PoseEditor } from './posing';
 import { ClipPlayer, Poser, spreadArms, uprightHead, type PoseName } from './pose';
 import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
 import { variedFace } from './presets';
@@ -151,6 +152,7 @@ function startLab(): void {
   controls.minDistance = 0.4;
   controls.maxDistance = 6;
   controls.maxPolarAngle = Math.PI * 0.55;
+  const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
   let view: 'face' | 'body' = 'body';
   let height = 1.7;
 
@@ -205,6 +207,7 @@ function startLab(): void {
   /** The region lit under the pointer (`regionGlow`). */
   const glow = { hover: { value: 0 }, time: { value: 0 } };
   const pictures = new Thumbs(builder, paintedSkins);
+  for (const type of ['pointermove', 'pointerdown', 'wheel', 'keydown'] as const) window.addEventListener(type, () => { pictures.touched = performance.now(); }, { passive: true });
   let generation = 0;
   /** When the waiting rebuild starts (ms, `performance.now`), or 0: sliders dragged are built once they rest, in the frame loop. */
   let buildAt = 0;
@@ -244,6 +247,7 @@ function startLab(): void {
       for (const m of next.meshes) { m.castShadow = true; m.frustumCulled = false; }
       scene.add(next.scene);
       poser = new Poser(next.scene);
+      posing.setRoot(next.scene);
       player = null;
       const sexNow = sexName();
       void loadRocketboxClips(sexNow).then((clips) => {
@@ -286,7 +290,7 @@ function startLab(): void {
 
   const TABS: readonly (readonly [string, string, string])[] = [
     ['pessoa', '🧍', 'Pessoa'], ['rosto', '🙂', 'Rosto'], ['estilo', '✨', 'Estilo'], ['cabelo', '💇', 'Cabelo'],
-    ['roupas', '👕', 'Roupas'], ['expressao', '😄', 'Expressão'],
+    ['roupas', '👕', 'Roupas'], ['expressao', '😄', 'Expressão'], ['pose', '🕺', 'Pose'],
   ];
   for (const [id, ico, label] of TABS) {
     const b = el('button', {}, el('span', { cls: 'ico', textContent: ico }), label);
@@ -300,7 +304,8 @@ function startLab(): void {
     nameInput.value = person.spec.name;
     const scroll = panel.scrollTop;
     pictures.clearQueue();
-    panel.replaceChildren(...(sculptor ? sculptPanel(sculptor, { slider, render, close: closeSculptor }) : PANELS[tab]!()));
+    if (tab !== 'pose') posing.select(null);
+    panel.replaceChildren(...(sculptor ? sculptPanel(sculptor, { slider, render, close: closeSculptor }) : tab === 'pose' ? posePanel() : PANELS[tab]!()));
     panel.scrollTop = scroll;
   }
 
@@ -431,6 +436,30 @@ function startLab(): void {
     rebuild(0);
   }
 
+  /** The pose tab: a joint picked and turned with the gizmo, poses kept as keyframes, played back. */
+  function posePanel(): Node[] {
+    const now = (): number => (performance.now() - clock0) / 1000;
+    const keyAt = el('input', { type: 'number', min: '0', step: '0.25', value: String(posing.keys.length ? posing.keys[posing.keys.length - 1]!.t + 1 : 0) });
+    const add = el('button', { cls: 'big save', textContent: '＋ Quadro' });
+    add.onclick = () => { posing.addKey(+keyAt.value); render(); };
+    const play = el('button', { cls: 'big alt', textContent: posing.playing ? '■ Parar' : '▶ Tocar' });
+    play.onclick = () => { if (posing.playing) posing.stop(); else posing.play(now()); render(); };
+    const reset = el('button', { cls: 'big alt', textContent: 'Limpar' });
+    reset.onclick = () => { posing.reset(); render(); };
+    return [
+      el('h3', { textContent: 'Articulação' }),
+      el('div', { cls: 'chips' }, ...JOINTS.map(([label, name]) => {
+        const b = el('button', { textContent: label, cls: posing.bone === name ? 'on' : '' });
+        b.onclick = () => { posing.stop(); posing.select(posing.bone === name ? null : name); render(); };
+        return b;
+      })),
+      el('h3', { textContent: 'Animação' }),
+      el('label', { cls: 'row' }, el('span', { textContent: 'Tempo (s)' }), keyAt, el('output', { textContent: `${posing.keys.length}` })),
+      el('div', { cls: 'pair' }, add, play), reset,
+      el('div', { cls: 'chips' }, ...posing.keys.map((k) => el('button', { textContent: `${k.t}s` }))),
+    ];
+  }
+
   // ---------------------------------------------------------------- the hair sculptor
 
   async function openSculptor(): Promise<void> {
@@ -482,6 +511,7 @@ function startLab(): void {
     const b = built;
     if (b && await addDragMorphs(b, region, fx, fy, DRAG_REACH, (slider, to) => builder.shape({ ...person, spec: { ...person.spec, features: { ...person.spec.features, [slider]: to } } }), () => built === b)) dragWeights = {};
   }
+  const FACE_REGIONS = new Set(['head', 'forehead', 'brows', 'eyes', 'nose', 'cheeks', 'mouth', 'jaw', 'ears']);
   let lastPick = 0;
   const feature = (k: string): number => person.spec.features[k] ?? 0;
   const showTip = (e: PointerEvent, region: Region | null): void => {
@@ -499,7 +529,8 @@ function startLab(): void {
     const region = shaper.pick(ndc(e), camera);
     if (!region) return;
     shaping = { region, x0: e.clientX, y0: e.clientY, fx: feature(region.x.slider), fy: feature(region.y.slider) };
-    void prepareDrag(region, shaping.fx, shaping.fy);
+    // The instant preview only on the face: a body slider (a length, a girth) moves skin the hair, eyes and garments do not follow in a morph.
+    if (FACE_REGIONS.has(region.id)) void prepareDrag(region, shaping.fx, shaping.fy);
     controls.enabled = false;
     renderer.domElement.setPointerCapture(e.pointerId);
     showTip(e, region);
@@ -571,6 +602,7 @@ function startLab(): void {
     while (revokeAt.length && revokeAt[0]![0] <= now) URL.revokeObjectURL(revokeAt.shift()![1]);
     if (built) {
       if (player?.playing) player.apply(t); else poser?.apply(pose, t);
+      posing.apply(t);
       // Arms clear of the body in the standing clips (not when they reach for something).
       if (['idle', 'talk', 'listen', 'look', 'nervous', 'laugh', 'walkStroll', 'walkCool'].includes(clipName)) { spreadArms(built.scene, 0.14); uprightHead(built.scene); }
       if (stool.visible) {
@@ -606,7 +638,18 @@ function startLab(): void {
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
   (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, setHair, setStyle, frame, get built() { return built; },
-    pick(tabId: string) { tab = tabId; render(); }, sideView() { const d = camera.position.distanceTo(controls.target); camera.position.copy(controls.target).add(new Vector3(d, 0, 0)); }, pictures, withLook(patch: Partial<PersonLook>) { return { ...person, spec: { ...person.spec, look: { ...person.spec.look, ...patch } } }; }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async body() { return measureBody((await builder.setup()).assets, await builder.shape(person)); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
+    pick(tabId: string) { tab = tabId; render(); }, async bakePictures() {
+      // Every panel of both sexes asked once, each picture drawn on the mannequin; the bake script writes them as files.
+      pictures.baking = true;
+      const keep = person;
+      for (const sex of ['female', 'male'] as const) {
+        person = { ...person, spec: { ...person.spec, body: { ...person.spec.body, gender: sex === 'female' ? 0.06 : 0.92 } } };
+        for (const t of ['pessoa', 'rosto', 'estilo', 'cabelo', 'roupas']) { tab = t; panel.replaceChildren(...PANELS[t]!()); }
+      }
+      const out = await pictures.drained();
+      person = keep; pictures.baking = false; tab = 'pessoa'; render();
+      return out;
+    }, sideView() { const d = camera.position.distanceTo(controls.target); camera.position.copy(controls.target).add(new Vector3(d, 0, 0)); }, pictures, withLook(patch: Partial<PersonLook>) { return { ...person, spec: { ...person.spec, look: { ...person.spec.look, ...patch } } }; }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async body() { return measureBody((await builder.setup()).assets, await builder.shape(person)); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
     closeUp(dist = 0.5, x = 0) {
       const head = new Vector3();
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });

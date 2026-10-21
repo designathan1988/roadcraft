@@ -12,6 +12,14 @@ import type { LabPerson } from './record';
 export type Framing = 'face' | 'head' | 'body' | 'feet';
 
 const SIZE = 112;
+/** The baked pictures, by file (`src/peopleLab/pics/<hash of the picture's key>.webp`). */
+const BAKED = import.meta.glob<string>('./pics/*.webp', { eager: true, query: '?url', import: 'default' });
+
+function hash(text: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(36) + text.length.toString(36);
+}
 
 export class Thumbs {
   private readonly renderer: WebGLRenderer;
@@ -25,6 +33,12 @@ export class Thumbs {
   private readonly layers: PersonLayers = createPersonLayers();
   /** True while the person is being shaped or built: pictures wait, the page stays smooth. */
   paused = false;
+  /** Drawing the pictures to bake them (the bake script turns it on); otherwise none is ever drawn here. */
+  baking = false;
+  /** Every picture asked for while baking. */
+  readonly wanted = new Set<string>();
+  /** When the person was last handled (pointer, keys): pictures wait until the hand rests, so dragging never stutters. */
+  touched = 0;
 
   constructor(private readonly builder: LabBuilder, private readonly painted: WeakMap<Texture, Texture>) {
     const canvas = document.createElement('canvas');
@@ -46,25 +60,29 @@ export class Thumbs {
   image(key: string, person: LabPerson, framing: Framing): HTMLImageElement {
     const img = document.createElement('img');
     img.alt = '';
+    img.decoding = 'async';
+    // The pictures are made ahead (`npm run bake:people-pics`, `scripts/bake-people-pics.mjs`) and shipped as files: nothing is drawn in the browser.
+    const baked = BAKED[`./pics/${hash(key)}.webp`];
+    if (baked && !this.baking) { img.src = baked; return img; }
+    if (!this.baking) { img.className = 'missing'; return img; }
+    this.wanted.add(key);
     const known = this.done.get(key);
     if (known) { img.src = known; return img; }
     img.className = 'pending';
-    // Built only once it scrolls into view: a panel of forty choices costs only the ones seen.
-    const seen = new IntersectionObserver((entries) => {
-      if (!entries.some((e) => e.isIntersecting)) return;
-      seen.disconnect();
-      const done = this.done.get(key);
-      if (done !== undefined) { img.src = done; img.classList.remove('pending'); return; }
-      const job = this.waiting.get(key);
-      if (job) job.img.push(img); else this.waiting.set(key, { person, framing, img: [img] });
-      void this.pump();
-    });
-    seen.observe(img);
+    const job = this.waiting.get(key);
+    if (job) job.img.push(img); else this.waiting.set(key, { person, framing, img: [img] });
+    void this.pump();
     return img;
   }
 
-  /** Forget the pictures not yet drawn (the panel changed). */
-  clearQueue(): void { this.waiting.clear(); }
+  /** Forget the pictures not yet drawn (the panel changed); never while baking. */
+  clearQueue(): void { if (!this.baking) this.waiting.clear(); }
+
+  /** Baking: resolves once every asked picture is drawn, with each as [file name, data URL]. */
+  async drained(): Promise<[string, string][]> {
+    while (this.waiting.size || this.busy) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    return [...this.wanted].map((key) => [`${hash(key)}.webp`, this.done.get(key) ?? ''] as [string, string]).filter(([, src]) => src.startsWith('data:'));
+  }
 
   private async pump(): Promise<void> {
     if (this.busy) return;
@@ -80,7 +98,7 @@ export class Thumbs {
         for (const img of job.img) { img.src = src; img.classList.remove('pending'); }
         // A breath between builds, longer while the person is being worked on: the page stays responsive.
         // Frames, not a timer: ~8 frames between pictures, and none while paused.
-        for (let f = 0; f < 8 || this.paused; f++) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
     } finally { this.busy = false; }
   }
@@ -95,7 +113,7 @@ export class Thumbs {
     const tall = head.y * 1.13;
     const [target, dist] = framing === 'face' ? [head.clone().add(new Vector3(0, 0.05, 0)), 0.75]
       : framing === 'head' ? [head.clone().add(new Vector3(0, 0.03, 0)), 1.05]
-        : framing === 'feet' ? [new Vector3(0, 0.12, 0), 1.1] : [new Vector3(0, tall * 0.5, 0), tall * 4.6];
+        : framing === 'feet' ? [new Vector3(0, 0.12, 0), 1.1] : [new Vector3(0, tall * 0.5, 0), tall * 2.55];
     this.camera.position.copy(target).add(new Vector3(0.28, 0.06, 1).normalize().multiplyScalar(dist));
     this.camera.lookAt(target);
     this.renderer.render(this.scene, this.camera);

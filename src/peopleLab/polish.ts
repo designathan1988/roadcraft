@@ -232,7 +232,11 @@ ${shader.vertexShader}`
     shader.fragmentShader = `uniform float labHover; uniform float labTime; varying float vLabRegion;
 ${shader.fragmentShader}`
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        if (labHover > 0.5 && abs(vLabRegion - labHover) < 0.5) totalEmissiveRadiance += vec3(0.05, 0.32, 0.6) * (0.55 + 0.25 * sin(labTime * 5.0));`);
+        if (labHover > 0.5 && abs(vLabRegion - labHover) < 0.5) {
+          // A glow round the part's edges (fresnel), as Create-a-Sim outlines it: the part's own colours stay readable.
+          float labRim = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.5);
+          totalEmissiveRadiance += vec3(0.1, 0.5, 1.0) * (0.12 + 0.9 * labRim) * (0.75 + 0.25 * sin(labTime * 5.0));
+        }`);
   };
   material.customProgramCacheKey = () => `${key}-lab-glow`;
 }

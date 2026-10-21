@@ -5,7 +5,7 @@ import type { CartoonStyle } from '@render/people/cartoon';
 import { CLOTH, FACE, HAIR_CATALOGUE, HAIR_LABELS, HAIR_COLOURS, HEAD_SHAPES, MOODS, SHOES_CATALOGUE, SKIN, STYLE_PRESETS } from './choices';
 import type { PoseName } from './pose';
 import type { LibraryClipName } from '@render/citizenWalk';
-import { BODIES, FACES, LOOKS, PARTS, currentPreset, withBody, withFace, withPart } from './presets';
+import { BODIES, FACES, LOOKS, PARTS, mannequin, currentPreset, withBody, withFace, withPart } from './presets';
 import type { LabPerson } from './record';
 import type { Framing, Thumbs } from './thumbs';
 import { el, type widgets } from './widgets';
@@ -56,8 +56,12 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
     }
     return grid;
   };
-  const withLook = (patch: Partial<PersonLook>): LabPerson => ({ ...p(), spec: { ...p().spec, look: { ...p().spec.look, ...patch } } });
-  const withFeatures = (features: Record<string, number>): LabPerson => ({ ...p(), spec: { ...p().spec, features } });
+  /** Pictures are of the mannequin (`presets.ts` mannequin), never of the person: the item shown alone, each picture made once. */
+  const m = (): LabPerson => mannequin(c.sex());
+  const withLook = (patch: Partial<PersonLook>): LabPerson => ({ ...m(), spec: { ...m().spec, look: { ...m().spec.look, ...patch } } });
+  const withFeatures = (features: Record<string, number>): LabPerson => ({ ...m(), spec: { ...m().spec, features } });
+  /** A face preset on the mannequin's own face. */
+  const mf = (): Readonly<Record<string, number>> => m().spec.features;
   /** Fine sliders, folded away. */
   const fine = (title: string, ...kids: Node[]): HTMLElement => {
     const d = el('details', { cls: 'fine' }, el('summary', { textContent: title }), ...kids);
@@ -78,7 +82,7 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
       return [
         seg([['female', 'Mulher'], ['male', 'Homem']] as const, c.sex(), (v) => c.setSex(v)),
         el('h3', { textContent: 'Corpo' }),
-        pics(BODIES.map((pr) => ({ id: pr.label, label: pr.label, variant: { ...p(), spec: { ...p().spec, ...withBody(b, p().spec.features, pr) } } })), null,
+        pics(BODIES.map((pr) => ({ id: pr.label, label: pr.label, variant: { ...m(), spec: { ...m().spec, ...withBody(m().spec.body, m().spec.features, pr) } } })), null,
           (id) => c.setSpec(withBody(b, p().spec.features, BODIES.find((x) => x.label === id)!)), 'body'),
         el('h3', { textContent: 'Pele' }),
         swatches(SKIN, p().spec.look.skin, (col) => c.setLook({ skin: col, melanin: undefined, undertone: undefined })),
@@ -97,11 +101,11 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
       const f = p().spec.features;
       const out: Node[] = [
         el('h3', { textContent: 'Rostos' }),
-        pics(FACES.map((face) => ({ id: face.label, label: face.label, variant: withFeatures(withFace(f, face)) })), null,
+        pics(FACES.map((face) => ({ id: face.label, label: face.label, variant: withFeatures(withFace(mf(), face)) })), null,
           (id) => c.setSpec({ features: withFace(f, FACES.find((x) => x.label === id)!) }), 'face'),
         el('h3', { textContent: 'Cabeça' }),
         pics(HEAD_SHAPES.map(([k, label]) => {
-          const next: Record<string, number> = { ...f };
+          const next: Record<string, number> = { ...mf() };
           for (const [h] of HEAD_SHAPES) delete next[h];
           next[k] = 0.35;
           return { id: k, label, variant: withFeatures(next) };
@@ -114,7 +118,7 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
       ];
       for (const part of PARTS) {
         out.push(el('h3', { textContent: part.label }),
-          pics(part.presets.map((pr) => ({ id: pr.label, label: pr.label, variant: withFeatures(withPart(f, part, pr)) })), currentPreset(f, part),
+          pics(part.presets.map((pr) => ({ id: pr.label, label: pr.label, variant: withFeatures(withPart(mf(), part, pr)) })), currentPreset(f, part),
             (id) => c.setSpec({ features: withPart(f, part, part.presets.find((x) => x.label === id)!) }), part.id === 'ears' ? 'head' : 'face'),
           fine('Ajuste', ...part.sliders.filter((k) => sliderLabel.has(k)).map((k) => featureSlider(k))));
       }
@@ -131,7 +135,7 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
       if (!female()) {
         out.push(el('h3', { textContent: 'Barba' }),
           pics(['none', ...itemsOf('beard')].map((n) => ({ id: n, label: n === 'none' ? 'Sem barba' : nameOf(n),
-            variant: withLook({ extras: [...(p().spec.look.extras ?? []).filter((x) => !itemsOf('beard').includes(x)), ...(n === 'none' ? [] : [n])] }) })),
+            variant: withLook({ extras: n === 'none' ? [] : [n] }) })),
           c.extraOf(['beard']), (id) => { c.setExtra(['beard'], id); }, 'face'));
       }
       return out;
@@ -141,7 +145,7 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
       const set = (k: keyof CartoonStyle, v: number): void => c.setStyle({ ...s, [k]: v });
       return [
         el('h3', { textContent: 'Estilo' }),
-        pics(STYLE_PRESETS.map(([label, preset]) => ({ id: label, label, variant: { ...p(), style: preset } })),
+        pics(STYLE_PRESETS.map(([label, preset]) => ({ id: label, label, variant: { ...m(), style: preset } })),
           STYLE_PRESETS.find(([, pr]) => (Object.keys(pr) as (keyof CartoonStyle)[]).every((k) => Math.abs(pr[k] - s[k]) < (k === 'head' ? 0.08 : 0.01)))?.[0], (id) => c.setStyle(STYLE_PRESETS.find(([l]) => l === id)![1]), 'body'),
         fine('Ajuste',
           slider('Cabeça', 0.8, 1.8, 0.01, s.head, (v) => set('head', v)),
@@ -201,7 +205,7 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
         pics(SHOES_CATALOGUE[sex].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ footwear: n }) })), l.footwear, (id) => c.setLook({ footwear: id }), 'feet'),
         el('h3', { textContent: 'Óculos' }),
         pics(['none', ...itemsOf('glasses', { street: true, sex })].map((n) => ({ id: n, label: n === 'none' ? 'Sem' : nameOf(n),
-          variant: withLook({ extras: [...(l.extras ?? []).filter((x) => !itemsOf('glasses').includes(x)), ...(n === 'none' ? [] : [n])] }) })),
+          variant: withLook({ extras: n === 'none' ? [] : [n] }) })),
         c.extraOf(['glasses']), (id) => c.setExtra(['glasses'], id), 'face'),
       ];
     },

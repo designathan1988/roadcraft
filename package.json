@@ -34,7 +34,8 @@
     "test:scale": "node scripts/run-limited.mjs npm run test:scale:raw",
     "budgets": "node scripts/run-limited.mjs npm run budgets:raw",
     "budgets:raw": "vitest run -c vitest.scale.config.ts tests/perf/budgets.spec.ts",
-    "postinstall": "patch-package --patch-dir scripts/patches"
+    "postinstall": "patch-package --patch-dir scripts/patches",
+    "bake:people-pics": "node scripts/bake-people-pics.mjs"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
