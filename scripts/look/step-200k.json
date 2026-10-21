@@ -11,13 +11,13 @@
       "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large', radiusMetres: 7900 }); 'started'"
     },
     {
-      "until": "performance.getEntriesByName('city:applied').length > 0",
+      "until": "(() => { const e = performance.getEntriesByName('city:applied')[0]; if (e && window.__cityAt === undefined) window.__cityAt = e.startTime; return window.__cityAt !== undefined; })()",
       "name": "city applied",
       "timeout": 1800000,
       "polling": 250
     },
     {
-      "until": "(() => { const at = performance.getEntriesByName('city:applied')[0].startTime; return performance.getEntriesByName('opening:shown').some((e) => e.startTime > at); })()",
+      "until": "(() => { const at = window.__cityAt ?? 0; return performance.getEntriesByName('opening:shown').some((e) => e.startTime > at) || !window.__roadcraft.scene().opening; })()",
       "name": "city shown",
       "timeout": 600000,
       "polling": 250

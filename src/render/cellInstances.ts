@@ -81,7 +81,7 @@ export interface SlotFormat {
   /** GLSL declared before `poseMatrixOf` (the uniforms it reads), and those uniforms, given to every program drawn from these poses. */
   readonly pars?: string;
   readonly uniforms?: Readonly<Record<string, { value: unknown }>>;
-  /** GLSL run first in `poseMatrixOf`, before `glsl`: a pose it returns a matrix for early (one not to be drawn). */
+  /** GLSL run first in `poseMatrixOf`: sets `poseHidden = true` for a pose not to be drawn (every vertex at one point). */
   readonly guard?: string;
   matrixInto(data: Float32Array, at: number, out: Float32Array, outAt: number): void;
 }
@@ -133,9 +133,14 @@ attribute vec4 ${POSE_B};
 mat4 posedInstanceMatrix;
 #define instanceMatrix posedInstanceMatrix
 ${format.pars ?? ''}
-mat4 poseMatrixOf(vec4 a, vec4 b) {
-${format.guard ?? ''}
+mat4 poseMatrixRaw(vec4 a, vec4 b) {
 ${format.glsl}
+}
+// DO NOT return early from here: ANGLE's D3D translation warned of an uninitialised return value (X4000) for every program with a guard.
+mat4 poseMatrixOf(vec4 a, vec4 b) {
+  bool poseHidden = false;
+${format.guard ?? ''}
+  return poseHidden ? mat4(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0, 0.0, 0.0, 1.0)) : poseMatrixRaw(a, b);
 }
 #endif
 ${source.replace(MAIN, (open) => `${open}

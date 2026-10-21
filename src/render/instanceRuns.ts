@@ -50,7 +50,7 @@ export const YAW_POSE: PoseFormat = {
     float column = floor(b.w / ${NEAR_CODE_SPAN.toFixed(1)});
     vec2 cell = vec2(column, b.w - column * ${NEAR_CODE_SPAN.toFixed(1)}) - ${(NEAR_CODE_SPAN / 2).toFixed(1)};
     vec2 off = abs(cell - uNearSquare.xy);
-    if (max(off.x, off.y) <= uNearSquare.z) return mat4(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0, 0.0, 0.0, 1.0));
+    if (max(off.x, off.y) <= uNearSquare.z) poseHidden = true;
   }`,
   // `yawMatrixInto`: a = x, y, z, yaw; b = the scale on three axes.
   glsl: /* glsl */ `
