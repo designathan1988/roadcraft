@@ -13,7 +13,8 @@ import { applyFace, faceAt } from '@render/people/faceExpression';
 import { createPersonLayers, releaseSkinAppearance, type SkinAppearance } from '@render/people/skinAppearance';
 import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
-import { JOINTS, PoseEditor } from './posing';
+import { PoseEditor } from './posing';
+import { posePanel, timeline } from './posePanel';
 import { setupNavigation } from './navigation';
 import { ClipPlayer, Poser, spreadArms, uprightHead, type PoseName } from './pose';
 import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
@@ -169,7 +170,7 @@ function startLab(): void {
   controls.maxPolarAngle = Math.PI * 0.55;
   // Navigation as editors do it (`navigation.ts`): right orbits, middle pans, wheel zooms to the cursor, Alt with any button, F frames.
   setupNavigation(controls, camera, renderer.domElement, {
-    targets: () => [built?.scene, sculptor?.group, studio?.group, atelier?.group].filter((o): o is Object3D => !!o),
+    targets: () => [built?.scene, sculptor?.group, studio?.group, atelier?.group, tab === 'pose' ? posing.helpers : null].filter((o): o is Object3D => !!o),
     frame: () => frame(view),
   });
   const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
@@ -326,11 +327,12 @@ function startLab(): void {
     nameInput.value = person.spec.name;
     const scroll = panel.scrollTop;
     pictures.clearQueue();
-    if (tab !== 'pose') posing.select(null);
+    posing.show(tab === 'pose' && !editor());
+    if (tab !== 'pose') tl?.classList.remove('on');
     if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
     else if (atelier) panel.replaceChildren(...atelierPanel(atelier, { ui: { slider, swatches, seg, tiles }, render, close: closeAtelier, colours: CLOTH }));
     else if (studio) panel.replaceChildren(...hairPanel(studio, { ui: { slider, swatches, seg, tiles }, render, close: closeHairStudio, colours: HAIR_COLOURS }));
-    else if (tab === 'pose') panel.replaceChildren(...posePanel());
+    else if (tab === 'pose') panel.replaceChildren(...posePanelNodes());
     else {
       // The category's groups along the top (Create-a-Sim's sub tabs), the chosen one below.
       const groups = PANELS[tab]!;
@@ -474,44 +476,22 @@ function startLab(): void {
     rebuild(0);
   }
 
-  /** The pose tab: a joint picked and turned with the gizmo, poses kept as keyframes, played back. */
-  function posePanel(): Node[] {
+  /** The rig and animation tab (`posePanel.ts`), and its timeline under the view. */
+  let poseGroup = 'pose';
+  let tl: (HTMLElement & { draw?: () => void }) | null = null;
+  function posePanelNodes(): Node[] {
     const now = (): number => (performance.now() - clock0) / 1000;
-    const keyAt = el('input', { type: 'number', min: '0', step: '0.25', value: String(posing.keys.length ? posing.keys[posing.keys.length - 1]!.t + 1 : 0) });
-    const add = el('button', { cls: 'big save' }, icon('key', 15), 'Quadro');
-    add.onclick = () => { posing.addKey(+keyAt.value); render(); };
-    const play = el('button', { cls: 'big alt' }, icon(posing.playing ? 'stop' : 'play', 15), posing.playing ? 'Parar' : 'Tocar');
-    play.onclick = () => { if (posing.playing) posing.stop(); else posing.play(now()); render(); };
-    const reset = el('button', { cls: 'big alt' }, icon('trash', 15), 'Limpar');
-    reset.onclick = () => { posing.reset(); render(); };
-    const mode = el('div', { cls: 'seg' }, ...([['rotate', 'Girar'], ['translate', 'Mover (rig)']] as const).map(([m, label]) => {
-      const b = el('button', { textContent: label, cls: posing.mode === m ? 'on' : '' });
-      b.onclick = () => { posing.setMode(m); render(); };
-      return b;
-    }));
-    return [
-      el('h3', { textContent: 'Poses' }),
-      el('div', { cls: 'grid' }, ...READY_POSES.map(([label, clip, at]) => {
-        const t = el('button', { cls: `tile${clipName === clip && player?.hold === at ? ' on' : ''}` }, label);
-        t.onclick = () => {
-          clipName = clip; stool.visible = clip === 'sitIdle';
-          heldAt = at;
-          if (player) { player.play(clip, now()); player.hold = at; }
-          render();
-        };
-        return t;
-      })),
-      el('h3', { textContent: 'Articulação' }), mode,
-      el('div', { cls: 'chips' }, ...JOINTS.map(([label, name]) => {
-        const b = el('button', { textContent: label, cls: posing.bone === name ? 'on' : '' });
-        b.onclick = () => { posing.stop(); posing.select(posing.bone === name ? null : name); render(); };
-        return b;
-      })),
-      el('h3', { textContent: 'Animação' }),
-      el('label', { cls: 'row' }, el('span', { textContent: 'Tempo (s)' }), keyAt, el('output', { textContent: `${posing.keys.length}` })),
-      el('div', { cls: 'pair' }, add, play), reset,
-      el('div', { cls: 'chips' }, ...posing.keys.map((k) => el('button', { textContent: `${k.t}s` }))),
-    ];
+    if (!tl) { tl = timeline(posing, render); stage.append(tl); }
+    tl.classList.toggle('on', poseGroup === 'anim');
+    tl.draw?.();
+    return posePanel(posing, {
+      ui: { slider, swatches, seg, tiles }, render, now, group: poseGroup, setGroup: (g) => { poseGroup = g; },
+      poses: READY_POSES.map(([label, clip, at]) => [label, () => {
+        clipName = clip; stool.visible = clip === 'sitIdle';
+        heldAt = at;
+        if (player) { player.play(clip, now()); player.hold = at; }
+      }, clipName === clip && heldAt === at] as const),
+    });
   }
 
   // ---------------------------------------------------------------- the hair studio
@@ -634,6 +614,7 @@ function startLab(): void {
     renderer.domElement.style.cursor = shaping ? 'grabbing' : 'grab';
   };
   renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (tab === 'pose' && e.button === 0 && !e.altKey && !editor()) { if (posing.pick(ndc(e), camera)) render(); return; }
     if (editor() || e.button !== 0 || !shaper || !shapeTabs.has(tab)) return;
     const region = shaper.pick(ndc(e), camera);
     if (!region) return;
@@ -719,6 +700,7 @@ function startLab(): void {
     if (built) {
       if (player?.playing) player.apply(t); else poser?.apply(pose, t);
       posing.apply(t);
+      if (posing.playing) tl?.draw?.();
       // Arms clear of the body in the standing clips (not when they reach for something).
       if (['idle', 'talk', 'listen', 'look', 'nervous', 'laugh', 'walkStroll', 'walkCool'].includes(clipName)) { spreadArms(built.scene, 0.14); uprightHead(built.scene); }
       if (stool.visible) {
@@ -726,7 +708,8 @@ function startLab(): void {
         built.scene.traverse((o) => { if (o.name === 'Bip01_Pelvis') { o.updateWorldMatrix(true, false); const at = o.getWorldPosition(new Vector3()); stool.scale.y = Math.max(0.2, (at.y - 0.1) / 0.44); stool.position.set(at.x, stool.scale.y * 0.22, at.z - 0.04); } });
       }
       // Close up the street's faces read faint: the lab shows each feeling half as strong again (blinks and gaze as they are).
-      const face = faceAt(person.spec.id, t, activity, person.spec.mood ?? 0);
+      // The face set in the rig tab or keyed in the animation wins over the face's own life.
+      const face = posing.faceNow() ?? faceAt(person.spec.id, t, activity, person.spec.mood ?? 0);
       for (const m of built.meshes as SkinnedMesh[]) {
         if (m.morphTargetInfluences && m.morphTargetDictionary) {
           applyFace(m.morphTargetInfluences, m.morphTargetDictionary, face);
@@ -754,7 +737,7 @@ function startLab(): void {
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
   (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, setHair, setStyle, frame, get built() { return built; },
-    pick(tabId: string) { tab = tabId; render(); }, async bakePictures() {
+    pick(tabId: string) { tab = tabId; render(); }, posing, async bakePictures() {
       // Every panel of both sexes asked once, each picture drawn on the mannequin; the bake script writes them as files.
       pictures.baking = true;
       const keep = person;

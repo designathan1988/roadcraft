@@ -139,3 +139,11 @@ details.fine summary:hover { color: var(--ink); }
 .subtabs button:hover { color: var(--ink); background: var(--panel-2); }
 .subtabs button.on { color: var(--ink); background: var(--panel-3); }
 .gap { height: 12px; }
+
+.timeline { display: none; align-items: center; gap: 10px; }
+.timeline.on { display: flex; }
+.timeline .tl-time { font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; width: 52px; }
+.timeline .track { position: relative; flex: 1; height: 34px; border-radius: 6px; background: var(--panel-2); cursor: ew-resize; }
+.timeline .tl-tick { position: absolute; top: 2px; font-size: 9px; color: var(--ink-3); transform: translateX(-50%); border-left: 1px solid var(--line); height: 30px; padding-left: 2px; }
+.timeline .tl-key { position: absolute; top: 12px; width: 10px; height: 10px; background: #ffb547; transform: translateX(-50%) rotate(45deg); border-radius: 1px; }
+.timeline .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); transform: translateX(-50%); }
