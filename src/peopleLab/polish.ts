@@ -147,8 +147,36 @@ function foldSpikes(mesh: SkinnedMesh): void {
   index.needsUpdate = true;
 }
 
+/** A skirt's hem even: the fitting drags a few hem vertices down into a point (the elegant suit's front, 2026-10-21). For a garment that ends above the knee
+ *  height band (a skirt, a dress), its vertices below the hem line (the 12th lowest percentile of its lower half) are raised to it. */
+function evenHem(mesh: SkinnedMesh): void {
+  const g = mesh.geometry;
+  const slot = g.getAttribute('garmentSlot') as BufferAttribute | undefined;
+  const position = g.getAttribute('position') as BufferAttribute;
+  if (!slot) return;
+  let top = -Infinity;
+  for (let v = 0; v < position.count; v++) top = Math.max(top, position.getY(v));
+  const bySlot = new Map<number, number[]>();
+  for (let v = 0; v < position.count; v++) {
+    const k = Math.round(slot.getX(v));
+    if (k >= 1) (bySlot.get(k) ?? bySlot.set(k, []).get(k)!).push(v);
+  }
+  for (const vs of bySlot.values()) {
+    const ys = vs.map((v) => position.getY(v)).sort((a, b) => a - b);
+    const lowest = ys[0]!;
+    // Trousers reach the ankles, tops end at the waist: only a garment whose bottom lies between knee and mid thigh is a skirt.
+    if (lowest < top * 0.25 || lowest > top * 0.5) continue;
+    const lower = ys.filter((y) => y < top * 0.5);
+    const hem = lower[Math.floor(lower.length * 0.12)] ?? lowest;
+    if (hem - lowest < 0.015) continue;
+    for (const v of vs) if (position.getY(v) < hem) position.setY(v, hem - (hem - position.getY(v)) * 0.15);
+  }
+  position.needsUpdate = true;
+}
+
 export function polishPerson(meshes: readonly SkinnedMesh[], look: PersonLook): void {
   for (const mesh of meshes) {
+    evenHem(mesh);
     foldSpikes(mesh);
     clearScalpPaint(mesh, look);
     solidHair(mesh, look);
