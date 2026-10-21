@@ -34,6 +34,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  type WebGLRendererParameters,
 } from 'three';
 
 import { Digest } from '@core/digest';
@@ -396,6 +397,8 @@ export function createSceneRenderer(
   engine: Engine = new Engine(),
   /** The player's own settings on the tier (the options panel); the tier's own when absent. */
   initialSettings?: QualitySettings,
+  /** Where the WebGL renderer comes from: three's own, always, in the game; a renderer on a GPU that draws nothing in the specs that open a city in Node (`tests/support/nullGpu.ts`). */
+  makeRenderer: (parameters: WebGLRendererParameters) => WebGLRenderer = (parameters) => new WebGLRenderer(parameters),
 ): SceneHandle {
   /** Something landed since the last shadow pass that the casters' signature cannot see (a texture, a program): the sun's stores are not used for that frame (`ShadowPassInput.still`). What comes into the scene or leaves it, the signature sees (`casterSignature`). */
   let castersStirred = true;
@@ -435,7 +438,7 @@ export function createSceneRenderer(
       location.replace(url.href);
     });
   }
-  const renderer = new WebGLRenderer({
+  const renderer = makeRenderer({
     canvas: glCanvas,
     // A quality without the chain chosen later draws through a multisampled target of its own (`postprocess.ts` plainChain).
     antialias: !canvasForChain,
