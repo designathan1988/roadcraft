@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Frustum, Matrix4, OrthographicCamera, type InstancedMesh } from 'three';
+import { Frustum, Matrix4, OrthographicCamera, type Camera, type InstancedMesh, type Object3D } from 'three';
 
 import { Rng } from '@core/rng';
 import { RoadDoc } from '@world/doc';
@@ -12,6 +12,7 @@ import { m } from '@world/units';
 import { drawnMatrices, posesOf } from '@render/cellInstances';
 import { createSceneryKit } from '@render/scenery';
 import { createStreetFurniture, furnitureProduct, meadowProduct } from '@render/streetFurnitureLayer';
+import { lookProps, propView } from '@render/propCells';
 import { proveIncremental } from '../support/derivedEquivalence';
 
 /** THE STREET FURNITURE ON THE SPINE (`streetFurnitureLayer.ts`) */
@@ -77,22 +78,47 @@ const edits = [
   },
 ];
 
-/** Every instance a layer draws, by mesh, as text: culled to a view over the whole town. */
-function drawn(layer: ReturnType<typeof createStreetFurniture>): Map<string, string[]> {
-  const camera = new OrthographicCamera(-m(4000), m(4000), m(4000), -m(4000), 1, m(20000));
+/** A camera over the town from straight above, `half` world units half high. */
+function over(half: number): Camera {
+  const camera = new OrthographicCamera(-half, half, half, -half, 1, m(20000));
   camera.position.set(span / 2, m(5000), -span / 2);
   camera.lookAt(span / 2, 0, -span / 2);
   camera.updateMatrixWorld();
+  return camera;
+}
+
+/** The layer brought to a camera's view (`lookProps`, every cell and block it wants placed) and culled to it. */
+function seen(layer: ReturnType<typeof createStreetFurniture>, camera: Camera): void {
   const view = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-  layer.cull(new Frustum().setFromProjectionMatrix(view), view);
+  const frustum = new Frustum().setFromProjectionMatrix(view);
+  for (let i = 0; i < 100; i++) {
+    lookProps([layer.layer], propView(camera, frustum, 540, 0));
+    if (!layer.layer.busy) break;
+  }
+  layer.cull(frustum, view);
+}
+
+/**
+ * Every instance a layer draws, by mesh, as text: seen from over the whole town (every thing a far batch's, `propCells.ts`) and from
+ * close over its middle (the near cells' and the far batches' both).
+ */
+function drawn(layer: ReturnType<typeof createStreetFurniture>): Map<string, string[]> {
   const out = new Map<string, string[]>();
-  for (const mesh of [...layer.meshes, ...(layer.grass.children as InstancedMesh[])]) {
-    const rows: string[] = [];
-    const matrices = drawnMatrices(mesh), colours = mesh.instanceColor?.array;
-    for (let i = 0; i < mesh.count; i++) {
-      rows.push([...matrices.subarray(i * 16, i * 16 + 16), ...(colours ? colours.subarray(i * 3, i * 3 + 3) : [])].join(','));
+  for (const [view, camera] of [['whole', over(m(4000))], ['close', over(m(150))]] as const) {
+    seen(layer, camera);
+    for (const mesh of [...layer.meshes, ...(layer.grass.children as InstancedMesh[])]) {
+      // A far block the view does not want is hidden (its group): it draws nothing.
+      let shown = true;
+      for (let o: Object3D | null = mesh; o; o = o.parent) shown &&= o.visible;
+      if (!shown) continue;
+      const rows: string[] = [];
+      const matrices = drawnMatrices(mesh), colours = mesh.instanceColor?.array;
+      for (let i = 0; i < mesh.count; i++) {
+        rows.push([...matrices.subarray(i * 16, i * 16 + 16), ...(colours ? colours.subarray(i * 3, i * 3 + 3) : [])].join(','));
+      }
+      const name = `${view} ${mesh.name}`;
+      if (rows.length) out.set(name, [...(out.get(name) ?? []), ...rows].sort());
     }
-    if (rows.length) out.set(mesh.name, [...(out.get(mesh.name) ?? []), ...rows].sort());
   }
   return out;
 }
@@ -154,12 +180,19 @@ describe('the street furniture kept from the diary', () => {
     for (let i = 0; i < 400; i++) edits[0]!(town, rng);
     const layer = createStreetFurniture(kit);
     layer.sync(town.net, town.elevation, town.groundAt, 0);
-    const warm = new Map(layer.warm().map((mesh) => [mesh.name, mesh]));
+    // The near cells' meshes and the far batches both (`propCells.ts`).
+    seen(layer, over(m(4000)));
+    seen(layer, over(m(150)));
+    const warmed = layer.warm();
+    const warm = new Map(warmed.map((mesh) => [mesh.name, mesh]));
     const drawn = [...layer.meshes, ...(layer.grass.children as InstancedMesh[])];
     expect(drawn.length).toBeGreaterThan(8);
+    expect(drawn.some((mesh) => mesh.name.endsWith('-far-cells'))).toBe(true);
     // What three keys a program by: the geometry's attributes (the model's and the poses'), the material, the instancing and its colours, the shadow's depth material.
     for (const mesh of drawn) {
-      const ahead = warm.get(mesh.name);
+      // A far batch is drawn by a store's own programs: its body's, or its plants' pictures'.
+      const ahead = warm.get(mesh.name.replace(/-far-cells$/, ''))
+        ?? warmed.find((w) => w.material === mesh.material && w.customDepthMaterial === mesh.customDepthMaterial && !!w.instanceColor === !!mesh.instanceColor);
       expect(ahead, mesh.name).toBeDefined();
       expect(Object.keys(ahead!.geometry.attributes).sort(), mesh.name).toEqual(Object.keys(mesh.geometry.attributes).sort());
       expect(ahead!.geometry.getAttribute('position'), mesh.name).toBe(mesh.geometry.getAttribute('position'));

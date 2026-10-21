@@ -37,9 +37,9 @@ describe('scene census', () => {
               "drawn": 4,
               "objects": 4,
             },
-            "benches": {
-              "drawn": 159,
-              "objects": 1,
+            "benches-far-cells": {
+              "drawn": 876,
+              "objects": 4,
             },
             "building-acUnit": {
               "drawn": 3588,
@@ -177,37 +177,13 @@ describe('scene census', () => {
               "drawn": 4,
               "objects": 4,
             },
-            "garden-bushes-bush-far": {
-              "drawn": 41,
-              "objects": 1,
+            "gardens-far-cells": {
+              "drawn": 34274,
+              "objects": 4,
             },
-            "garden-bushes-bushFlowering-far": {
-              "drawn": 309,
-              "objects": 1,
-            },
-            "garden-trees-broadleaf-far": {
-              "drawn": 263,
-              "objects": 1,
-            },
-            "garden-trees-broadleafTall-far": {
-              "drawn": 110,
-              "objects": 1,
-            },
-            "garden-trees-conifer-far": {
-              "drawn": 82,
-              "objects": 1,
-            },
-            "garden-trees-ipePink-far": {
-              "drawn": 49,
-              "objects": 1,
-            },
-            "garden-trees-ipeYellow-far": {
-              "drawn": 60,
-              "objects": 1,
-            },
-            "hydrants": {
-              "drawn": 54,
-              "objects": 1,
+            "hydrants-far-cells": {
+              "drawn": 294,
+              "objects": 4,
             },
             "kerb+median-kerb-far": {
               "drawn": 4,
@@ -273,25 +249,25 @@ describe('scene census', () => {
               "drawn": 1,
               "objects": 1,
             },
-            "street-bins": {
-              "drawn": 157,
-              "objects": 1,
+            "street-bins-far-cells": {
+              "drawn": 840,
+              "objects": 4,
             },
-            "street-light-beams": {
-              "drawn": 173,
-              "objects": 1,
+            "street-light-beams-far-cells": {
+              "drawn": 840,
+              "objects": 4,
             },
-            "street-light-lamps": {
-              "drawn": 156,
-              "objects": 1,
+            "street-light-lamps-far-cells": {
+              "drawn": 840,
+              "objects": 4,
             },
-            "street-light-pools": {
-              "drawn": 179,
-              "objects": 1,
+            "street-light-pools-far-cells": {
+              "drawn": 840,
+              "objects": 4,
             },
-            "street-lights": {
-              "drawn": 164,
-              "objects": 1,
+            "street-lights-far-cells": {
+              "drawn": 840,
+              "objects": 4,
             },
             "terrain-ground": {
               "drawn": 1,
@@ -330,12 +306,12 @@ describe('scene census', () => {
               "objects": 4,
             },
           },
-          "drawn": 435698,
-          "draws": 247,
+          "drawn": 473386,
+          "draws": 259,
           "lines": 0,
-          "objects": 283,
+          "objects": 301,
           "points": 4000,
-          "triangles": 4667808,
+          "triangles": 5192448,
         },
         "street": {
           "byName": {
@@ -346,6 +322,10 @@ describe('scene census', () => {
             "benches": {
               "drawn": 60,
               "objects": 1,
+            },
+            "benches-far-cells": {
+              "drawn": 876,
+              "objects": 4,
             },
             "building-acUnit": {
               "drawn": 2953,
@@ -504,31 +484,35 @@ describe('scene census', () => {
               "objects": 1,
             },
             "garden-trees-broadleaf": {
-              "drawn": 45,
+              "drawn": 121,
               "objects": 1,
             },
             "garden-trees-broadleaf-cards": {
-              "drawn": 45,
+              "drawn": 121,
               "objects": 1,
             },
-            "garden-trees-broadleaf-far": {
-              "drawn": 76,
+            "garden-trees-broadleafTall": {
+              "drawn": 3,
+              "objects": 1,
+            },
+            "garden-trees-broadleafTall-cards": {
+              "drawn": 3,
               "objects": 1,
             },
             "garden-trees-broadleafTall-far": {
-              "drawn": 51,
+              "drawn": 48,
               "objects": 1,
             },
             "garden-trees-conifer": {
-              "drawn": 3,
+              "drawn": 13,
               "objects": 1,
             },
             "garden-trees-conifer-cards": {
-              "drawn": 3,
+              "drawn": 13,
               "objects": 1,
             },
             "garden-trees-conifer-far": {
-              "drawn": 39,
+              "drawn": 29,
               "objects": 1,
             },
             "garden-trees-ipePink": {
@@ -540,20 +524,24 @@ describe('scene census', () => {
               "objects": 1,
             },
             "garden-trees-ipeYellow": {
-              "drawn": 32,
+              "drawn": 33,
               "objects": 1,
             },
             "garden-trees-ipeYellow-cards": {
-              "drawn": 32,
+              "drawn": 33,
               "objects": 1,
             },
-            "garden-trees-ipeYellow-far": {
-              "drawn": 1,
-              "objects": 1,
+            "gardens-far-cells": {
+              "drawn": 34274,
+              "objects": 4,
             },
             "hydrants": {
               "drawn": 21,
               "objects": 1,
+            },
+            "hydrants-far-cells": {
+              "drawn": 294,
+              "objects": 4,
             },
             "kerb+median-kerb-far": {
               "drawn": 4,
@@ -595,21 +583,41 @@ describe('scene census', () => {
               "drawn": 59,
               "objects": 1,
             },
+            "street-bins-far-cells": {
+              "drawn": 840,
+              "objects": 4,
+            },
             "street-light-beams": {
               "drawn": 71,
               "objects": 1,
+            },
+            "street-light-beams-far-cells": {
+              "drawn": 840,
+              "objects": 4,
             },
             "street-light-lamps": {
               "drawn": 58,
               "objects": 1,
             },
+            "street-light-lamps-far-cells": {
+              "drawn": 840,
+              "objects": 4,
+            },
             "street-light-pools": {
               "drawn": 76,
               "objects": 1,
             },
+            "street-light-pools-far-cells": {
+              "drawn": 840,
+              "objects": 4,
+            },
             "street-lights": {
               "drawn": 64,
               "objects": 1,
+            },
+            "street-lights-far-cells": {
+              "drawn": 840,
+              "objects": 4,
             },
             "terrain-ground": {
               "drawn": 1,
@@ -664,12 +672,12 @@ describe('scene census', () => {
               "objects": 4,
             },
           },
-          "drawn": 557612,
-          "draws": 361,
+          "drawn": 597346,
+          "draws": 384,
           "lines": 0,
-          "objects": 508,
+          "objects": 540,
           "points": 4000,
-          "triangles": 4753622,
+          "triangles": 5409012,
         },
       }
     `);

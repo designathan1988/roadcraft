@@ -204,6 +204,32 @@ export class ViewCells<V> {
     for (const key of this.wanted) this.wantedSet.add(key);
   }
 
+  /** The cells the view wants given as they are (a layer that chooses its own: a square round the eye, the blocks a frustum sees), in the order they are asked. */
+  want(keys: readonly CellKey[]): void {
+    this.wanted = [...keys];
+    this.wantedSet.clear();
+    for (const key of this.wanted) this.wantedSet.add(key);
+  }
+
+  /** A held product's bytes set again: what it holds on the CPU and the GPU now (its arrays let go once on the GPU, `mesh/gpuOnly.ts`). */
+  account(key: CellKey, cpuBytes: number, gpuBytes: number): void {
+    const known = this.held.get(key);
+    if (!known) return;
+    this.cpuBytes += cpuBytes - known.product.cpuBytes;
+    this.gpuBytes += gpuBytes - (known.product.gpuBytes ?? 0);
+    known.product = { value: known.product.value, cpuBytes, gpuBytes };
+    known.stage = gpuBytes > 0 ? CellStage.resident : CellStage.derived;
+  }
+
+  /** These cells dropped, made again when next wanted or asked (what they answer changed without an entry of the diary: the city's hour). The cells dropped. */
+  forget(keys: Iterable<CellKey>): number {
+    let n = 0;
+    for (const key of keys) if (this.held.has(key)) { this.drop(key); n++; }
+    this.work.invalidated += n;
+    if (n) this.version++;
+    return n;
+  }
+
   /** The cells the view wants (`look`), in their order. */
   get wantedKeys(): readonly CellKey[] {
     return this.wanted;

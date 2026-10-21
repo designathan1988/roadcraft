@@ -82,10 +82,10 @@ import { type BlockDigestAsk, type GroundShapeAsk, type PadsAsk, type PlateShape
 import type { Pad } from '@world/buildings/pads';
 import { refOf } from '@world/buildings/recordTable';
 import { shapeBoth } from './terrainShaping';
-import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
+import { PLANT_MAP_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
-import { createGardens, gardenPlants, type Gardens } from './gardens';
-import { gardenLists } from './gardenLists';
+import { createGardenCells, type GardenCells } from './gardens';
+import { lookProps, propView } from './propCells';
 import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, gateUntilBuilt, shadowStandIn, warmPending } from './uploads';
@@ -93,7 +93,7 @@ import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather, sways } from './wind';
 import { holdStill, updateMoving } from './stillTree';
 import { castCastersInto } from './shadowCasters';
-import { setShadowSun } from './cellInstances';
+import { screenHalf, setShadowSun } from './cellInstances';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -116,7 +116,8 @@ import { createShaderCatalogue } from './shaderCatalogue';
 import { personProgramStandIns } from './people/proceduralCrowd';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
-import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
+import { buildPolePreview, buildUtilities, type PolePreviewInput } from './poleLayer';
+import { PoleCells } from './poleCells';
 import { createBarriers } from './barriers';
 import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview } from './transit';
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
@@ -733,7 +734,8 @@ export function createSceneRenderer(
   /** What the player placed on the footways and the long grass, kept item by item from the diary (`streetFurnitureLayer.ts`) */
   const furniture = createStreetFurniture(sceneryKit);
   world.add(furniture.group, furniture.grass);
-  let utilities: PoleLayer | null = null;
+  /** The poles and wires held round the view, block by block (`poleLayer.ts` PoleCells). */
+  let utilities: PoleCells | null = null;
   /** The pole tool's planned run, and the plan it was built for (rebuilt only when that changes). */
   /** Vehicle exhaust and dust (`exhaust.ts`): one particle cloud for the map. */
   const exhaust = createExhaust();
@@ -1132,8 +1134,8 @@ export function createSceneRenderer(
     signs.refill();
     wantAllTexels();
   });
-  /** The buildings' garden plants, and the buildings and ground they were planted for. */
-  let gardens: Gardens | null = null;
+  /** The buildings' garden plants held round the view (`gardens.ts` createGardenCells). */
+  let gardens: GardenCells | null = null;
   const coverKit = createGroundCoverKit();
   // The countryside's trees are hand-made models (`natureTrees.ts`), loaded once
   let natureTreeKit: NatureTreeKit | null = null;
@@ -1302,8 +1304,6 @@ export function createSceneRenderer(
     // DO NOT leave it out: without it the gardens asked every planted building of the city whether the ground moved under it
     rectsSince: (since) => groundRectsSince(since),
   };
-  /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
-  const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
@@ -1695,22 +1695,21 @@ export function createSceneRenderer(
   let utilityRevision = -1;
   /** What moves a pole or its parts: the poles and wires, the roads (its kerb), the roads' heights and the ground under it. */
   const POLE_KINDS: readonly ChangeKind[] = ['utilities', 'roads', 'elevation', 'ground', 'terrain'];
+  /** Time a frame may spend making the poles' blocks the view asks for, ms (one at least). */
+  const POLE_FRAME_MS = 3;
   /** The diary's serial of `POLE_KINDS` the pole layer was brought up to. */
   let poleSerial = -1;
-  /** The pole layer brought up to the diary (`poleLayer.ts`) */
+  /** The pole layer brought up to the diary (`poleLayer.ts` PoleCells): the blocks its changes reached dropped, made again as the view asks (`draw`). */
   const syncUtilities = (net: Network, groundAt: (x: number, y: number) => number): void => {
     const serial = net.doc.changes.serialOf(...POLE_KINDS);
+    if (utilities) utilities.source(net, groundAt);
     if (utilities && serial === poleSerial) return;
-    const entries = utilities ? net.doc.changes.since(poleSerial, POLE_KINDS) : null;
-    const before = utilities?.triangles ?? 0;
-    if (!utilities || entries === null || entries.some((e) => e.rects === null)) {
-      if (utilities) { world.remove(utilities.group); utilities.dispose(); }
-      utilities = buildUtilities(net, groundAt, sceneryKit, docPoles(net.doc));
+    if (!utilities) {
+      utilities = new PoleCells(sceneryKit);
+      utilities.source(net, groundAt);
       world.add(utilities.group);
-    } else {
-      utilities.follow(net, groundAt, net.doc, entries, docPoles(net.doc));
     }
-    builtTriangles += utilities.triangles - before;
+    utilities.follow(net.doc.changes);
     poleSerial = serial;
   };
   /** The poles and the placed things, outside a world being built: a pole edit moves only `doc.utilityRevision` */
@@ -2272,7 +2271,7 @@ export function createSceneRenderer(
   let transitPreviewKey = '';
 
   /** The map zoom and the plant layers `setMap` was last told about (`draw`). */
-  let plantMapFor: { map: boolean | null; gardens: Gardens | null } = { map: null, gardens: null };
+  let plantMapFor: { map: boolean | null; gardens: GardenCells | null } = { map: null, gardens: null };
   /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
   const VIEW_SEEN = m(320);
   /** In perspective: radians added to each side of the camera's width (the camera turns). */
@@ -2908,15 +2907,13 @@ export function createSceneRenderer(
         fxPreload = true;
         requestIdleCallback(() => { void loadEffects(); }, { timeout: 5000 });
       }
-      // Each building's plants (`gardenLists.ts`), placed again only when some changed.
-      const plants = plantLists.update(net.doc.buildings, groundSettled);
-      if (plants) {
-        // Kept building by building (`gardens.ts`): a list the same as before keeps its plants' slots.
-        gardens ??= createGardens(sceneryKit);
-        const swapped = gardens.update(plants);
-        for (const mesh of swapped.removed) world.remove(mesh);
-        for (const mesh of swapped.added) world.add(mesh);
+      // The gardens held round the view (`gardens.ts` createGardenCells): placed from the buildings as the view asks (`lookProps`), the cells an edit or the ground reached dropped once the ground is settled (a stroke over).
+      if (!gardens) {
+        gardens = createGardenCells(sceneryKit);
+        world.add(gardens.layer.group);
       }
+      gardens.source(net.doc.buildings, terrain.renderedHeightAt);
+      if (groundSettled) gardens.follow(net.doc.changes);
       performance.mark('frame:plants');
       // THE PLANTS AND STONES (`coverSweep.ts`/`coverKeeps`, `natureSweep`/`natureKeeps`, the planted trees)
       if (!stroking && !worldJob) {
@@ -3106,7 +3103,6 @@ export function createSceneRenderer(
       for (const mesh of gardens?.meshes ?? []) {
         mesh.visible = detailed && (!plantMap || !isLeafCards(mesh));
       }
-      gardens?.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
       // After `visible` is set (the contract of `Scenery.setMap`), and only when the map zoom is crossed or the layer is new
       if (plantMap !== plantMapFor.map || gardens !== plantMapFor.gardens) {
         plantMapFor = { map: plantMap, gardens };
@@ -3161,6 +3157,13 @@ export function createSceneRenderer(
       // Plants and street furniture outside the view are not drawn at all.
       // The layers' shadow margin away from the sun the cascades cast by. DO NOT take the light's position less its target: both move with every fit of the cascades (the ground coming in, the camera), their difference by the last bits, and every layer's every kind was culled again each frame the view stood still.
       setShadowSun(environment.toSun.x, environment.toSun.y, environment.toSun.z);
+      // The props held round the view (`propCells.ts`): the near square's cells and the far blocks the view reaches placed within the frame's time, the poles' blocks too; none of a layer not drawn at this zoom.
+      {
+        const view = propView(cullCamera, crowdFrustum, screenHalf(), rig.target.y);
+        const props = [...(gardens && detailed ? [gardens.layer] : []), ...(quality.detailProps && detailed ? [furniture.layer] : [])];
+        if (props.length) lookProps(props, view);
+        utilities?.look(view, performance.now() + POLE_FRAME_MS);
+      }
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
       barriers.cull(crowdFrustum, crowdProjection);

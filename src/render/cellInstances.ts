@@ -78,6 +78,11 @@ export interface SlotFormat {
   readonly key: string;
   /** The body of GLSL `mat4 poseMatrixOf(vec4 a, vec4 b)`: `matrixInto` written in GLSL, the pose's floats being a.xyzw then b (b.w is 1 for a 7-float pose). */
   readonly glsl: string;
+  /** GLSL declared before `poseMatrixOf` (the uniforms it reads), and those uniforms, given to every program drawn from these poses. */
+  readonly pars?: string;
+  readonly uniforms?: Readonly<Record<string, { value: unknown }>>;
+  /** GLSL run first in `poseMatrixOf`, before `glsl`: a pose it returns a matrix for early (one not to be drawn). */
+  readonly guard?: string;
   matrixInto(data: Float32Array, at: number, out: Float32Array, outAt: number): void;
 }
 
@@ -99,6 +104,8 @@ export interface CellInstances {
   readonly meshes: readonly InstancedMesh[];
   /** Triangles of the near meshes, every live instance counted. */
   readonly triangles: number;
+  /** Bytes its arrays hold on the CPU: the kinds' placements and the levels' buffers (`propCells.ts` counts them). */
+  readonly cpuBytes: number;
   /** The things that came and went; the meshes made for kinds that had none. */
   update(change: CellChange): InstancedMesh[];
   /** The map zoom: every plant with far pictures drawn as one, the other kinds' leaf cards left out. Only a change does anything. */
@@ -125,7 +132,9 @@ attribute vec4 ${POSE_A};
 attribute vec4 ${POSE_B};
 mat4 posedInstanceMatrix;
 #define instanceMatrix posedInstanceMatrix
+${format.pars ?? ''}
 mat4 poseMatrixOf(vec4 a, vec4 b) {
+${format.guard ?? ''}
 ${format.glsl}
 }
 #endif
@@ -151,6 +160,7 @@ export function posedMaterial<M extends Material>(material: M, format: SlotForma
   const source = key === Material.prototype.customProgramCacheKey ? compile.toString() : null;
   material.onBeforeCompile = (shader, renderer) => {
     compile.call(material, shader, renderer);
+    if (format.uniforms) Object.assign(shader.uniforms, format.uniforms);
     shader.vertexShader = poseVertexShader(shader.vertexShader, format);
   };
   material.customProgramCacheKey = () => `${source ?? key.call(material)}|pose-${format.key}`;
@@ -238,7 +248,7 @@ const ALL_PLANES = 0b111111;
 /** Integer cell coordinates as one key (exact while |cell| < 2^24). */
 const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000 + (iz + 0x1000000);
 /** The band round a level's threshold, as a share of it, an instance keeps the level it had in. */
-const HYSTERESIS = 0.15;
+export const HYSTERESIS = 0.15;
 /** A pick at most this far over the share kept is still written: the GPU, in float32, shrinks it away (`impostorThin`). */
 const PICK_SLACK = 1e-4;
 /** Levels an instance was drawn at. */
@@ -256,6 +266,41 @@ export function setShadowSun(x: number, y: number, z: number): void {
   shadowSun.x = x / length; shadowSun.y = y / length; shadowSun.z = z / length;
 }
 const bufferSize = new Vector2();
+
+/** Half the drawing buffer's height, device pixels, as the meshes last drew: what a size on the screen is measured in. */
+export const screenHalf = (): number => screen.half;
+
+/** The screen's size noted each time three draws `mesh` (a mesh the cells did not make: a layer's far batches, `propCells.ts`). */
+export function watchScreen(mesh: InstancedMesh): void {
+  const before = mesh.onBeforeRender.bind(mesh);
+  mesh.onBeforeRender = (renderer, ...rest) => {
+    const half = renderer.getDrawingBufferSize(bufferSize).y / 2;
+    if (half > 0) screen.half = half;
+    before(renderer, ...rest);
+  };
+}
+
+/**
+ * A mesh drawing `count` instances of `spec` from these poses and tints, as they are (no cull of its own: three culls it by `sphere`):
+ * a layer's batch made once and kept on the GPU (`propCells.ts`). `model` in place of the spec's geometry: one with instanced attributes of its own.
+ */
+export function batchMesh(spec: KindMesh, model: BufferGeometry, poses: InstancedInterleavedBuffer, tints: InstancedBufferAttribute | null,
+  count: number, sphere: Sphere, format: SlotFormat): InstancedMesh {
+  const mesh = dressedMesh(spec, posedGeometry(model, poses), format);
+  mesh.instanceColor = tints;
+  mesh.count = count;
+  mesh.boundingSphere = sphere;
+  mesh.frustumCulled = true;
+  watchScreen(mesh);
+  spec.made?.(mesh);
+  return mesh;
+}
+
+/** A batch's mesh let go: its own buffers freed on the GPU, the model's kept. */
+export function releaseBatchMesh(mesh: InstancedMesh): void {
+  mesh.dispose();
+  letGo(mesh.geometry);
+}
 
 /** The instances a kind draws at one level (near or far): ONE buffer of poses and one of tints for all the level's meshes (a plant's body and its cards). */
 interface Level {
@@ -429,10 +474,16 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     }
     grown.clear();
   };
-  /** The kind's slots filed again after a repack moved them. */
-  const refile = (k: Kind): void => {
-    for (const leaf of leaves.values()) leaf.slots![k.index]!.length = 0;
-    for (let i = 0; i < k.used; i++) if (k.spheres[i * 4 + 3] !== -Infinity) file(k, i);
+  /**
+   * The kind's slots filed again after a repack moved them: the tree made anew from every kind's live slots, so a cell left empty
+   * (things taken away as the view moved on) is let go. DO NOT keep the leaves of every cell ever filled: they grew with the ground the view went over.
+   */
+  const refile = (_k: Kind): void => {
+    roots.clear();
+    rootOrder = [];
+    leaves.clear();
+    grown.clear();
+    for (const kind of kinds) for (let i = 0; i < kind.used; i++) if (kind.spheres[i * 4 + 3] !== -Infinity) file(kind, i);
   };
 
   /**
@@ -746,6 +797,14 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     get triangles() {
       let n = 0;
       for (const k of kinds) for (const s of k.meshes) if (s.mesh && !s.spec.far) n += trianglesOf(s.spec.geometry) * (k.used - k.dead);
+      return n;
+    },
+    get cpuBytes() {
+      let n = 0;
+      for (const k of kinds) {
+        for (const a of [k.data, k.colours, k.spheres, k.feet, k.sizes, k.picks, k.seen, k.level, k.want]) n += a.byteLength;
+        for (const b of k.levels) n += (b.poses?.array.byteLength ?? 0) + (b.tints?.array.byteLength ?? 0) + b.shown.byteLength + b.at.byteLength;
+      }
       return n;
     },
     update(change) {

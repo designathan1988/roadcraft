@@ -59,7 +59,7 @@ function thing(rng: Rng, cx: number, cz: number, spread: number): { run: Run; sp
     const sphere = geometry.boundingSphere!.clone().applyMatrix4(object.matrix);
     // The matrix the layer writes: its pose as kept (floats), written out.
     const matrix = new Float32Array(16);
-    YAW_POSE.matrixInto(Float32Array.from([x, y, z, yaw, s, sy, s]), 0, matrix, 0);
+    YAW_POSE.matrixInto(Float32Array.from([x, y, z, yaw, s, sy, s, -1]), 0, matrix, 0);
     const colour = specs[store]!.tinted ? Float32Array.from([tint.r, tint.g, tint.b]) : new Float32Array(0);
     (spheres.get(store) ?? spheres.set(store, []).get(store)!).push(sphere);
     (rows.get(store) ?? rows.set(store, []).get(store)!).push([...matrix, ...colour].join(','));
@@ -340,13 +340,15 @@ describe('a thing kept as a pose, not a matrix', () => {
     }
   });
 
-  it('keeps 7 floats a thing turned about the up axis, not a matrix', () => {
+  it('keeps 8 floats a thing turned about the up axis (its place, yaw, scales and the cell a far batch hides it in), not a matrix', () => {
     const builder = new RunBuilder(specs);
     for (let i = 0; i < 10; i++) builder.turned(1, i, 0, -i, i * 0.3, 1, 2, 3, 3);
     const pack = builder.build().get(1)!;
     expect(pack.count).toBe(10);
     expect(pack.data.length).toBe(10 * YAW_POSE.stride);
-    expect(YAW_POSE.stride).toBe(7);
+    expect(YAW_POSE.stride).toBe(8);
+    // A run's thing is drawn wherever it stands: no far batch's cell (`propCells.ts`).
+    for (let i = 0; i < 10; i++) expect(pack.data[i * 8 + 7]).toBe(-1);
     expect(() => new RunBuilder(specs, COVER_POSE).turned(0, 0, 0, 0, 0, 1, 1, 1, 1)).toThrow();
   });
 });
@@ -372,7 +374,7 @@ describe('a pose made a matrix by the GPU (`cellInstances.ts` `posedMaterial`)',
   it('is the matrix the CPU makes of it (`matrixInto`), for every format', () => {
     // The numbers after x, y, z and yaw, by format: scales, a tree's width, height and lean, a cover's lean and scales.
     const ranges: Record<string, readonly (readonly [number, number])[]> = {
-      yaw: [[0.05, 30], [0.05, 30], [0.05, 30]],
+      yaw: [[0.05, 30], [0.05, 30], [0.05, 30], [-1, -1]],
       tree: [[0.5, 25], [0.5, 25], [-0.3, 0.3], [-0.3, 0.3]],
       cover: [[-0.3, 0.3], [0.05, 30], [0.05, 30], [0.05, 30]],
     };
