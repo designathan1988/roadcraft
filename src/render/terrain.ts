@@ -1366,6 +1366,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const patchMesh = (geometry: BufferGeometry, name: string): Mesh => {
     const mesh = new Mesh(geometry, groundMaterial);
     mesh.name = name;
+    // What the patches are placed with, for the WebGPU renderer's twin of the ground (`gpu/twins.ts`): the same uniforms' objects.
+    mesh.userData['landLod'] = { uniforms: lodUniforms, grid: LAND_GRID };
     mesh.receiveShadow = true;
     // The ground does NOT cast.
     mesh.castShadow = false;

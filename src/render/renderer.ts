@@ -176,6 +176,8 @@ import { TILE, tileKeyAt, tileOfKey } from '@world/tiles';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
+import { chosenBackend } from './gpu/backendChoice';
+import type { CompareOptions, CompareResult, WebGpuView } from './gpu/webgpuView';
 
 /** The scene renderer. ## The rebuild contract Everything derived from the road network or the terrain is rebuilt in */
 
@@ -255,7 +257,12 @@ export interface SceneHandle {
   buildingLevels(): Readonly<Record<string, number>>;
   /** The roads of the tiles not in the page's document, baked per tile from the tile store (`farRoads.ts`). */
   readonly farRoads: FarTiles;
-  readonly backend: 'three-webgl';
+  /** Which renderer draws the frame (`gpu/backendChoice.ts`): WebGL, or three's WebGPU renderer with `?gpu=webgpu` (`MIGRACAO-WEBGPU.md`). */
+  readonly backend: 'three-webgl' | 'three-webgpu';
+  /** The same view drawn by the WebGL and the WebGPU renderer and the pictures compared (`gpu/webgpuView.ts`, `scripts/look.mjs` "compare"). */
+  compare(options?: CompareOptions): Promise<CompareResult>;
+  /** What the WebGPU renderer left out of its frames so far, drawables by reason (empty under WebGL). */
+  webgpuLeftOut(): Record<string, number>;
   readonly viewport: Viewport;
   readonly scene: Scene;
   /** The underlying WebGL renderer. Exposed for diagnostics and tests. */
@@ -439,8 +446,29 @@ export function createSceneRenderer(
   let castersMoved = false;
   /** Whether the opening's quality draws through the post chain: its canvas then takes only the output pass, so it is made without multisampling or depth (the chain's scene target has its own). */
   const canvasForChain = (initialSettings ?? QUALITY[initialQuality === 'auto' ? 'high' : initialQuality]).postProcessing;
+  /** THE WEBGPU RENDERER (`MIGRACAO-WEBGPU.md`, stage 1), asked with `?gpu=webgpu`: it draws the frame on the page's canvas, and the WebGL
+   *  renderer keeps all it does besides (programs, uploads, bakes, the shadows' stores) on a canvas of its own, never shown. Without the key,
+   *  nothing of it is loaded and WebGL draws on the page's canvas as always. */
+  const backend = chosenBackend();
+  const glCanvas = backend === 'webgpu' ? document.createElement('canvas') : canvas;
+  let gpuView: WebGpuView | null = null;
+  /** The drawing buffer's size as the screen last asked it, for the WebGPU view when it comes. */
+  const drawingSize = { width: 0, height: 0, ratio: 1 };
+  if (backend === 'webgpu') {
+    void import('./gpu/webgpuView').then((module) => module.createWebGpuView(canvas)).then((view) => {
+      gpuView = view;
+      if (drawingSize.width > 0) view.setSize(drawingSize.width, drawingSize.height, drawingSize.ratio);
+      onAssetsReady();
+    }, (error: unknown) => {
+      // No adapter or device after all: the game as it always draws, the address without the key (a reload, nothing of the city made yet).
+      console.error('WebGPU renderer unavailable, back to WebGL', error);
+      const url = new URL(location.href);
+      url.searchParams.delete('gpu');
+      location.replace(url.href);
+    });
+  }
   const renderer = new WebGLRenderer({
-    canvas,
+    canvas: glCanvas,
     // A quality without the chain chosen later draws through a multisampled target of its own (`postprocess.ts` plainChain).
     antialias: !canvasForChain,
     depth: !canvasForChain,
@@ -2221,6 +2249,8 @@ export function createSceneRenderer(
     (width, height, ratio, wholePixels) => {
       rig.resize(width, height);
       post.setSize(width, height, ratio);
+      drawingSize.width = width; drawingSize.height = height; drawingSize.ratio = ratio;
+      gpuView?.setSize(width, height, ratio);
       // The GPU's cap from the device and the pixels at the tier's whole ratio, not the dynamic resolution's share: the buildings' detail does not follow it. And the frame's targets in the ledger (`gpuLedger.ts`).
       gpuLedger.cap = deviceGpuCap(readGpuDevice(renderer.getContext(), wholePixels));
       targetsTold = -1;
@@ -2571,6 +2601,8 @@ export function createSceneRenderer(
     qualityCompileSince = performance.now();
   }
 
+  /** The WebGPU renderer the comparisons draw with (`compare`). */
+  let comparer: Promise<WebGpuView> | null = null;
   const handle: SceneHandle = {
     // Asked for by the Actions (a shot, a bomb) and the weapons lab: the effects, and now the physics the bodies fall with
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
@@ -2615,7 +2647,14 @@ export function createSceneRenderer(
     shot(from, to) { fx?.shot(from, to); },
     inspect,
     census: () => agents.census(),
-    backend: 'three-webgl',
+    backend: backend === 'webgpu' ? 'three-webgpu' : 'three-webgl',
+    async compare(options) {
+      // Under WebGL, a WebGPU renderer of its own on a canvas never shown, made at the first comparison.
+      comparer ??= gpuView ? Promise.resolve(gpuView) : import('./gpu/webgpuView').then((module) => module.createWebGpuView(document.createElement('canvas')));
+      const view = await comparer;
+      return view.compare(renderer, scene, rig.camera, options);
+    },
+    webgpuLeftOut: () => gpuView?.leftOut() ?? {},
     viewport: rig.viewport,
     scene,
     gl: renderer,
@@ -3570,9 +3609,12 @@ export function createSceneRenderer(
           if (!effectSwitches.shadowUpdate) renderer.shadowMap.needsUpdate = false;
         }
         optimizer.beforeRender();
-        gpuTimer.begin();
-        post.render(delta);
-        gpuTimer.end();
+        if (backend === 'webgl') {
+          gpuTimer.begin();
+          post.render(delta);
+          gpuTimer.end();
+        // Under WebGPU, the frame its renderer can draw so far: the scene without the post chain nor the shadows (stages 3 and 4); nothing until its device stands.
+        } else gpuView?.render(scene, rig.camera);
         // What came into the scene given the optimisations on, a few times a second: built off the draw when that changed programs.
         if (optimizer.afterRender()) compileChanged();
         buildingSwitcher.afterRender();
@@ -3664,6 +3706,8 @@ export function createSceneRenderer(
     },
     dispose() {
       sizeWatch?.disconnect();
+      gpuView?.dispose();
+      void comparer?.then((view) => { if (view !== gpuView) view.dispose(); });
       roadTiles.dispose();
       groundWorkers.dispose();
       tileWriter?.terminate();

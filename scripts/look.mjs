@@ -7,6 +7,7 @@ import { homedir, tmpdir } from 'node:os';
 import { _electron, chromium } from '@playwright/test';
 
 // `node scripts/look.mjs <script.json> [out folder] [--video] [--url=http://…]`
+// plan "gpu": "webgpu" draws the game with three's WebGPU renderer (`MIGRACAO-WEBGPU.md`): the page's `?gpu=webgpu`, the desktop's `ROADCRAFT_LOOK_GPU`.
 const args = process.argv.slice(2);
 const flags = args.filter((a) => a.startsWith('--'));
 const [file, outArg] = args.filter((a) => !a.startsWith('--'));
@@ -38,7 +39,7 @@ const chromeArgs = process.env.LOOK_CHROME_ARGS ? process.env.LOOK_CHROME_ARGS.s
 /** `--electron`: the desktop build as the player runs it (`desktop/main.cjs`, the game from `dist/`: build it first, `--mode development` for the probes the steps call), its window hidden at 1920x1080 (`ROADCRAFT_LOOK`), no Steam. */
 const electron = flags.includes('--electron');
 // ONE TIMED LOOK AT A TIME ON THIS MACHINE: sessions working side by side share the GPU and the CPU, and two cities opened at once made each other's frame times worthless. A run that times anything (record, usage, trace) waits for the one before it (a lock file holding its pid; a dead holder's lock is taken over); a run of shots and counts (memory, draws, the console) goes at once: those do not depend on what else runs. LOOK_NO_LOCK=1 skips it.
-const timed = (steps) => (steps ?? []).some((step) => step.record || step.usage || step.usageStart || step.trace || (step.steps && timed(step.steps)));
+const timed = (steps) => (steps ?? []).some((step) => step.record || step.usage || step.usageStart || step.trace || step.compare || (step.steps && timed(step.steps)));
 const lockFile = join(tmpdir(), 'roadcraft-look.lock');
 if (!process.env.LOOK_NO_LOCK && timed(plan.steps)) {
   let said = false;
@@ -59,7 +60,7 @@ const browser = electron ? await desktopBrowser() : await chromium.launch({ chan
 
 /** The desktop app as a browser of one page (Playwright `_electron`): its window the page; closing it ends the app. */
 async function desktopBrowser() {
-  const app = await _electron.launch({ args: [join(resolve('.'), 'desktop', 'main.cjs')], env: { ...process.env, ROADCRAFT_LOOK: '1', ROADCRAFT_NO_STEAM: '1' } });
+  const app = await _electron.launch({ args: [join(resolve('.'), 'desktop', 'main.cjs')], env: { ...process.env, ROADCRAFT_LOOK: '1', ROADCRAFT_NO_STEAM: '1', ...(plan.gpu ? { ROADCRAFT_LOOK_GPU: plan.gpu } : {}) } });
   // The shell's own lines (each process's memory, `main.cjs` LOOK), as they come.
   app.process().stdout?.on('data', (chunk) => { for (const line of String(chunk).split(/\r?\n/)) if (line.startsWith('[metrics]')) console.log(`${new Date().toISOString().slice(11, 19)} ${line} MB`); });
   const window = await app.firstWindow();
@@ -116,7 +117,9 @@ async function steps(page, report) {
   page.on('download', (d) => { const path = join(out, d.suggestedFilename()); void d.saveAs(path).then(() => console.log(`download: ${path}`)); });
   // The file the next file picker gets ("file" step), as the player picks one.
   page.on('filechooser', (chooser) => { if (page.nextFile) void chooser.setFiles(page.nextFile); page.nextFile = null; });
-  const url = plan.url ?? 'http://127.0.0.1:5300/';
+  const asked = new URL(plan.url ?? 'http://127.0.0.1:5300/');
+  if (plan.gpu) asked.searchParams.set('gpu', plan.gpu);
+  const url = asked.href;
   try {
     // The desktop's window opens its own game (`app://roadcraft/`).
     if (page.desktop) await page.waitForLoadState('load');
@@ -440,6 +443,30 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
       await page.screenshot({ path, ...(step.clip ? { clip: { x, y, width: w, height: h } } : {}) });
       line.file = path;
       console.log(`shot: ${path}`);
+    } else if (step.compare) {
+      // THE SAME VIEW IN BOTH RENDERERS (`MIGRACAO-WEBGPU.md`: a material migrated replaces the old one only when this passes): the
+      // simulation's clock held, both pictures drawn in one task of the page (the same instant: the wind's clock moves only between frames),
+      // each into a linear target, through the same film curve (`src/render/gpu/imageCompare.ts`). Writes `<i>-<name>-webgl.png`, `-webgpu.png`
+      // and `-diff.png` (red the larger the difference, white over 8 times the threshold); `threshold` 8-bit steps (8), `timingFrames` the draws
+      // of each timed on the GPU (20), `faithfulOnly` what only a simple twin draws left out of both (the same things drawn the same way).
+      await page.evaluate(() => window.__roadcraft.measure(true));
+      try {
+        await frames(30);
+        const result = await page.evaluate((options) => window.__roadcraft.compare(options), { threshold: step.threshold, timingFrames: step.timingFrames, faithfulOnly: step.faithfulOnly });
+        const files = {};
+        for (const kind of ['webgl', 'webgpu', 'diff']) {
+          files[kind] = join(out, `${String(i).padStart(2, '0')}-${step.compare}-${kind}.png`);
+          writeFileSync(files[kind], Buffer.from(result[kind].slice(result[kind].indexOf(',') + 1), 'base64'));
+        }
+        line.value = { name: step.compare, width: result.width, height: result.height, ...result.difference, gpuMs: result.gpuMs, asIs: result.asIs, twins: result.twins, leftOut: result.leftOut, files };
+        const d = result.difference;
+        console.log(`compare "${step.compare}" ${result.width}x${result.height}: mean ${d.mean.toFixed(3)}, ${d.over.toFixed(3)}% over ${d.threshold}, max ${d.max}; GPU WebGL ${result.gpuMs.webgl ?? '—'} ms, WebGPU ${result.gpuMs.webgpu ?? '—'} ms; as is ${result.asIs.count} (${result.asIs.names.join(', ')}); twins ${Object.entries(result.twins).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}; left out ${Object.entries(result.leftOut).map(([k, v]) => `${k} ${v}`).join(', ') || 'nothing'}
+  ${files.webgl}
+  ${files.webgpu}
+  ${files.diff}`);
+      } finally {
+        await page.evaluate(() => window.__roadcraft.measure(false));
+      }
     } else if (step.budget) {
       await frames(30);
       line.value = await page.evaluate((view) => window.__roadcraft.budget(view).map((r) => `${r.status} | ${r.item} | ${r.measured} | ${r.budget}${r.times ? ` | ${r.times}×` : ''}`), step.budget);

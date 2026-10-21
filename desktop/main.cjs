@@ -28,11 +28,13 @@ app.commandLine.appendSwitch('js-flags', '--heap-growing-percent=100');
 
 /** The player's desktop choices that must be known before the window exists (`desktop-settings.json` in userData). */
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'desktop-settings.json');
-const DEFAULT_SETTINGS = { vsync: true, fullscreen: false };
+/** `gpu`: the renderer that draws the game, 'webgl' (as always) or 'webgpu' (three's WebGPU renderer, `MIGRACAO-WEBGPU.md`: the page's `?gpu=webgpu`). */
+const DEFAULT_SETTINGS = { vsync: true, fullscreen: false, gpu: 'webgl' };
+const GPU_BACKENDS = ['webgl', 'webgpu'];
 function readSettings() {
   try {
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-    return { vsync: raw.vsync !== false, fullscreen: raw.fullscreen === true };
+    return { vsync: raw.vsync !== false, fullscreen: raw.fullscreen === true, gpu: GPU_BACKENDS.includes(raw.gpu) ? raw.gpu : 'webgl' };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -150,7 +152,9 @@ function createWindow() {
   };
   window.on('enter-full-screen', keepFullscreen);
   window.on('leave-full-screen', keepFullscreen);
-  void window.loadURL(`${ORIGIN}index.html`);
+  // A look run may ask for a renderer of its own (`scripts/look.mjs` plan "gpu"), never kept in the settings.
+  const gpu = LOOK && GPU_BACKENDS.includes(process.env.ROADCRAFT_LOOK_GPU ?? '') ? process.env.ROADCRAFT_LOOK_GPU : settings.gpu;
+  void window.loadURL(`${ORIGIN}index.html${gpu === 'webgpu' ? '?gpu=webgpu' : ''}`);
 }
 
 /** Only the game's own page may ask (Electron security checklist: validate the sender of every IPC message). */
@@ -166,6 +170,7 @@ function serveIpc() {
     return {
       vsync: settings.vsync,
       fullscreen: window ? window.isFullScreen() : settings.fullscreen,
+      gpu: settings.gpu,
       steam: steam !== null,
       steamDeck: steam ? safe(() => steam.utils.isSteamRunningOnSteamDeck(), false) : false,
     };
@@ -173,6 +178,8 @@ function serveIpc() {
   ipcMain.handle('desktop:set', (event, patch) => {
     if (!fromGame(event) || !patch || typeof patch !== 'object') return false;
     if (typeof patch.vsync === 'boolean') settings.vsync = patch.vsync;
+    // The renderer: from the next start, as vsync.
+    if (GPU_BACKENDS.includes(patch.gpu)) settings.gpu = patch.gpu;
     if (typeof patch.fullscreen === 'boolean') {
       settings.fullscreen = patch.fullscreen;
       BrowserWindow.fromWebContents(event.sender)?.setFullScreen(patch.fullscreen);

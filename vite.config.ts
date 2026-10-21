@@ -72,8 +72,9 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
+        // Its WebGPU renderer and node materials in a chunk of their own, loaded only with `?gpu=webgpu` or a comparison (`render/gpu/webgpuView.ts`): the WebGL game never downloads them.
         manualChunks: (id: string) =>
-          id.includes('node_modules/three') ? 'three' : undefined,
+          /node_modules\/three\/build\/three\.(webgpu|tsl)/.test(id) ? 'three-webgpu' : id.includes('node_modules/three') ? 'three' : undefined,
       },
     },
   },

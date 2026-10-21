@@ -3969,6 +3969,12 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   ledger: () => Object.fromEntries(engine.ledger),
   /** The job pool as it stands (`jobs/jobPool.ts` jobPoolStats): its workers, in the page or a job process, and what each runs. */
   jobPool: () => jobPoolStats(),
+  /** Which renderer draws the frame (`?gpu=webgpu`, `MIGRACAO-WEBGPU.md`). */
+  backend: scene.backend,
+  /** The view drawn by the WebGL and the WebGPU renderer in the same instant, the pictures compared (`scripts/look.mjs` "compare"). */
+  compare: (options?: Parameters<SceneHandle['compare']>[0]) => scene.compare(options),
+  /** What the WebGPU renderer left out of its frames so far, by reason. */
+  webgpuLeftOut: () => scene.webgpuLeftOut(),
   doc,
   net,
   sim,
