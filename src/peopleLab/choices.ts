@@ -2,6 +2,7 @@ import type { CartoonStyle } from '@render/people/cartoon';
 import { CLOTH_COLOURS } from '@people/spec';
 import { PIXAR, REALISTIC } from '@render/people/cartoon';
 import type { PoseName } from './pose';
+import type { LibraryClipName } from '@render/citizenWalk';
 
 /** THE LAB'S LISTS OF CHOICES: colours, styles, names shown, face sliders, actions */
 export const SKIN = [0xf6dccb, 0xf0cdb2, 0xe5b898, 0xd9a47f, 0xc68b62, 0xb07349, 0x8f5b3a, 0x6f452b, 0x553220, 0x3d2417];
@@ -41,10 +42,16 @@ export const FACE: readonly (readonly [string, string, readonly (readonly [strin
 export const HEAD_SHAPES: readonly (readonly [string, string])[] = [['head-oval', 'Oval'], ['head-round', 'Redonda'], ['head-square', 'Quadrada'],
   ['head-rectangular', 'Retangular'], ['head-diamond', 'Diamante'], ['head-triangular', 'Triangular'], ['head-invertedtriangular', 'Coração']];
 
-export const MOODS: readonly (readonly [string, string, string | undefined, PoseName])[] = [
-  ['😐', 'Parado', undefined, 'idle'], ['💬', 'Conversando', 'talk', 'idle'], ['😂', 'Gargalhada', 'laugh', 'idle'],
-  ['👋', 'Acenando', 'wave', 'wave'], ['🙌', 'Comemorando', 'cheer', 'cheer'], ['💃', 'Animado', 'dance', 'hips'],
-  ['😠', 'Bravo', 'angry', 'hips'], ['🗯️', 'Discutindo', 'argue', 'idle'], ['😢', 'Chorando', 'cry', 'idle'], ['😱', 'Assustado', 'panic', 'idle'],
+/** The actions: an emoji, a name, what the face does (`faceAt`), and the captured clip the body plays (`citizenWalk.ts` library). */
+export const MOODS: readonly (readonly [string, string, string | undefined, PoseName, LibraryClipName])[] = [
+  ['🧍', 'Parado', undefined, 'idle', 'idle'], ['💬', 'Conversando', 'talk', 'idle', 'talk'], ['👂', 'Ouvindo', 'listen', 'idle', 'listen'],
+  ['😂', 'Rindo', 'laugh', 'idle', 'laugh'], ['👋', 'Acenando', 'wave', 'wave', 'wave'], ['🙌', 'Comemorando', 'cheer', 'cheer', 'cheer'],
+  ['💃', 'Dançando', 'dance', 'hips', 'dance'], ['📱', 'Ao telefone', 'phone', 'idle', 'phone'], ['📷', 'Fotografando', undefined, 'idle', 'photo'],
+  ['📖', 'Lendo', undefined, 'idle', 'read'], ['🥤', 'Bebendo', undefined, 'idle', 'drink'], ['🎧', 'Música', 'listen', 'idle', 'headphones'],
+  ['👀', 'Olhando', undefined, 'idle', 'look'], ['😬', 'Nervoso', 'look', 'idle', 'nervous'], ['😠', 'Bravo', 'angry', 'hips', 'angry'],
+  ['🗯️', 'Discutindo', 'argue', 'idle', 'argue'], ['🚶', 'Passeando', undefined, 'idle', 'walkStroll'], ['😎', 'Andar estiloso', undefined, 'idle', 'walkCool'],
+  ['🏃', 'Correndo', undefined, 'idle', 'run'], ['🪑', 'Sentado', 'talk', 'idle', 'sitIdle'], ['🧎', 'Agachado', undefined, 'idle', 'crouchIdle'],
+  ['😢', 'Chorando', 'cry', 'idle', 'idle'], ['😱', 'Assustado', 'panic', 'idle', 'nervous'],
 ];
 
 /** Solid hairstyles that read well up close (the MakeHuman system cards, `people` studio's choices), by sex: what a new person wears. */

@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, BufferAttribute, MOUSE, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
+  ACESFilmicToneMapping, BufferAttribute, CylinderGeometry, MOUSE, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
   PMREMGenerator, PerspectiveCamera, Scene, ShadowMaterial, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D, type SkinnedMesh,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -13,7 +13,8 @@ import { applyFace, faceAt } from '@render/people/faceExpression';
 import { createPersonLayers, releaseSkinAppearance, type SkinAppearance } from '@render/people/skinAppearance';
 import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
-import { Poser, type PoseName } from './pose';
+import { ClipPlayer, Poser, type PoseName } from './pose';
+import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
 import { variedFace } from './presets';
 import { HandShaper, REGION_IDS, addDragMorphs, type Region } from './direct';
 import { measureBody } from './proportions';
@@ -41,6 +42,9 @@ function startLab(): void {
   let pose: PoseName = 'idle';
   let built: BuiltPerson | null = null;
   let poser: Poser | null = null;
+  /** The captured clip the body plays (`ClipPlayer`), and the player on the person built now. */
+  let clipName: LibraryClipName = 'idle';
+  let player: ClipPlayer | null = null;
   let tab = 'pessoa';
   let showAll = false;
   let roster: LabPerson[] = loadRoster();
@@ -135,6 +139,12 @@ function startLab(): void {
   shadowCatcher.receiveShadow = true;
   scene.add(shadowCatcher);
 
+  // A stool for the seated clips: the capture sits on a chair the clip does not carry.
+  const stool = new Mesh(new CylinderGeometry(0.2, 0.18, 0.44, 32), new MeshStandardMaterial({ color: 0xc9a27a, roughness: 0.6 }));
+  stool.position.set(0, 0.22, -0.16);
+  stool.castShadow = stool.receiveShadow = true;
+  stool.visible = false;
+  scene.add(stool);
   const camera = new PerspectiveCamera(30, 1, 0.05, 50);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -233,6 +243,13 @@ function startLab(): void {
       for (const m of next.meshes) { m.castShadow = true; m.frustumCulled = false; }
       scene.add(next.scene);
       poser = new Poser(next.scene);
+      player = null;
+      const sexNow = sexName();
+      void loadRocketboxClips(sexNow).then((clips) => {
+        if (built !== next || !next.meshes[0]) return;
+        player = new ClipPlayer(next.scene, next.meshes[0], clips);
+        player.play(clipName, (performance.now() - clock0) / 1000);
+      }, (error: unknown) => { console.warn('[people-lab] the motion library could not be loaded; the lab poses instead', error); });
       if (!shaping) dragWeights = null;
       shaper = nextShaper;
       next.scene.updateWorldMatrix(true, true);
@@ -287,12 +304,12 @@ function startLab(): void {
   }
 
   const PANELS = makePanels({
-    get person() { return person; }, get showAll() { return showAll; }, get activity() { return activity; }, get pose() { return pose; },
+    get person() { return person; }, get showAll() { return showAll; }, get activity() { return activity; }, get pose() { return pose; }, get clip() { return clipName; },
     ui: { slider, swatches, seg, tiles }, pictures,
     setSpec, setLook: (patch) => setLook(patch as Loose<PersonLook>), setBody, setFeature, setStyle,
     setMood: (v) => { person = { ...person, spec: { ...person.spec, mood: v } }; },
     setShowAll: (v) => { showAll = v; render(); },
-    act: (a, p) => { activity = a; pose = p; render(); },
+    act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
     render, openSculptor: () => { void openSculptor(); }, fitFace: () => { void fitFace(); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
@@ -547,7 +564,11 @@ function startLab(): void {
     if (toastUntil && now >= toastUntil) { toastUntil = 0; toast.classList.remove('on'); }
     while (revokeAt.length && revokeAt[0]![0] <= now) URL.revokeObjectURL(revokeAt.shift()![1]);
     if (built) {
-      poser?.apply(pose, t);
+      if (player?.playing) player.apply(t); else poser?.apply(pose, t);
+      if (stool.visible) {
+        // Under the pelvis wherever the clip puts it, its top just below the seat.
+        built.scene.traverse((o) => { if (o.name === 'Bip01_Pelvis') { o.updateWorldMatrix(true, false); const at = o.getWorldPosition(new Vector3()); stool.scale.y = Math.max(0.2, (at.y - 0.1) / 0.44); stool.position.set(at.x, stool.scale.y * 0.22, at.z - 0.04); } });
+      }
       const face = faceAt(person.spec.id, t, activity, person.spec.mood ?? 0);
       for (const m of built.meshes as SkinnedMesh[]) {
         if (m.morphTargetInfluences && m.morphTargetDictionary) {

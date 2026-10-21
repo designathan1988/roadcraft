@@ -1,4 +1,5 @@
-import { Quaternion, Vector3, type Bone, type Object3D } from 'three';
+import { Quaternion, Vector3, type Bone, type Object3D, type SkinnedMesh } from 'three';
+import { clipTransferFor, type LibraryClip, type LibraryClipName, type NeutralWalk, type RocketboxClips } from '@render/citizenWalk';
 
 /** THE LAB'S POSES: a relaxed standing pose, breathing, and a few gestures, aimed in world space so no bone's own axes have to be known */
 
@@ -92,5 +93,34 @@ export class Poser {
         this.arm('r', new Vector3(-L * 0.75, -0.65, -0.1), new Vector3(L * 0.85, -0.25, 0.35));
         break;
     }
+  }
+}
+
+/** THE GAME'S OWN CAPTURED MOTIONS (Microsoft Rocketbox, `citizenWalk.ts` library) on the lab's person: the actions play the clips the street plays. */
+export class ClipPlayer {
+  private transfer: NeutralWalk | null = null;
+  private clip: LibraryClip | null = null;
+  private started = 0;
+
+  constructor(private readonly root: Object3D, private readonly mesh: SkinnedMesh, private readonly clips: RocketboxClips) {}
+
+  /** Plays `name` from now; false when the library has no such clip. */
+  play(name: LibraryClipName | null, now: number): boolean {
+    const clip = name ? this.clips[name] : undefined;
+    if (!clip) { this.transfer = null; this.clip = null; return false; }
+    if (clip === this.clip) return true;
+    this.clip = clip;
+    this.transfer = clipTransferFor(this.root, this.mesh, clip);
+    this.started = now;
+    return true;
+  }
+
+  get playing(): boolean { return !!this.transfer; }
+
+  /** The pose at `now` (seconds); a clip that does not loop holds its last frame. */
+  apply(now: number): void {
+    if (!this.transfer || !this.clip) return;
+    const t = now - this.started;
+    this.transfer.pose(this.clip.loop ? t % this.clip.duration : Math.min(t, this.clip.duration - 1e-3));
   }
 }

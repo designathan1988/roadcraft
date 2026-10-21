@@ -4,6 +4,7 @@ import { itemsOf, type WardrobeItem } from '@people/wardrobe';
 import type { CartoonStyle } from '@render/people/cartoon';
 import { CLOTH, FACE, HAIR_CATALOGUE, HAIR_LABELS, HAIR_COLOURS, HEAD_SHAPES, MOODS, SHOES_CATALOGUE, SKIN, STYLE_PRESETS } from './choices';
 import type { PoseName } from './pose';
+import type { LibraryClipName } from '@render/citizenWalk';
 import { BODIES, FACES, LOOKS, PARTS, currentPreset, withBody, withFace, withPart } from './presets';
 import type { LabPerson } from './record';
 import type { Framing, Thumbs } from './thumbs';
@@ -16,6 +17,7 @@ export interface PanelContext {
   readonly showAll: boolean;
   readonly activity: string | undefined;
   readonly pose: PoseName;
+  readonly clip: LibraryClipName;
   readonly ui: ReturnType<typeof widgets>;
   readonly pictures: Thumbs;
   setSpec(patch: Partial<PersonSpec>): void;
@@ -25,7 +27,7 @@ export interface PanelContext {
   setStyle(s: CartoonStyle): void;
   setMood(v: number): void;
   setShowAll(v: boolean): void;
-  act(activity: string | undefined, pose: PoseName): void;
+  act(activity: string | undefined, pose: PoseName, clip: LibraryClipName): void;
   render(): void;
   openSculptor(): void;
   dropSculpt(): void;
@@ -207,9 +209,9 @@ export function makePanels(c: PanelContext): Record<string, () => Node[]> {
       el('h3', { textContent: 'Humor' }),
       slider('Triste ↔ Feliz', -1, 1, 0.01, p().spec.mood ?? 0, (v) => c.setMood(v)),
       el('h3', { textContent: 'Ações' }),
-      el('div', { cls: 'grid' }, ...MOODS.map(([emoji, label, act, pose]) => {
-        const t = el('button', { cls: `tile${act === c.activity && pose === c.pose ? ' on' : ''}` }, el('span', { cls: 'glyph', textContent: emoji }), label);
-        t.onclick = () => c.act(act, pose);
+      el('div', { cls: 'grid' }, ...MOODS.map(([emoji, label, act, pose, clip]) => {
+        const t = el('button', { cls: `tile${act === c.activity && clip === c.clip ? ' on' : ''}` }, el('span', { cls: 'glyph', textContent: emoji }), label);
+        t.onclick = () => c.act(act, pose, clip);
         return t;
       })),
     ],
