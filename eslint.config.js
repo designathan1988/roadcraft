@@ -54,6 +54,13 @@ export default tseslint.config(
     ignores: [
       'coverage/**',
       'dist/**',
+      // The probe build, the runs' reports and the agents' worktrees: generated, never source.
+      'dist-probe/**',
+      'lab-reports/**',
+      'test-results/**',
+      '.claude/**',
+      'research_notes/**',
+      'reports/**',
       'node_modules/**',
       'docs/screenshots/**',
       // Dropped-in assets and generated output.
