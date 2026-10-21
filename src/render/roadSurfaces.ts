@@ -14,7 +14,7 @@ import { LANE_LINE } from '@world/roadTypes';
 import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
 import type { SceneMaterials } from './materials';
 import { type PassLook, passDesc, passRaised, passReads, polysOf, tileBundle } from './roadSurfacePass';
-import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, mergeTiles, splitBlock, tilesOnGpu } from './mesh/surfaceTiles';
+import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, memberSizes, mergeTiles, splitBlock, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { type BlockArrays, levelsOf } from './mesh/roadLod';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR } from './roadTones';
@@ -640,14 +640,16 @@ export function* roadSurfaceSteps(
           const lock = locks?.[0] ?? null;
           const near = locks ? locks.some((b) => reuse!.near!((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) : true;
           const memberTiles = members.map(({ spec, list: tiles }) => tiles.map((tile) => tile.bundle!.get(spec.options.name)!));
+          // DO NOT name `memberTiles` in a closure here: every closure of this block shares one context (V8), and `levels.bring`, kept as long as the block, held through it every tile's arrays (174 MB in a large city, a heap snapshot of 2026-10-20). The far level cuts by their sizes alone.
+          const shares = memberSizes(memberTiles);
           mesh = mergeTiles(memberTiles.flat(), group.options, source,
             lock ? {
               lock, near, also: locks!.slice(1),
               start: (block, arrays) => {
                 coarsening++;
                 // Each surface simplified on its own, as when it was a block of its own; one too small to gain is drawn whole in the far level.
-                const pieces = memberTiles.length === 1 ? [cloneBlock(arrays)] : splitBlock(arrays, memberTiles);
-                const whole = memberTiles.length === 1 ? [] : splitBlock(arrays, memberTiles);
+                const pieces = shares.length === 1 ? [cloneBlock(arrays)] : splitBlock(arrays, shares);
+                const whole = shares.length === 1 ? [] : splitBlock(arrays, shares);
                 Promise.all(pieces.map((piece, i) => coarsen!(piece, locks![i]!))).then((made) => {
                   // The block may have been built again meanwhile: its far level is of the one it was made for.
                   if (chunks?.get(key)?.mesh !== block) return;

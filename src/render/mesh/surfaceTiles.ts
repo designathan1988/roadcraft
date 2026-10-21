@@ -95,14 +95,24 @@ export function cloneBlock(arrays: BlockArrays): BlockArrays {
   };
 }
 
-/** A block's arrays cut back into its surfaces' (`members`: each surface's tiles, in the order they were merged), each a copy: what a block
- *  of several surfaces drawn alike hands its workers to simplify, a surface at a time, as each was simplified when it was a block of its own. */
-export function splitBlock(arrays: BlockArrays, members: readonly (readonly Tile[])[]): BlockArrays[] {
-  const out: BlockArrays[] = [];
-  let v = 0, k = 0;
-  for (const tiles of members) {
+/** A surface's share of a block: its tiles' vertices and indices (`memberSizes`). */
+export interface MemberSize { readonly vertices: number; readonly count: number }
+
+/** Each surface's share of a block, from its tiles (in the order they were merged): what `splitBlock` cuts by, without the tiles. */
+export function memberSizes(members: readonly (readonly Tile[])[]): MemberSize[] {
+  return members.map((tiles) => {
     let vertices = 0, count = 0;
     for (const tile of tiles) { vertices += tile.positions.length / 3; count += tile.indices.length; }
+    return { vertices, count };
+  });
+}
+
+/** A block's arrays cut back into its surfaces' (`members`: each surface's share, in the order they were merged), each a copy: what a block
+ *  of several surfaces drawn alike hands its workers to simplify, a surface at a time, as each was simplified when it was a block of its own. */
+export function splitBlock(arrays: BlockArrays, members: readonly MemberSize[]): BlockArrays[] {
+  const out: BlockArrays[] = [];
+  let v = 0, k = 0;
+  for (const { vertices, count } of members) {
     const index = vertices > 0xffff ? new Uint32Array(count) : new Uint16Array(count);
     for (let i = 0; i < count; i++) index[i] = arrays.index[k + i]! - v;
     const cut = (a: Float32Array, size: number): Float32Array => a.slice(v * size, (v + vertices) * size);

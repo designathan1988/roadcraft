@@ -6,7 +6,7 @@ import { coarseArrays, levelsOf } from '@render/mesh/roadLod';
 import { marksRoadSection } from '@render/mesh/roadEdges';
 import { COARSE_ERROR } from '@render/mesh/roadLodPure';
 import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
-import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, mergeTiles, splitBlock } from '@render/mesh/surfaceTiles';
+import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, memberSizes, mergeTiles, splitBlock } from '@render/mesh/surfaceTiles';
 import { refillArrays } from '@render/mesh/gpuOnly';
 import type { Tile } from '@render/mesh/tileMesh';
 
@@ -273,7 +273,7 @@ describe('a block of several surfaces drawn alike (`roadSurfaces.ts` drawGroups)
   it('cuts back into each surface as its own block was, and joins again to the block', () => {
     const a = strip(), b = strip();
     const block = blockArraysOf([a, b], options.material)!;
-    const [first, second] = splitBlock(block, [[a], [b]]);
+    const [first, second] = splitBlock(block, memberSizes([[a], [b]]));
     // Each piece the arrays its surface alone would have made: what its worker simplified when it was a block of its own.
     for (const piece of [first!, second!]) {
       const own = blockArraysOf([strip()], options.material)!;
