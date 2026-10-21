@@ -474,6 +474,13 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
     (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
   levels.changed = lodChanged;
+  // Behind the curtain a tile or a plate out of the view is not asked: the workers make what the opening's picture draws first (`coarsePending`), the rest nearest first once it is shown.
+  // One let go for the budget (`massBudget`) waits for the view to meet it again: DO NOT ask it back at once, to be let go again.
+  levels.deferred = (key) => (hiddenNow || massCells.evicted(key)) && !massCells.levelSeen(key);
+  // A plate with no masses of its own is a hole in the map (the corners of a city opened on its middle, step-25k 08-early-map): before the view's detail.
+  levels.hole = (key) => key[0] === 'p' && !massCells.levelDrawn(key);
+  /** The most the town's masses (cells, tiles, plates) hold on the GPU, bytes (`quality.ts` GEOMETRY_BUDGETS): past it the levels out of the view go, least recently seen first. */
+  let massBudget = Infinity;
   // The plates waiting asked nearest the eye first (`massLevels.ts` PLATES_IN_FLIGHT).
   levels.away = (key) => {
     if (!eye) return 0;
@@ -695,7 +702,8 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
       return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || (eye !== null && !lodSettled);
     },
     get coarsePending() {
-      return requests.massing > 0 || massCells.waiting > 0;
+      // The levels in the view's frustum only: DO NOT hold the opening for every plate of the map (a city of 25,000 buildings waited for nine plates of 2 km, 16 s of the workers, when its view drew none of them, step-25k 2026-10-21); those out of view come after the curtain, nearest first.
+      return requests.massing > 0 || massCells.waitingInView > 0;
     },
     get viewPending() {
       // The cells the view wants in detail (near, in its frustum, `massCells.nearKeys`) whose detail has not landed.
@@ -893,6 +901,8 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
         rebuilt = true;
         keepToBudget();
       }
+      // The masses out of the view let go past the budget (a ledger's sum when under it).
+      if (Number.isFinite(massBudget) && massCells.evictLevels(massBudget) > 0) lodStale = true;
       // The tiles and cells the view refined to since: their masses asked (top down, `massLevels.ts`, `askExposed`).
       levels.pump(env);
       askExposed(env);
@@ -1022,6 +1032,9 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
     setDetailBudget(bytes) {
       budget = bytes;
       keepToBudget();
+    },
+    setMassBudget(bytes) {
+      massBudget = bytes;
     },
     books() {
       return {

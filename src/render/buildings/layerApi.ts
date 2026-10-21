@@ -60,6 +60,8 @@ export interface BuildingLayer {
   levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number, view?: Frustum | null): void;
   /** The most the cells' detail may hold on the GPU, bytes: past it the cells drawn far go first (their masses stand for them). */
   setDetailBudget(bytes: number): void;
+  /** The most the town's masses (cells, tiles, plates) may hold on the GPU, bytes: past it the tiles and plates out of the view go, the least recently seen first, asked again once the view meets them (`massCells.ts` evictLevels). */
+  setMassBudget(bytes: number): void;
   /** What the layer keeps, by book (cells, levels, measures, held back): bounded by the view, never by the road walked (tested walking 2 and 20 tiles). */
   books(): Readonly<Record<string, number>>;
   /** The frame's scale (`frameBudget.ts`): the view's budget of triangles (`core/perfBudget.ts` `VIEW_BUDGETS`), the error scale that fits it (1 draws for 2 px of error, 2 for 4 px...; the roads' reach follows it, `renderer.ts`). */

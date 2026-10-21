@@ -261,6 +261,82 @@ export class GpuBatchedMesh extends BatchedMesh {
     this.letGo(old);
   }
 
+  /** The vertices and indices the live geometries reserve: what the batch holds once its holes are packed (`compact`). three counts its
+   *  room from the end of the last geometry ever stored (r186 `unusedVertexCount`), so a deleted geometry's range stays taken: the
+   *  facade batch of a large city grew from 121 MB to 373 MB touring its corners, every cell let go a hole no new one went into (2026-10-21). */
+  usedCounts(): { readonly vertices: number; readonly indices: number } {
+    let vertices = 0, indices = 0;
+    for (const info of this.inner._geometryInfo) if (info.active) { vertices += info.reservedVertexCount; indices += Math.max(0, info.reservedIndexCount); }
+    return { vertices, indices };
+  }
+
+  /**
+   * The live geometries packed to the front of storage of `maxVertexCount` vertices and `maxIndexCount` indices, the holes deleted
+   * geometries left gone (three's `optimize`, done on the GPU): the vertices copied buffer to buffer (`copyBufferSubData`), the indices
+   * read back once (`getBufferSubData`, WebGL 2.0 spec 5.14.3) and shifted by the distance their geometry moved, as three's own
+   * `optimize` shifts its index array (r186) - WebGL 2 has no base vertex for the multi-draw, the indices hold their vertex's place.
+   */
+  compact(maxVertexCount: number, maxIndexCount: number): void {
+    const gl = this.gl;
+    const inner = this.inner;
+    if (!gl || !inner._geometryInitialized) {
+      if (inner._geometryInitialized) this.optimize();
+      super.setGeometrySize(maxVertexCount, maxIndexCount);
+      return;
+    }
+    const live = inner._geometryInfo.filter((info) => info.active).sort((a, b) => a.vertexStart - b.vertexStart);
+    const used = this.usedCounts();
+    if (used.vertices > maxVertexCount || used.indices > maxIndexCount) throw new Error('GpuBatchedMesh: the live geometries do not fit the size asked');
+    const old = this.geometry;
+    // Every index stored, read back in one call (one wait on the GPU, not one a geometry).
+    const indexEnd = inner._nextIndexStart;
+    const stored = new Uint32Array(indexEnd);
+    if (indexEnd > 0) {
+      gl.bindBuffer(gl.COPY_READ_BUFFER, (old.getIndex() as unknown as GLBufferAttribute).buffer);
+      gl.getBufferSubData(gl.COPY_READ_BUFFER, 0, stored);
+    }
+    inner._maxVertexCount = maxVertexCount;
+    inner._maxIndexCount = maxIndexCount;
+    const fresh = this.storage();
+    const packed = new Uint32Array(used.indices);
+    let nextVertex = 0, nextIndex = 0;
+    // Runs of geometries lying next to each other in the old storage moved in one copy an attribute.
+    let runFrom = -1, runTo = -1, runAt = 0;
+    const flush = (): void => {
+      if (runFrom < 0) return;
+      for (const [name, layout] of this.layouts!) {
+        const bytes = layout.itemSize * layout.of.BYTES_PER_ELEMENT;
+        gl.bindBuffer(gl.COPY_READ_BUFFER, (old.getAttribute(name) as unknown as GLBufferAttribute).buffer);
+        gl.bindBuffer(gl.COPY_WRITE_BUFFER, (fresh.getAttribute(name) as unknown as GLBufferAttribute).buffer);
+        gl.copyBufferSubData(gl.COPY_READ_BUFFER, gl.COPY_WRITE_BUFFER, runFrom * bytes, runAt * bytes, (runTo - runFrom) * bytes);
+      }
+      runFrom = -1;
+    };
+    for (const info of live) {
+      if (info.vertexStart !== runTo) { flush(); runFrom = info.vertexStart; runAt = nextVertex; }
+      runTo = info.vertexStart + info.reservedVertexCount;
+      const delta = nextVertex - info.vertexStart;
+      for (let j = 0; j < info.reservedIndexCount; j++) packed[nextIndex + j] = stored[info.indexStart + j]! + delta;
+      info.vertexStart = nextVertex;
+      info.indexStart = nextIndex;
+      info.start = nextIndex;
+      nextVertex += info.reservedVertexCount;
+      nextIndex += Math.max(0, info.reservedIndexCount);
+    }
+    flush();
+    if (nextIndex > 0) {
+      gl.bindBuffer(gl.COPY_WRITE_BUFFER, (fresh.getIndex() as unknown as GLBufferAttribute).buffer);
+      gl.bufferSubData(gl.COPY_WRITE_BUFFER, 0, packed);
+    }
+    gl.bindBuffer(gl.COPY_READ_BUFFER, null);
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
+    inner._nextVertexStart = nextVertex;
+    inner._nextIndexStart = nextIndex;
+    inner._visibilityChanged = true;
+    this.geometry = fresh;
+    this.letGo(old);
+  }
+
   /** A geometry's buffers deleted (three deletes those it registered when the geometry is disposed; deleting one twice is harmless). */
   private letGo(geometry: BufferGeometry): void {
     geometry.dispose();

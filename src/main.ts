@@ -4117,6 +4117,9 @@ ${JSON.stringify(counts)}`;
       buildingDetailMB: mb(scene.buildingDetailBytes()),
       heapMB: heap === undefined ? null : mb(heap),
       cpuByName: c.cpuByName.map(([name, bytes]) => `${name} ${mb(bytes)}`),
+      // What holds the geometry on the GPU, by holder (digits taken out: one row a kind of block or cell), most first.
+      gpuByName: [...[...c.bytesByName].reduce((rows, [name, bytes]) => rows.set(name.replace(/\d+/g, '#'), (rows.get(name.replace(/\d+/g, '#')) ?? 0) + bytes), new Map<string, number>())]
+        .sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, bytes]) => `${name} ${mb(bytes)}`),
       buffers: c.buffers, releasedBuffers: c.releasedBuffers, textures: c.textures,
       glGeometries: scene.gl.info.memory.geometries, glTextures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,
       drawCalls: scene.stats.drawCalls, builtTriangles: scene.stats.builtTriangles, drawnTriangles: scene.stats.drawnTriangles,
