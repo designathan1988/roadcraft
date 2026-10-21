@@ -2,10 +2,11 @@
 //  1. types: the native TypeScript compiler (`tsgo`, @typescript/native-preview: ~2 s for the whole program, where `tsc` takes ~12 s);
 //  2. lint: ESLint on the changed files only (a file's result depends on that file alone);
 //  3. specs: only those that import the changed code (`vitest related`, Vitest's static module graph), stopped at the first failure;
-//     and always the goldens: the city a seed makes and the driving and walking of a seed, bit for bit (Factorio's per-tick CRC, in seconds);
+//     and always the goldens: the city a seed makes and the driving and walking of a seed, bit for bit (Factorio's per-tick CRC, in seconds),
+//     and the census of the derived world (tests/census: what the buildings' layer, the gardens and the trees make of the small city, in Node, no GPU);
 //  4. the game itself: the small city opened in headless Chrome (`scripts/look/verify.json`), map, district and street photographed,
 //     failing on any page error, console error or lost WebGL context, each photo compared with the reference (`lab-reports/verify-ref`).
-// `--ref`: the photos taken now become the reference (after a change seen and approved). `--no-game`: steps 1-3 only.
+// `--game`: also step 4 (the browser, the photos); `--ref` with it: the photos taken now become the reference (after a change seen and approved).
 // The big city, the timings and the whole suite are not here: they are for the milestones, not for every change.
 import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
@@ -15,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const args = process.argv.slice(2);
 const makeRef = args.includes('--ref');
-const noGame = args.includes('--no-game');
+/** The game opened in a browser only when asked (`--game`): a change of the picture itself; everything else is proven in Node, in seconds. */
+const noGame = !args.includes('--game');
 /** Share of a photo's pixels that may differ from the reference: the cars and the trees in the wind move between two runs (0.1-0.4 %). */
 const MOST_CHANGED = 0.015;
 const REF = join(ROOT, 'lab-reports', 'verify-ref');
@@ -42,7 +44,7 @@ const t0 = Date.now();
 const specs = code.filter((f) => f.startsWith('src/') || f.startsWith('tests/'));
 const steps = [run('types (tsgo)', bin('tsgo'), ['--noEmit', '-p', 'tsconfig.json'])];
 if (code.length) steps.push(run(`lint (${code.length} files)`, bin('eslint'), ['--cache', '--cache-location', 'node_modules/.cache/eslint-verify', '--suppressions-location', 'scripts/baselines/eslint-suppressions.json', ...code]));
-steps.push(run('goldens (city, driving, walking)', bin('vitest'), ['run', 'tests/world/cityGolden.spec.ts', 'tests/sim/drivingGolden.spec.ts', 'tests/sim/walkingGolden.spec.ts']));
+steps.push(run('goldens and census (city, driving, walking, the derived world)', bin('vitest'), ['run', 'tests/world/cityGolden.spec.ts', 'tests/sim/drivingGolden.spec.ts', 'tests/sim/walkingGolden.spec.ts', 'tests/census/worldCensus.spec.ts']));
 if (specs.length) steps.push(run('specs of the change', bin('vitest'), ['related', '--run', '--bail', '1', '--passWithNoTests', ...specs]));
 const results = await Promise.all(steps);
 let failed = false;
