@@ -1456,7 +1456,8 @@ export function createSceneRenderer(
     return [...keys].map(plateRegion);
   };
   /** Two solves compared block by block (`compareSolves`): `blocks` once `ready`, with the page's time it took. */
-  interface BlockCompare { blocks: [number, number, number, number][]; ready: boolean; ms: number }
+  /** `fill`: the blocks a scoped opening left unbuilt (`buildWorld` full), the solve standing: built, never said to have moved. */
+  interface BlockCompare { blocks: [number, number, number, number][]; ready: boolean; ms: number; fill?: true }
   /** The blocks whose ground two solves of the roads shape differently, or whose decks differ */
   const compareSolves = (before: RoadElevation, after: RoadElevation, landBlocks: readonly [number, number, number, number][] | null): BlockCompare => {
     const at = performance.now();
@@ -1909,7 +1910,7 @@ export function createSceneRenderer(
     // Now the ground comes to meet the roads
     // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job, which waits for them. A fill compares none: its blocks are the surfaces' visit list, not a ground change (`worldSteps` shapes none on level land).
     const compare = full ? null : (previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null);
-    pendingBlocks = full ? [{ blocks: fillBlocks!, ready: true, ms: 0 }] : (compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null]);
+    pendingBlocks = full ? [{ blocks: fillBlocks!, ready: true, ms: 0, fill: true }] : (compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null]);
     const elevationMs = performance.now() - started;
     const cause = net.doc.changes.version;
     // DO NOT build it in one go: the roads of a generated city were built in the frame of the change, on the page
@@ -1927,7 +1928,8 @@ export function createSceneRenderer(
     // The blocks the solves differ in, once the worker has digested them (`compareSolves`).
     while (compares.some((c) => c && !c.ready)) { groundWorkers.check(); yield 'wait'; }
     const own = compares[compares.length - 1] ?? null;
-    const changed = own ? own.blocks : null;
+    // The fill after a scoped opening moved no road's height (its solve stands, `landStill`): its blocks are what is still to build, not what moved. DO NOT tell the diary every block of the map moved: the gardens, the buildings' grounds and the poles each worked their whole map out again in the frame after, a frame of 550-600 ms some 20 s into a large city (2026-10-21).
+    const changed = own ? (own.fill ? [] : own.blocks) : null;
     // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
     worldCause = derived(net, 'elevation', changed, 'road heights solved', solved.cause,
       { ms: solved.elevationMs + (own?.ms ?? 0), detail: changed ? `${changed.length} blocks of ${SHAPE_BLOCK} u` : 'whole map' }) || solved.cause;
