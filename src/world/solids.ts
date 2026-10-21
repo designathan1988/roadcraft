@@ -107,7 +107,8 @@ export function createSolids(): { solids: Solids; derived: Derived<RoadDoc, Sour
     byId: true,
     /** @rebuild Only when everything changed (`Derived.refresh` with the diary unread): the one walk of the map. */
     *allKeys(doc) {
-      for (const b of doc.buildings.all()) yield `b${b.id}`;
+      // The ids alone, no record decoded (`BuildingStore.idList`).
+      for (const id of doc.buildings.idList()) yield `b${id}`;
       for (const id of doc.barriers.keys()) yield `r${id}`;
       for (const id of doc.poles.keys()) yield `p${id}`;
       for (const id of doc.landscape.keys()) yield `l${id}`;

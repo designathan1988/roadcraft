@@ -16,6 +16,9 @@ export interface BuildingPreviewInput {
   readonly solid?: boolean;
 }
 
+/** A content digest of everything the ground, the natural ground and the paving read in a rectangle (`BuildingLayer.update`). */
+export type GroundDigestOf = (minX: number, minY: number, maxX: number, maxY: number) => number;
+
 export interface BuildingLayer {
   readonly group: Group;
   readonly triangles: number;
@@ -32,7 +35,9 @@ export interface BuildingLayer {
   /** Rebuilds what is stale. */
   update(doc: RoadDoc, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt, naturalAt?: GroundAt,
     /** The buildings a change of the ground since `sinceKey` reached (found by place, once a key: `digestFor`); null when that cannot be said */
-    groundMovedUnder?: (sinceKey: string) => readonly Building[] | null): boolean;
+    groundMovedUnder?: (sinceKey: string) => readonly Building[] | null,
+    /** A content digest of the ground in a rectangle given without reading its heights (level land: the roads' profiles and flush footways there, `renderer.ts`); null: each building's ground sampled (`layerCells.ts` `groundDigest`). One digest a cell (`layer.ts` `digestOfCell`). */
+    groundDigestOf?: GroundDigestOf | null): boolean;
   setPreview(preview: BuildingPreviewInput | null): void;
   /** "See inside": every building within `radius` of (x, y) is drawn cut open at `level`, its rooms and furniture showing */
   setCutaway(spec: CutawaySpec | null): void;

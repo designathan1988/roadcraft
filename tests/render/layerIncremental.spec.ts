@@ -218,9 +218,11 @@ describe('a cell waiting for its level', () => {
     const { readFileSync } = await import('node:fs');
     const layer = readFileSync('src/render/buildings/layer.ts', 'utf8');
     const land = layer.slice(layer.indexOf('const landCells'), layer.indexOf('const landCells') + 3000);
-    expect(land).toMatch(/const entries = entriesFor\(cell, list, groundAt, groundKey, pavedAt\)/);
+    expect(land).toMatch(/const entries = entriesFor\(cell, list\)/);
     const keep = layer.slice(layer.indexOf('const entriesFor'), layer.indexOf('const entriesFor') + 600);
-    expect(keep).toMatch(/known\.groundKey === groundKey && known\.cut === cut && known\.list\.length === list\.length && known\.list\.every/);
+    // Its ground by the cell's digest; its records by the diary: a cell whose buildings changed has its entries let go (`update`).
+    expect(keep).toMatch(/known\.digest === digest && known\.cut === cut/);
+    expect(layer).toMatch(/for \(const cell of dirty\) \{ cellEntries\.delete\(cell\); askMass\(cell, groundAt\); pendingCells\.add\(cell\); \}/);
     // The cut-open view by every number its entries read, not by identity (a new spec every frame from the wiring, PRD-12).
     const cutOf = layer.slice(layer.indexOf('const cutOf'), layer.indexOf('const cutOf') + 300);
     for (const field of ['c.only', 'c.level', 'c.x', 'c.y', 'c.radius', 'c.view.y, c.view.x']) expect(cutOf).toContain(field);

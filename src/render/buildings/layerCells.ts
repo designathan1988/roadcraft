@@ -20,12 +20,17 @@ import { PART_KINDS, type PartKind } from './kit';
 /** DO NOT work it out again here: every building the ground moved near turned its corners into the world again, 3 s of a 2 */
 export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt): number {
   const box = storedBounds(b, b.module * 2);
+  return boxGroundDigest(box.minX, box.minY, box.maxX, box.maxY, groundAt, pavedAt);
+}
+
+/** The ground of a box sampled as `groundDigest` samples a building's (6 by 6 points): the layer's, from the box its columns keep (`townColumns.ts`). */
+export function boxGroundDigest(minX: number, minY: number, maxX: number, maxY: number, groundAt: GroundAt, pavedAt?: PavedAt): number {
   // To the centimetre, as the text it replaced was; a number, never a string kept per building.
   const out = new Digest();
   for (let i = 0; i <= 5; i++) {
     for (let j = 0; j <= 5; j++) {
-      const x = box.minX + ((box.maxX - box.minX) * i) / 5;
-      const y = box.minY + ((box.maxY - box.minY) * j) / 5;
+      const x = minX + ((maxX - minX) * i) / 5;
+      const y = minY + ((maxY - minY) * j) / 5;
       out.add(Math.round(groundAt(x, y) * 100));
       if (pavedAt) { const p = pavedAt(x, y); out.add(Number.isFinite(p) ? Math.round(p * 100) : NaN); }
     }

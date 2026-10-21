@@ -600,9 +600,13 @@ export function clearBuildingsAfterEdit(ctx: BuildingContext, before: object): n
   return clearBuildingsOnRoads(ctx, delta === null ? null : delta.rects);
 }
 
-/** @rebuild What changed is not known (a map loaded): every building, once. */
-function everyBuilding(ctx: BuildingContext): Building[] {
-  return [...ctx.doc.buildings.all()];
+/** @rebuild What changed is not known (a map loaded): every building, once, one record read at a time: DO NOT copy every record into an array (the whole map held decoded while it is walked, `tableRows.ts`). Its ids taken first: a record written during the walk is one listed already. */
+function* everyBuilding(ctx: BuildingContext): Generator<Building, void, void> {
+  const ids = [...ctx.doc.buildings.idList()];
+  for (const id of ids) {
+    const b = ctx.doc.buildings.get(id);
+    if (b) yield b;
+  }
 }
 
 /** The buildings whose box meets one of `rects`, each once, in the store's order per rectangle. */

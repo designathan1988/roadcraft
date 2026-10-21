@@ -7,6 +7,8 @@ import { ForkMap } from '@core/forkMap';
 import { inheritStoredBounds, storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { BuildingItems } from './items';
+import type { RecordRef } from './recordTable';
+import type { TableRows } from './tableRows';
 import { type BuildingSections, itemsOfSections, sectionsOf } from './sections';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
 import { type Building, type BuildingId, asBuildingId, settleBuilding } from './types';
@@ -88,6 +90,18 @@ export class BuildingStore {
     return this.items.size;
   }
 
+  /** Where a worker reads a building's record without decoding it on the page (`recordTable.ts` `RecordRef`): its table's buffer and row while the record is the table's own; null for one written since (read it and take `refOf`). */
+  tableRef(id: BuildingId): RecordRef | null {
+    if (this.items instanceof BuildingItems) return this.items.tableRef(id);
+    return null;
+  }
+
+  /** The record table the map was opened from (null: none, every record written here): its columns are read without decoding a record. */
+  get table(): TableRows | null {
+    if (this.items instanceof BuildingItems) return this.items.table;
+    return this.below?.table ?? null;
+  }
+
   get(id: BuildingId): Building | undefined {
     return this.items.get(id);
   }
@@ -98,6 +112,11 @@ export class BuildingStore {
 
   all(): IterableIterator<Building> {
     return this.items.values();
+  }
+
+  /** Every building's id, in the order of `all()`, no record decoded (the table's id column, then the ids written after it). */
+  idList(): IterableIterator<BuildingId> {
+    return this.items.keys();
   }
 
   /** The buildings whose box (or anchor) may reach the rectangle, in the order of `all()` */

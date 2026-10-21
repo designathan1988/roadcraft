@@ -22,7 +22,8 @@ export class TableRows implements ReadonlyMap<BuildingId, Building> {
 
   constructor(buffer: ArrayBufferLike) {
     this.table = new RecordTable(buffer);
-    this.reader = this.table.reader();
+    // Its shared members held weakly: the table lives as long as the map, and a walk of the map would leave every one decoded.
+    this.reader = this.table.reader(true);
     const n = this.table.rows, ids = this.table.ids;
     const order = new Uint32Array(n);
     for (let i = 0; i < n; i++) order[i] = i;
@@ -70,6 +71,13 @@ export class TableRows implements ReadonlyMap<BuildingId, Building> {
     this.alive[row] = new WeakRef(b);
     this.onRead?.(b);
     return b;
+  }
+
+  /** How many rows' records are decoded and held somewhere now (the LRU of `get` among them): what the table saves is what is not. */
+  held(): number {
+    let n = 0;
+    for (const ref of this.alive) if (ref?.deref() !== undefined) n++;
+    return n;
   }
 
   get(id: BuildingId): Building | undefined {

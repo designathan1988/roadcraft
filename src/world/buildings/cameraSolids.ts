@@ -1,5 +1,6 @@
 import { m } from '@world/units';
 import { isMass, roofRise, volumeElevation, volumeHeight } from './geometry';
+import { IdSlots, grown } from '@core/idSlots';
 import { BuildingStore } from './store';
 import { type Building, type BuildingId, volumeTop } from './types';
 
@@ -13,10 +14,12 @@ const REACH = m(2);
 const CELL = m(40);
 
 /** DO NOT go back to an object per volume and a set per building: 29 MB of a city of 5 400. */
-const STRIDE = 13;
+const STRIDE = 14;
 const S_BX = 0, S_BY = 1, S_COS = 2, S_SIN = 3, S_X0 = 4, S_Y0 = 5, S_X1 = 6, S_Y1 = 7, S_FOOT = 8, S_TOP = 9;
 /** What the volume surely hides (`forEachOccluder`): the bottom and top of its walls, world height, its plan inset by `S_INSET`; NaN when it hides nothing for sure (a building with voids, a volume of its own outline). */
 const S_WALL0 = 10, S_WALL1 = 11, S_INSET = 12;
+/** The slot of the next solid volume of the same building (-1: its last): a building's volumes a chain from its first (`SolidFiling.first`). */
+const S_NEXT = 13;
 /** How far the occluder's plan is drawn in from the volume's: the reliefs pushed into its faces, and a margin. */
 const OCCLUDER_MARGIN = m(0.6);
 const PAGE_BITS = 12;
@@ -122,9 +125,8 @@ export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: 
   let buildings: BuildingStore | null = null;
   const read = BuildingStore.cursor();
   let groundSeen = -1;
-  /** Buildings to file again at the next ask, or the whole town; those whose floor the ground moved under, apart. */
+  /** Buildings to file again at the next ask (named by the diary, or the ground moved under them), or the whole town. */
   const pending = new Set<BuildingId>();
-  const groundMoved = new Set<BuildingId>();
   let whole = true;
   let version = 0;
   return {
@@ -142,7 +144,7 @@ export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: 
         if (rects === null) whole = true;
         else if (!whole) {
           // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
-          for (const b of town.nearAny(rects, reach, (b, r) => overlaps(boxOf(b), r))) { pending.add(b.id); groundMoved.add(b.id); }
+          for (const b of town.nearAny(rects, reach, (b, r) => overlaps(boxOf(b), r))) pending.add(b.id);
         }
         groundSeen = ground.version;
       }
@@ -160,14 +162,11 @@ export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: 
       } else {
         for (const id of pending) {
           const b = buildings?.get(id);
-          // Named by the diary again with the record filed and no ground moved under it: as it stands.
-          if (b && filing.recordOf(id) === b && !groundMoved.has(id)) continue;
           filing.remove(id);
           if (b) filing.add(b, floorAt(b));
         }
       }
       pending.clear();
-      groundMoved.clear();
       return filing;
     },
   };
@@ -177,16 +176,39 @@ const overlaps = (a: Rect, b: Rect): boolean => a[0] <= b[2] && a[2] >= b[0] && 
 
 const cellKey = (cx: number, cy: number): number => (cx + 4096) * 8192 + (cy + 4096);
 
+/** The cells a volume's world box grown by the reach touches (its numbers at `o` in `page`), each told once. */
+function forEachCellOf(page: Float64Array, o: number, visit: (key: number) => void): void {
+  const bx = page[o + S_BX]!, by = page[o + S_BY]!, cos = page[o + S_COS]!, sin = page[o + S_SIN]!;
+  const x0 = page[o + S_X0]!, y0 = page[o + S_Y0]!, x1 = page[o + S_X1]!, y1 = page[o + S_Y1]!;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let corner = 0; corner < 4; corner++) {
+    const lx = corner === 0 || corner === 3 ? x0 : x1;
+    const ly = corner < 2 ? y0 : y1;
+    const wx = bx + lx * cos - ly * sin;
+    const wy = by + lx * sin + ly * cos;
+    minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
+    minY = Math.min(minY, wy); maxY = Math.max(maxY, wy);
+  }
+  for (let cx = Math.floor((minX - REACH) / CELL); cx <= Math.floor((maxX + REACH) / CELL); cx++) {
+    for (let cy = Math.floor((minY - REACH) / CELL); cy <= Math.floor((maxY + REACH) / CELL); cy++) visit(cellKey(cx, cy));
+  }
+}
+
 /** The solid volumes filed by cell (their slots in `SolidPages`), each building's taken out and filed again on its own. */
 class SolidFiling implements CameraSolids {
   private readonly pages = new SolidPages();
   private readonly cells = new Map<number, number[]>();
-  /** Each building's record filed, its volumes' slots and the cells they are filed in. */
-  private readonly filed = new Map<BuildingId, { readonly b: Building; readonly slots: readonly number[]; readonly keys: readonly number[] }>();
+  /** DO NOT keep each building's record and arrays of its slots and cells (a `Map` entry, a record held decoded and two arrays a building of the map): its first volume's slot by its id, in a column (`IdSlots`), the rest chained in the pages (`S_NEXT`), its cells worked out again from its volumes' boxes when it is taken out. */
+  private readonly filedIds = new IdSlots(1024);
+  private first = new Int32Array(16);
+
+  constructor() {
+    this.filedIds.onGrow = (n) => { this.first = grown(this.first, n); };
+  }
 
   clear(): void {
     this.cells.clear();
-    this.filed.clear();
+    this.filedIds.clear();
     this.pages.clear();
   }
 
@@ -194,8 +216,7 @@ class SolidFiling implements CameraSolids {
   add(b: Building, foot: number): void {
     const cos = Math.cos(b.rotation);
     const sin = Math.sin(b.rotation);
-    const slots: number[] = [];
-    const keys: number[] = [];
+    let head = -1, last = -1;
     // A building carved by a void or an intersection hides nothing for sure: its masses' union is not its solid.
     const carved = b.volumes.some((v) => !v.open && !isMass(v));
     for (const v of b.volumes) {
@@ -213,48 +234,40 @@ class SolidFiling implements CameraSolids {
       page[o + S_WALL0] = solidWalls ? foot + Math.max(0, volumeElevation(b, v, v.base)) : NaN;
       page[o + S_WALL1] = solidWalls ? foot + volumeElevation(b, v, volumeTop(v)) : NaN;
       page[o + S_INSET] = inset;
-      slots.push(solid);
+      page[o + S_NEXT] = -1;
+      if (last >= 0) this.pages.page(last)[at(last) + S_NEXT] = solid; else head = solid;
+      last = solid;
       // The world box of the volume grown by the reach, filed in every cell it touches.
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (let corner = 0; corner < 4; corner++) {
-        const lx = corner === 0 || corner === 3 ? x0 : x1;
-        const ly = corner < 2 ? y0 : y1;
-        const wx = b.x + lx * cos - ly * sin;
-        const wy = b.y + lx * sin + ly * cos;
-        minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
-        minY = Math.min(minY, wy); maxY = Math.max(maxY, wy);
-      }
-      for (let cx = Math.floor((minX - REACH) / CELL); cx <= Math.floor((maxX + REACH) / CELL); cx++) {
-        for (let cy = Math.floor((minY - REACH) / CELL); cy <= Math.floor((maxY + REACH) / CELL); cy++) {
-          const k = cellKey(cx, cy);
-          const list = this.cells.get(k);
-          if (list) list.push(solid);
-          else this.cells.set(k, [solid]);
-          keys.push(k);
-        }
-      }
+      forEachCellOf(page, o, (k) => {
+        const list = this.cells.get(k);
+        if (list) list.push(solid);
+        else this.cells.set(k, [solid]);
+      });
     }
-    this.filed.set(b.id, { b, slots, keys });
-  }
-
-  /** The record a building was filed as. */
-  recordOf(id: BuildingId): Building | undefined {
-    return this.filed.get(id)?.b;
+    if (head < 0) return;
+    // Its slot taken first: taking it may grow the column (`onGrow`).
+    const filed = this.filedIds.take(b.id);
+    this.first[filed] = head;
   }
 
   /** The building's solids taken out of their cells. */
   remove(id: BuildingId): void {
-    const known = this.filed.get(id);
-    if (!known) return;
-    for (const k of known.keys) {
-      const list = this.cells.get(k);
-      if (!list) continue; // a cell two of its volumes are filed in, already emptied of them
-      const kept = list.filter((slot) => !known.slots.includes(slot));
-      if (kept.length) this.cells.set(k, kept);
-      else this.cells.delete(k);
+    const filed = this.filedIds.get(id);
+    if (filed < 0) return;
+    for (let slot = this.first[filed]!; slot >= 0;) {
+      const page = this.pages.page(slot), o = at(slot);
+      forEachCellOf(page, o, (k) => {
+        const list = this.cells.get(k);
+        if (!list) return;
+        const i = list.indexOf(slot);
+        if (i >= 0) list.splice(i, 1);
+        if (list.length === 0) this.cells.delete(k);
+      });
+      const next = page[o + S_NEXT]!;
+      this.pages.give(slot);
+      slot = next;
     }
-    for (const slot of known.slots) this.pages.give(slot);
-    this.filed.delete(id);
+    this.filedIds.delete(id);
   }
 
   forEachIn(x0: number, y0: number, x1: number, y1: number, visit: SolidVisit): void {

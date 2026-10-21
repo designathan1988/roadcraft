@@ -950,6 +950,15 @@ export function createSceneRenderer(
 
   /** The footway's rise over the carriageway at a point (`footwayRiseAt`), kerbed before any network is built. */
   const footwayRiseHere = (x: number, y: number): number => (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE);
+  /** THE GROUND OF A BOX ON LEVEL LAND, DIGESTED WITHOUT READING A HEIGHT (`layer.ts` `digestOfCell`, one a cell of buildings): there the ground is the level cut and filled to the roads and to the buildings' platforms, so its content is the level, the roads' profiles a point of the box can read (`RoadElevation.digest`), the flush footways (`packFlush`) and the platforms over it (`TownPads.cut`). Content, never a serial: the masses and floors kept on disk under it are found again only on the same ground. */
+  const levelGroundDigest = (minX: number, minY: number, maxX: number, maxY: number): number => {
+    const out = new Digest().add(Math.round(builtGroundAt(minX, minY) * 100)).add(elevation?.digest(minX, minY, maxX, maxY) ?? 0);
+    const flush = worldNet ? packFlush(worldNet, [[minX, minY, maxX, maxY]]).data : null;
+    if (flush) out.addAll(flush.rects).addAll(flush.lineEnds).addAll(flush.lines).addPlain(flush.roads);
+    const pads = sitesGraded.pads?.cut([[minX, minY, maxX, maxY]]);
+    if (pads) out.add(pads.apron).addPlain(pads.pads);
+    return out.value();
+  };
   /** See `SceneHandle.pavedHeightAt` (`world/paving.ts`). */
   const pavedHeightAt: PavingSource = Object.assign((x: number, y: number): number => {
     if (!elevation || !elevation.has(GROUND_ONLY)) return NaN;
@@ -2833,7 +2842,7 @@ export function createSceneRenderer(
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
         performance.mark('frame:buildings-start');
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
-          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
+          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))), levelLand ? levelGroundDigest : null)) shadowMoved = true;
         // Another frame while they land, nothing more: what lands stirs the stores itself (childadded, the door, `update`'s answer).
         if (buildings.pending) askDraw();
         performance.mark('frame:buildings-end');
