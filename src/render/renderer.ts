@@ -71,7 +71,8 @@ import { DEFAULT_OPTIMIZATIONS, qualityOptionsDiffer, withOptimizations, type Op
 import { createOptimizer } from './optimizationsApply';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
-import { ROAD_INPUT_RESIDENCY, SurfaceInputs } from './roadSurfaceInputs';
+import { ROAD_INPUT_RESIDENCY, SurfaceInputs, TILE, TILE_ORIGIN } from './roadSurfaceInputs';
+import { NetworkFarRoads } from './networkFarRoads';
 import { roadProgramStandIns } from './roadProgramStandIns';
 import { forgetDerivedKeys, forgetDerivedKinds, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { DerivedWriterLane } from './derivedWriterLane';
@@ -233,6 +234,8 @@ export interface SceneHandle {
   shadowStats(): ReturnType<SunCascades['takeStats']> | null;
   /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
   buildingLevels(): Readonly<Record<string, number>>;
+  /** What the opening still waits for (`draw`'s reveal): asked by the probes, never each frame. */
+  openingState(): { readonly roadsIn: boolean; readonly coarsePending: boolean; readonly viewPending: boolean; readonly treesStarted: boolean; readonly treesPending: boolean; readonly programs: string; readonly worked: number; readonly worldBusy: boolean; readonly fillPending: boolean };
   /** Which renderer draws the frame (`gpu/backendChoice.ts`): WebGL, or three's WebGPU renderer with `?gpu=webgpu` (`MIGRACAO-WEBGPU.md`). */
   readonly backend: 'three-webgl' | 'three-webgpu';
   /** The same view drawn by the WebGL and the WebGPU renderer and the pictures compared (`gpu/webgpuView.ts`, `scripts/look.mjs` "compare"). */
@@ -381,6 +384,8 @@ const SURFACE_SETS: readonly ReadonlySet<RoadStructure>[] = [GROUND_ONLY, new Se
 
 /** How far past a scoped opening's view its roads are solved (`buildWorld`, `SolveScope`): a tile meeting the view (76.8 m), what a tile reads round it (`SURFACE_READ_REACH`) and a junction or two whose heights reach in. `tests/world/elevationScope.spec.ts` proves every tile of the view reads the whole solve's heights with it, and that half of it does not (the small city, 2026-10-21). */
 const OPENING_SOLVE_MARGIN = m(320);
+/** The far roads' cells made from the network at a scoped opening (`networkFarRoads.ts`): a road block's side (`roadSurfaces.ts` CHUNK tiles). */
+const FAR_ROAD_CELL = 8 * TILE;
 /** The roads the opening's solve left, solved a share a frame once the town is shown (`completeSolve`): ~15-20 ms of a frame on level ground (the 16,708 roads of a city of the largest radius: 1.5 roads solved a road taken, ~0.04 ms each, Node, 2026-10-21). */
 const SOLVE_SHARE = 300;
 /** Level ground (a new map's `RELIEF_FLAT`, no stamp): every station's ground is the same, nothing is read under a road (`FLAT_GROUND`). A stroke or a height stamp makes it real ground again. */
@@ -725,6 +730,9 @@ export function createSceneRenderer(
   /** A road just built drawn at once (`roadStandIn.ts`) until the world's build of its commit lands. */
   const roadStandIn = new RoadStandIn();
   world.add(roadStandIn.group);
+  /** Every road of a large city at its far level from the opening's first frame, made from the network (`networkFarRoads.ts`): the fill's detailed blocks replace it when they land. */
+  const networkFar = new NetworkFarRoads();
+  world.add(networkFar.group);
   /** The roads the tool just laid (`flashRoads`: the player's road alone, never the street it meets split at the new junction), stood in once their heights are solved. */
   const pendingStandIn: SegmentId[] = [];
 
@@ -1939,6 +1947,13 @@ export function createSceneRenderer(
       // On land that has not moved, from the last solve
       : buildRoadElevation(net, groundAt, from, roadStations.current, groundMoved, solveScope);
     performance.mark('world:solved');
+    // A scoped opening: every road of the map drawn at once at its far level, from the network, the tiles the opening builds in detail cut out (`openingWithin`: every tile meeting the view's square).
+    if (opening) {
+      const lo = (v: number): number => Math.ceil((v - TILE_ORIGIN) / TILE - 1) * TILE + TILE_ORIGIN;
+      const hi = (v: number): number => (Math.floor((v - TILE_ORIGIN) / TILE) + 1) * TILE + TILE_ORIGIN;
+      networkFar.request(net, elevation, terrain.renderedHeightAt, FAR_ROAD_CELL, TILE_ORIGIN,
+        [lo(centre.x - openingHalf), lo(centre.y - openingHalf), hi(centre.x + openingHalf), hi(centre.y + openingHalf)]);
+    }
     solvedState = net.state;
     roadStations.used();
     measureHitch('hitch:road-edit/elevation', started);
@@ -2028,6 +2043,8 @@ export function createSceneRenderer(
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     mapRoadsIn = true;
+    // The fill after a scoped opening landed (every tile built, `openingWithin` gone): its blocks and their far levels stand for every road now.
+    if (!openingBuild && openingWithin === null) networkFar.clear();
     performance.mark('world:roads');
     roads.adopt();
     world.add(roads.group);
@@ -2189,7 +2206,7 @@ export function createSceneRenderer(
   const switchedOff = (on: EffectSwitches): (Object3D | null | undefined)[] => [
     ...(on.terrain ? [] : terrain.meshes),
     ...(on.water || !on.terrain ? [] : waterMeshes()),
-    ...(on.roads ? [] : [roads?.group, details?.group, roadStandIn.group]),
+    ...(on.roads ? [] : [roads?.group, details?.group, roadStandIn.group, networkFar.group]),
     ...(on.buildings ? [] : [buildings.group]),
     ...(on.vegetation ? [] : [...[coverCells, natureCards, natureForest, paintedForest, plantedForest].map((plants) => plants?.group), ...(gardens?.meshes ?? [])]),
     ...(on.furniture ? [] : [furniture.group, furniture.grass]),
@@ -2684,6 +2701,10 @@ export function createSceneRenderer(
     buildingLevels() {
       return buildings.levels();
     },
+    openingState() {
+      return { roadsIn: roads !== null && mapRoadsIn, coarsePending: buildings.coarsePending, viewPending: buildings.viewPending, treesStarted: natureTreesStarted,
+        treesPending: natureTreesPending, programs: openingPrograms, worked: reveal.worked, worldBusy: worldJob !== null, fillPending: openingFillPending };
+    },
     beginLoad() {
       reveal.begin();
       programs.begin();
@@ -2692,6 +2713,7 @@ export function createSceneRenderer(
       revealedPrograms = false;
       openingBuild = scopeNextOpening;
       openingFillPending = openingBuild;
+      networkFar.clear();
       scopeNextOpening = false;
       mapOpened = true;
       mapRoadsIn = false;
@@ -3460,7 +3482,8 @@ export function createSceneRenderer(
         // where a pixel cannot tell them from what stands.
         const mapView = !rig.perspective && rig.viewport.zoom < 1;
         // THE MAP'S OWN ROADS (`mapRoadsIn`), not whatever stands: DO NOT take the last city's for this one's - the curtain fell on a town of buildings over grass, no street drawn (2026-10-21).
-        const roadsIn = roads !== null && mapRoadsIn;
+        // And every road past the opening's view at its far level (`networkFar`): DO NOT show a map whose streets stop at the view's edge.
+        const roadsIn = roads !== null && mapRoadsIn && !networkFar.pending;
         const whole = roadsIn && !buildings.coarsePending && (mapView || !buildings.viewPending)
           && natureTreesStarted && !natureTreesPending;
         // DO NOT draw the unseen frame before the town's programs are built: drawn first, each program was built at its first use, one after the other, in that one frame (4.5 s of the opening's 62, 2026-10-16); asked together, the driver builds them in parallel (KHR_parallel_shader_compile).
@@ -3641,6 +3664,7 @@ export function createSceneRenderer(
       gpuView?.dispose();
       void comparer?.then((view) => { if (view !== gpuView) view.dispose(); });
       roadTiles.dispose();
+      networkFar.dispose();
       groundWorkers.dispose();
       tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the previews and the effects too
