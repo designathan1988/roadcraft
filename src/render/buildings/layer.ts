@@ -474,6 +474,8 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
     (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
   levels.changed = lodChanged;
+  // The base over each plate's square (the top level, `massBase.ts`): asked first, kept for good, drawn wherever nothing finer is.
+  levels.landBase = (key, base) => { massCells.landBase(key, base); chooseNow(); };
   // Behind the curtain a tile or a plate out of the view is not asked: the workers make what the opening's picture draws first (`coarsePending`), the rest nearest first once it is shown.
   // One let go for the budget (`massBudget`) waits for the view to meet it again: DO NOT ask it back at once, to be let go again.
   levels.deferred = (key) => (hiddenNow || massCells.evicted(key)) && !massCells.levelSeen(key);
@@ -703,7 +705,8 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
     },
     get coarsePending() {
       // The levels in the view's frustum only: DO NOT hold the opening for every plate of the map (a city of 25,000 buildings waited for nine plates of 2 km, 16 s of the workers, when its view drew none of them, step-25k 2026-10-21); those out of view come after the curtain, nearest first.
-      return requests.massing > 0 || massCells.waitingInView > 0;
+      // And every base of the map (`massBase.ts`): the town has no hole once they are in, whatever the view does after the curtain (the map pulled back to at once showed its corners empty for seconds, step-25k 2026-10-21). Their floors are the masses' that follow.
+      return requests.massing > 0 || massCells.waitingInView > 0 || massCells.basesWaiting > 0;
     },
     get viewPending() {
       // The cells the view wants in detail (near, in its frustum, `massCells.nearKeys`) whose detail has not landed.
@@ -1055,6 +1058,10 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
     get residentBytes() {
       return resident.total;
     },
+    census() {
+      massCells.syncBases();
+      return massCells.census();
+    },
     levels() {
       // Asked, never each frame (the per-frame log of this was the page's garbage): each cell of the town by the level chosen for it, the level shown, and why it is below its detail.
       const count = { cells: 0, chosenDetail: 0, chosenFacade: 0, chosenFar: 0, shownDetail: 0, shownFacade: 0, shownNone: 0, notLanded: 0, heldFar: 0, heldCoarse: 0 };
@@ -1068,12 +1075,14 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
         if (heldFar.has(key)) count.heldFar++;
         if (heldCoarse.has(key)) count.heldCoarse++;
       }
-      return { ...count, scale: frame.scale, budgetTriangles: frame.budget, chosenTriangles: chosenTriangles(), residentBytes: resident.total, detailBudgetBytes: budget, roomBytes: room() };
+      return { ...count, evictions: massCells.books()['massEvictions'] ?? 0, scale: frame.scale, budgetTriangles: frame.budget, chosenTriangles: chosenTriangles(), residentBytes: resident.total, detailBudgetBytes: budget, roomBytes: room() };
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, shadowTexel) {
       partView.x = eyeX; partView.y = eyeY; partView.z = eyeZ; partView.pxAtMetre = pxAtMetre; partView.orthoPx = orthoPx; partView.shadowTexel = shadowTexel;
       // The facade cells the view draws in the batched kinds, and no others (`farParts.ts`): one draw a kind, its instances added and taken out here.
       farParts.sync(facadeParts, (key) => levelShown(key) === 'facade');
+      // The bases under exactly the cells nothing finer draws this frame (`massCells.ts` syncBases).
+      massCells.syncBases();
       // A kind whose pieces span under a pixel where its nearest cell stands is not drawn: the far band keeps its walls, not its noise.
       farParts.view(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx);
       // Drawn while its cell is drawn in detail (the masses stand for it from afar, `massCells.ts`), each kind by its error on the screen.

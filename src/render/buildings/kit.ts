@@ -162,6 +162,8 @@ export interface BuildingKit {
   readonly finishTone: Readonly<Record<Finish, readonly [number, number, number]>>;
   /** Buildings seen from afar, their windows drawn by the shader (`massing.ts`, `massingMaterial.ts`). */
   readonly massing: MeshStandardMaterial;
+  /** The base's, the top level's (`massBase.ts`): each face shaded by its slope, a colour a triangle. */
+  readonly massingBase: MeshStandardMaterial;
   /** The facade level (L1): the shells with their openings drawn by the shader, every finish (`facadeLevel.ts`). */
   readonly facade: MeshStandardMaterial;
   /** Parts that cast shadows; the small ones do not, to spare the shadow pass. */
@@ -580,11 +582,12 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };
   const massing = createMassingMaterial({ roomsAwake, massingNight, roomDaylight });
+  const massingBase = createMassingMaterial({ roomsAwake, massingNight, roomDaylight }, true);
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
   // The facade level stands past the detail's reach (`massCells.ts` FINE_PIXELS, ~280 m at 1080p), where a finish's 15 cm features are half a pixel: its walls drawn by the shell's far program, its windows, frames and panes as they are. DO NOT give it the near program: its maps, normal frame and wear weighed on every wall of every facade cell of the view for texture no pixel resolved.
   const facade = createFacadeMaterial(createShellMaterial({ far: true }, anisotropy), panes, { roomsAwake, massingNight, roomDaylight });
-  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, farShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing]);
+  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, farShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBase]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
@@ -650,6 +653,7 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
     dimShell,
     dimParts,
     massing,
+    massingBase,
     facade,
     finishTone: finishAlbedo(),
     // Glass, doors and shutters close the openings for the sun

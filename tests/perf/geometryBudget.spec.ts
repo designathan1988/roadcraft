@@ -21,7 +21,7 @@ import { HEIGHT, WIDTH, openCityMap, setView, type City, type View } from '../su
 const OPEN: View = [0, 0, 1.8, 45, 79];
 /** The tier toured: medium, where the masses out of the view go for the budget (160 MB) on this city's tour; ultra holds it whole under its own. */
 const TIER = (process.env['BUDGET_TIER'] ?? 'medium') as QualityLevel;
-const UNBOUNDED = { totalMB: Infinity, massesMB: Infinity, viewCellsShare: 1 } as const;
+const UNBOUNDED = { totalMB: Infinity, massesMB: Infinity, viewCellsShare: 1, roadsNearMB: Infinity } as const;
 /** Frames a view may take to stand; it stands once what is drawn in it is the same `STILL` frames in a row and the world's job is done. */
 const MOST = 240;
 const STILL = 8;

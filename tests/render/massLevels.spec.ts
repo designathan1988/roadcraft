@@ -278,13 +278,16 @@ describe('the tiles and plates asked of the workers', () => {
     levels.touch('-1,0', entries('e'));
     levels.flush(env);
     const keys = asked.map((a) => `${a.kind} ${a.key}`).sort();
-    expect(keys).toEqual(['massPlate p:0,0', 'massPlate p:1,0', 'massTile t:-1,0', 'massTile t:0,0', 'massTile t:1,0'].sort());
+    // And the base over each plate's square, asked at once (`massBase.ts`).
+    expect(keys).toEqual(['massBase b:0,0', 'massBase b:1,0', 'massPlate p:0,0', 'massPlate p:1,0', 'massTile t:-1,0', 'massTile t:0,0', 'massTile t:1,0'].sort());
     // A tile is made of its cells' buildings; a plate of its tiles'.
     expect(named(asked.find((a) => a.key === 't:0,0')!.entries)).toEqual(['a', 'b', 'c']);
     expect(named(asked.find((a) => a.key === 'p:0,0')!.entries)).toEqual(['a', 'b', 'c', 'e']);
-    expect(levels.asking).toBe(5);
+    expect(named(asked.find((a) => a.key === 'b:0,0')!.entries)).toEqual(['a', 'b', 'c', 'e']);
+    expect(levels.asking).toBe(7);
     answer();
     expect(levels.asking).toBe(0);
+    // The bases land by their own way (`landBase`).
     expect(landed.length).toBe(5);
 
     asked.length = 0;
@@ -293,18 +296,18 @@ describe('the tiles and plates asked of the workers', () => {
     // The same buildings on the same ground (the town filed again): nothing.
     levels.touch('0,0', entries('a', 'b'));
     levels.flush(env);
-    expect(asked.map((a) => a.key).sort()).toEqual(['p:1,0', 't:1,0']);
+    expect(asked.map((a) => a.key).sort()).toEqual(['b:1,0', 'p:1,0', 't:1,0']);
     // Changed again before it came: the older job cancelled, the newer one asked.
     levels.touch('5,0', entries('d'));
     levels.flush(env);
-    expect(levels.asking).toBe(2);
+    expect(levels.asking).toBe(3);
 
     // Its last building gone: the tile and plate are removed, not asked.
     asked.length = 0;
     levels.touch('5,0', null);
     levels.flush(env);
     expect(asked).toEqual([]);
-    expect(removed.sort()).toEqual(['p:1,0', 't:1,0']);
+    expect(removed.sort()).toEqual(['b:1,0', 'p:1,0', 't:1,0']);
     expect(levels.asking).toBe(0);
   });
 
@@ -316,9 +319,9 @@ describe('the tiles and plates asked of the workers', () => {
     levels.touch('0,0', entries('a'));
     levels.touch('5,0', entries('b'));
     levels.flush(env);
-    // The plates asked, the tiles only planned: a plate stands for them from afar.
-    expect(asked.map((a) => a.key).sort()).toEqual(['p:0,0', 'p:1,0']);
-    expect(planned.sort()).toEqual(['p:0,0', 'p:1,0', 't:0,0', 't:1,0']);
+    // The plates and the bases asked, the tiles only planned: a plate stands for them from afar.
+    expect(asked.map((a) => a.key).sort()).toEqual(['b:0,0', 'b:1,0', 'p:0,0', 'p:1,0']);
+    expect(planned.sort()).toEqual(['b:0,0', 'b:1,0', 'p:0,0', 'p:1,0', 't:0,0', 't:1,0']);
     answer();
     asked.length = 0;
     levels.pump(env);
@@ -402,7 +405,8 @@ describe('a tile or a plate drawn before some of its buildings came in', () => {
     expect(levels.outdated(plateOf(0, 0))).toBe(true);
     levels.flush({ groundAt: flat, naturalAt: flat });
     expect(levels.outdated(plateOf(0, 0))).toBe(true);
-    answers.shift()!({ mass: null } as CellResult);
+    // Its base and its plate answered (the base is asked first, `massBase.ts`).
+    for (const done of answers.splice(0)) done({ mass: null } as CellResult);
     expect(levels.outdated(plateOf(0, 0))).toBe(false);
   });
 });

@@ -34,6 +34,10 @@ export interface BlockLevels {
   bring?: (() => Promise<GeometryArrays | null>) | null;
   /** Whether `bring` is under way: the block shows the full level when it lands. */
   bringing?: boolean;
+  /** The last look it met the view at (`roadResidency.ts` updateRoadLevels): the least recently seen go first past the budget. */
+  seenAt?: number;
+  /** Its full level's bytes on the GPU as last measured: what bringing it near costs. */
+  nearBytes?: number;
 }
 
 export const LOD_KEY = 'lod';
