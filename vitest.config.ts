@@ -49,8 +49,10 @@ export default defineConfig({
       '**/lots/**', '**/public/**', '**/index.html', '**/tests/fixtures/**', '**/tests/fuzz/fixtures/**',
       '**/src/**/*.json',
     ],
-    // A CAP on the workers, not the default of one per hardware thread.
-    maxWorkers: Math.min(SHARE_WORKERS, Number(process.env.VITEST_MAX_WORKERS ?? SHARE_WORKERS)),
+    // A CAP on the workers, not the default of one per hardware thread; two of the share left to the threads the specs start themselves
+    // (the road tiles', the simulation's): DO NOT fill the share with spec workers, the job's hard cap throttled the whole tree and a
+    // different heavy spec timed out each run (3-5 s alone, past 10 s in the suite; 6 workers: 774 s of tests in 171 s, 4: 530 s in 174 s, 2026-10-21).
+    maxWorkers: Math.min(Math.max(1, SHARE_WORKERS - 2), Number(process.env.VITEST_MAX_WORKERS ?? SHARE_WORKERS)),
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
