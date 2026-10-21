@@ -422,7 +422,7 @@ export function createSceneRenderer(
   /** The player's own settings on the tier (the options panel); the tier's own when absent. */
   initialSettings?: QualitySettings,
 ): SceneHandle {
-  /** Something landed or asked for a frame since the last shadow pass: the casters kept still in the sun's stores may have changed (`ShadowPassInput.still`). */
+  /** Something landed since the last shadow pass that the casters' signature cannot see (a texture, a program): the sun's stores are not used for that frame (`ShadowPassInput.still`). What comes into the scene or leaves it, the signature sees (`casterSignature`). */
   let castersStirred = true;
   const stir = (): void => { castersStirred = true; };
   const onAssetsReady = (): void => { stir(); askDraw(); };
@@ -437,9 +437,6 @@ export function createSceneRenderer(
   const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.castersMoving() ?? false);
   /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
   let castersMoved = false;
-  /** The camera at the last shadow pass: a view moved re-culls the instanced layers, the casters kept still are not those (`ShadowPassInput.still`). */
-  const shadowView = new Matrix4(), shadowProjection = new Matrix4();
-  let shadowScale = Number.NaN;
   /** Whether the opening's quality draws through the post chain: its canvas then takes only the output pass, so it is made without multisampling or depth (the chain's scene target has its own). */
   const canvasForChain = (initialSettings ?? QUALITY[initialQuality === 'auto' ? 'high' : initialQuality]).postProcessing;
   const renderer = new WebGLRenderer({
@@ -511,18 +508,15 @@ export function createSceneRenderer(
       object.addEventListener('childremoved', onChildRemoved);
     });
   };
-  // What comes into the scene or leaves it changes what casts: the sun's stores are not used for that frame (`castersStirred`).
-  // And through the one door into the drawn scene: held off the drawn layers until its programs are built (`uploads.ts` gateUntilBuilt).
-  // DO NOT stir the sun's stores for what comes or goes under a mover (people, vehicles, trains): never in a store, drawn over it every frame (`sunCascades.ts` movers); people walking into view stirred them every frame of a still view (`__stillLog`, 2026-10-17).
+  // What comes into the scene or leaves it is seen by the casters' signature at the next shadow pass (`casterSignature`): the sun's stores thrown away only if what casts changed.
+  // DO NOT throw the stores away for every arrival (`stir`): a large city streams cells, parts and plants in for seconds after each move, and every cascade was drawn whole at every frame meanwhile (11 M triangles a frame; the cascades' stats, 2026-10-20: 86 of 86 passes without a store).
+  // And through the one door into the drawn scene: held off the drawn layers until its programs are built (`uploads.ts` gateUntilBuilt), its layers in the signature.
   const onChildAdded = (event: { child: Object3D; target?: Object3D }): void => {
-    const casts = !inMover(event.target);
-    if (casts) stir();
     watchShadowDepth(event.child);
-    // Out of the door into the drawn layers: a caster from now on (`uploads.ts` gateUntilBuilt).
-    gateUntilBuilt(event.child, casts ? stir : undefined);
+    // Out of the door into the drawn layers: a caster from now on, drawn into the next frame's shadow (`uploads.ts` gateUntilBuilt). What comes under a mover (people, vehicles, trains) is drawn over the stores every frame (`sunCascades.ts` movers).
+    gateUntilBuilt(event.child, inMover(event.target) ? undefined : () => askDraw());
   };
-  const onChildRemoved = (event: { child: Object3D; target?: Object3D }): void => {
-    if (!inMover(event.target)) stir();
+  const onChildRemoved = (event: { child: Object3D }): void => {
     event.child.traverse((o) => noteSway(o, false));
   };
   /** The roots of what moves (`environment.setMovers`): what is under them is drawn over the stores, never kept in them. */
@@ -565,6 +559,15 @@ export function createSceneRenderer(
       const g = mesh.geometry;
       mix(mesh.id);
       mix(g.id);
+      // Its programs: a level drawn with another material casts as it draws (three numbers every material, r186 `Material.id`; its typings leave it out).
+      const material = mesh.material as unknown as { id: number } | { id: number }[];
+      if (Array.isArray(material)) for (const one of material) mix(one.id); else mix(material.id);
+      mix((mesh.customDepthMaterial as unknown as { id: number } | undefined)?.id ?? -1);
+      // Its layers: a mesh held at the door until its programs are built is visible and casts nothing (`uploads.ts` gateUntilBuilt).
+      mix(mesh.layers.mask);
+      // Where it stands (a caster moved is another shadow), to a hundredth of a unit.
+      const at = mesh.matrixWorld.elements;
+      mix(Math.round(at[12]! * 100)); mix(Math.round(at[13]! * 100)); mix(Math.round(at[14]! * 100));
       mix(mesh.count ?? -1);
       mix(mesh.instanceMatrix?.version ?? -1);
       mix(g.drawRange.start);
@@ -915,7 +918,8 @@ export function createSceneRenderer(
   let waitLook: ReturnType<typeof setTimeout> | null = null;
   const lookAgain = (): void => {
     if (waitLook !== null) return;
-    waitLook = setTimeout(() => { waitLook = null; onAssetsReady(); }, WAIT_LOOK_MS);
+    // A frame to look again, nothing landed by it: what the workers send back stirs the stores as it lands, what it adds the casters' signature sees. DO NOT stir them here: a world job waiting on its workers asked every 16 ms, every cascade drawn whole meanwhile.
+    waitLook = setTimeout(() => { waitLook = null; askDraw(); }, WAIT_LOOK_MS);
   };
   const pumpWorld = (): void => {
     if (!worldJob) return;
@@ -930,7 +934,8 @@ export function createSceneRenderer(
       if (worldJob !== job) return;
       if (step.done) { worldJob = null; shadowMoved = true; return; }
       if (step.value === 'wait') { lookAgain(); return; }
-      if (performance.now() >= until) { onAssetsReady(); return; }
+      // A step's meshes come, go or change what they hold: the casters' signature sees it at the next shadow pass (`casterSignature`). DO NOT stir the sun's stores for every step: the world's job runs a step a frame for many seconds after each move of a large city's camera, and every cascade was drawn whole at every one (114 calls in 3 s, 2026-10-20). Its end redraws them (`shadowMoved`).
+      if (performance.now() >= until) { askDraw(); return; }
     }
   };
   let networkRevision = -1;
@@ -3338,21 +3343,18 @@ export function createSceneRenderer(
         if (castersMoved && !moving) shadowMoved = true;
         castersMoved = moving;
         // Each cascade drawn when what it holds can have changed (`sunCascades.ts` `pass`)
-        // The still casters as they stood at the last pass: the same view (what the layers cull by it) and nothing landed, added or taken away since.
-        const viewStill = shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
-        shadowView.copy(rig.camera.matrixWorld);
-        shadowProjection.copy(rig.camera.projectionMatrix);
+        // The still casters as they stood at the last pass: the same signature (`casterSignature`: what casts, where, with what it draws) and nothing landed it cannot see (`castersStirred`).
         // DO NOT take a view that moved for casters that changed: the camera turning redrew every cascade whole at nearly every frame
         // (the probe, 2026-10-19: 309 of 533 passes in the district turning, 369 of 592 in the street), the stores thrown away for a view
-        // whose still casters were the same. What the layers cull by the view shows in what they draw (`casterSignature`): the same
-        // signature, the same still casters, the stores stand.
-        const signature = viewStill ? lastCasterSignature : casterSignature();
-        const castersSame = viewStill || signature === lastCasterSignature;
+        // whose still casters were the same. What the layers cull by the view shows in what they draw.
+        // DO NOT skip the signature while the view stands still: the layers change what they draw with no view moved and nothing added (a level
+        // swapped a frame after its data came, the poles' levels by the shadow's texel, `poleLayer.ts`); the street view 12 s after opening, still,
+        // had another signature than the one last taken (2026-10-20). It costs 0.15-0.2 ms a pass in the large city.
+        // DO NOT take the buildings' error scale moving for changed casters either (`frameBudget.ts`): it follows the frame's time and wanders under load
+        // while a level changes only past a threshold, which the signature sees; every cascade was drawn whole at every frame for ~20 s after each move.
+        const signature = casterSignature();
+        const still = signature === lastCasterSignature && !castersStirred;
         lastCasterSignature = signature;
-        // The buildings' levels follow the frame's error scale too (`frameBudget.ts`): one moved, other levels cast.
-        const scaleStill = shadowScale === buildings.frame.scale;
-        shadowScale = buildings.frame.scale;
-        const still = castersSame && scaleStill && !castersStirred;
         castersStirred = false;
         if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still })) {
           renderer.shadowMap.needsUpdate = true;
