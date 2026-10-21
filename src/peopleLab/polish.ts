@@ -217,3 +217,22 @@ export function sharpEyes(material: MeshStandardMaterial, eye: Texture): void {
   };
   material.customProgramCacheKey = () => `${key}-lab-sharp-eyes`;
 }
+
+/** The part under the pointer glowing, as Create-a-Sim lights it: `labRegion` (a region id a vertex) against `hover` (the region lit, 0 for none), pulsing on `time`. */
+export function regionGlow(material: MeshStandardMaterial, uniforms: { hover: { value: number }; time: { value: number } }): void {
+  const before = material.onBeforeCompile;
+  const key = material.customProgramCacheKey();
+  material.onBeforeCompile = (shader, renderer) => {
+    before.call(material, shader, renderer);
+    shader.uniforms['labHover'] = uniforms.hover;
+    shader.uniforms['labTime'] = uniforms.time;
+    shader.vertexShader = `attribute float labRegion; varying float vLabRegion;
+${shader.vertexShader}`
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLabRegion = labRegion;');
+    shader.fragmentShader = `uniform float labHover; uniform float labTime; varying float vLabRegion;
+${shader.fragmentShader}`
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        if (labHover > 0.5 && abs(vLabRegion - labHover) < 0.5) totalEmissiveRadiance += vec3(0.05, 0.32, 0.6) * (0.55 + 0.25 * sin(labTime * 5.0));`);
+  };
+  material.customProgramCacheKey = () => `${key}-lab-glow`;
+}

@@ -50,6 +50,9 @@ const FINDERS: Readonly<Record<string, readonly string[]>> = {
   hips: ['measure-hips-circ-decr-incr', 'buttocks-volume-decr-incr'],
 };
 
+/** The regions in a fixed order (their ids in the glow attribute). */
+export const REGION_IDS: readonly string[] = Object.keys(REGIONS);
+
 /** The face as drawn: its middle line, the eyes' height, the chin's, and the head's half width, metres. */
 interface FaceFrame { readonly cx: number; readonly eyeY: number; readonly chinY: number; readonly topY: number; readonly halfX: number; readonly midZ: number }
 
@@ -103,6 +106,34 @@ export class HandShaper {
     }
     return { cx: (minX + maxX) / 2, halfX: (maxX - minX) / 2, midZ: (minZ + maxZ) / 2, topY: maxY,
       eyeY: eyes ? eyeY / eyes : minY + (maxY - minY) * 0.55, chinY: minY };
+  }
+
+  /** Each drawn vertex's region, as its place in `REGION_IDS` + 1 (0: none): the glow over the part under the pointer reads it. */
+  regionAttribute(): Float32Array {
+    const g = this.mesh.geometry;
+    const n = g.getAttribute('position').count;
+    const out = new Float32Array(n);
+    const source = g.userData['morphSource'] as { kind: Int16Array; index: Int32Array } | undefined;
+    const hairMask = g.getAttribute('hairMask') as BufferAttribute | undefined;
+    const ids = new Map(REGION_IDS.map((id, i) => [id, i + 1]));
+    const byVertex = new Map<number, number>();
+    for (let i = 0; i < n; i++) {
+      if (hairMask && Math.round(hairMask.getX(i)) === 2) { out[i] = ids.get('brows')!; continue; }
+      if (hairMask && Math.round(hairMask.getX(i)) >= 1) continue;
+      if (source && source.kind[i] === -1) {
+        const v = source.index[i]!;
+        let r = byVertex.get(v);
+        if (r === undefined) { const region = this.regionOfVertex(v); r = region ? ids.get(region.id)! : 0; byVertex.set(v, r); }
+        out[i] = r;
+        continue;
+      }
+      // A garment: the body part its bone moves.
+      const bone = this.boneOf(i);
+      const id = /neck/i.test(bone) ? 'neck' : /finger|hand/i.test(bone) ? 'hands' : /foot|toe/i.test(bone) ? 'feet' : /arm|clavicle/i.test(bone) ? 'arms'
+        : /thigh|calf/i.test(bone) ? 'legs' : /pelvis/i.test(bone) ? 'hips' : /spine2|spine1/i.test(bone) ? 'chest' : /spine/i.test(bone) ? 'belly' : '';
+      out[i] = id ? ids.get(id)! : 0;
+    }
+    return out;
   }
 
   /** The region under the pointer, or null off the person. */

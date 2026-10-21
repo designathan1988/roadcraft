@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, MOUSE, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
+  ACESFilmicToneMapping, BufferAttribute, MOUSE, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
   PMREMGenerator, PerspectiveCamera, Scene, ShadowMaterial, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D, type SkinnedMesh,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -15,10 +15,11 @@ import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
 import { Poser, type PoseName } from './pose';
 import { variedFace } from './presets';
-import { HandShaper, addDragMorphs, type Region } from './direct';
+import { HandShaper, REGION_IDS, addDragMorphs, type Region } from './direct';
 import { measureBody } from './proportions';
 import { fitBody } from './bodyFit';
 import { dressPerson } from './dress';
+import { regionGlow } from './polish';
 import { Thumbs } from './thumbs';
 import { makePanels } from './panels';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
@@ -191,6 +192,8 @@ function startLab(): void {
   let appearance: SkinAppearance | null = null;
   /** Pictures of the choices (`thumbs.ts`). */
   const paintedSkins = new WeakMap<Texture, Texture>();
+  /** The region lit under the pointer (`regionGlow`). */
+  const glow = { hover: { value: 0 }, time: { value: 0 } };
   const pictures = new Thumbs(builder, layers, paintedSkins);
   let generation = 0;
   /** When the waiting rebuild starts (ms, `performance.now`), or 0: sliders dragged are built once they rest, in the frame loop. */
@@ -217,7 +220,13 @@ function startLab(): void {
       if (built) { scene.remove(built.scene); dispose(built.scene); }
       built = next;
       // The game's second step (`riggedCitizens.ts`): skin, irises, hair strands and fabrics drawn from their textures.
+      // The parts the hand can shape, known before the materials are made: each vertex's region, for the glow.
+      const faces = await builder.proportions();
+      const spec = person.spec;
+      const nextShaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
+      if (nextShaper) next.meshes[0]!.geometry.setAttribute('labRegion', new BufferAttribute(nextShaper.regionAttribute(), 1));
       const skin = await dressPerson(next, effective(person).spec, layers, paintedSkins);
+      for (const m of next.meshes) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) if (m.geometry.hasAttribute('labRegion')) regionGlow(mat as MeshStandardMaterial, glow);
       if (mine !== generation) { releaseSkinAppearance(skin); dispose(next.scene); return; }
       if (appearance) releaseSkinAppearance(appearance);
       appearance = skin;
@@ -225,9 +234,7 @@ function startLab(): void {
       scene.add(next.scene);
       poser = new Poser(next.scene);
       if (!shaping) dragWeights = null;
-      const faces = await builder.proportions();
-      const spec = person.spec;
-      shaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
+      shaper = nextShaper;
       next.scene.updateWorldMatrix(true, true);
       // Standing height from the head bone (a skinned geometry's own box is in its bind space, not the scene's).
       let headY = 1.5;
@@ -458,6 +465,7 @@ function startLab(): void {
   let lastPick = 0;
   const feature = (k: string): number => person.spec.features[k] ?? 0;
   const showTip = (e: PointerEvent, region: Region | null): void => {
+    glow.hover.value = region ? REGION_IDS.indexOf(region.id) + 1 : 0;
     if (!region) { tip.classList.remove('on'); renderer.domElement.style.cursor = ''; return; }
     const r = stage.getBoundingClientRect();
     tip.style.left = `${e.clientX - r.left + 16}px`;
@@ -505,7 +513,7 @@ function startLab(): void {
     render();
   };
   renderer.domElement.addEventListener('pointerup', endShape);
-  renderer.domElement.addEventListener('pointerleave', () => { if (!shaping) tip.classList.remove('on'); });
+  renderer.domElement.addEventListener('pointerleave', () => { if (!shaping) { tip.classList.remove('on'); glow.hover.value = 0; } });
   renderer.domElement.addEventListener('pointerdown', (e) => {
     if (!sculptor || e.button !== 0) return;
     if (sculptor.begin(ndc(e), camera)) {
@@ -534,6 +542,7 @@ function startLab(): void {
   function loop(): void {
     const now = performance.now();
     const t = (now - clock0) / 1000;
+    glow.time.value = t;
     if (buildAt && now >= buildAt) { buildAt = 0; void runBuild(); }
     if (toastUntil && now >= toastUntil) { toastUntil = 0; toast.classList.remove('on'); }
     while (revokeAt.length && revokeAt[0]![0] <= now) URL.revokeObjectURL(revokeAt.shift()![1]);
