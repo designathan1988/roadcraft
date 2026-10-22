@@ -125,37 +125,17 @@ export class HairSculptor {
     bodyGeometry.setAttribute('position', new BufferAttribute(body.positions, 3));
     bodyGeometry.setIndex(tris);
     bodyGeometry.computeVertexNormals();
-    // The scalp under the hair in the hair's colour (the vertices the item hangs from): no bare parting showing between the cards.
+    // The skin in its own colour everywhere, the scalp included (no hair colour painted on it).
     const tint = new Float32Array(body.positions.length);
-    const skinC = new Color(skinColour), hairC = new Color(colour);
-    // Skin within 3 cm of a strand (a grid of the hair's points, 3 cm cells): the scalp, the parting, under the fringe.
-    const NEAR = 0.3;
-    const cells = new Set<string>();
-    const fittedHair = fitProxy(pack, body.positions);
-    if (pack.kind === 'hair') for (let i = 0; i < fittedHair.length; i += 3) cells.add(`${Math.floor(fittedHair[i]! / NEAR)},${Math.floor(fittedHair[i + 1]! / NEAR)},${Math.floor(fittedHair[i + 2]! / NEAR)}`);
-    const nearHair = (v: number): boolean => {
-      const x = Math.floor(body.positions[v * 3]! / NEAR), y = Math.floor(body.positions[v * 3 + 1]! / NEAR), z = Math.floor(body.positions[v * 3 + 2]! / NEAR);
-      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) if (cells.has(`${x + dx},${y + dy},${z + dz}`)) return true;
-      return false;
-    };
-    let top = -Infinity;
-    for (let i = 1; i < body.positions.length; i += 3) top = Math.max(top, body.positions[i]!);
-    // The scalp only: above the hairline at the front (~7 cm under the crown), down to the nape at the back; never the forehead, face or shoulders.
-    let mz = 0, mc = 0;
-    for (let i = 0; i < body.positions.length; i += 3) if (body.positions[i + 1]! > top - 1.4) { mz += body.positions[i + 2]!; mc++; }
-    const midZ = mc ? mz / mc : 0;
-    const scalp = (v: number): boolean => {
-      const y = body.positions[v * 3 + 1]!, z = body.positions[v * 3 + 2]!;
-      return y > top - 0.7 || (z < midZ && y > top - 1.7);
-    };
-    for (let v = 0; v < tint.length / 3; v++) (cells.size && scalp(v) && nearHair(v) ? hairC : skinC).toArray(tint, v * 3);
+    const skinC = new Color(skinColour);
+    for (let v = 0; v < tint.length / 3; v++) skinC.toArray(tint, v * 3);
+    let headTop = -Infinity;
+    for (let i = 1; i < body.positions.length; i += 3) headTop = Math.max(headTop, body.positions[i]!);
     bodyGeometry.setAttribute('color', new BufferAttribute(tint, 3));
     const skin = new Mesh(bodyGeometry, new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }));
     skin.castShadow = skin.receiveShadow = true;
     this.group.add(skin);
     // The skull's middle: the mean of the skin within ~22 cm of the head's top (the brain case), front to back and side to side.
-    let headTop = -Infinity;
-    for (let i = 1; i < body.positions.length; i += 3) headTop = Math.max(headTop, body.positions[i]!);
     let sx = 0, sz = 0, count = 0;
     for (let i = 0; i < body.positions.length; i += 3) if (body.positions[i + 1]! > headTop - 1.4) { sx += body.positions[i]!; sz += body.positions[i + 2]!; count++; }
     this.skull.set(count ? sx / count : 0, headTop - 1.0, count ? sz / count : 0);

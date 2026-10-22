@@ -6,7 +6,8 @@ import type { PersonLook } from '@people/spec';
 /** `personRig.ts` EYE_SLOT: the eyeballs' mark in `hairMask`. */
 const EYE_SLOT = 5;
 
-/** The rig tints the scalp in the hair's colour, and that paint runs down onto the forehead: it is kept on the scalp, taken off the forehead and face. */
+/** The rig tints the scalp in the hair's colour (and the paint runs onto the forehead): every painted body vertex gets the skin back, the scalp
+ *  included - the player wants no hair colour on the scalp. The eyeballs keep theirs. */
 function clearScalpPaint(mesh: SkinnedMesh, look: PersonLook): void {
   const g = mesh.geometry;
   const body = g.groups[0];
@@ -15,25 +16,10 @@ function clearScalpPaint(mesh: SkinnedMesh, look: PersonLook): void {
   const hairMask = g.getAttribute('hairMask') as BufferAttribute | undefined;
   if (!body || !skinMask || !colour || !g.index) return;
   const skin = new Color(look.skin);
-  const position = g.getAttribute('position') as BufferAttribute;
-  const seen = new Set<number>();
-  const painted: number[] = [];
   for (let i = body.start; i < body.start + body.count; i++) {
     const v = g.index.getX(i);
-    if (seen.has(v)) continue;
-    seen.add(v);
     if (hairMask && Math.round(hairMask.getX(v)) === EYE_SLOT) continue;
-    if (skinMask.getX(v) < 0.999) painted.push(v);
-  }
-  // The paint stays on the scalp (under the hair, so no bald patch shows between strands) and comes off the forehead and face only:
-  // above ~7 cm under the crown at the front, down to the nape behind the head's middle.
-  let top = -Infinity, zSum = 0;
-  for (const v of painted) top = Math.max(top, position.getY(v));
-  for (const v of painted) zSum += position.getZ(v);
-  const midZ = painted.length ? zSum / painted.length : 0;
-  for (const v of painted) {
-    const y = position.getY(v), z = position.getZ(v);
-    if (y > top - 0.07 || (z < midZ && y > top - 0.17)) continue;
+    if (skinMask.getX(v) >= 0.999) continue;
     skinMask.setX(v, 1);
     colour.setXYZ(v, skin.r, skin.g, skin.b);
   }
