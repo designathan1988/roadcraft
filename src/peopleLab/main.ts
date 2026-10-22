@@ -27,15 +27,13 @@ import { regionGlow } from './polish';
 import { Thumbs } from './thumbs';
 import { makePanels } from './panels';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
-import { HairStudio } from './hairStudio';
-import { hairPanel } from './hairPanel';
 import { Atelier } from './atelier';
 import { BodySculptor, bodyDelta } from './bodySculpt';
 import { bodySculptPanel } from './bodySculptPanel';
 import { atelierPanel } from './atelierPanel';
 import { sculptPanel } from './sculptPanel';
-import { ATELIER, GROOM, PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
-import { CLOTH, HAIR_CATALOGUE, HAIR_COLOURS, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
+import { ATELIER, PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
+import { CLOTH, HAIR_CATALOGUE, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
 import { el, widgets } from './widgets';
 import { icon } from './icons';
 
@@ -65,14 +63,12 @@ function startLab(): void {
   const thumbs: Record<string, string> = loadThumbs();
   /** The hair sculptor while it is open, the person hidden. */
   let sculptor: HairSculptor | null = null;
-  /** The hair studio while it is open. */
-  let studio: HairStudio | null = null;
   /** The atelier while it is open. */
   let atelier: Atelier | null = null;
   /** The body sculptor while it is open. */
   let carver: BodySculptor | null = null;
-  /** The editor taking the pointer: the sculptor or the hair studio. */
-  const editor = (): HairSculptor | HairStudio | Atelier | BodySculptor | null => sculptor ?? studio ?? atelier ?? carver;
+  /** The editor taking the pointer: the sculptor, the atelier or the body's brushes. */
+  const editor = (): HairSculptor | Atelier | BodySculptor | null => sculptor ?? atelier ?? carver;
   /** Click-and-drag shaping of the person built now. */
   let shaper: HandShaper | null = null;
 
@@ -174,7 +170,7 @@ function startLab(): void {
   controls.maxPolarAngle = Math.PI * 0.55;
   // Navigation as editors do it (`navigation.ts`): right orbits, middle pans, wheel zooms to the cursor, Alt with any button, F frames.
   setupNavigation(controls, camera, renderer.domElement, {
-    targets: () => [built?.scene, sculptor?.group, studio?.group, atelier?.group, carver?.group, tab === 'pose' ? posing.helpers : null].filter((o): o is Object3D => !!o),
+    targets: () => [built?.scene, sculptor?.group, atelier?.group, carver?.group, tab === 'pose' ? posing.helpers : null].filter((o): o is Object3D => !!o),
     frame: () => frame(view),
   });
   const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
@@ -336,7 +332,6 @@ function startLab(): void {
     if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
     else if (carver) panel.replaceChildren(...bodySculptPanel(carver, { slider, render, close: closeCarver }));
     else if (atelier) panel.replaceChildren(...atelierPanel(atelier, { ui: { slider, swatches, seg, tiles }, render, close: closeAtelier, colours: CLOTH }));
-    else if (studio) panel.replaceChildren(...hairPanel(studio, { ui: { slider, swatches, seg, tiles }, render, close: closeHairStudio, colours: HAIR_COLOURS }));
     else if (tab === 'pose') panel.replaceChildren(...posePanelNodes());
     else {
       // The category's groups along the top (Create-a-Sim's sub tabs), the chosen one below.
@@ -365,7 +360,7 @@ function startLab(): void {
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
-    openHairStudio: () => { void openHairStudio(); }, openCarver: () => { void openCarver(); }, openAtelier: () => { void openAtelier(); },
+    openCarver: () => { void openCarver(); }, openAtelier: () => { void openAtelier(); },
     setSex: (v) => {
       // The hair and the outfit go with the sex unless they suit both.
       const look = person.spec.look;
@@ -499,30 +494,7 @@ function startLab(): void {
     });
   }
 
-  // ---------------------------------------------------------------- the hair studio
 
-  async function openHairStudio(): Promise<void> {
-    const body = await builder.studioBody(person);
-    studio = new HairStudio(body, person.spec.look.hairCut === GROOM ? person.groom ?? null : null, person.spec.look.hair, person.spec.look.skin);
-    if (!studio.count) studio.preset('bob');
-    scene.add(studio.group);
-    if (built) built.scene.visible = false;
-    frame('face');
-    render();
-  }
-
-  function closeHairStudio(keep: boolean): void {
-    const s = studio;
-    if (!s) return;
-    if (keep && s.count) person = { ...person, groom: s.record(), spec: { ...person.spec, look: { ...person.spec.look, hairCut: GROOM, hairStyle: 'long' } } };
-    scene.remove(s.group);
-    s.dispose();
-    studio = null;
-    if (built) built.scene.visible = true;
-    controls.enabled = true;
-    render();
-    if (keep) rebuild(0);
-  }
 
   // ---------------------------------------------------------------- the body sculptor
 
@@ -689,7 +661,7 @@ function startLab(): void {
   renderer.domElement.addEventListener('pointerdown', (e) => {
     const ed = editor();
     if (!ed || e.button !== 0 || e.altKey) return;
-    if (ed instanceof HairStudio || ed instanceof BodySculptor ? ed.begin(ndc(e), camera, e.shiftKey) : ed.begin(ndc(e), camera)) {
+    if (ed instanceof BodySculptor ? ed.begin(ndc(e), camera, e.shiftKey) : ed.begin(ndc(e), camera)) {
       carving = true;
       controls.enabled = false;
       renderer.domElement.setPointerCapture(e.pointerId);
@@ -701,7 +673,7 @@ function startLab(): void {
     if (carving) ed.move(ndc(e), camera, e.shiftKey);
     else ed.hover(ndc(e), camera);
   });
-  const stop = (): void => { if (!carving) return; carving = false; editor()?.end(); controls.enabled = true; if (studio) render(); };
+  const stop = (): void => { if (!carving) return; carving = false; editor()?.end(); controls.enabled = true; };
   renderer.domElement.addEventListener('pointerup', stop);
   renderer.domElement.addEventListener('pointercancel', stop);
   window.addEventListener('keydown', (e) => {
@@ -721,7 +693,6 @@ function startLab(): void {
   function loop(): void {
     const now = performance.now();
     const t = (now - clock0) / 1000;
-    studio?.tick(Math.min(0.05, (now - lastTick) / 1000));
     atelier?.tick(Math.min(0.05, (now - lastTick) / 1000));
     lastTick = now;
     glow.time.value = t;
@@ -785,7 +756,7 @@ function startLab(): void {
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });
       controls.target.copy(head).add(new Vector3(0, 0.02, 0.05));
       camera.position.copy(controls.target).add(new Vector3(x, y, dist));
-    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, openHairStudio, closeHairStudio, get studio() { return studio; }, openAtelier, closeAtelier, get atelier() { return atelier; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
+    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, openAtelier, closeAtelier, get atelier() { return atelier; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
 }
 
 startLab();

@@ -13,9 +13,7 @@ import { captureBind, captureBindRotations } from '@render/citizenWalk';
 import { ATELIER, GROOM, PROC_PREFIX, type LabPerson } from './record';
 import { ClothSim, PATTERNS } from './cloth';
 import { garmentPack } from './atelier';
-import { GroomBody } from './groom';
-import { presetRecord, shellOf, shellPack } from './hairShell';
-import type { StudioBody } from './hairStudio';
+import type { StudioBody } from './groom';
 import { FaceProportions } from './proportions';
 import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
 import type { HairSculpt } from './sculpt';
@@ -85,6 +83,8 @@ export class LabBuilder {
     const { assets: a, morpher: mo } = await this.setup();
     const cut = person.spec.look.hairCut;
     if (!cut || cut === 'none') return null;
+    // An older studio's hair: that studio is gone, worn as a bob.
+    if (cut === GROOM) return loadProxyItem('bob02');
     return cut.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : loadProxyItem(cut);
   }
 
@@ -104,13 +104,6 @@ export class LabBuilder {
     return { positions, faces: m.faces, faceGroup: m.faceGroup, skinGroup: m.faceGroups.indexOf('body'), skin, anchors };
   }
 
-  /** The hair studio's hair as an item on this person's body. */
-  async groomItem(person: LabPerson): Promise<ProxyItem> {
-    const body = await this.studioBody(person);
-    const gb = new GroomBody(body.positions, body.skin, body.faces, body.faceGroup, body.skinGroup);
-    // An older studio's groom converted to the style it was closest to (`shellOf`).
-    return { pack: shellPack(shellOf(person.groom, gb) ?? presetRecord('bob', gb), gb, body.anchors), texture: null, transparent: false, textureFile: null };
-  }
 
   /** The atelier's garment as an item: its draped positions pinned to this body's skin. */
   async garmentItem(person: LabPerson): Promise<ProxyItem> {
@@ -152,7 +145,7 @@ export class LabBuilder {
     const proxies = new Map<string, ProxyItem>();
     try {
       for (const [name, item] of await Promise.all(wornItems(spec.look).map(async (n) =>
-        [n, n === ATELIER && person.garment ? await this.garmentItem(person) : n === GROOM && person.groom ? await this.groomItem(person) : n.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : await loadProxyItem(n)] as const))) proxies.set(name, item);
+        [n, n === ATELIER && person.garment ? await this.garmentItem(person) : n === GROOM ? await loadProxyItem('bob02') : n.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : await loadProxyItem(n)] as const))) proxies.set(name, item);
     } catch (error) {
       // Drawn in the tailored shells rather than not at all, as the game does.
       console.warn('[people-lab] an item could not be loaded; drawn in the tailored shells', error);

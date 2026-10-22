@@ -2,7 +2,7 @@ import { ageFromYears, yearsFromAge, type MacroParams } from '@people/body/macro
 import { EYE_COLOURS, WARDROBE, type PersonLook, type PersonSpec } from '@people/spec';
 import { itemsOf, type WardrobeItem } from '@people/wardrobe';
 import type { CartoonStyle } from '@render/people/cartoon';
-import { CLOTH, FACE, HAIR_CATALOGUE, HAIR_LABELS, HAIR_COLOURS, HEAD_SHAPES, MOODS, SHOES_CATALOGUE, SKIN, STYLE_PRESETS } from './choices';
+import { CLOTH, FACE, HAIR_CATALOGUE, HAIR_FRINGED, HAIR_LABELS, HAIR_TIED, HAIR_COLOURS, HEAD_SHAPES, MOODS, SHOES_CATALOGUE, SKIN, STYLE_PRESETS } from './choices';
 import type { PoseName } from './pose';
 import type { LibraryClipName } from '@render/citizenWalk';
 import { BODIES, FACES, LOOKS, PARTS, mannequin, currentPreset, withBody, withFace, withPart } from './presets';
@@ -39,8 +39,6 @@ export interface PanelContext {
   setExtra(kinds: readonly WardrobeItem['kind'][], name: string): void;
   sex(): 'female' | 'male';
   setSex(v: 'female' | 'male'): void;
-  /** The hair studio (`hairStudio.ts`). */
-  openHairStudio(): void;
   /** The garment atelier (`atelier.ts`). */
   openAtelier(): void;
   /** Brushes on the body and face (`bodySculpt.ts`). */
@@ -232,10 +230,23 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
         ];
       }],
       ['cor', 'Cor', () => [swatches(HAIR_COLOURS, p().spec.look.hair, (col) => c.setLook({ hair: col }))]],
-      ['criar', 'Criar', () => {
-        const make = el('button', { cls: 'big save' }, icon('hair', 16), 'Estúdio de cabelo');
-        make.onclick = () => c.openHairStudio();
-        return [make];
+      ['montar', 'Montar', () => {
+        // Whole hairstyles of the catalogue by kind, then shaped with the sculptor: made hair, no seams (its pieces were never made to be
+        // joined, so none is cut and joined).
+        const all = [...HAIR_CATALOGUE[sex()], ...(c.showAll ? HAIR_CATALOGUE[sex() === 'female' ? 'male' : 'female'] : [])];
+        const kind = (n: string): 'fringe' | 'tied' | 'loose' => (HAIR_FRINGED.includes(n) ? 'fringe' : HAIR_TIED.includes(n) ? 'tied' : 'loose');
+        const group = (k: 'fringe' | 'tied' | 'loose'): HTMLElement =>
+          pics(all.filter((n) => kind(n) === k).map((n) => ({ id: n, label: HAIR_LABELS[n] ?? nameOf(n), variant: withLook({ hairCut: n }) })),
+            p().spec.look.hairCut, (id) => c.setLook({ hairCut: id }), 'head');
+        const shape = el('button', { cls: 'big save' }, icon('sculpt', 16), 'Esculpir este penteado');
+        shape.onclick = () => c.openSculptor();
+        return [
+          allToggle('Mostrar tudo'),
+          el('h3', { textContent: 'Solto' }), group('loose'),
+          el('h3', { textContent: 'Com franja' }), group('fringe'),
+          el('h3', { textContent: 'Preso' }), group('tied'),
+          shape,
+        ];
       }],
       ['barba', 'Barba', () => [extraPics('beard', 'Sem barba')]],
       ['chapeu', 'Chapéu', () => [

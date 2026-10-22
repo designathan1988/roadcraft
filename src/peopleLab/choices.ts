@@ -91,6 +91,12 @@ export const SHOES_CATALOGUE = {
 } as const;
 
 /** What the hairstyles are called in the creator. */
+/** The catalogue's hairstyles with a fringe of their own, and those gathered up (tied, braided, in a bun). */
+export const HAIR_FRINGED: readonly string[] = ['cortu_straight_bangs', 'culturalibre_hair_18', 'elvs_katherine_hair', 'toigo_blunt_bob_with_bangs',
+  'toigo_curled_under_bob_with_bangs', 'toigo_inverted_bob_with_bangs'];
+export const HAIR_TIED: readonly string[] = ['ponytail01', 'braid01', 'elvs_50s_updo', 'elvs_french_braid_variation', 'rehmanpolanski_hair_bun_brown',
+  'elvs_micky_afro', 'elvs_braided_rows'];
+
 export const HAIR_LABELS: Readonly<Record<string, string>> = {
   long01: 'Longo liso', bob02: 'Chanel', bob01: 'Chanel de lado', ponytail01: 'Rabo de cavalo', braid01: 'Trança', culturalibre_hair_01: 'Longo solto',
   culturalibre_hair_18: 'Chanel com franja', culturalibre_hair_17: 'Ondulado', cortu_straight_bangs: 'Franja reta', elvs_50s_updo: 'Coque anos 50',

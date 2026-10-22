@@ -3,7 +3,6 @@ import type { HairStyle } from '@people/hair/procedural';
 import type { CartoonStyle } from '@render/people/cartoon';
 import type { HairSculpt } from './sculpt';
 import type { Motion } from './posing';
-import type { ShellRecord } from './hairShell';
 import type { GarmentRecord } from './atelier';
 import { yearsFromAge } from '@people/body/macro';
 
@@ -23,8 +22,6 @@ export interface LabPerson {
   readonly sculpts?: readonly HairSculpt[];
   /** The rig as reshaped, the pose held and the animation made in the pose tab (`posing.ts`). */
   readonly motion?: Motion;
-  /** Hair made in the hair studio (`groom.ts`), worn when `spec.look.hairCut` is `groom`. */
-  readonly groom?: ShellRecord;
   /** A garment made in the atelier (`atelier.ts`), worn over the outfit (`spec.look.extras` has `atelier`). */
   readonly garment?: GarmentRecord;
   /** The body and face sculpted with brushes (`bodySculpt.ts`): moves of the base mesh's vertices. */
@@ -39,7 +36,7 @@ export interface LabRoster {
 /** The hair studio's hairstyles are named `proc:<id>`, never a catalogue item. */
 export const PROC_PREFIX = 'proc:';
 
-/** The hair studio's hair, as `spec.look.hairCut`. */
+/** An older hair studio's hair, as `spec.look.hairCut`: worn as the base it was nearest, a bob (that studio is gone). */
 export const GROOM = 'groom';
 
 /** The atelier's garment, as an extra worn. */
@@ -70,7 +67,6 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.sculpt && person.sculpt.base === spec.look.hairCut ? { sculpt: person.sculpt } : {}),
     ...(person.sculpts?.length ? { sculpts: person.sculpts } : {}),
     ...(person.motion && Object.keys(person.motion).length ? { motion: person.motion } : {}),
-    ...(person.groom && spec.look.hairCut === GROOM ? { groom: person.groom } : {}),
     ...(person.body ? { body: person.body } : {}),
     ...(person.garment && spec.look.extras?.includes(ATELIER) ? { garment: person.garment } : {}),
   };

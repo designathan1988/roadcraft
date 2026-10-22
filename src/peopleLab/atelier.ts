@@ -5,7 +5,7 @@ import { nearestThree } from '@people/hair/procedural';
 import type { ProxyPack } from '@people/body/proxy';
 import { ClothSim, PATTERNS, type Cut, type Measures } from './cloth';
 import { GroomBody } from './groom';
-import type { StudioBody } from './hairStudio';
+import type { StudioBody } from './groom';
 
 /** THE ATELIER: a garment made as CLO 3D makes one - a pattern drafted to the body's measures, its pieces wrapped round the body, sewn and draped live;
  *  the cloth can be grabbed and pulled while it drapes. Finished, it is pinned to the body as a game item. */

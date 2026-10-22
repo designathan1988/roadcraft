@@ -4,6 +4,18 @@
 
 export interface Tie { x: number; y: number; z: number; radius: number }
 
+/** A person's body for the editors that work on it (the hair builder, the atelier): positions (dm), quads, the skin's vertices, the head and neck's. */
+export interface StudioBody {
+  readonly positions: Float32Array;
+  readonly faces: Uint16Array;
+  readonly faceGroup: Uint8Array;
+  readonly skinGroup: number;
+  /** The skin's vertices (the body's own range). */
+  readonly skin: readonly number[];
+  /** Head and neck skin vertices: what worn hair is pinned to. */
+  readonly anchors: readonly number[];
+}
+
 /** The body the hair lives on: its positions and normals (dm), the skin's vertices on a grid for collision, the scalp. */
 export class GroomBody {
   readonly normals: Float32Array;
