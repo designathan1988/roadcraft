@@ -77,8 +77,9 @@ const BASE = [
   {
     id: 'farCascadeEvery', system: 'shadows', title: 'Far cascades every N frames',
     what: 'Cascades 1 and 2 (the far ones) are redrawn only every N passes; the near one (0) as always.',
-    tradeoff: 'Cuts most full redraws of the far cascades; distant shadows lag when the camera turns (broken bands while the camera moves).',
-    choices: [{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 4, label: '4' }, { value: 8, label: '8' }],
+    tradeoff: 'Cuts most full redraws of the far cascades; distant shadows lag a frame when the camera turns. The bands it broke into were the scroll of a skipped turn being lost (`sunCascades.ts` fit, fixed 2026-10-22).',
+    // 2 by default (the first choice): flying the camera, the shadows cost 4.7 ms of GPU a frame, p95 12.4 ms, against 0.6 standing still (`npm run diagnose`, 2026-10-22).
+    choices: [{ value: 2, label: '2' }, { value: 1, label: '1' }, { value: 4, label: '4' }, { value: 8, label: '8' }],
   },
   {
     id: 'castMasses', system: 'shadows', title: 'Buildings cast shadow by their masses',

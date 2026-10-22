@@ -100,6 +100,7 @@ export function buildFindings(report) {
       title: `Ao navegar a imagem engasga: ${f.hitches} quadros acima de 25 ms em ${f.frames}, p99 ${f.p99} ms, o pior de ${f.max} ms`,
       cost: `pior quadro ${f.max} ms`, rank: f.max, where: n.profile?.held?.count ? heldLines(n.profile) : heldBy(frames('navigate')),
       evidence: (n.profile?.held?.worstBy ?? []).map((x) => `no pior trecho: ${x.at} ${x.ms} ms`) });
+    if (n.passes?.length) add({ area: 'Desempenho', severity: 'média', title: `GPU por passe ao navegar: ${n.passes.slice(0, 4).map((p) => `${p.pass} ${p.avg} ms (p95 ${p.p95})`).join(', ')}`, cost: `${n.passes.reduce((a, p) => a + p.avg, 0).toFixed(1)} ms por quadro`, rank: n.passes.reduce((a, p) => a + p.avg, 0), evidence: n.passes.slice(4, 8).map((p) => `${p.pass} ${p.avg} ms`) });
     if (n.frames.gpu.p95 !== null && n.frames.gpu.p95 > 12) add({ area: 'Desempenho', severity: n.frames.gpu.p95 > 16.7 ? 'alta' : 'média',
       title: `Ao navegar a GPU passa do orçamento (p95 ${n.frames.gpu.p95} ms, pior ${n.frames.gpu.max} ms)`, cost: `GPU p95 ${n.frames.gpu.p95} ms`, rank: n.frames.gpu.p95 });
     if (n.profile?.garbageMs > 50) add({ area: 'Desempenho', severity: n.profile.garbageMs > 200 ? 'alta' : 'média',
@@ -122,7 +123,8 @@ export function buildFindings(report) {
   }
   for (const [ph, w] of Object.entries(report.gpuWork ?? {})) {
     if (!/^(view:|navigate)/.test(ph) || !w.linked) continue;
-    add({ area: 'Desempenho', severity: w.linked > 5 ? 'alta' : 'média', title: `${w.linked} programas de shader compilados durante o jogo (${PHASE_NAMES[ph] ?? ph}): cada um pode travar um quadro`, cost: `${w.linked} programas`, rank: w.linked * 10 });
+    const built = ph === 'navigate' ? report.phases.navigate?.programsBuilt : report.views?.[ph.slice(5)]?.programsBuilt;
+    add({ area: 'Desempenho', severity: w.linked > 5 ? 'alta' : 'média', title: `${w.linked} programas de shader compilados durante o jogo (${PHASE_NAMES[ph] ?? ph}): cada um pode travar um quadro`, cost: `${w.linked} programas`, rank: w.linked * 10, where: built ?? [] });
   }
 
   // SAVE AND REOPEN.

@@ -81,6 +81,8 @@ export function createOptimizer(deps: OptimizerDeps): Optimizer {
   const counts = { shadow: 0, relief: 0, uploads: 0, walk: 0 };
   const due = (key: 'shadow' | 'relief' | 'uploads', every: number): boolean => every <= 1 || counts[key]++ % every === 0;
   const num = (v: unknown, fallback: number): number => (typeof v === 'number' ? v : fallback);
+  // The defaults that are not the environment's own, set once: `set` applies only what changes from `values`, the defaults never.
+  environment.setFarCascadeEvery(num(DEFAULT_OPTIMIZATIONS.farCascadeEvery, 1));
 
   // ---- materials, textures and meshes: what each was before, given back at the default
   const precisionWas = new Map<Material, Material['precision']>();

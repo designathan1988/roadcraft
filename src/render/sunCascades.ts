@@ -633,16 +633,22 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       const texel = (2 * f.half) / size;
       const cr = Math.round((minR + maxR) / 2 / texel) * texel;
       const cu = Math.round((minU + maxU) / 2 / texel) * texel;
-      const dx = Math.round((cr - f.cr) / texel), dy = Math.round((cu - f.cu) / texel);
+      // Added to a scroll not yet drawn (a far cascade out of its turn, `setFarEvery`; a pass skipped, `shadowEvery`): the store moves by
+      // every step since it was drawn. DO NOT keep the last step alone: the light had moved by them all, and the far shadows stood off by
+      // the steps skipped - broken bands while the camera moved (the lab's `farCascadeEvery`, diagnosis 2026-10-22).
+      const pending = scroll[i] ?? null;
+      const dx = Math.round((cr - f.cr) / texel) + (pending?.dx ?? 0), dy = Math.round((cu - f.cu) / texel) + (pending?.dy ?? 0);
       const inside = minR >= cr - f.half && maxR <= cr + f.half && minU >= cu - f.half && maxU <= cu + f.half;
       const kept = (size - Math.abs(dx)) * (size - Math.abs(dy));
-      if (inside && (dx !== 0 || dy !== 0) && kept >= (1 - SCROLL_MOST) * size * size) {
+      if (inside && (dx !== 0 || dy !== 0) && Math.abs(dx) < size && Math.abs(dy) < size && kept >= (1 - SCROLL_MOST) * size * size) {
         f.cr = cr;
         f.cu = cu;
         place(i);
         scroll[i] = { dx, dy };
         return false;
       }
+      // Too far for the store to follow: drawn whole at the new centre, the pending scroll let go with it.
+      scroll[i] = null;
     }
     // A half-side on the ladder 2^(k/4) m: the same cascade size over a range of views, so its texels stay where they were
     const step = Math.ceil(4 * Math.log2(Math.max(m(1), need * ROOM) / m(1)));

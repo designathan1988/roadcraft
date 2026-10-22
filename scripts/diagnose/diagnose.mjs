@@ -169,6 +169,7 @@ async function diagnose() {
   // VIEWS: each settled, then its frames, its GPU (whole frame, then pass by pass), what it draws, its memory and its picture.
   for (const v of VIEWS) {
     await phase(`view:${v.name}`);
+    const programsBefore = await programNames();
     await setView({ x: centre.x, y: centre.y, zoom: v.zoom, az: v.az, el: v.el });
     const settled = await settle(20_000);
     const row = { settled };
@@ -189,6 +190,8 @@ async function diagnose() {
       return c ? { calls: c.calls, triangles: c.triangles, byLayer: rows(c.byLayer), byPass: rows(c.byPass), byMaterial: rows(c.byMaterial) } : null;
     });
     row.memory = await memory();
+    // The programs built while this view landed (its first frames in play): named, so each can be built before the curtain.
+    row.programsBuilt = newPrograms(programsBefore, await programNames());
     if (!has('--no-quality')) row.picture = await picture(v.name);
     report.views[v.name] = row;
     log(`${v.name}: frame p99 ${row.frames.frame.p99} ms, GPU p95 ${row.frames.gpu.p95 ?? '—'} ms, draws ${row.memory.drawCalls}, triangles ${(row.memory.drawnTriangles / 1e6).toFixed(1)} M${row.picture ? `, ${(row.picture.overShare * 100).toFixed(2)} % of pixels off the supersampled reference` : ''}`);
@@ -208,12 +211,24 @@ async function diagnose() {
     { x: centre.x - 0.6 * R, y: centre.y - 0.4 * R, zoom: 5, az: 20, el: 35, ms: 3000 },
     { x: centre.x - 0.2 * R, y: centre.y - 0.4 * R, zoom: 5, az: 60, el: 35, ms: 3000 },
   ];
+  const flightPrograms = await programNames();
   const flight = await frameWindow(0, () => page.evaluate(fly, tour));
   const nav = { frames: flight, profile: await profileStop('navigate') };
+  // The same flight again, the GPU timed pass by pass (its per-pass queries cost the page: kept out of the flight above).
+  await setView({ x: centre.x, y: centre.y, zoom: 2.5, az: 45, el: 48 });
+  await page.evaluate(() => window.__labGpu?.passTiming(true));
+  await page.evaluate(fly, tour);
+  const flightPasses = await page.evaluate(() => {
+    const rows = window.__labGpu?.passes() ?? [];
+    window.__labGpu?.passTiming(false);
+    return rows.map((p) => ({ pass: p.pass, avg: +p.avg.toFixed(2), p95: +p.p95.toFixed(2), max: +p.max.toFixed(2), share: Math.round(p.share) })).sort((a, b) => b.avg - a.avg);
+  });
   // RETURN: the first view again: what the flight left behind (heap after a collection, geometries, textures, programs).
   await setView({ x: centre.x, y: centre.y, zoom: 2.5, az: 45, el: 48 });
   await settle(15_000);
   nav.before = before;
+  nav.passes = flightPasses;
+  nav.programsBuilt = newPrograms(flightPrograms, await programNames());
   nav.after = await memory();
   report.phases.navigate = nav;
   log(`flight: ${flight.frame.frames} frames, p99 ${flight.frame.p99} ms, worst ${flight.frame.max} ms, ${flight.frame.hitches} over 25 ms; heap ${before.heapMB} -> ${nav.after.heapMB} MB`);
@@ -260,6 +275,19 @@ async function diagnose() {
     'long sessions (hours): a run of minutes shows leaks only as growth over one flight',
     'shadow and AO quality against a higher-setting reference; flicker in motion: only the supersampled reference of still frames is compared',
   );
+}
+
+/** The programs three holds now, by name and cache key (`renderer.info.programs`). */
+function programNames() {
+  return page.evaluate(() => (window.__roadcraft.scene().gl.info.programs ?? []).map((p) => `${p.name} ${String(p.cacheKey).slice(0, 60)}`));
+}
+
+/** The programs in `after` not in `before`, by name with how many of each. */
+function newPrograms(before, after) {
+  const had = new Set(before);
+  const counts = new Map();
+  for (const p of after) if (!had.has(p)) { const name = p.split(' ')[0]; counts.set(name, (counts.get(name) ?? 0) + 1); }
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ×${n}`);
 }
 
 async function phase(name) {
