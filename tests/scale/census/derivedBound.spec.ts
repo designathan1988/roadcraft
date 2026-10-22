@@ -290,7 +290,7 @@ describe('the props held round the view', () => {
     expect(dropped).toBeLessThanOrEqual(9);
     doc.buildings.put(near);
     for (const p of [a, b]) { p.gardens.dispose(); p.furniture.dispose(); p.poles.dispose(); }
-  }, 60_000);
+  });
 
   it('draws near the camera the plants the whole map placed at once draws there, and holds far its plants of each block', () => {
     const city = large;
@@ -349,5 +349,5 @@ describe('the props held round the view', () => {
     runs.dispose();
     pictures.release();
     p.gardens.dispose(); p.furniture.dispose(); p.poles.dispose();
-  }, 60_000);
+  });
 });

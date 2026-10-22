@@ -73,7 +73,7 @@ export class RoadTilePool implements RoadTiler {
 
   coarsen(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null> {
     const lanes = (this.unseen ? this.start() : null) ?? this.startCoarse();
-    // Where no worker can be made (Node, the specs that open a city: `tests/census/sceneCensus.spec.ts`), made here as the worker makes it, once the simplifier's WebAssembly is in (`roadTile.worker.ts` serve).
+    // Where no worker can be made (Node, the specs that open a city: `tests/scale/census/sceneCensus.spec.ts`), made here as the worker makes it, once the simplifier's WebAssembly is in (`roadTile.worker.ts` serve).
     if (!lanes) return MeshoptSimplifier.ready.then(() => coarseArrays(arrays, lock));
     const lane = lanes[this.nextLane++ % lanes.length]!;
     const id = this.nextId++;

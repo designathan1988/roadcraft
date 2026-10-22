@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { installNullPage, primeCookedSurfaces } from '../support/nullGpu';
-import { HEIGHT, STREET, WIDTH, openSmallCity, setView, settle } from '../support/sceneHarness';
+import { installNullPage, primeCookedSurfaces } from '../../support/nullGpu';
+import { HEIGHT, STREET, WIDTH, openSmallCity, setView, settle } from '../../support/sceneHarness';
 
 /**
  * THE SCENE AS THE GAME WOULD DRAW IT, WITHOUT OPENING THE GAME: the real scene renderer (`createSceneRenderer`) on a GPU that draws

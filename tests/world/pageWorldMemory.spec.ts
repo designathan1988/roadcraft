@@ -93,5 +93,5 @@ describe("the page's world memory", () => {
     expect(large.systems['network']! / large.buildings).toBeLessThan(2.2 * 1024);
     // The dropped kerbs of one small rectangle: its region's alone (~0.2 KB a building; 1.2 KB when every ramp of the map was worked out at the first ask).
     expect(large.systems['curbRamps']! / large.buildings).toBeLessThan(0.5 * 1024);
-  }, 120_000);
+  });
 });

@@ -57,7 +57,7 @@ const heap = async (): Promise<number> => {
 };
 
 function cooked(name: string): RoadDoc {
-  const dir = new URL('../../cooked/cities/', import.meta.url);
+  const dir = new URL('../../../cooked/cities/', import.meta.url);
   const data = JSON.parse(gunzipSync(readFileSync(new URL(`${name}.json.gz`, dir))).toString('utf8')) as SerializedDoc;
   const bytes = gunzipSync(readFileSync(new URL(`${name}.table.gz`, dir)));
   const table = tableIn(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));

@@ -45,7 +45,7 @@ const heap = async (): Promise<{ js: number; arrays: number }> => {
 };
 
 function cooked(name: string): RoadDoc {
-  const dir = new URL('../../cooked/cities/', import.meta.url);
+  const dir = new URL('../../../cooked/cities/', import.meta.url);
   const data = JSON.parse(gunzipSync(readFileSync(new URL(`${name}.json.gz`, dir))).toString('utf8')) as SerializedDoc;
   const bytes = gunzipSync(readFileSync(new URL(`${name}.table.gz`, dir)));
   const table = tableIn(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
@@ -58,7 +58,7 @@ function cooked(name: string): RoadDoc {
 const flat = (): number => 0;
 
 /** `walkBytes`: the JS heap a walk of every record leaves held by the table (`tableRows.ts`: an entry a record held, let go when it is collected); `layerBytes`: the JS heap the layer adds; `arrayBytes`: the array buffers it adds (outside the JS heap: its columns, the masses' arrays). */
-interface Held { readonly buildings: number; readonly walkBytes: number; readonly layerBytes: number; readonly arrayBytes: number; readonly decoded: number; readonly ms: number }
+interface Held { readonly buildings: number; readonly walkBytes: number; readonly layerBytes: number; readonly arrayBytes: number; readonly decoded: number; readonly frames: number }
 
 /** The layer updated round one camera over the city's middle until it settles; the heap it adds and the records left decoded. */
 async function heldRound(name: string): Promise<Held> {
@@ -74,21 +74,22 @@ async function heldRound(name: string): Promise<Held> {
   for (const b of doc.buildings.all()) volumes += b.volumes.length;
   expect(volumes).toBeGreaterThan(0);
   const before = await heap();
-  const started = performance.now();
   const layer = createBuildingLayer();
   layer.levelOfDetail(eye.x, eye.y, m(150), 120, null);
+  // The frames it took to settle (a count, not the real clock: `tests/arch/testRules.spec.ts`).
+  let frames = 0;
   for (let frame = 0; frame < 400; frame++) {
+    frames = frame + 1;
     layer.update(doc, flat, 'g');
     layer.levelOfDetail(eye.x, eye.y, m(150), 120, null);
     if (!layer.pending) break;
   }
-  const ms = performance.now() - started;
   const after = await heap();
   const decoded = doc.buildings.table!.held();
   // Kept alive to here: what is measured is what the live layer holds.
   expect(layer.books()).toBeTruthy();
   layer.dispose();
-  return { buildings: doc.buildings.size, walkBytes: before.js - walkFrom.js, layerBytes: after.js - before.js, arrayBytes: after.arrays - before.arrays, decoded, ms };
+  return { buildings: doc.buildings.size, walkBytes: before.js - walkFrom.js, layerBytes: after.js - before.js, arrayBytes: after.arrays - before.arrays, decoded, frames };
 }
 
 describe("the buildings layer's page memory", () => {
@@ -97,7 +98,7 @@ describe("the buildings layer's page memory", () => {
     const large = await heldRound('large-7');
     const mb = (bytes: number): string => (bytes / 1e6).toFixed(1);
     for (const [name, held] of [['small', small], ['large', large]] as const) {
-      console.log(`[layerMemory] ${name}: ${held.buildings} buildings, a walk of the table ${mb(held.walkBytes)} MB, layer ${mb(held.layerBytes)} MB of JS heap and ${mb(held.arrayBytes)} MB of arrays, ${held.decoded} records decoded, ${held.ms.toFixed(0)} ms`);
+      console.log(`[layerMemory] ${name}: ${held.buildings} buildings, a walk of the table ${mb(held.walkBytes)} MB, layer ${mb(held.layerBytes)} MB of JS heap and ${mb(held.arrayBytes)} MB of arrays, ${held.decoded} records decoded, settled in ${held.frames} frames`);
     }
     expect(large.buildings).toBeGreaterThan(small.buildings * 4);
     // The records held decoded: the table's recent reads (`tableRows.ts` RECENT, 2048) and the few the view's cells and signature buildings read, the same for six times the buildings.

@@ -49,5 +49,5 @@ describe('world census', () => {
       }
     `);
     layer.dispose();
-  }, 60_000);
+  });
 });

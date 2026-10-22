@@ -99,5 +99,5 @@ describe('the undo of 1,000 edits', () => {
     expect(ids.map((id) => doc.buildings.get(id)!.palette)).toEqual(firstThousand.map((b) => (b.palette + 10) % 8));
     for (let i = 0; i < 1000; i++) history.redo(doc);
     expect(doc.buildings.get(ids[99]! as BuildingId)!.name).toBe('Edit 1999');
-  }, 30_000);
+  });
 });

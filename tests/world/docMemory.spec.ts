@@ -46,5 +46,5 @@ describe("the document's memory", () => {
     // The table's index (12 B a building) and the slots of the records read (WeakRef, 4-8 B): far below the ~300 B the report allows.
     expect(after).toBeLessThan(300);
     expect(after).toBeLessThan(before / 10);
-  }, 60_000);
+  });
 });

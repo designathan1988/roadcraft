@@ -90,12 +90,12 @@ describe('the roads\' heights solved round the view first, the rest after', () =
 
   it('end on the whole solve: the large city on level ground', () => {
     scopedThenCompleted(layCity(largeCityPlan(7)), FLAT_GROUND, m(700), m(320), 400);
-  }, 30_000);
+  });
 
   it('end on the whole solve: the large city on relief', () => {
     const ground: Ground = (x, y) => 6 * Math.sin(x / 210) + 4 * Math.cos(y / 170) + 2 * Math.sin((x + y) / 90);
     scopedThenCompleted(layCity(largeCityPlan(7)), ground, m(700), m(320), 400);
-  }, 30_000);
+  });
 
   it('end on the whole solve: a town on its relief, with bridges, decks and tunnels', () => {
     const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
