@@ -76,6 +76,37 @@ export function legOf(d: Leg): Leg {
   return new PackedLeg(d.seg, d.far, d.plusSide, d.typeIndex, d.direction, d.approaching, d.road, v);
 }
 
+/** A road's directions by number, for `packLegs`. */
+const DIRECTIONS: readonly SegmentDirection[] = ['both', 'aToB', 'bToA'];
+/** How many numbers `packLegs` gives a leg: its road, far node, side, type, direction, approach and profile (an index into the roads), then its run (`PackedLeg`). */
+const LEG_PACK = 7 + SHIFT + 1;
+
+/**
+ * Legs as one run of numbers, their profiles in `roads` (each once: a message's clone keeps one copy of an object it meets twice):
+ * DO NOT hand a thread a leg as an object of points - the page took 0.4 s to read back the junctions of the city of 70,000 buildings
+ * solved off it (2026-10-22).
+ */
+export function packLegs(legs: readonly Leg[], roads: RoadType[]): number[] {
+  const out: number[] = [];
+  for (const leg of legs) {
+    let road = roads.indexOf(leg.road);
+    if (road < 0) road = roads.push(leg.road) - 1;
+    out.push(leg.seg, leg.far, leg.plusSide === 'left' ? 1 : 0, leg.typeIndex, DIRECTIONS.indexOf(leg.direction), leg.approaching ? 1 : 0, road,
+      leg.origin.x, leg.origin.y, leg.dir.x, leg.dir.y, leg.nrm.x, leg.nrm.y, leg.ang, leg.hw, leg.hwLeft, leg.hwRight, leg.hwSidewalk, leg.length, leg.shift);
+  }
+  return out;
+}
+
+/** The legs of `packLegs`. */
+export function unpackLegs(nums: readonly number[], roads: readonly RoadType[]): Leg[] {
+  const out: Leg[] = [];
+  for (let k = 0; k < nums.length; k += LEG_PACK) {
+    out.push(new PackedLeg(nums[k]! as SegmentId, nums[k + 1]! as NodeId, nums[k + 2] === 1 ? 'left' : 'right', nums[k + 3]!,
+      DIRECTIONS[nums[k + 4]!]!, nums[k + 5] === 1, roads[nums[k + 6]!]!, nums.slice(k + 7, k + LEG_PACK)));
+  }
+  return out;
+}
+
 /** A leg's fields as plain data (`LegData`). */
 export function legData(leg: Leg): LegData {
   return {

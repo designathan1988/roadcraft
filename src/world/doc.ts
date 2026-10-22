@@ -52,6 +52,7 @@ import { type GrownRows, selectRows } from './growth/rows';
 import { gatesOf } from './buildingGates';
 import { PoleIndex } from './poleIndex';
 import { TileIndex } from './tileIndex';
+import { PointFiling } from './pointFiling';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT, m } from './units';
@@ -176,7 +177,7 @@ export class RoadDoc {
   private landscapeMap: Map<number, LandscapeItem> = new RecordMap();
   get landscape(): ReadonlyMap<number, LandscapeItem> { return this.landscapeMap; }
   /** The street furniture by place (`landscapeIn`), in cells a few items wide. */
-  private landscapeCells = new CellFiling<number, LandscapeItem>(LANDSCAPE_CELL);
+  private landscapeCells = new PointFiling<number>(LANDSCAPE_CELL);
   /** How many street name plates carry each name (`roads/streetNames.ts` gives a new street a name none has). */
   private streetNameCount = new Map<string, number>();
   get streetNamesInUse(): ReadonlyMap<string, number> { return this.streetNameCount; }
@@ -602,21 +603,24 @@ export class RoadDoc {
 
   /** The street furniture standing in the cells a rectangle reaches (a superset: test each), in increasing id order. */
   landscapeIn(rect: ChangeRect): LandscapeItem[] {
-    return this.landscapeCells.idsMeeting(rect).map((id) => this.landscapeMap.get(id)!);
+    return this.landscapeCells.idsMeeting(rect, this.landscapeAt).map((id) => this.landscapeMap.get(id)!);
   }
 
   /** The street furniture whose box reaches any of `rects`, each once, in increasing id order (`CellFiling.idsMeetingAny`). */
   landscapeInAny(rects: readonly ChangeRect[]): LandscapeItem[] {
-    return this.landscapeCells.idsMeetingAny(rects).map((id) => this.landscapeMap.get(id)!);
+    return this.landscapeCells.idsMeetingAny(rects, this.landscapeAt).map((id) => this.landscapeMap.get(id)!);
   }
+
+  /** Where a piece of street furniture stands, read from its record (`PointFiling`: the filing keeps no place of its own). */
+  private readonly landscapeAt = (id: number): LandscapeItem => this.landscapeMap.get(id)!;
 
   /** A record put (new, or replacing the one of its id, which keeps its place in the map's order). */
   private putLandscapeRecord(item: LandscapeItem): void {
     this.ownIndex('landscape');
     const was = this.landscapeMap.get(item.id);
-    if (was) this.countStreetName(was, -1);
+    if (was) { this.countStreetName(was, -1); this.landscapeCells.remove(was.id, was.x, was.y); }
     this.landscapeMap.set(item.id, item);
-    this.landscapeCells.file(item.id, item, [item.x, item.y, item.x, item.y]);
+    this.landscapeCells.file(item.id, item.x, item.y);
     this.countStreetName(item, 1);
   }
 
@@ -625,7 +629,7 @@ export class RoadDoc {
     if (!was) return;
     this.ownIndex('landscape');
     this.landscapeMap.delete(id);
-    this.landscapeCells.remove(id);
+    this.landscapeCells.remove(id, was.x, was.y);
     this.countStreetName(was, -1);
   }
 
@@ -638,10 +642,10 @@ export class RoadDoc {
   private clearLandscapeRecords(): void {
     this.landscapeMap.clear();
     if (this.sharedIndices.delete('landscape')) {
-      this.landscapeCells = new CellFiling(LANDSCAPE_CELL);
+      this.landscapeCells = new PointFiling(LANDSCAPE_CELL);
       this.streetNameCount = new Map();
     } else {
-      this.landscapeCells.copyFrom(new CellFiling(LANDSCAPE_CELL));
+      this.landscapeCells.clear();
       this.streetNameCount.clear();
     }
   }
@@ -1990,7 +1994,7 @@ export class RoadDoc {
         this.barrierCells = CellFiling.over(this.barrierCells);
         return;
       case 'landscape':
-        this.landscapeCells = CellFiling.over(this.landscapeCells);
+        this.landscapeCells = PointFiling.over(this.landscapeCells);
         this.streetNameCount = new ForkMap(this.streetNameCount);
     }
   }
@@ -3059,10 +3063,12 @@ function landscapeRecord(raw: NonNullable<SerializedDoc['landscape']>[number], r
   if (!isLandscapeKind(raw?.kind) || !Number.isFinite(raw.x) || !Number.isFinite(raw.y) || !Number.isInteger(raw.id)) return null;
   const at = repair ? onWorld(raw) : { x: raw.x, y: raw.y };
   // The game's own string for the kind, not the parsed one (a string of its own an item, ~24 B each).
-  return { id: raw.id, kind: LANDSCAPE_KINDS.find((k) => k === raw.kind) ?? raw.kind, x: at.x, y: at.y,
-    ...(isSignType(raw.signType) ? { signType: raw.signType } : {}),
-    ...(typeof raw.text === 'string' && raw.text ? { text: raw.text.slice(0, SIGN_TEXT_MAX) } : {}),
-    ...(Number.isFinite(raw.planted) ? { planted: raw.planted } : {}) };
+  // DO NOT make it by spreading its optional fields into a literal: an object so made took ~100 B more than one of its four fields (2026-10-22); those it has are added after, in the same order.
+  const item: { -readonly [K in keyof LandscapeItem]: LandscapeItem[K] } = { id: raw.id, kind: LANDSCAPE_KINDS.find((k) => k === raw.kind) ?? raw.kind, x: at.x, y: at.y };
+  if (isSignType(raw.signType)) item.signType = raw.signType;
+  if (typeof raw.text === 'string' && raw.text) item.text = raw.text.slice(0, SIGN_TEXT_MAX);
+  if (Number.isFinite(raw.planted)) item.planted = raw.planted as number;
+  return item;
 }
 
 /** A stored wall, fence or hedge, or null when it is not one (fewer than two points). */

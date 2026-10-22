@@ -51,6 +51,19 @@ export class Ring {
     this.count = edges.length;
   }
 
+  /** The ring as its run of numbers and its edge count, for another thread (`Ring.fromRun`): the run itself, not a copy. */
+  run(): { readonly data: readonly number[]; readonly count: number } {
+    return { data: this.data, count: this.count };
+  }
+
+  /** A ring from its run (`run`), the run kept as it is. */
+  static fromRun(run: { readonly data: readonly number[]; readonly count: number }): Ring {
+    const ring = Object.create(Ring.prototype) as { data: readonly number[]; count: number };
+    ring.data = run.data.slice();
+    ring.count = run.count;
+    return ring as unknown as Ring;
+  }
+
   /** The first vertex (a new point at each call). */
   get start(): Vec2 {
     return { x: this.data[START]!, y: this.data[START + 1]! };

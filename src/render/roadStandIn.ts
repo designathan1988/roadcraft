@@ -95,9 +95,10 @@ export class RoadStandIn {
       const node = net.doc.node(id);
       if (!levels || !node || !node.incident.every((s) => only.has(s))) continue;
       const height = (x: number, y: number): number => heights.at(x, y);
-      const casing = levels.get(Level.Casing), asphalt = levels.get(Level.Asphalt);
-      if (casing) fill(casing.ring.flatten(), height, casingParts);
-      if (asphalt) fill(asphalt.ring.flatten(), height, asphaltParts);
+      // The outlines kept (`JunctionLevels.ringAt`): DO NOT make the casing's level again for its outline alone.
+      const casing = levels.ringAt(Level.Casing), asphalt = levels.ringAt(Level.Asphalt);
+      if (casing) fill(casing.flatten(), height, casingParts);
+      if (asphalt) fill(asphalt.flatten(), height, asphaltParts);
     }
     const meshes = [meshOf(casingParts, this.casing, 1), meshOf(asphaltParts, this.asphalt, 2)].filter((m): m is Mesh => m !== null);
     if (!meshes.length) return;

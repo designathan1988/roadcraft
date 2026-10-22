@@ -386,12 +386,13 @@ export function buildRoadElevation(
       if (net.transitions.has(node)) return PLATE_MARGIN;
       // The plate is flat over the junction's whole footprint, its footways and verges included (`Network.plateReach`).
       let reach = trim ?? 0;
-      const outer = net.junctions.get(node)?.get(Level.Casing);
-      const inner = net.junctions.get(node)?.get(Level.Asphalt);
-      if (outer && inner) {
+      // The casing's legs alone (`JunctionLevels.legsAt`): DO NOT make the casing's level at every junction for its widths.
+      const levels = net.junctions.get(node);
+      if (levels?.has(Level.Casing) && levels.has(Level.Asphalt)) {
+        const inner = levels.legsAt(Level.Asphalt);
         let extra = 0;
-        for (const leg of outer.legs) {
-          const carriage = inner.legs.find((l) => l.seg === leg.seg);
+        for (const leg of levels.legsAt(Level.Casing)) {
+          const carriage = inner.find((l) => l.seg === leg.seg);
           if (carriage) extra = Math.max(extra, leg.hw - carriage.hw);
         }
         reach += extra;

@@ -69,11 +69,12 @@ export function farRoadInput(net: Network, heights: FarRoadHeights, groundAt: (x
     if (!node) continue;
     // A junction every road of which the solve left: on the ground, as they are.
     const height = node.incident.length > 0 && node.incident.every((s) => pending.has(s)) ? onGround : roadAt;
-    const casing = levels.get(Level.Casing), asphalt = levels.get(Level.Asphalt);
-    if (casing) add(casing.ring.flatten(), 0, CASING, height);
+    // The outlines kept (`JunctionLevels.ringAt`): DO NOT make every junction's casing level again for its outline alone.
+    const casing = levels.ringAt(Level.Casing), asphalt = levels.ringAt(Level.Asphalt);
+    if (casing) add(casing.flatten(), 0, CASING, height);
     if (asphalt) {
       const types = node.incident.map((s) => net.ribbons.get(s)?.typeIndex ?? -1).filter((t) => t >= 0);
-      add(asphalt.ring.flatten(), 1, ASPHALT_BY_CLASS[types.length ? Math.max(...types) : 0] ?? STREET_MEANS.asphalt, height);
+      add(asphalt.flatten(), 1, ASPHALT_BY_CLASS[types.length ? Math.max(...types) : 0] ?? STREET_MEANS.asphalt, height);
     }
   }
   const input: FarRoadInput = { cell, origin, exclude, points: new Float64Array(points), counts: new Uint32Array(counts), layers: new Uint8Array(layers), colors: new Float32Array(colors) };

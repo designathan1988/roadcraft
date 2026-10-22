@@ -30,12 +30,12 @@ import { METERS_PER_UNIT } from '@world/units';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
-import { RoadDoc, type JunctionControl } from '@world/doc';
+import { RoadDoc, type JunctionControl, type SerializedDoc } from '@world/doc';
 import { cutLotsByRoads } from '@world/lots';
 import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
-import { Network } from '@world/network';
+import { Network, type NetworkBake } from '@world/network';
 import { buildLargeCityMap, buildSmallCityMap } from '@editor/smallCityMap';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
@@ -100,7 +100,8 @@ import { carryStreetKit } from '@editor/roads/streetKit';
 import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
-import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
+import { History, followNetwork, openedGenerated, restoreInto, restoreSnapshot, serialize } from '@editor/history';
+import type { NetworkBakeAsk, NetworkBakeReply } from './networkBake.worker';
 import { SampleRing, STUTTER_MS } from '@core/sampleRing';
 import { problems } from '@core/assert';
 import { SessionSummary, fieldReport, problemBridge, shaderErrorHook, watchContext, wireFieldReport } from './fieldReport';
@@ -2063,6 +2064,29 @@ function openedOf(reply: CityGenReply): OpenedCity {
   return reply.buildings ? preparedCity(reply.data, reply.buildings instanceof ArrayBuffer ? tableIn(reply.buildings) : reply.buildings) : { data: reply.data, table: null };
 }
 
+/**
+ * A document's network solved by a job worker (`networkBake.worker.ts`), as the page will restore it (`restoreInto`); null without a job
+ * queue (a test) or when the worker failed: the page then solves it itself. DO NOT solve a large city's every junction on the page
+ * behind the curtain: the page stood blocked 1.6 s in the network's rebuild for the city of 70,000 buildings (2026-10-22).
+ */
+function networkBakeOf(data: SerializedDoc, table: ArrayBufferLike | null): Promise<NetworkBake | null> {
+  if (!canQueueJobs()) return Promise.resolve(null);
+  return new Promise((done) => {
+    submitJob({
+      service: 'networkBake', key: 'networkBake', priority: 0,
+      // The document and its buildings' table are all it reads: fit for a desktop job process (the table copied there).
+      crosses: true,
+      write: () => ({ data: { id: cityAskId++, data, table, generated: openedGenerated(data, table) } satisfies NetworkBakeAsk, transfer: [] }),
+      done: (answer) => {
+        const reply = answer as NetworkBakeReply;
+        if (!reply.bake) console.warn('[city] the network was not solved off the page', reply.error);
+        done(reply.bake ?? null);
+      },
+      failed: (message) => { console.warn('[city] the network was not solved off the page', message); done(null); },
+    });
+  });
+}
+
 /** The city's worker asked for a city (`priority`: the queue's, 0 first), its answer kept under `key` for the next opening of this seed. */
 function cityJob(ask: CityGenAsk, key: string | null, priority: number): Promise<CityGenReply> {
   return new Promise((done, fail) => {
@@ -2138,8 +2162,11 @@ async function openCityNow(ask: CityGenAsk): Promise<void> {
   try {
     const city = await cityData(ask);
     performance.mark('city:data');
+    // Its network solved off the page while the curtain stays (`networkBake.worker.ts`): the page's build takes it.
+    const bake = await networkBakeOf({ ...city.data, relief: NEW_RELIEF, markingStyle: 'br' }, city.table);
+    performance.mark('city:baked');
     generatingCity = false;
-    openCity(city.data, openedBuildings(city) > 5_000, city.table);
+    openCity(city.data, openedBuildings(city) > 5_000, city.table, bake);
     performance.mark('city:applied');
   } catch (error) {
     console.error('The city could not be made.', error);
@@ -2164,11 +2191,13 @@ function openLargeCity(seed: number, radius?: number): Promise<void> {
 }
 
 /** `table`: its buildings' table, prepared by the city's worker (`editor/preparedCity.ts`). */
-function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, table: ArrayBufferLike | null = null): void {
+function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, table: ArrayBufferLike | null = null, bake: NetworkBake | null = null): void {
   history.begin(doc);
   // A large city opens at a district, its first world covering the view alone (`renderer.ts` openingBuild): the whole map's roads took tens of seconds the curtain showed nothing of.
   deferSessionSave = large;
   if (large) scene.scopeOpening(true);
+  // Taken by the rebuild of the map put in place (`restoreInto`): offered right before it, so no rebuild of the map before takes it.
+  if (bake) net.offerBake(bake);
   applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import', table);
   // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).
   history.end(doc);
