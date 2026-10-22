@@ -229,7 +229,7 @@ async function diagnose() {
   const flightPrograms = await programNames();
   const flight = await frameWindow(0, () => page.evaluate(fly, tour));
   const nav = { frames: flight, profile: await profileStop('navigate') };
-  nav.shadows = await page.evaluate(() => { const s = window.__roadcraft.scene().shadowStats?.(); return s ? { passes: s.passes, whole: s.whole, over: s.over, why: s.why, widest: s.widest?.slice(0, 5), changers: s.changers?.slice(0, 10) } : null; });
+  nav.shadows = await page.evaluate(() => { const s = window.__roadcraft.scene().shadowStats?.(); return s ? { passes: s.passes, whole: s.whole, over: s.over, why: s.why, widest: s.widest?.slice(0, 5), changers: s.changers?.slice(0, 10), near: s.near?.slice(0, 10) } : null; });
   nav.allocations = allocationsOf((await cdp.send('HeapProfiler.stopSampling')).profile, flight.frame.seconds);
   // The same flight again, the GPU timed pass by pass (its per-pass queries cost the page: kept out of the flight above).
   await setView({ x: centre.x, y: centre.y, zoom: 2.5, az: 45, el: 48 });

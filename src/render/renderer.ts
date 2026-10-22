@@ -238,7 +238,7 @@ export interface SceneHandle {
   scopeOpening(large: boolean): void;
   /** The sun's cascades' passes since the last call (`SunCascades.takeStats`). */
   /** `unknown`: the still casters whose last change had no box to tell (the stores thrown away for them: what to give bounds to). */
-  shadowStats(): (ReturnType<SunCascades['takeStats']> & { readonly unknown: readonly string[]; readonly widest: readonly string[]; readonly changers: readonly string[] }) | null;
+  shadowStats(): (ReturnType<SunCascades['takeStats']> & { readonly unknown: readonly string[]; readonly widest: readonly string[]; readonly changers: readonly string[]; readonly near: readonly string[] }) | null;
   /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
   buildingLevels(): Readonly<Record<string, number>>;
   /** What draws each cell of buildings now, by key (`massCells.ts` census): the census of holes (`tests/perf/massBase.spec.ts`). */
@@ -699,6 +699,8 @@ export function createSceneRenderer(
   const casterUnknown: string[] = [];
   /** The widest change boxes seen since the stats were last taken (`shadowStats`): the caster's name and its box's longest side, m - what throws the stores away for a box over half the map. */
   const casterWidest: { name: string; side: number }[] = [];
+  /** The same, of the changes under the near cascade's cover (`changeNear`): what throws the near store away (`tooBigNear`). */
+  const casterWidestNear: { name: string; side: number }[] = [];
   /** The casters whose signature changed since the stats were last taken, by name, and how many passes each (`shadowStats`: what keeps a still view's stores from standing). */
   const casterChangers = new Map<string, number>();
   const noteChanger = (mesh: Object3D): void => {
@@ -707,6 +709,11 @@ export function createSceneRenderer(
   };
   const noteWidest = (mesh: Object3D, box: Box3): void => {
     const side = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    if (changeNear?.intersectsBox(box)) {
+      const near = casterWidestNear.findIndex((w) => w.name === (mesh.name || mesh.type));
+      if (near >= 0) casterWidestNear[near]!.side += side;
+      else if (casterWidestNear.length < 16) casterWidestNear.push({ name: mesh.name || mesh.type, side });
+    }
     const at = casterWidest.findIndex((w) => w.name === (mesh.name || mesh.type));
     if (at >= 0) { if (side > casterWidest[at]!.side) casterWidest[at]!.side = side; return; }
     if (casterWidest.length < 16) casterWidest.push({ name: mesh.name || mesh.type, side });
@@ -1293,7 +1300,7 @@ export function createSceneRenderer(
   /** The box the sun's cascades cover (`crowdFrustum.keep`), and the margin past it, world units. */
   const cascadeCover = new Box3();
   const CASCADE_KEEP_MARGIN = m(24);
-  /** The widest cover kept, world units a side: a street's or a district's near cascade, not the map's. */
+  /** The widest cover kept, world units a side: a street's or a district's near cascade, not the map's. Past it (a high flight) the cover is off: at 1,200 m the flight drew its near cascade whole more, not less (98 against 77 of ~650 passes, 2026-10-22). */
   const CASCADE_KEEP_MOST = m(600);
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
@@ -3110,8 +3117,11 @@ export function createSceneRenderer(
       const widest = casterWidest.sort((a, b) => b.side - a.side).map((w) => `${w.name} ${Math.round(w.side)}`);
       casterWidest.length = 0;
       const changers = [...casterChangers].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${n}`);
+      // Under the near cascade: by the sum of their sides, what changed there most.
+      const near = casterWidestNear.sort((a, b) => b.side - a.side).map((w) => `${w.name} ${Math.round(w.side)}`);
+      casterWidestNear.length = 0;
       casterChangers.clear();
-      return stats ? { ...stats, unknown: [...casterUnknown], widest, changers } : null;
+      return stats ? { ...stats, unknown: [...casterUnknown], widest, changers, near } : null;
     },
     setGeometryBudget(budget) {
       geometryBudget = budget;

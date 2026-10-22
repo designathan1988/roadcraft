@@ -213,7 +213,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const everDrawn = lights.map(() => false);
   const framesSince = lights.map((_light, i) => -i * SAFETY_STAGGER);
   /** What `takeStats` tells. */
-  const stats = { passes: 0, whole: lights.map(() => 0), over: lights.map(() => 0), why: { refit: 0, changed: 0, effects: 0, safety: 0, noStore: 0, scroll: 0, patch: 0, deferred: 0, thrown: 0, noBox: 0, tooBig: 0, tooBigNear: 0 } };
+  const stats = { passes: 0, whole: lights.map(() => 0), over: lights.map(() => 0), why: { refit: 0, changed: 0, effects: 0, safety: 0, noStore: 0, scroll: 0, patch: 0, deferred: 0, thrown: 0, noBox: 0, tooBig: 0, tooBigNear: 0, refitSun: 0, refitSize: 0, refitDepth: 0, refitMove: 0 } };
   /** Each cascade's held sun and light axes: a cascade is fitted again for the sun only when the true sun left its own tolerance (`sunTolerance`), the far cascades, with texels of metres, far less often than the near one. Cascade 0's is the sun the rest of the game reads (`toSun`, the light's direction). */
   const holds = lights.map(() => new SunHold());
   const sunStepped = lights.map(() => true);
@@ -661,6 +661,13 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     const need = Math.max(maxR - minR, maxU - minU) / 2;
     // The same half-side, sun and depth range: the map's grid stands, and the store's texels with it.
     const same = f.placed && !sunStepped[i] && f.half >= need && f.half <= need * SHRINK * ROOM && sLo >= f.sLo && sHi <= f.sHi;
+    // Why it is fitted again, the near cascade's (`takeStats`): the sun stepped, its size, its depth range, or a move its store cannot follow.
+    if (i === 0 && f.placed && !(same && minR >= f.cr - f.half && maxR <= f.cr + f.half && minU >= f.cu - f.half && maxU <= f.cu + f.half)) {
+      if (sunStepped[i]) stats.why.refitSun++;
+      else if (!(f.half >= need && f.half <= need * SHRINK * ROOM)) stats.why.refitSize++;
+      else if (!(sLo >= f.sLo && sHi <= f.sHi)) stats.why.refitDepth++;
+      else stats.why.refitMove++;
+    }
     if (same && minR >= f.cr - f.half && maxR <= f.cr + f.half && minU >= f.cu - f.half && maxU <= f.cu + f.half) return false;
     if (same && renderer !== null && storeValid[i]) {
       // The square moved: its centre on the same texel grid, the store scrolled to it and the strips uncovered drawn alone (`scrollInto`). DO NOT draw the whole town again for a pan of a fifth of the square: the store holds every texel of the overlap, to the bit.
@@ -692,7 +699,10 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     const texel = (2 * f.half) / Math.max(1, lights[i]!.shadow.mapSize.x);
     f.cr = Math.round((minR + maxR) / 2 / texel) * texel;
     f.cu = Math.round((minU + maxU) / 2 / texel) * texel;
-    const slack = m(10) + 0.1 * (sHi - sLo);
+    // Room for the ground and the tops a move brings under the square (a taller building, a dip): DO NOT fit the depth range tight - the
+    // near cascade was fitted again for its depth 25 times in a flight of ~600 passes, its store thrown away each time (`refitDepth`,
+    // `npm run diagnose` on a clean tree, 2026-10-22). The map's depth is 24 bits: a kilometre of range still holds under 0.1 mm a step.
+    const slack = m(40) + 0.25 * (sHi - sLo);
     f.sLo = sLo - slack;
     f.sHi = sHi + slack;
     f.placed = true;
