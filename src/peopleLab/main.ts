@@ -22,7 +22,8 @@ import { setupNavigation } from './navigation';
 import { ClipPlayer, Poser, spreadArms, uprightHead, type PoseName } from './pose';
 import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
 import { variedFace } from './presets';
-import { HandShaper, REGION_IDS, addDragMorphs, type Region } from './direct';
+import { HandShaper } from './direct';
+import { HandDrag } from './handDrag';
 import { measureBody } from './proportions';
 import { fitBody } from './bodyFit';
 import { dressPerson } from './dress';
@@ -94,20 +95,18 @@ function startLab(): void {
 
   function setSpec(patch: Partial<PersonSpec>, slider?: Slider): void {
     person = { ...person, spec: { ...person.spec, ...patch } };
-    if (slider && reshapeTo(slider)) return;
+    if (slider && reshapeTo([slider])) return;
     rebuild();
   }
 
   /** The person now drawn on the built one: at once from the slider's samples, exactly once it rests. False when it needs a build. */
-  function reshapeTo(slider?: Slider): boolean {
+  function reshapeTo(sliders: readonly Slider[] = [], holding = false): boolean {
     const r = reshaper, from = committed;
     if (!r || !from || buildKey(person) !== buildKey(from)) return false;
-    if (slider) {
-      const axis: ShapeAxis = { key: slider.key, value: slider.get(person), base: slider.get(from), range: slider.range,
-        context: shapeOf(slider.set(from, 0)), at: (v) => builder.shape(effective(slider.set(from, v))) };
-      r.move([axis]);
-    } else r.move([]);
-    reshapeAt = performance.now() + (slider ? SHAPE_REST : 0);
+    r.move(sliders.map((sl): ShapeAxis => ({ key: sl.key, value: sl.get(person), base: sl.get(from), range: sl.range,
+      context: shapeOf(sl.set(from, 0)), at: (v) => builder.shape(effective(sl.set(from, v))) })));
+    // Held by the hand: exact once it lets go (`HandDrag.rest`).
+    reshapeAt = holding ? 0 : performance.now() + (sliders.length ? SHAPE_REST : 0);
     return true;
   }
   let reshaping = false;
@@ -315,7 +314,6 @@ function startLab(): void {
         clips = loaded;
         startClip();
       }, (error: unknown) => { console.warn('[people-lab] the motion library could not be loaded; the lab poses instead', error); });
-      if (!shaping) dragWeights = null;
       shaper = nextShaper;
       reshaper = next.reshape && next.meshes[0] ? new Reshaper(next.meshes[0], next.reshape) : null;
       committed = target;
@@ -330,7 +328,7 @@ function startLab(): void {
       console.error('[people-lab] the person could not be built', error);
       stats.textContent = `Erro ao montar: ${String(error).slice(0, 120)}`;
     } finally {
-      if (mine === generation) { busy.classList.remove('on'); pictures.paused = !!shaping; }
+      if (mine === generation) { busy.classList.remove('on'); pictures.paused = hand.dragging; }
     }
   }
 
@@ -656,75 +654,23 @@ function startLab(): void {
     return new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   };
   let carving = false;
-  // ---- shaping by hand: the part under the pointer, dragged
-  const tip = el('div', { cls: 'tip' });
-  stage.append(tip);
+  // ---- shaping by hand: the part under the pointer, dragged (`handDrag.ts`)
   const shapeTabs = new Set(['pessoa', 'rosto']);
-  let shaping: { region: Region; x0: number; y0: number; fx: number; fy: number } | null = null;
-  /** While dragging: each drag direction's morph weight, drawn every frame on top of the face (`loop`). */
-  let dragWeights: Record<string, number> | null = null;
-  /** How far each drag morph reaches, in slider units. */
-  const DRAG_REACH = 0.6;
-  /** The four drag morphs (each slider up and down) added to the person built now: the drag is seen at once, the rebuild comes on release. */
-  async function prepareDrag(region: Region, fx: number, fy: number): Promise<void> {
-    const b = built;
-    if (b && await addDragMorphs(b, region, fx, fy, DRAG_REACH, (slider, to) => builder.shape({ ...person, spec: { ...person.spec, features: { ...person.spec.features, [slider]: to } } }), () => built === b)) dragWeights = {};
-  }
-  const FACE_REGIONS = new Set(['head', 'forehead', 'brows', 'eyes', 'nose', 'cheeks', 'mouth', 'jaw', 'ears']);
-  let lastPick = 0;
-  const feature = (k: string): number => person.spec.features[k] ?? 0;
-  const showTip = (e: PointerEvent, region: Region | null): void => {
-    glow.hover.value = region ? REGION_IDS.indexOf(region.id) + 1 : 0;
-    if (!region) { tip.classList.remove('on'); renderer.domElement.style.cursor = ''; return; }
-    const r = stage.getBoundingClientRect();
-    tip.style.left = `${e.clientX - r.left + 16}px`;
-    tip.style.top = `${e.clientY - r.top + 12}px`;
-    tip.innerHTML = `<b>${region.label}</b><br>${region.x.label} ${feature(region.x.slider).toFixed(2)} · ${region.y.label} ${feature(region.y.slider).toFixed(2)}`;
-    tip.classList.add('on');
-    renderer.domElement.style.cursor = shaping ? 'grabbing' : 'grab';
-  };
+  const sliderOf = (name: string): Slider => (name.startsWith('body:') ? bodySlider(name.slice(5) as keyof MacroParams) : featureSlider(name));
+  const hand = new HandDrag({
+    canvas: renderer.domElement, stage, camera, controls, glow,
+    shaper: () => shaper, active: () => !editor() && shapeTabs.has(tab),
+    value: (name) => sliderOf(name).get(person),
+    set: (values, names) => {
+      const sliders = names.map(sliderOf);
+      for (const sl of sliders) person = sl.set(person, values[sl.key.replace(/^feature:/, '')] ?? sl.get(person));
+      if (!reshapeTo(sliders, true)) rebuild(120);
+    },
+    rest: () => { if (!reshapeTo()) rebuild(0); render(); },
+  });
   renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (tab === 'pose' && e.button === 0 && !e.altKey && !editor()) { if (posing.pick(ndc(e), camera)) render(); return; }
-    if (editor() || e.button !== 0 || !shaper || !shapeTabs.has(tab)) return;
-    const region = shaper.pick(ndc(e), camera);
-    if (!region) return;
-    shaping = { region, x0: e.clientX, y0: e.clientY, fx: feature(region.x.slider), fy: feature(region.y.slider) };
-    // The instant preview only on the face: a body slider (a length, a girth) moves skin the hair, eyes and garments do not follow in a morph.
-    if (FACE_REGIONS.has(region.id)) void prepareDrag(region, shaping.fx, shaping.fy);
-    controls.enabled = false;
-    renderer.domElement.setPointerCapture(e.pointerId);
-    showTip(e, region);
+    if (tab === 'pose' && e.button === 0 && !e.altKey && !editor()) { if (posing.pick(ndc(e), camera)) render(); }
   });
-  renderer.domElement.addEventListener('pointermove', (e) => {
-    if (editor() || !shaper || !shapeTabs.has(tab)) { tip.classList.remove('on'); return; }
-    if (shaping) {
-      const s = shaping;
-      const clamp = (x: number): number => Math.max(-1, Math.min(1, x));
-      const vx = clamp(s.fx + (e.clientX - s.x0) / 180), vy = clamp(s.fy - (e.clientY - s.y0) / 180);
-      person = { ...person, spec: { ...person.spec, features: { ...person.spec.features, [s.region.x.slider]: vx, [s.region.y.slider]: vy } } };
-      if (dragWeights) {
-        // Seen at once: each axis's morph towards the side it is dragged.
-        const dx = (vx - s.fx) / DRAG_REACH, dy = (vy - s.fy) / DRAG_REACH;
-        dragWeights = { 'drag:x+': Math.max(0, dx), 'drag:x-': Math.max(0, -dx), 'drag:y+': Math.max(0, dy), 'drag:y-': Math.max(0, -dy) };
-      } else rebuild(120);
-      showTip(e, s.region);
-      return;
-    }
-    const now = performance.now();
-    if (now - lastPick < 70) return;
-    lastPick = now;
-    showTip(e, shaper.pick(ndc(e), camera));
-  });
-  const endShape = (): void => {
-    if (!shaping) return;
-    shaping = null;
-    controls.enabled = true;
-    // The exact shape, built once the hand lets go; the drag morphs stay drawn until it is ready.
-    rebuild(0);
-    render();
-  };
-  renderer.domElement.addEventListener('pointerup', endShape);
-  renderer.domElement.addEventListener('pointerleave', () => { if (!shaping) { tip.classList.remove('on'); glow.hover.value = 0; } });
   renderer.domElement.addEventListener('pointerdown', (e) => {
     const ed = editor();
     if (!ed || e.button !== 0 || e.altKey) return;
@@ -785,11 +731,7 @@ function startLab(): void {
         if (m.morphTargetInfluences && m.morphTargetDictionary) {
           applyFace(m.morphTargetInfluences, m.morphTargetDictionary, face);
           // Past the game's cap of 1 (three.js blends any weight): blinks and gaze kept as they are.
-          if (activity) for (const [name, i] of Object.entries(m.morphTargetDictionary)) if (!CALM.has(name) && !name.startsWith('drag:')) m.morphTargetInfluences[i] = m.morphTargetInfluences[i]! * EXPRESSIVE;
-          if (dragWeights) for (const [name, w] of Object.entries(dragWeights)) {
-            const i = m.morphTargetDictionary[name];
-            if (i !== undefined) m.morphTargetInfluences[i] = w;
-          }
+          if (activity) for (const [name, i] of Object.entries(m.morphTargetDictionary)) if (!CALM.has(name)) m.morphTargetInfluences[i] = m.morphTargetInfluences[i]! * EXPRESSIVE;
         }
       }
     }

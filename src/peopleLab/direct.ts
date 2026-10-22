@@ -1,5 +1,5 @@
 import { PARTS } from './presets';
-import { BufferAttribute, Raycaster, Vector3, type Camera, type SkinnedMesh, type Vector2 } from 'three';
+import { Raycaster, Vector3, type BufferAttribute, type Camera, type SkinnedMesh, type Vector2 } from 'three';
 
 /** SHAPING BY HAND, as Create-a-Sim does it: the part under the pointer is found, and dragging it changes that part (sideways one slider, up and down another) */
 
@@ -187,25 +187,4 @@ export class HandShaper {
     if (/spine/i.test(bone)) return REGIONS['belly']!;
     return null;
   }
-}
-
-/** The four drag morphs (each slider of the region up and down by `reach`) added to the person built now: the drag is seen at once (`dragWeights`), the rebuild comes on release. False when the person cannot (the tailored shells) or was rebuilt meanwhile. */
-export async function addDragMorphs(built: { readonly meshes: readonly SkinnedMesh[]; readonly morph?: (positions: Float32Array) => Float32Array },
-  region: Region, fx: number, fy: number, reach: number, shapeAt: (slider: string, value: number) => Promise<Float32Array>, current: () => boolean): Promise<boolean> {
-  const mesh = built.meshes[0];
-  if (!built.morph || !mesh) return false;
-  const attributes = [...(mesh.geometry.morphAttributes.position ?? [])].filter((a) => !a.name.startsWith('drag:'));
-  for (const [axis, slider, from] of [['x', region.x.slider, fx], ['y', region.y.slider, fy]] as const) {
-    for (const sign of [1, -1]) {
-      const shape = await shapeAt(slider, Math.max(-1, Math.min(1, from + sign * reach)));
-      if (!current()) return false;
-      const attribute = new BufferAttribute(built.morph(shape), 3);
-      attribute.name = `drag:${axis}${sign > 0 ? '+' : '-'}`;
-      attributes.push(attribute);
-    }
-  }
-  mesh.geometry.morphAttributes.position = attributes;
-  mesh.geometry.morphTargetsRelative = true;
-  mesh.updateMorphTargets();
-  return true;
 }
