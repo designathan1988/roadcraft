@@ -20,9 +20,10 @@ export function effective(person: LabPerson): LabPerson {
 /** What a build depends on beyond the body's shape: what is worn (a child wears the tailored shells), the sex's motion capture. Equal keys reshape, unequal ones build. */
 export function buildKey(p: LabPerson): string {
   const e = effective(p);
-  const { body: _b, motion: _m, style: _s, ...rest } = e;
-  void _b; void _m; void _s;
-  return JSON.stringify({ ...rest, spec: { ...e.spec, name: '', mood: 0, features: null, body: e.spec.body.gender < 0.5 } });
+  // The outfit's colour and style are drawn by uniforms (`clothStyle.ts`): changing them builds nothing.
+  const { body: _b, motion: _m, style: _s, outfitStyle: _o, ...rest } = e;
+  void _b; void _m; void _s; void _o;
+  return JSON.stringify({ ...rest, spec: { ...e.spec, name: '', mood: 0, features: null, body: e.spec.body.gender < 0.5, look: { ...e.spec.look, outfitTint: null } } });
 }
 
 /** Everything the body's shape is made from. */

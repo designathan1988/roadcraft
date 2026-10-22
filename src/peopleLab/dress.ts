@@ -12,7 +12,8 @@ export async function dressPerson(person: BuiltPerson, spec: PersonSpec, layers:
   polishPerson(person.meshes, spec.look, sculpted);
   // A grown hairstyle is no catalogue file: its card texture is not loaded (the lab draws hair solid anyway).
   const own = spec.look.hairCut?.startsWith(PROC_PREFIX) || spec.look.hairCut === GROOM;
-  const skin = await loadSkinAppearance({ ...spec, look: { ...spec.look, ...(own ? { hairCut: 'none' } : {}), } });
+  // The outfit's colour is the lab's own (`clothStyle.ts`, live): the game's dye left off, the texture drawn as it is.
+  const skin = await loadSkinAppearance({ ...spec, look: { ...spec.look, outfitTint: null, ...(own ? { hairCut: 'none' } : {}) } });
   let soft = painted.get(skin.texture);
   if (!soft) {
     soft = paintedSkin(skin.texture, 1) ?? skin.texture;

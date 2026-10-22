@@ -12,6 +12,7 @@ import type { Framing, Thumbs } from './thumbs';
 import { el, type widgets } from './widgets';
 import { icon } from './icons';
 import { PickerMemory, picker } from './picker';
+import { PLAIN_STYLE, type ClothPattern, type OutfitStyle } from './clothStyle';
 
 /** THE CREATOR'S PANELS, as Create-a-Sim lays them out: pictures of every choice first, the fine sliders folded away under them */
 
@@ -42,6 +43,9 @@ export interface PanelContext {
   /** The worn outfit's length and looseness. */
   outfitShape(): HairShape;
   setOutfitShape(s: HairShape): void;
+  /** The outfit's pattern, accent and finish (`clothStyle.ts`), and setting it (with the main colour, when given): drawn at once, no build. */
+  outfitStyle(): OutfitStyle | undefined;
+  setOutfitStyle(s: OutfitStyle, tint?: number | null): void;
   fitFace(): void;
   extraOf(kinds: readonly WardrobeItem['kind'][]): string;
   setExtra(kinds: readonly WardrobeItem['kind'][], name: string): void;
@@ -269,10 +273,22 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       }],
     ] : [
       ['ajustar', 'Ajustar', () => {
-        // The outfit worn, shortened below the waist (as Mutable clips a hem: a hand-made garment stretched longer opens holes and shows its
-        // inside) and looser or closer, on the piece itself.
-        const os = c.outfitShape();
+        // The outfit worn, as Create-a-Style dressed any garment: its colour and a pattern in a second colour, its finish, then shortened
+        // below the waist (as Mutable clips a hem) and looser or closer. Colour and pattern are drawn at once; the cut rebuilds.
+        const os = c.outfitShape(), st = c.outfitStyle() ?? PLAIN_STYLE;
+        const put = (patch: Partial<OutfitStyle>, tint?: number | null): void => c.setOutfitStyle({ ...(c.outfitStyle() ?? PLAIN_STYLE), ...patch }, tint);
+        const patterned = st.pattern !== 'plain';
         return [
+          swatches(CLOTH, p().spec.look.outfitTint ?? -1, (col) => put({}, col)),
+          c.ui.iconSeg<ClothPattern>([['plain', 'plain', 'Liso'], ['stripes', 'stripes', 'Listras'], ['gingham', 'gingham', 'Xadrez'], ['dots', 'dots', 'Poá'],
+            ['denim', 'denim', 'Sarja (jeans)'], ['rib', 'rib', 'Canelado']], st.pattern, (v) => put({ pattern: v })),
+          ...(patterned ? [
+            swatches(CLOTH, st.accent, (col) => put({ accent: col })),
+            slider('Escala', 3, 40, 0.5, st.scale, (v) => put({ scale: v }), (v) => `${Math.round(100 / v)} cm`),
+            slider('Intensidade', 0, 1, 0.01, st.amount, (v) => put({ amount: v }), (v) => `${Math.round(v * 100)}%`),
+          ] : []),
+          slider('Textura', 0, 1, 0.01, st.detail, (v) => put({ detail: v }), (v) => `${Math.round(v * 100)}%`),
+          slider('Brilho', 0, 1, 0.01, st.shine, (v) => put({ shine: v }), (v) => `${Math.round(v * 100)}%`),
           slider('Comprimento', 0.6, 1, 0.01, Math.min(1, os.length), (v) => c.setOutfitShape({ ...c.outfitShape(), length: v }), (v) => `${Math.round(v * 100)}%`),
           slider('Folga', -0.3, 1.5, 0.05, os.volume * 10, (v) => c.setOutfitShape({ ...c.outfitShape(), volume: v / 10 }), (v) => `${v.toFixed(1)} cm`),
         ];
@@ -284,7 +300,6 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       ['inteira', 'Conjuntos', () => [allToggle(), outfitPics([...WARDROBE.outfits[sex()], ...opts('suit'), ...opts('dress')]), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
       ['cima', 'Parte de cima', () => [allToggle(), outfitPics(opts('top')), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
       ['baixo', 'Parte de baixo', () => [c.ui.iconSeg([['bottom', 'trousers', 'Calças e shorts'], ['skirt', 'skirt', 'Saias']] as const, lowerKind, (v) => { lowerKind = v; }), ...(c.pictures.baking ? [extraPics('bottom', 'Nenhuma'), extraPics('skirt', 'Nenhuma')] : [extraPics(lowerKind, 'Nenhuma')])]],
-      ['cor', 'Cor', () => [swatches(CLOTH, p().spec.look.outfitTint ?? -1, (col) => c.setLook({ outfitTint: col }))]],
       ['sapatos', 'Sapatos', () => [
         pics(SHOES_CATALOGUE[sex()].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ footwear: n }) })), p().spec.look.footwear, (id) => c.setLook({ footwear: id }), 'feet'),
         ...carvePiece(p().spec.look.footwear, 'Editar sapatos'),

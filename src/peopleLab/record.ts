@@ -4,6 +4,7 @@ import type { HairStyle } from '@people/hair/procedural';
 import type { CartoonStyle } from '@render/people/cartoon';
 import type { HairSculpt } from './sculpt';
 import type { Motion } from './posing';
+import { PLAIN_STYLE, type OutfitStyle } from './clothStyle';
 import { yearsFromAge } from '@people/body/macro';
 
 /** A PERSON MADE IN THE LAB, as saved: the game's own `PersonSpec` plus what the game does not yet keep per person */
@@ -28,6 +29,8 @@ export interface LabPerson {
   readonly hairShape?: HairShape;
   /** The worn outfit's length and looseness (`hairShape.ts`, its wave unused). */
   readonly outfitShape?: HairShape;
+  /** The worn outfit's pattern, accent colour and finish (`clothStyle.ts`); its main colour is `spec.look.outfitTint`. */
+  readonly outfitStyle?: OutfitStyle;
 }
 
 export interface LabRoster {
@@ -72,6 +75,7 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.body ? { body: person.body } : {}),
     ...(!isPlain(person.hairShape) ? { hairShape: person.hairShape } : {}),
     ...(!isPlain(person.outfitShape) ? { outfitShape: person.outfitShape } : {}),
+    ...(person.outfitStyle && JSON.stringify(person.outfitStyle) !== JSON.stringify(PLAIN_STYLE) ? { outfitStyle: person.outfitStyle } : {}),
   };
 }
 

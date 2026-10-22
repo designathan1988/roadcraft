@@ -24,6 +24,7 @@ import { variedFace } from './presets';
 import { HandShaper } from './direct';
 import { HandDrag } from './handDrag';
 import { PersonHistory } from './history';
+import { clothStyle, clothUniforms, setCloth, type OutfitStyle } from './clothStyle';
 import { applyLabFace, attachFace } from './faceRig';
 import { measureBody } from './proportions';
 import { fitBody } from './bodyFit';
@@ -246,6 +247,9 @@ function startLab(): void {
   views.append(...viewButtons, spin);
   // Undo and redo of the whole person (`history.ts`); inside a sculptor, of its strokes.
   const history = new PersonHistory();
+  /** The outfit's colours and pattern, shared by every build's materials (`clothStyle.ts`); a pending history step for them. */
+  const cloth = clothUniforms();
+  let styleStepAt = 0;
   const undoButton = el('button', { cls: 'toggle', title: 'Desfazer (Ctrl+Z)' }, icon('undo', 16));
   const redoButton = el('button', { cls: 'toggle', title: 'Refazer (Ctrl+Y)' }, icon('redo', 16));
   function step(back: boolean): void {
@@ -309,7 +313,10 @@ function startLab(): void {
       const nextShaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
       if (nextShaper) next.meshes[0]!.geometry.setAttribute('labRegion', new BufferAttribute(nextShaper.regionAttribute(), 1));
       const skin = await dressPerson(next, effective(target).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit));
-      for (const m of next.meshes) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) if (m.geometry.hasAttribute('labRegion')) regionGlow(mat as MeshStandardMaterial, glow);
+      for (const m of next.meshes) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        if (m.geometry.hasAttribute('labRegion')) regionGlow(mat as MeshStandardMaterial, glow);
+        clothStyle(mat as MeshStandardMaterial, cloth);
+      }
       if (mine !== generation) { releaseSkinAppearance(skin); dispose(next.scene); return; }
       if (appearance) releaseSkinAppearance(appearance);
       appearance = skin;
@@ -433,6 +440,12 @@ function startLab(): void {
     setHairShape: (hs) => { person = { ...person, hairShape: hs }; rebuild(200); },
     outfitShape: () => person.outfitShape ?? PLAIN_SHAPE,
     setOutfitShape: (os) => { person = { ...person, outfitShape: os }; rebuild(200); },
+    outfitStyle: () => person.outfitStyle,
+    // Drawn at once by the cloth's uniforms; a step of the history once the hand rests.
+    setOutfitStyle: (s: OutfitStyle, tint?: number | null) => {
+      person = { ...person, outfitStyle: s, ...(tint !== undefined ? { spec: { ...person.spec, look: { ...person.spec.look, outfitTint: tint } } } : {}) };
+      styleStepAt = performance.now() + 400;
+    },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
     openCarver: () => { void openCarver(); },
@@ -703,6 +716,8 @@ function startLab(): void {
     if (buildAt && now >= buildAt) { buildAt = 0; void runBuild(); }
     if (reshapeAt && now >= reshapeAt) { reshapeAt = 0; void commitShape(); }
     reshaper?.tick();
+    setCloth(cloth, person.spec.look.outfitTint, person.outfitStyle);
+    if (styleStepAt && now >= styleStepAt) { styleStepAt = 0; history.checkpoint(person); }
     if (toastUntil && now >= toastUntil) { toastUntil = 0; toast.classList.remove('on'); }
     while (revokeAt.length && revokeAt[0]![0] <= now) URL.revokeObjectURL(revokeAt.shift()![1]);
     if (built) {
@@ -740,7 +755,7 @@ function startLab(): void {
   void fitFace();
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
-  (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, buildNow() { busy.classList.add('on'); buildAt = performance.now(); }, setStyle, frame, get built() { return built; },
+  (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, buildNow() { busy.classList.add('on'); buildAt = performance.now(); }, get builds() { return generation; }, setStyle, frame, get built() { return built; },
     pick(tabId: string) { tab = tabId; render(); }, posing, async bakePictures() {
       // Every panel of both sexes asked once, each picture drawn on the mannequin; the bake script writes them as files.
       pictures.baking = true;
