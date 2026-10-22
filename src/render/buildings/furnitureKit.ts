@@ -8,6 +8,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { weldGeometry } from '../mesh/weld';
+import { dropHiddenFaces } from '../mesh/hiddenFaces';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type FurnitureKind } from '@world/buildings/interior';
 
 /** The furniture people use inside buildings, as models */
@@ -340,7 +341,9 @@ const BULB = hex(0xfffbe8);
 export function createFurnitureGeometries(): Record<FurnitureKind, BufferGeometry> {
   const out = {} as Record<FurnitureKind, BufferGeometry>;
   for (const kind of FURNITURE_KINDS) {
-    const parts = build(kind).map((g) => {
+    const built = build(kind);
+    dropHiddenFaces(built);
+    const parts = built.map((g) => {
       // Every part with the same attributes, so they merge: a part that is no box keeps its own normals (no rounding, radius 0).
       const n = g.getAttribute('position').count;
       if (!g.getAttribute('uv')) g.setAttribute('uv', new BufferAttribute(new Float32Array(n * 2), 2));
