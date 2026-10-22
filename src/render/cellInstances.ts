@@ -52,6 +52,9 @@ export interface KindMesh {
   readonly made?: (mesh: InstancedMesh) => void;
 }
 
+/** Texels a small kind's widest instance must span (radius) to cast into a cascade (`makeMesh`). */
+const SMALL_CAST_TEXELS = 2;
+
 /** How a kind's level is chosen by its size on the screen: its bounding diameter, device pixels. */
 export interface KindLevels {
   /** The radius a size is measured by, model units: the diameter times the instance's largest scale. */
@@ -60,6 +63,8 @@ export interface KindLevels {
   readonly far?: number;
   /** Pixels across under which it is not drawn at all (a kind with no far pictures). */
   readonly least?: number;
+  /** A small thing (a bin, a bench): cast into a cascade only where it spans `SMALL_CAST_TEXELS` (`makeMesh`). */
+  readonly small?: boolean;
   /** Whether the far pictures can be drawn (taken, `plantImpostors.ts`): until then every size is drawn near. */
   readonly ready?: () => boolean;
   /** Told each view culled for and half the screen's height, device pixels (the far pictures' uniforms). */
@@ -549,8 +554,11 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       before(renderer, ...rest);
     };
     spec.made?.(mesh);
-    // Cast into a cascade only with instances, and where the widest it draws reaches a texel (`shadowCasters.ts`).
-    s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest });
+    // Cast into a cascade only with instances, and where the widest it draws reaches a texel (`shadowCasters.ts`); a small thing (a kind
+    // not drawn under a pixel, `least`: a bin, a bench, a hydrant) only where it spans `SMALL_CAST_TEXELS`. DO NOT cast a bin a texel or two
+    // wide into every cascade: at the district's view the street furniture drew twice its own triangles again into the shadows (bins 0.8 M
+    // in the scene, 1.5 M in the cascades, `npm run diagnose`, 2026-10-22) for shadows PCF spreads to nothing.
+    s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest, texels: k.spec.levels?.least !== undefined || k.spec.levels?.small === true ? SMALL_CAST_TEXELS : 1 });
     return mesh;
   };
 

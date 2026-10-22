@@ -7,6 +7,8 @@ export interface SizedCaster {
   readonly mesh: Mesh;
   readonly casts: boolean;
   radius(): number;
+  /** Texels its radius must span to cast (1 when none): a small thing's shadow narrower than that is a smudge PCF spreads away. */
+  readonly texels?: number;
 }
 
 const casters = new Set<SizedCaster>();
@@ -28,6 +30,6 @@ export function castCastersInto(texel: number | null): void {
     if (texel === null) { c.mesh.castShadow = c.casts; continue; }
     const instanced = c.mesh as InstancedMesh;
     const holds = !instanced.isInstancedMesh || instanced.count > 0;
-    c.mesh.castShadow = c.casts && holds && c.radius() >= texel;
+    c.mesh.castShadow = c.casts && holds && c.radius() >= texel * (c.texels ?? 1);
   }
 }

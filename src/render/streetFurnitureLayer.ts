@@ -1,4 +1,4 @@
-import { Color, Group, type Frustum, type InstancedMesh, type Matrix4, type MeshDepthMaterial } from 'three';
+import { BoxGeometry, BufferAttribute, type BufferGeometry, Color, Group, type Frustum, type InstancedMesh, type Matrix4, type MeshDepthMaterial, Vector3 } from 'three';
 
 import { Rng } from '@core/rng';
 import { angleOf } from '@core/vec2';
@@ -66,12 +66,42 @@ export interface FurnitureSource {
   readonly groundAt: (x: number, y: number) => number;
 }
 
+/** Pixels across under which a small prop is drawn as its box (`farBox`). */
+const PROP_FAR_PX = 12;
+
+/** A prop seen a few pixels across: the box round it, every attribute of the model at its mean (its tone, its finish), 12 triangles. */
+function farBox(model: BufferGeometry): BufferGeometry {
+  if (!model.boundingBox) model.computeBoundingBox();
+  const b = model.boundingBox!;
+  const size = b.getSize(new Vector3()), centre = b.getCenter(new Vector3());
+  const box = new BoxGeometry(Math.max(size.x, 1e-3), Math.max(size.y, 1e-3), Math.max(size.z, 1e-3));
+  box.translate(centre.x, centre.y, centre.z);
+  const vertices = box.getAttribute('position').count;
+  for (const [name, attribute] of Object.entries(model.attributes)) {
+    if (name === 'position' || name === 'normal' || name === 'uv') continue;
+    const n = attribute.count, size1 = attribute.itemSize;
+    const mean = new Array<number>(size1).fill(0);
+    for (let i = 0; i < n; i++) for (let c = 0; c < size1; c++) mean[c]! += attribute.getComponent(i, c) / n;
+    const array = new Float32Array(vertices * size1);
+    for (let v = 0; v < vertices; v++) for (let c = 0; c < size1; c++) array[v * size1 + c] = mean[c]!;
+    box.setAttribute(name, new BufferAttribute(array, size1, attribute.normalized));
+  }
+  box.computeBoundingSphere();
+  return box;
+}
+
 /** The meshes of the furniture and the street plants: the stores, and where each plant's body and cards are. */
 export function furnitureStores(kit: SceneryKit, pictures: SceneryPictures): RunStore[] {
-  /** A prop; `small`: one a pixel across or less is not drawn (a lamp's glow and its pools are seen from afar). */
+  /** A prop; `small`: drawn as its box in its mean colour under `PROP_FAR_PX` across (`farBox`), thinned under a pixel or two as the far
+   *  pictures are (`plantImpostors.ts` thinWant) - a lamp's glow and its pools are seen from afar, never small.
+   *  DO NOT draw a bin of 250 triangles a few pixels across: at the district's view the small props drew ~3.5 M triangles, scene and shadows
+   *  (`npm run diagnose`, 2026-10-22). */
   const prop = (name: string, geometry: RunStore['geometry'], material: RunStore['material'], castShadow = true, receiveShadow = true, renderOrder?: number, small = false): RunStore =>
     ({ name, geometry, material, castShadow, receiveShadow, ...(renderOrder !== undefined ? { renderOrder } : {}), tinted: false, cards: false,
-      ...(small ? { levels: { reach: radiusOf(geometry), least: 1 } } : {}) });
+      ...(small ? {
+        levels: { reach: radiusOf(geometry), far: PROP_FAR_PX, small: true },
+        with: [{ name: `${name}-far`, geometry: farBox(geometry), material, castShadow, receiveShadow, cards: false, far: true }],
+      } : {}) });
   const f = kit.furniture;
   const stores: RunStore[] = [
     prop('street-lights', f.lamp, kit.props),

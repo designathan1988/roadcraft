@@ -187,7 +187,16 @@ async function diagnose() {
       await window.__labGpu.capture();
       const c = window.__labGpu.report()?.capture;
       const rows = (list) => (list ?? []).slice(0, 12).map((r) => ({ key: r.key, calls: r.calls, triangles: r.triangles, instances: r.instances }));
-      return c ? { calls: c.calls, triangles: c.triangles, byLayer: rows(c.byLayer), byPass: rows(c.byPass), byMaterial: rows(c.byMaterial) } : null;
+      // By the mesh's name (digits taken out: one row a kind of run or cell) and pass: which object of a layer holds its triangles.
+      const byName = new Map();
+      for (const d of window.__labGpu.lastCapture()?.records ?? []) {
+        const k = `${d.pass === 'shadows' ? 'shadow ' : ''}${String(d.name || d.path).replace(/\d+/g, '#')}`;
+        const row = byName.get(k) ?? { key: k, calls: 0, triangles: 0, instances: 0 };
+        row.calls += d.calls; row.triangles += d.triangles; row.instances += d.instances;
+        byName.set(k, row);
+      }
+      const named = [...byName.values()].sort((a, b) => b.triangles - a.triangles).slice(0, 25);
+      return c ? { calls: c.calls, triangles: c.triangles, byLayer: rows(c.byLayer), byPass: rows(c.byPass), byMaterial: rows(c.byMaterial), byName: named } : null;
     });
     row.memory = await memory();
     // The programs built while this view landed (its first frames in play): named, so each can be built before the curtain.
