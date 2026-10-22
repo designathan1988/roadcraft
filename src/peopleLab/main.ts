@@ -361,6 +361,8 @@ function startLab(): void {
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
     hairShape: () => person.hairShape ?? PLAIN_SHAPE,
     setHairShape: (hs) => { person = { ...person, hairShape: hs }; rebuild(200); },
+    outfitShape: () => person.outfitShape ?? PLAIN_SHAPE,
+    setOutfitShape: (os) => { person = { ...person, outfitShape: os }; rebuild(200); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
     openCarver: () => { void openCarver(); }, openAtelier: () => { void openAtelier(); },

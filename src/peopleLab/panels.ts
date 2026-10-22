@@ -38,6 +38,9 @@ export interface PanelContext {
   /** The worn hairstyle's length, volume and waves (`hairShape.ts`). */
   hairShape(): HairShape;
   setHairShape(s: HairShape): void;
+  /** The worn outfit's length and looseness. */
+  outfitShape(): HairShape;
+  setOutfitShape(s: HairShape): void;
   fitFace(): void;
   extraOf(kinds: readonly WardrobeItem['kind'][]): string;
   setExtra(kinds: readonly WardrobeItem['kind'][], name: string): void;
@@ -274,6 +277,14 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
         ];
       }],
     ] : [
+      ['ajustar', 'Ajustar', () => {
+        // The outfit worn, made longer or shorter below the waist and looser or closer, on the piece itself.
+        const os = c.outfitShape();
+        return [
+          slider('Comprimento', 0.6, 1.6, 0.01, os.length, (v) => c.setOutfitShape({ ...c.outfitShape(), length: v }), (v) => `${Math.round(v * 100)}%`),
+          slider('Folga', -0.3, 1.5, 0.05, os.volume * 10, (v) => c.setOutfitShape({ ...c.outfitShape(), volume: v / 10 }), (v) => `${v.toFixed(1)} cm`),
+        ];
+      }],
       ['looks', 'Looks', () => [
         pics(LOOKS.map((lk) => ({ id: lk.label, label: lk.label, variant: withLook(sex() === 'female' ? lk.female : lk.male) })), null,
           (id) => { const lk = LOOKS.find((x) => x.label === id)!; c.setLook(sex() === 'female' ? lk.female : lk.male); }, 'body'),

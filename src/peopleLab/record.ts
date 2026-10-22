@@ -29,6 +29,8 @@ export interface LabPerson {
   readonly body?: HairSculpt;
   /** The worn hairstyle's length, volume and waves (`hairShape.ts`). */
   readonly hairShape?: HairShape;
+  /** The worn outfit's length and looseness (`hairShape.ts`, its wave unused). */
+  readonly outfitShape?: HairShape;
 }
 
 export interface LabRoster {
@@ -72,6 +74,7 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.motion && Object.keys(person.motion).length ? { motion: person.motion } : {}),
     ...(person.body ? { body: person.body } : {}),
     ...(!isPlain(person.hairShape) ? { hairShape: person.hairShape } : {}),
+    ...(!isPlain(person.outfitShape) ? { outfitShape: person.outfitShape } : {}),
     ...(person.garment && spec.look.extras?.includes(ATELIER) ? { garment: person.garment } : {}),
   };
 }

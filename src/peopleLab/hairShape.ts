@@ -1,9 +1,10 @@
 import { fitProxy, type ProxyPack } from '@people/body/proxy';
 
-/** HAIR SHAPED BY PARAMETERS: a catalogue hairstyle (hand-made, its quality kept) lengthened or shortened, given volume and waves by sliders, the
+/** HAIR AND CLOTHES SHAPED BY PARAMETERS: a catalogue hairstyle (hand-made, its quality kept) lengthened or shortened, given volume and waves by sliders, the
  *  way the parametric character creators do it - Daz's and Character Creator's per-hairstyle morphs, inZOI's root-to-tip length - computed here
- *  from the piece itself, so every catalogue hairstyle has them. The result is a move of the item's own offsets (as the sculptor's), so it fits
- *  any body as the game fits the item. */
+ *  from the piece itself, so every catalogue hairstyle has them. Garments take the same two of them: their length below the waist (Mutable's
+ *  clip-and-morph does a hem so) and their looseness (Roblox's puffiness). The result is a move of the item's own offsets (as the sculptor's), so
+ *  it fits any body as the game fits the item. */
 
 export interface HairShape {
   /** Length of the hanging part: 1 as made, below 1 shorter, above longer. */

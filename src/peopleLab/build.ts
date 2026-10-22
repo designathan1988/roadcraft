@@ -169,6 +169,9 @@ export class LabBuilder {
     // The worn hairstyle's length, volume and waves, on this body (`hairShape.ts`).
     const shaped = cut ? proxies.get(cut) : undefined;
     if (cut && shaped && !isPlain(person.hairShape)) proxies.set(cut, { ...shaped, pack: shapedPack(shaped.pack, body, person.hairShape!) });
+    // The worn outfit's length and looseness, the same way.
+    const outfit = spec.look.outfit, dressed = outfit ? proxies.get(outfit) : undefined;
+    if (outfit && dressed && !isPlain(person.outfitShape)) proxies.set(outfit, { ...dressed, pack: shapedPack(dressed.pack, body, person.outfitShape!) });
     const sex = spec.body.gender < 0.5 ? 'female' : 'male';
     const input = {
       proxies,
