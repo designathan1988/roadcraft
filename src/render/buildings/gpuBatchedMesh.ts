@@ -71,6 +71,8 @@ export class GpuBatchedMesh extends BatchedMesh {
   private layouts: Map<string, Layout> | null = null;
   /** The buffers this batch made, let go with it. */
   private readonly made = new Set<WebGLBuffer>();
+  /** Each geometry's own indices (its vertices from 0, two bytes each while it has under 65,536), kept on the page: packing the batch (`compact`) writes the index buffer again from them, shifted to where each geometry lands. DO NOT read the stored indices back from the GPU for it (`getBufferSubData`): it waits for every draw queued before it, on the page, as cells come and go under a moving camera (the player's list, 2026-10-22). */
+  private readonly localIndex = new Map<number, Uint16Array | Uint32Array>();
 
   /** Instances left out of the draws seen from one camera alone (`render/occlusion.ts`: behind the walls standing before the eye). The
    *  shadow passes draw them: three's `onBeforeShadow` lists the batch's draws through `onBeforeRender` with the shadow camera (r186
@@ -211,6 +213,9 @@ export class GpuBatchedMesh extends BatchedMesh {
     const index = new Uint32Array(info.reservedIndexCount);
     const sourceArray = sourceIndex.array;
     for (let i = 0; i < sourceIndex.count; i++) index[i] = info.vertexStart + sourceArray[i]!;
+    const local = vertices <= 65535 ? new Uint16Array(sourceIndex.count) : new Uint32Array(sourceIndex.count);
+    for (let i = 0; i < sourceIndex.count; i++) local[i] = sourceArray[i]!;
+    this.localIndex.set(geometryId, local);
     // The rest of what is reserved points at its first vertex, as three's fill (degenerate triangles).
     index.fill(info.vertexStart, sourceIndex.count);
     gl.bindBuffer(target, (this.geometry.getIndex() as unknown as GLBufferAttribute).buffer);
@@ -226,6 +231,11 @@ export class GpuBatchedMesh extends BatchedMesh {
     info.boundingSphere = geometry.boundingSphere!.clone();
     inner._visibilityChanged = true;
     return geometryId;
+  }
+
+  override deleteGeometry(geometryId: number): this {
+    this.localIndex.delete(geometryId);
+    return super.deleteGeometry(geometryId);
   }
 
   override setGeometrySize(maxVertexCount: number, maxIndexCount: number): void {
@@ -284,14 +294,15 @@ export class GpuBatchedMesh extends BatchedMesh {
       super.setGeometrySize(maxVertexCount, maxIndexCount);
       return;
     }
-    const live = inner._geometryInfo.filter((info) => info.active).sort((a, b) => a.vertexStart - b.vertexStart);
+    const live = inner._geometryInfo.map((info, id) => ({ info, id })).filter(({ info }) => info.active).sort((a, b) => a.info.vertexStart - b.info.vertexStart);
     const used = this.usedCounts();
     if (used.vertices > maxVertexCount || used.indices > maxIndexCount) throw new Error('GpuBatchedMesh: the live geometries do not fit the size asked');
     const old = this.geometry;
-    // Every index stored, read back in one call (one wait on the GPU, not one a geometry).
+    // The indices written again from each geometry's own (`localIndex`); only a geometry whose own are missing (none is stored without them) has every index read back from the GPU, in one call.
     const indexEnd = inner._nextIndexStart;
-    const stored = new Uint32Array(indexEnd);
-    if (indexEnd > 0) {
+    let stored: Uint32Array | null = null;
+    if (live.some(({ id }) => !this.localIndex.has(id)) && indexEnd > 0) {
+      stored = new Uint32Array(indexEnd);
       gl.bindBuffer(gl.COPY_READ_BUFFER, (old.getIndex() as unknown as GLBufferAttribute).buffer);
       gl.getBufferSubData(gl.COPY_READ_BUFFER, 0, stored);
     }
@@ -312,11 +323,18 @@ export class GpuBatchedMesh extends BatchedMesh {
       }
       runFrom = -1;
     };
-    for (const info of live) {
+    for (const { info, id } of live) {
       if (info.vertexStart !== runTo) { flush(); runFrom = info.vertexStart; runAt = nextVertex; }
       runTo = info.vertexStart + info.reservedVertexCount;
-      const delta = nextVertex - info.vertexStart;
-      for (let j = 0; j < info.reservedIndexCount; j++) packed[nextIndex + j] = stored[info.indexStart + j]! + delta;
+      const local = this.localIndex.get(id);
+      if (local) {
+        // Its own indices from its new first vertex; the rest of what it reserves points at that vertex (degenerate triangles, as `setGeometryAt` filled it).
+        for (let j = 0; j < info.indexCount; j++) packed[nextIndex + j] = nextVertex + local[j]!;
+        packed.fill(nextVertex, nextIndex + info.indexCount, nextIndex + info.reservedIndexCount);
+      } else {
+        const delta = nextVertex - info.vertexStart;
+        for (let j = 0; j < info.reservedIndexCount; j++) packed[nextIndex + j] = stored![info.indexStart + j]! + delta;
+      }
       info.vertexStart = nextVertex;
       info.indexStart = nextIndex;
       info.start = nextIndex;

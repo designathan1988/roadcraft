@@ -1,0 +1,48 @@
+{
+  "storage": { "roadcraft.quality": "ultra" },
+  "viewport": [1920, 1080],
+  "city": { "seed": 7, "size": "large" },
+  "steps": [
+    { "until": "(() => { const c = document.getElementById('loading-curtain'); return !!c && getComputedStyle(c).display === 'none'; })()", "name": "curtain gone", "timeout": 300000, "polling": 250 },
+    { "press": "Começar a construir", "optional": true },
+    { "press": "Continuar", "optional": true },
+    { "wait": 2000 },
+
+    { "eval": "window.__roadcraft.sim.setClock(720); window.__roadcraft.measure(true); 1" },
+    { "wait": 2500 },
+    { "setView": [0, 0, 0.6, 45, 48] }, { "wait": 4500 },
+    { "shot": "map" },
+    { "setView": [0, 0, 2.5, 45, 48] }, { "wait": 5000 },
+    { "shot": "district" }, { "memory": "exact" },
+    { "setView": [150, 0, 5, 20, 35] }, { "wait": 5000 },
+    { "shot": "street" }, { "memory": "exact" },
+    { "shot": "street-detail", "clip": [640, 300, 640, 480] },
+
+    { "eval": "window.__roadcraft.measure(false); window.__roadcraft.scene().shadowStats(); 'clock released'" },
+    { "wait": 1500 },
+    { "eval": "window.__roadcraft.scene().shadowStats(); 'zeroed'" },
+    { "usage": { "seconds": 3 } },
+    { "record": "street-still-sun-moving" }, { "wait": 5000 }, { "recordEnd": true },
+    { "eval": "JSON.stringify(window.__roadcraft.scene().shadowStats())" },
+    { "shot": "street-after-sun" },
+
+    { "eval": "window.__roadcraft.scene().shadowStats(); 'zeroed'" },
+    { "record": "street-pan" },
+    { "drag": [[960, 540], [560, 540]], "button": "middle", "steps": 60 },
+    { "drag": [[560, 540], [960, 640]], "button": "middle", "steps": 60 },
+    { "recordEnd": true },
+    { "eval": "JSON.stringify(window.__roadcraft.scene().shadowStats())" },
+    { "shot": "street-panned" },
+
+    { "setView": [0, 0, 2.5, 45, 48] }, { "wait": 4000 },
+    { "eval": "window.__roadcraft.scene().shadowStats(); 'zeroed'" },
+    { "usage": { "seconds": 3 } },
+    { "record": "district-pan" },
+    { "drag": [[960, 540], [460, 540]], "button": "middle", "steps": 60 },
+    { "drag": [[460, 540], [960, 740]], "button": "middle", "steps": 60 },
+    { "recordEnd": true },
+    { "eval": "JSON.stringify(window.__roadcraft.scene().shadowStats())" },
+    { "shot": "district-panned" },
+    { "budget": "district" }
+  ]
+}

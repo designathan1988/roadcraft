@@ -1,4 +1,4 @@
-import { type BufferGeometry, Group, InstancedBufferAttribute, InstancedInterleavedBuffer, InstancedMesh, type Material } from 'three';
+import { Box3, type BufferGeometry, Group, InstancedBufferAttribute, InstancedInterleavedBuffer, InstancedMesh, type Material, Vector3 } from 'three';
 
 import { CELL } from '@world/cells';
 
@@ -21,6 +21,9 @@ import { SHELL_PARTS } from './shellParts';
 /** A cell's instances of one kind in the batch: a contiguous run of the kind's buffers. */
 interface Run {
   readonly cell: string;
+  /** The cell's column and row on the world grid (`CELL`), read from its key once (DO NOT split the key for every run of every kind each frame: `view` runs every frame over every run of the town's facade cells). */
+  readonly i: number;
+  readonly j: number;
   start: number;
   count: number;
   /** A kind made of bars (`PartScreen.pieces`): its instances' widest bar in this cell, m; NaN for a solid kind. */
@@ -47,6 +50,8 @@ export class FarPartBatch {
   private readonly kinds = new Map<PartKind, KindBatch>();
   private readonly cells = new Set<string>();
   private readonly drawn = new Map<string, number>();
+  /** Each cell's instances' world box (every kind), for the shadows: a cell come or gone changes the sun's stores under its box alone (`renderer.ts` casterChanges reads each mesh's `castBox`, and its `wholeBox` when the mesh is shown or hidden). */
+  private readonly boxes = new Map<string, Box3>();
   private faded = false;
   private casting = true;
 
@@ -101,10 +106,8 @@ export class FarPartBatch {
       /** A kind of bars: drawn while some cell's bars span half a pixel where it stands (`partCells.ts` BAR_PIXELS). DO NOT judge them by their whole diagonal at the nearest cell: every facade cell's window frames, 6 cm bars a fifth of a pixel wide that the facade shader already paints, were drawn over the town (5 M triangles of a district's frame, 2026-10-20). */
       let barPixels = 0;
       for (const run of batch.runs) {
-        const comma = run.cell.indexOf(',');
-        const i = Number(run.cell.slice(0, comma)), j = Number(run.cell.slice(comma + 1));
         // A run's key is its facade cell's (the world grid's CELL, 256 m), not a 64 m sub-cell's: read on the sub-cell's side, each run stood a quarter of the way to the origin.
-        const x0 = i * CELL, y0 = j * CELL;
+        const x0 = run.i * CELL, y0 = run.j * CELL;
         const dx = Math.max(x0 - eyeX, 0, eyeX - (x0 + CELL));
         const dy = Math.max(y0 - eyeY, 0, eyeY - (y0 + CELL));
         // Three's world: the plan's y is -z; the eye's height over the cell's ground is the third term.
@@ -130,6 +133,22 @@ export class FarPartBatch {
     }
     this.cells.clear();
     this.drawn.clear();
+    this.boxes.clear();
+    this.tellBoxes(null);
+  }
+
+  /** The meshes told where their instances stand: `changed`, the box of the cell that came or went, joined into each mesh's `castBox`; every mesh's `wholeBox` the union of every cell's. */
+  private tellBoxes(changed: Box3 | null): void {
+    const whole = new Box3();
+    for (const box of this.boxes.values()) whole.union(box);
+    for (const batch of this.kinds.values()) {
+      const data = batch.mesh.userData;
+      data['wholeBox'] = whole;
+      if (changed) {
+        const kept = data['castBox'] as Box3 | undefined;
+        if (kept) kept.union(changed); else data['castBox'] = changed.clone();
+      }
+    }
   }
 
   /** Its instances drawn at the coarsest level the far view was made for. */
@@ -171,19 +190,30 @@ export class FarPartBatch {
   /** A cell drawn at its facade level: its instances of every batched kind, each at the kind's coarsest level. */
   private add(cell: string, filing: PartFiling): void {
     this.cells.add(cell);
+    const comma = cell.indexOf(',');
+    const i = Number(cell.slice(0, comma)), j = Number(cell.slice(comma + 1));
     let triangles = 0;
+    const box = new Box3();
     for (const band of filing.bands) {
       const batch = this.kinds.get(band.kind);
       if (!batch) continue;
       const count = band.start[band.start.length - 1]!;
       if (!count) continue;
+      // Where the band's instances stand: each pose's place, its model's extent at its scale round it (`partPose.ts`: x, y, z, cos, sin, sx, sy, sz).
+      const extent = this.kit.screen[band.kind].extent;
+      for (let k = 0; k < count; k++) {
+        const o = k * POSE_FLOATS;
+        const reach = Math.hypot(band.poses[o + 5]! * extent[0], band.poses[o + 6]! * extent[1], band.poses[o + 7]! * extent[2]);
+        box.expandByPoint(reachPoint.set(band.poses[o]! - reach, band.poses[o + 1]! - reach, band.poses[o + 2]! - reach));
+        box.expandByPoint(reachPoint.set(band.poses[o]! + reach, band.poses[o + 1]! + reach, band.poses[o + 2]! + reach));
+      }
       const start = batch.used;
       this.grow(batch, start + count);
       (batch.poses.array as Float32Array).set(band.poses, start * POSE_FLOATS);
       if (batch.colours && band.colours) (batch.colours.array as Uint16Array).set(band.colours, start * 3);
       const screen = this.kit.screen[band.kind];
       const bar = screen.pieces[0] !== screen.extent ? widestBar(screen.pieces, band.scale) : Number.NaN;
-      batch.runs.push({ cell, start, count, bar });
+      batch.runs.push({ cell, i, j, start, count, bar });
       batch.used += count;
       batch.mesh.count = batch.used;
       batch.mesh.visible = true;
@@ -192,12 +222,16 @@ export class FarPartBatch {
     }
     this.drawn.set(cell, triangles);
     this.group.visible = this.casting;
+    if (!box.isEmpty()) { this.boxes.set(cell, box); this.tellBoxes(box); }
   }
 
   /** A cell gone from the facade level: its runs taken out and the runs after each moved down (the buffers kept compact). */
   private remove(cell: string): void {
     if (!this.cells.delete(cell)) return;
     this.drawn.delete(cell);
+    const box = this.boxes.get(cell);
+    this.boxes.delete(cell);
+    if (box) this.tellBoxes(box);
     for (const batch of this.kinds.values()) {
       for (let i = batch.runs.length - 1; i >= 0; i--) {
         const run = batch.runs[i]!;
@@ -243,6 +277,8 @@ export class FarPartBatch {
     batch.capacity = capacity;
   }
 }
+
+const reachPoint = new Vector3();
 
 /** The run's poses and colours sent to the GPU, its range only. DO NOT clear the ranges a change already added: every cell added or taken out this frame adds its own, and three merges and clears them once, after the upload (r186 `WebGLAttributes.updateBuffer`). */
 function dirty(batch: KindBatch, start: number, count: number): void {

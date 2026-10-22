@@ -1,5 +1,6 @@
 import {
   BasicShadowMap,
+  type Box3,
   DepthFormat,
   DepthTexture,
   DirectionalLight,
@@ -17,6 +18,7 @@ import {
   UnsignedByteType,
   UnsignedIntType,
   Vector3,
+  Vector4,
   WebGLRenderTarget,
   type Camera,
   type Light,
@@ -25,7 +27,7 @@ import {
 } from 'three';
 import { m } from '@world/units';
 
-/** THE SUN'S CASCADED SHADOW MAPS (cascaded shadow maps, Engel, ShaderX5; stable fitting after Valient, ShaderX6) */
+/** THE SUN'S CASCADED SHADOW MAPS (cascaded shadow maps, Engel, ShaderX5; stable fitting after Valient, ShaderX6; the still casters' store scrolled with the view after Acton, "CSM Scrolling", SIGGRAPH 2012; the cascades' whole draws spread over frames as Dybisz, "Shadows optimizations in Cyberpunk 2077", SIGGRAPH 2021) */
 
 /** The sun's cascades: three lights of one direction and colour, each with its own map; the shader lights a pixel once, with the finest map holding it. */
 export const SUN_CASCADES = 3;
@@ -33,8 +35,12 @@ export const SUN_CASCADES = 3;
 const SHADOW_REACH = m(800);
 /** The most eye depth the cascades cover, the whole map seen from above at most. */
 const SHADOW_DEPTH_MAX = m(8000);
-/** How far the sun the shadows are cast by may drift from the true one before it is moved (rad): 0.1 degree. */
+/** How far the sun the shadows are cast by may drift from the true one before it is moved (rad), at the least: 0.1 degree. Each cascade holds its own sun and lets it drift as far as one of its texels of shadow displacement allows (`sunTolerance`): DO NOT refit the three cascades at every 0.1 degree of the city's sun (0.05-0.07 degrees a real second, `city.ts` TIME_SCALE): every 1.5-2 s of play the whole town was drawn into the three maps in one frame. */
 const SUN_STEP = (0.1 * Math.PI) / 180;
+/** A cascade whose square only moved by whole texels keeps the store's depth where the squares overlap and draws the strips uncovered alone (`scrollInto`); strips over this share of the map's area are a whole draw instead (two strip passes and their blits cost more than one whole pass there). */
+const SCROLL_MOST = 0.5;
+/** The most strips a cascade draws in one pass for its changed casters (`rectsOf`). */
+const MOST_STRIPS = 2;
 /** Depth offset of the shadow test, world units (4 cm). */
 const SHADOW_BIAS_WORLD = m(0.04);
 /** A cascade drawn whole after this many frames however still, a last resort for a change nothing told it of (ten seconds at 60 Hz): the casters' signature tells it of every change of what it draws (`renderer.ts` casterSignature, a batch's pieces too). DO NOT redraw it every half second: a whole cascade every ten frames was the frame that missed its vsync in every still view of a large city (a tenth of the frames, measured 2026-10-20). */
@@ -60,6 +66,9 @@ class CascadeShadow extends LightShadow<OrthographicCamera> {
     super.updateMatrices(light);
   }
 }
+
+/** A part of a cascade's square drawn alone (`drawStrips`): its bounds in the light's square about the centre (the camera's), and on the map in pixels (the viewport's). */
+interface Strip { readonly left: number; readonly right: number; readonly bottom: number; readonly top: number; readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 
 /** Where a cascade stands in the light's axes: centre (right, up), half-side, and the depth range along the sun it holds. */
 interface Fit {
@@ -92,6 +101,8 @@ export interface ShadowPassInput {
   readonly still?: boolean;
   /** The view stands where it stood (the camera unmoved): a cascade drawn whole now is kept as its store though its casters changed, the next frames standing on it. Absent: only a still pass keeps its store. */
   readonly keep?: boolean;
+  /** With `still` false: the world boxes holding every still caster that changed since the last pass (`renderer.ts` casterChanges, a few apart from each other) - each cascade's store is drawn again under them alone (`patched`), and stands untouched where they fall outside its square; null: a change with no box to tell, the stores thrown away as before. Absent: the stores thrown away. */
+  readonly patch?: readonly Box3[] | null | undefined;
 }
 
 export interface SunCascades {
@@ -130,9 +141,9 @@ class SunHold {
   readonly u = new Vector3();
   private held = false;
 
-  /** Takes the true sun; true when the held one moved. */
-  take(sun: Vector3): boolean {
-    if (this.held && this.s.angleTo(sun) <= SUN_STEP) return false;
+  /** Takes the true sun; true when the held one moved: when the true sun left `tolerance` (rad) of it. */
+  take(sun: Vector3, tolerance = SUN_STEP): boolean {
+    if (this.held && this.s.angleTo(sun) <= tolerance) return false;
     if (!this.held) {
       this.held = true;
       this.s.copy(sun).normalize();
@@ -185,11 +196,20 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   });
   const fits: Fit[] = lights.map(() => ({ cr: 0, cu: 0, half: 0, sLo: 0, sHi: 0, placed: false }));
   const refitted = lights.map(() => true);
+  /** Whether the cascade's map was ever drawn whole since it was made: a refit of one never drawn (the first frame, the maps made again) waits for no turn, it has no map to stand on. */
+  const everDrawn = lights.map(() => false);
   const framesSince = lights.map((_light, i) => -i * SAFETY_STAGGER);
   /** What `takeStats` tells. */
-  const stats = { passes: 0, whole: lights.map(() => 0), over: lights.map(() => 0), why: { refit: 0, changed: 0, effects: 0, safety: 0, noStore: 0 } };
-  const hold = new SunHold();
-  let sunStepped = true;
+  const stats = { passes: 0, whole: lights.map(() => 0), over: lights.map(() => 0), why: { refit: 0, changed: 0, effects: 0, safety: 0, noStore: 0, scroll: 0, patch: 0, deferred: 0, thrown: 0, noBox: 0, tooBig: 0 } };
+  /** Each cascade's held sun and light axes: a cascade is fitted again for the sun only when the true sun left its own tolerance (`sunTolerance`), the far cascades, with texels of metres, far less often than the near one. Cascade 0's is the sun the rest of the game reads (`toSun`, the light's direction). */
+  const holds = lights.map(() => new SunHold());
+  const sunStepped = lights.map(() => true);
+  /** A cascade whose square only moved this frame, by whole texels of its grid (`fit`): asked to scroll its store into its map and draw the strips uncovered alone (`pass` takes it into `scrolled`, or into a whole draw when the store cannot stand). */
+  const scroll: ({ readonly dx: number; readonly dy: number } | null)[] = lights.map(() => null);
+  /** The scrolls this pass draws (`blitShift`, `stripsOfShift`), with the cascade kept whole after (`whole`). */
+  const scrolled: ({ readonly dx: number; readonly dy: number } | null)[] = lights.map(() => null);
+  /** The parts of each cascade's square its changed casters fall in this pass (`ShadowPassInput.patch`, `rectOf`): cleared and drawn again alone, the rest of the store standing. */
+  const patched: (Strip[] | null)[] = lights.map(() => null);
   let movers: readonly Movers[] = [];
   let casters: ((texel: number | null, cascade: number, half: number) => void) | null = null;
   let enabled = true;
@@ -302,6 +322,14 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   /** The reach of the roots that never change size (`Movers.fixedSize`), kept from frame to frame with the instances it was measured at. */
   const fixedSpheres = new WeakMap<Object3D, { readonly radius: number; readonly count: number }>();
   const texelOf = (i: number): number => (2 * fits[i]!.half) / Math.max(1, lights[i]!.shadow.mapSize.x);
+  /** How far the true sun may leave cascade `i`'s held one, rad: until the shadow of the tallest caster in the view (`height` over the lowest ground) would move by one of the cascade's texels, never under `SUN_STEP`. A sun `e` high moves a shadow's tip by h / sin²e per radian of elevation and h · cot e per radian of azimuth. */
+  const sunTolerance = (i: number, height: number): number => {
+    const f = fits[i]!;
+    if (!f.placed) return SUN_STEP;
+    const e = Math.asin(Math.min(1, Math.max(0.05, holds[i]!.s.y)));
+    const reach = Math.max(m(1), height) * Math.max(1 / Math.sin(e) ** 2, 1 / Math.tan(e));
+    return Math.max(SUN_STEP, texelOf(i) / reach);
+  };
   /** A mover is drawn into cascade `i` only if it is wider than two of its texels: under that, its shadow is a smudge PCF spreads away. */
   const drawnIn = (root: Object3D, i: number, fixed = false): boolean => {
     let r = radii.get(root);
@@ -384,6 +412,135 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     }
   };
 
+  /** Cascade `i`'s square moved by (`dx`, `dy`) whole texels of its grid (`fit`, the store standing for its town): the store's depth where the squares overlap blitted into the map shifted by (-dx, -dy) (Acton, "CSM Scrolling", SIGGRAPH 2012). The strips uncovered are `stripsOfShift`. */
+  const blitShift = (i: number, dx: number, dy: number): void => {
+    if (!renderer) return;
+    const map = lights[i]!.shadow.map, store = stores[i];
+    if (!map?.depthTexture || !store?.depthTexture) return;
+    const size = map.width;
+    const gl = renderer.getContext() as WebGL2RenderingContext;
+    // The overlap, blitted on the GPU. DO NOT take three's `copyTextureToTexture` for a region off the origin: r186 hands `blitFramebuffer` the region's width where it wants the region's far edge, and the overlap came out scaled.
+    const from = renderer.properties.get(store) as { __webglFramebuffer?: WebGLFramebuffer | null };
+    const to = renderer.properties.get(map) as { __webglFramebuffer?: WebGLFramebuffer | null };
+    const w = size - Math.abs(dx), h = size - Math.abs(dy);
+    const sx = Math.max(dx, 0), sy = Math.max(dy, 0), tx = Math.max(-dx, 0), ty = Math.max(-dy, 0);
+    // The blit writes the depth whatever the last material left (the depth mask, the scissor): the state said so.
+    renderer.state.setScissorTest(false);
+    renderer.state.buffers.depth.setMask(true);
+    if (w > 0 && h > 0 && from.__webglFramebuffer && to.__webglFramebuffer) {
+      renderer.state.bindFramebuffer(gl.READ_FRAMEBUFFER, from.__webglFramebuffer);
+      renderer.state.bindFramebuffer(gl.DRAW_FRAMEBUFFER, to.__webglFramebuffer);
+      gl.blitFramebuffer(sx, sy, sx + w, sy + h, tx, ty, tx + w, ty + h, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
+      renderer.state.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+      renderer.state.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    }
+  };
+
+  /** The strips a shift of (`dx`, `dy`) texels uncovers in cascade `i`: in the light's square (the camera's bounds, about its centre) and on the map (pixels, the viewport's share). */
+  const stripsOfShift = (i: number, dx: number, dy: number): Strip[] => {
+    const size = Math.max(1, lights[i]!.shadow.mapSize.x);
+    const half = fits[i]!.half, texel = (2 * half) / size;
+    const strips: Strip[] = [];
+    if (dx > 0) strips.push({ left: half - dx * texel, right: half, bottom: -half, top: half, x: size - dx, y: 0, w: dx, h: size });
+    else if (dx < 0) strips.push({ left: -half, right: -half - dx * texel, bottom: -half, top: half, x: 0, y: 0, w: -dx, h: size });
+    if (dy > 0) strips.push({ left: -half, right: half, bottom: half - dy * texel, top: half, x: 0, y: size - dy, w: size, h: dy });
+    else if (dy < 0) strips.push({ left: -half, right: half, bottom: -half, top: -half - dy * texel, x: 0, y: 0, w: size, h: -dy });
+    return strips;
+  };
+
+  /** Where a world box falls in cascade `i`'s square, a texel of margin round it, on whole texels: the strip to draw again; undefined when it falls outside the square (nothing of the cascade changed). A caster's footprint on the map is its box's corners cast along the sun onto the light's right and up: the box's own extent on those two axes. */
+  const rectOf = (i: number, box: Box3): Strip | undefined => {
+    const f = fits[i]!, hold = holds[i]!;
+    const size = Math.max(1, lights[i]!.shadow.mapSize.x);
+    const texel = (2 * f.half) / size;
+    let minR = Infinity, maxR = -Infinity, minU = Infinity, maxU = -Infinity;
+    for (let k = 0; k < 8; k++) {
+      corner.set(k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z);
+      const r = corner.dot(hold.r) - f.cr, u = corner.dot(hold.u) - f.cu;
+      if (r < minR) minR = r; if (r > maxR) maxR = r;
+      if (u < minU) minU = u; if (u > maxU) maxU = u;
+    }
+    if (!(minR <= maxR)) return undefined;
+    // On whole texels, a texel of margin either way, within the square.
+    const x0 = Math.max(0, Math.floor((minR + f.half) / texel) - 1), x1 = Math.min(size, Math.ceil((maxR + f.half) / texel) + 1);
+    const y0 = Math.max(0, Math.floor((minU + f.half) / texel) - 1), y1 = Math.min(size, Math.ceil((maxU + f.half) / texel) + 1);
+    if (x1 <= x0 || y1 <= y0) return undefined;
+    return { left: -f.half + x0 * texel, right: -f.half + x1 * texel, bottom: -f.half + y0 * texel, top: -f.half + y1 * texel, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  };
+  /** The strips of cascade `i` the changed casters' boxes fall in, at most `MOST_STRIPS` (the nearest two joined while there are more: each strip is a pass of three over the scene, and sixteen a cascade cost the page more than the draws saved, 2026-10-22): an empty list when none does (the store stands), null when together they cover more than `SCROLL_MOST` of the map (a whole draw costs less). */
+  const rectsOf = (i: number, boxes: readonly Box3[]): Strip[] | null => {
+    const size = Math.max(1, lights[i]!.shadow.mapSize.x);
+    const strips: Strip[] = [];
+    for (const box of boxes) {
+      const rect = rectOf(i, box);
+      if (rect !== undefined) strips.push(rect);
+    }
+    while (strips.length > MOST_STRIPS) {
+      // The pair whose union adds the least area.
+      let a = 0, b = 1, least = Infinity;
+      for (let p = 0; p < strips.length; p++) {
+        for (let q = p + 1; q < strips.length; q++) {
+          const u = unionStrip(strips[p]!, strips[q]!);
+          const added = u.w * u.h - strips[p]!.w * strips[p]!.h - strips[q]!.w * strips[q]!.h;
+          if (added < least) { least = added; a = p; b = q; }
+        }
+      }
+      strips[a] = unionStrip(strips[a]!, strips[b]!);
+      strips.splice(b, 1);
+    }
+    let area = 0;
+    for (const strip of strips) area += strip.w * strip.h;
+    return area > SCROLL_MOST * size * size ? null : strips;
+  };
+  /** The strip round two. */
+  const unionStrip = (p: Strip, q: Strip): Strip => {
+    const x = Math.min(p.x, q.x), y = Math.min(p.y, q.y);
+    const x1 = Math.max(p.x + p.w, q.x + q.w), y1 = Math.max(p.y + p.h, q.y + q.h);
+    return { left: Math.min(p.left, q.left), right: Math.max(p.right, q.right), bottom: Math.min(p.bottom, q.bottom), top: Math.max(p.top, q.top), x, y, w: x1 - x, h: y1 - y };
+  };
+  const corner = new Vector3();
+
+  /** Cascade `i`'s `strips` cleared to the far depth and their still casters drawn alone - the shadow camera narrowed to each strip and the shadow's viewport set to it (three's `WebGLShadowMap` reads `LightShadow.getViewport`; the narrowed projection culls the objects and the batches' pieces to the strip) - then the full camera and the matrix the shader samples by put back. The map then holds under each strip what a whole draw would, to the texel: the same grid, the same depth range. The movers are drawn over after, as after a whole draw (`whole`). */
+  const drawStrips = (i: number, strips: readonly Strip[], base: (lights: Light[], scene: Scene, camera: Camera) => void, scene: Scene, camera: Camera): void => {
+    if (!renderer) return;
+    const light = lights[i]!, shadow = light.shadow, map = shadow.map;
+    if (!map?.depthTexture) return;
+    const size = map.width, half = fits[i]!.half;
+    const cam = shadow.camera;
+    const viewport = (shadow as unknown as { _viewports: Vector4[] })._viewports[0]!;
+    const clear = renderer.clear;
+    try {
+      for (const strip of strips) {
+        map.scissorTest = true;
+        map.scissor.set(strip.x, strip.y, strip.w, strip.h);
+        renderer.setRenderTarget(map as WebGLRenderTarget);
+        // The clear writes the depth whatever the last material left (the depth mask): the state said so.
+        renderer.state.buffers.depth.setMask(true);
+        renderer.clear(false, true, false);
+        map.scissorTest = false;
+        map.scissor.set(0, 0, size, size);
+        cam.left = strip.left; cam.right = strip.right; cam.bottom = strip.bottom; cam.top = strip.top;
+        cam.updateProjectionMatrix();
+        viewport.set(strip.x / size, strip.y / size, strip.w / size, strip.h / size);
+        shadow.needsUpdate = true;
+        renderer.shadowMap.needsUpdate = true;
+        // DO NOT let three clear the map: it holds the store, the strip cleared above.
+        renderer.clear = () => {};
+        base([light], scene, camera);
+        renderer.clear = clear;
+      }
+    } finally {
+      renderer.clear = clear;
+      map.scissorTest = false;
+      map.scissor.set(0, 0, size, size);
+      viewport.set(0, 0, 1, 1);
+      cam.left = -half; cam.right = half; cam.bottom = -half; cam.top = half;
+      cam.updateProjectionMatrix();
+      // The matrix the shader samples by, for the whole square at its centre, without the hook of a draw (`CascadeShadow.updateMatrices`).
+      LightShadow.prototype.updateMatrices.call(shadow, light);
+    }
+  };
+
   if (renderer) {
     const shadowMap = renderer.shadowMap;
     const base = shadowMap.render.bind(shadowMap) as (lights: Light[], scene: Scene, camera: Camera) => void;
@@ -400,8 +557,19 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         renderer.clear = clear;
       }
       if (!whole.includes(true) && !over.includes(true)) return;
-      restore();
       const target = renderer.getRenderTarget(), face = renderer.getActiveCubeFace(), level = renderer.getActiveMipmapLevel();
+      // The cascades whose square only moved, or whose casters changed under a known box: the store scrolled into the map, the strips uncovered and the box's part drawn alone; kept whole below, the movers drawn over.
+      for (let i = 0; i < lights.length; i++) {
+        const shift = scrolled[i], rects = patched[i];
+        scrolled[i] = null;
+        patched[i] = null;
+        if (!shift && !rects) continue;
+        const strips: Strip[] = [];
+        if (shift) { blitShift(i, shift.dx, shift.dy); strips.push(...stripsOfShift(i, shift.dx, shift.dy)); stats.why.scroll++; }
+        if (rects) { strips.push(...rects); stats.why.patch++; }
+        drawStrips(i, strips, base, scene, camera);
+      }
+      restore();
       for (let i = 0; i < lights.length; i++) {
         if (!whole[i] && !over[i]) continue;
         const map = lights[i]!.shadow.map, store = stores[i];
@@ -432,6 +600,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     const light = lights[i]!;
     const fit = fits[i]!;
     const camera = light.shadow.camera;
+    const hold = holds[i]!;
     light.position.set(0, 0, 0).addScaledVector(hold.r, fit.cr).addScaledVector(hold.u, fit.cu).addScaledVector(hold.s, fit.sHi);
     light.target.position.copy(light.position).sub(hold.s);
     light.updateMatrixWorld();
@@ -455,11 +624,26 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const fit = (i: number, minR: number, maxR: number, minU: number, maxU: number, sLo: number, sHi: number): boolean => {
     const f = fits[i]!;
     const need = Math.max(maxR - minR, maxU - minU) / 2;
-    const fits0 = f.placed && !sunStepped
-      && f.half >= need && f.half <= need * SHRINK * ROOM
-      && minR >= f.cr - f.half && maxR <= f.cr + f.half && minU >= f.cu - f.half && maxU <= f.cu + f.half
-      && sLo >= f.sLo && sHi <= f.sHi;
-    if (fits0) return false;
+    // The same half-side, sun and depth range: the map's grid stands, and the store's texels with it.
+    const same = f.placed && !sunStepped[i] && f.half >= need && f.half <= need * SHRINK * ROOM && sLo >= f.sLo && sHi <= f.sHi;
+    if (same && minR >= f.cr - f.half && maxR <= f.cr + f.half && minU >= f.cu - f.half && maxU <= f.cu + f.half) return false;
+    if (same && renderer !== null && storeValid[i]) {
+      // The square moved: its centre on the same texel grid, the store scrolled to it and the strips uncovered drawn alone (`scrollInto`). DO NOT draw the whole town again for a pan of a fifth of the square: the store holds every texel of the overlap, to the bit.
+      const size = Math.max(1, lights[i]!.shadow.mapSize.x);
+      const texel = (2 * f.half) / size;
+      const cr = Math.round((minR + maxR) / 2 / texel) * texel;
+      const cu = Math.round((minU + maxU) / 2 / texel) * texel;
+      const dx = Math.round((cr - f.cr) / texel), dy = Math.round((cu - f.cu) / texel);
+      const inside = minR >= cr - f.half && maxR <= cr + f.half && minU >= cu - f.half && maxU <= cu + f.half;
+      const kept = (size - Math.abs(dx)) * (size - Math.abs(dy));
+      if (inside && (dx !== 0 || dy !== 0) && kept >= (1 - SCROLL_MOST) * size * size) {
+        f.cr = cr;
+        f.cu = cu;
+        place(i);
+        scroll[i] = { dx, dy };
+        return false;
+      }
+    }
     // A half-side on the ladder 2^(k/4) m: the same cascade size over a range of views, so its texels stay where they were
     const step = Math.ceil(4 * Math.log2(Math.max(m(1), need * ROOM) / m(1)));
     f.half = m(1) * 2 ** (step / 4);
@@ -476,13 +660,12 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   };
 
   return {
-    toSun: hold.s,
+    toSun: holds[0]!.s,
     lights,
     setMovers(next) { movers = next; },
     setCasters(next) { casters = next; },
     follow(camera, sunDirection, groundAt, target, top) {
       if (!enabled) return false;
-      sunStepped = hold.take(sunDirection);
       camera.updateMatrixWorld();
       const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true;
       const near = (camera as PerspectiveCamera | OrthographicCamera).near;
@@ -541,10 +724,13 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       const d1 = Math.min(dTarget * 1.5, dNear + (dEnd - dNear) * 0.34);
       const d2 = Math.min(Math.sqrt(d1 * dEnd), d1 + (dEnd - d1) * 0.5);
       splits[0] = dNear; splits[1] = d1; splits[2] = d2; splits[3] = dEnd;
-      const sy = Math.max(0.08, hold.s.y);
       let any = false;
       for (let i = 0; i < SUN_CASCADES; i++) {
         const from = splits[i]!, to = splits[i + 1]!;
+        // Each cascade's sun, held until the true one left its tolerance: a texel of shadow displacement at the tallest caster.
+        const hold = holds[i]!;
+        sunStepped[i] = hold.take(sunDirection, sunTolerance(i, high - low));
+        const sy = Math.max(0.08, hold.s.y);
         let minR = Infinity, maxR = -Infinity, minU = Infinity, maxU = -Infinity, minS = Infinity, maxS = -Infinity;
         const add = (v: Vector3): void => {
           const r = v.dot(hold.r), u = v.dot(hold.u), s = v.dot(hold.s);
@@ -576,7 +762,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         if (!(minR <= maxR)) continue;
         if (fit(i, minR, maxR, minU, maxU, minS, maxS)) { refitted[i] = true; any = true; }
       }
-      return any || sunStepped;
+      return any || sunStepped.includes(true);
     },
     takeStats() {
       const out = { passes: stats.passes, whole: [...stats.whole], over: [...stats.over], why: { ...stats.why } };
@@ -584,7 +770,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       for (const k of Object.keys(stats.why) as (keyof typeof stats.why)[]) stats.why[k] = 0;
       return out;
     },
-    pass({ changed, effects, still = false, keep = false }) {
+    pass({ changed, effects, still = false, keep = false, patch }) {
       if (!enabled) return false;
       stats.passes++;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
@@ -592,6 +778,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       spheres.clear();
       radii.clear();
       let any = false;
+      /** A cascade drawn whole this frame for a refit alone: the others' refits wait their turn, a frame each (Dybisz 2021). */
+      let refitDrawn = false;
       for (let i = 0; i < SUN_CASCADES; i++) {
         let moved = false;
         for (const mover of movers) {
@@ -600,8 +788,16 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           for (const root of mover.roots) if (root.visible && drawnIn(root, i, mover.fixedSize)) { moved = true; break; }
         }
         framesSince[i]!++;
-        // A store stands for its town only while nothing of it changed since it was taken.
-        if (!still) storeValid[i] = false;
+        // A store stands for its town only while nothing of it changed since it was taken - or while what changed is known by its box: the store drawn again under the box alone (`patched`), untouched where the box falls outside the square.
+        patched[i] = null;
+        if (!still && storeValid[i]) {
+          const rects = patch === undefined || patch === null || !renderer ? null : rectsOf(i, patch);
+          if (rects === null) {
+            // Why the store goes (`takeStats`): no box given, a change with no box to tell, or boxes over half the map together.
+            if (patch === undefined) stats.why.thrown++; else if (patch === null) stats.why.noBox++; else stats.why.tooBig++;
+            storeValid[i] = false;
+          } else if (rects.length > 0) patched[i] = rects;
+        } else if (!still) storeValid[i] = false;
         // A far cascade out of its turn (`setFarEvery`): what asked it to be drawn kept for its turn, its map and its matrix left as they were drawn (three updates a light's shadow matrix only as it draws it).
         if (i > 0 && farEvery > 1 && (passNo + i) % farEvery !== 0) {
           carried[i] = carried[i]! || changed || effects;
@@ -609,20 +805,37 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         }
         const wasCarried = carried[i]!;
         carried[i] = false;
+        // Its square moved by whole texels (`fit`): scrolled while its store stands and nothing else asks for the whole; else the square is at its new centre and the map is not: drawn whole, as a refit.
+        const asked = scroll[i] ?? null;
+        scroll[i] = null;
+        if (asked !== null && !(renderer !== null && storeValid[i])) refitted[i] = true;
         // The town under the cascade drawn again: it changed, the cascade moved, or no store stands for it. What the wind sways is a mover (`wind.ts` markSway, `renderer.ts`): drawn over the store each frame, never frozen in it (2cc436e0), and the town under a near cascade no longer drawn again every frame for it.
         const all = refitted[i]! || changed || wasCarried || effects || framesSince[i]! >= SAFETY_FRAMES || (moved && (!renderer || !storeValid[i]));
-        if (!fits[i]!.placed || !(all || moved)) continue;
+        const scrolling = asked !== null && !all;
+        const patching = patched[i] !== null && !all;
+        if (!fits[i]!.placed || !(all || moved || scrolling || patching)) continue;
         if (all) {
+          // A refit alone, nothing changed: one cascade a frame, the others their turn in the frames after (`refitted` kept), each map and the matrix it was drawn with standing together until then (three sets a light's shadow matrix only as it draws that light). DO NOT draw the three cascades whole in one frame for a sun that moved a tenth of a degree.
+          const refitAlone = refitted[i]! && everDrawn[i]! && !changed && !wasCarried && !effects && framesSince[i]! < SAFETY_FRAMES && !(moved && (!renderer || !storeValid[i]));
+          if (refitAlone && refitDrawn) { stats.why.deferred++; patched[i] = null; continue; }
+          if (refitAlone) refitDrawn = true;
+          everDrawn[i] = true;
           stats.whole[i]!++;
           if (refitted[i]) stats.why.refit++; else if (changed || wasCarried) stats.why.changed++; else if (effects) stats.why.effects++; else if (framesSince[i]! >= SAFETY_FRAMES) stats.why.safety++; else stats.why.noStore++;
           lights[i]!.shadow.needsUpdate = true;
           // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame): the movers drawn in the same pass, no copy, no second pass over them.
           // Kept where the view stands (`keep`) as well: DO NOT draw the town whole twice for one change of a caster in a still view (once unkept, then again to keep it, the next frame): two cascade passes of 11 M triangles each for a signal head written again (2026-10-21).
-          whole[i] = renderer !== null && (still || keep);
+          // Kept as well when what changed is known by its box: the next frames scroll and patch it rather than draw the town again.
+          whole[i] = renderer !== null && (still || keep || (patch !== undefined && patch !== null));
+          patched[i] = null;
           // Drawn for safety alone: its turn kept; drawn with the others (a change, a refit, effects): its turn set apart from theirs.
           const safetyAlone = !refitted[i] && !changed && !wasCarried && !effects && framesSince[i]! >= SAFETY_FRAMES;
           refitted[i] = false;
           framesSince[i] = safetyAlone ? 0 : -i * SAFETY_STAGGER;
+        } else if (scrolling || patching) {
+          // Kept whole after the scroll and the patch: the map copied to the store, the movers drawn over it (`shadowMap.render`).
+          scrolled[i] = scrolling ? asked : null;
+          whole[i] = true;
         } else { over[i] = true; stats.over[i]!++; }
         any = true;
       }
@@ -651,6 +864,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         }
         storeValid[i] = false;
         refitted[i] = true;
+        everDrawn[i] = false;
       });
     },
     setFarEvery(n) {
@@ -663,6 +877,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         light.shadow.map = null;
         storeValid[i] = false;
         refitted[i] = true;
+        everDrawn[i] = false;
       });
     },
     syncLight() {

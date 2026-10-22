@@ -1,4 +1,5 @@
 import {
+  Box3,
   BufferGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
@@ -15,6 +16,7 @@ import {
   type Object3D,
 } from 'three';
 import { m } from '@world/units';
+import { addChangeBox } from './changeBoxes';
 import { type Bounds, enclose, planeMask } from './instanceCull';
 import { impostorPick, thinWant } from './plantImpostors';
 import { trianglesOf } from './propGeometry';
@@ -228,6 +230,8 @@ function dressedMesh(spec: KindMesh, geometry: BufferGeometry, format: SlotForma
   if (spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
   // Culled instance by instance (`cull`): a sphere round the whole map rejects nothing.
   mesh.frustumCulled = false;
+  // Where its instances came or went since the sun's last shadow pass (`reconcile`, `renderer.ts` casterChanges), a few boxes apart from each other (`changeBoxes.ts`): the cascades' stores are drawn again under those alone, not thrown away for every cull of a moving view.
+  mesh.userData['castBoxes'] = [] as Box3[];
   const depth = spec.depth ? posedMaterial(spec.depth, format) : spec.castShadow ? poseDepthOf(spec.material, format) : undefined;
   if (depth) mesh.customDepthMaterial = depth;
   return mesh;
@@ -261,6 +265,9 @@ const NEAR = 0, FAR = 1, NONE = 2, UNKNOWN = 255;
 
 /** Half the drawing buffer's height, device pixels, as the meshes last drew (`onBeforeRender`): the screen sizes are in it. */
 const screen = { half: 540 };
+/** A slot's sphere as a box, at one `reconcile`. */
+const dirtyBox = new Box3();
+
 /** Towards the sun the shadows are cast by (three's space, unit), as the cascades hold it (`setShadowSun`); none known: the margin round every way. */
 const shadowSun = { x: 0, y: 0, z: 0, known: false };
 /** The sun the shadows are cast by, for the layers' margins: an instance off the view is kept only where its shadow can fall into it, away from the sun. */
@@ -673,10 +680,23 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   const reconcile = (k: Kind, b: Level, id: number): void => {
     const now = k.serial, seen = k.seen, want = k.want, shown = b.shown, at = b.at;
     let n = b.drawn;
+    // The spheres of the slots that leave this level and of those that come: what the shadow stores must draw again (`castBoxes`), each in a box of its own joined to the ones it touches. A slot moved to another position draws the same thing: not a change of the picture.
+    const spheres = k.spheres;
+    const dirty = (i: number): void => {
+      const o = i * 4, r = spheres[o + 3]!;
+      if (!(r > -Infinity)) return;
+      dirtyBox.min.set(spheres[o]! - r, spheres[o + 1]! - r, spheres[o + 2]! - r);
+      dirtyBox.max.set(spheres[o]! + r, spheres[o + 1]! + r, spheres[o + 2]! + r);
+      for (const s of b.meshes) {
+        const boxes = s.mesh?.userData['castBoxes'] as Box3[] | undefined;
+        if (boxes) addChangeBox(boxes, dirtyBox);
+      }
+    };
     for (let p = 0; p < n;) {
       const s = shown[p]!;
       if (seen[s] === now && want[s] === id) { p++; continue; }
       at[s] = -1;
+      dirty(s);
       n--;
       // The last position's slot moved here (looked at again: it may be going too).
       if (p < n) put(k, b, shown[n]!, p);
@@ -687,7 +707,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       while (capacity < n + b.entering.length) capacity *= 2;
       sizeLevel(k, b, capacity, n);
     }
-    for (const i of b.entering) if (at[i]! < 0) put(k, b, i, n++);
+    for (const i of b.entering) if (at[i]! < 0) { put(k, b, i, n++); dirty(i); }
     b.drawn = n;
     // A quarter of the buffers in use or less: shrunk to twice what is drawn, so they follow the view, not the most it ever held.
     if (b.capacity > MIN_CAPACITY && n * 4 < b.capacity) sizeLevel(k, b, Math.max(MIN_CAPACITY, n * 2), n);

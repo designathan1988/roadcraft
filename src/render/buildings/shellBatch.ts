@@ -18,9 +18,11 @@ type ShellSet = 'detail' | 'facade' | 'runs';
 
 const IDENTITY = new Matrix4();
 
-/** A batch whose drawn pieces changed (one added, taken out, shown or hidden): its `castVersion` stepped, read by the shadows' signature of their still casters (`renderer.ts` casterSignature). DO NOT leave it to a timed redraw: a batch's pieces shown or hidden change none of its attributes, and only the cascades' safety redraw caught them (a whole cascade every ten frames, the frames that missed their vsync). */
-function castChanged(mesh: GpuBatchedMesh): void {
+/** A batch whose drawn pieces changed (one added, taken out, shown or hidden): its `castVersion` stepped, read by the shadows' signature of their still casters (`renderer.ts` casterChanges), and the world box of the pieces changed joined into its `castBox`, so the sun's stores are drawn again under that box alone (`sunCascades.ts` patches), not the whole town. DO NOT leave it to a timed redraw: a batch's pieces shown or hidden change none of its attributes, and only the cascades' safety redraw caught them (a whole cascade every ten frames, the frames that missed their vsync). */
+function castChanged(mesh: GpuBatchedMesh, box: Box3): void {
   mesh.userData['castVersion'] = ((mesh.userData['castVersion'] as number | undefined) ?? 0) + 1;
+  const kept = mesh.userData['castBox'] as Box3 | undefined;
+  if (kept) kept.union(box); else mesh.userData['castBox'] = box.clone();
 }
 
 interface Batch {
@@ -86,12 +88,15 @@ export class ShellBatch {
       target.mesh.setMatrixAt(instanceId, IDENTITY);
       target.mesh.setVisibleAt(instanceId, this.visible.get(id) ?? true);
       made.push({ batch: target, id: instanceId, geometryId });
-      castChanged(target.mesh);
       batch.group.remove(mesh);
       source.dispose();
       if (geometry !== source) geometry.dispose();
     }
-    if (made.length) { this.cells.set(id, made); this.boxes.set(id, box); }
+    if (made.length) {
+      this.cells.set(id, made);
+      this.boxes.set(id, box);
+      for (const target of new Set(made.map((entry) => entry.batch))) castChanged(target.mesh, box);
+    }
   }
 
   /** A cell's shells taken out: its geometries (and their instances) deleted from their batch. */
@@ -99,10 +104,11 @@ export class ShellBatch {
     const id = `${kind}|${key}`;
     const made = this.cells.get(id);
     if (!made) return;
+    const box = this.boxes.get(id) ?? new Box3();
     this.cells.delete(id);
     this.visible.delete(id);
     this.boxes.delete(id);
-    for (const entry of made) { entry.batch.mesh.deleteGeometry(entry.geometryId); castChanged(entry.batch.mesh); }
+    for (const entry of made) { entry.batch.mesh.deleteGeometry(entry.geometryId); castChanged(entry.batch.mesh, box); }
     for (const batch of new Set(made.map((entry) => entry.batch))) this.squeeze(batch);
   }
 
@@ -123,7 +129,8 @@ export class ShellBatch {
     const id = `${kind}|${key}`;
     if (this.visible.get(id) === visible) return;
     this.visible.set(id, visible);
-    for (const entry of this.cells.get(id) ?? []) { entry.batch.mesh.setVisibleAt(entry.id, visible); castChanged(entry.batch.mesh); }
+    const box = this.boxes.get(id) ?? new Box3();
+    for (const entry of this.cells.get(id) ?? []) { entry.batch.mesh.setVisibleAt(entry.id, visible); castChanged(entry.batch.mesh, box); }
   }
 
   /** The colour pass about to be drawn from `camera`: the shells of every cell shown whose box `hidden` says is behind the walls laid

@@ -9,10 +9,12 @@ import type { Occupant, RagdollProbe } from './ragdoll';
 import type { PlayEffects } from './playEffects';
 import { createLotOverlay, type LotOverlayInput } from './lotOverlay';
 import { onCarriageway } from '@world/carriageway';
+import { addChangeBox, clearChangeBoxes } from './changeBoxes';
 import {
   BufferGeometry,
   ShaderMaterial,
   AdditiveBlending,
+  Box3,
   DoubleSide,
   Float32BufferAttribute,
   Color,
@@ -235,7 +237,8 @@ export interface SceneHandle {
   /** The next map opened is large: its first world covers the view alone, the rest filled after the curtain. */
   scopeOpening(large: boolean): void;
   /** The sun's cascades' passes since the last call (`SunCascades.takeStats`). */
-  shadowStats(): ReturnType<SunCascades['takeStats']> | null;
+  /** `unknown`: the still casters whose last change had no box to tell (the stores thrown away for them: what to give bounds to). */
+  shadowStats(): (ReturnType<SunCascades['takeStats']> & { readonly unknown: readonly string[]; readonly widest: readonly string[] }) | null;
   /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
   buildingLevels(): Readonly<Record<string, number>>;
   /** What draws each cell of buildings now, by key (`massCells.ts` census): the census of holes (`tests/perf/massBase.spec.ts`). */
@@ -439,9 +442,8 @@ export function createSceneRenderer(
   makeRenderer: (parameters: WebGLRendererParameters) => WebGLRenderer = (parameters) => new WebGLRenderer(parameters),
 ): SceneHandle {
   /** Something landed since the last shadow pass that the casters' signature cannot see (a texture, a program): the sun's stores are not used for that frame (`ShadowPassInput.still`). What comes into the scene or leaves it, the signature sees (`casterSignature`). */
-  let castersStirred = true;
-  const stir = (): void => { castersStirred = true; };
-  const onAssetsReady = (): void => { stir(); askDraw(); };
+  // DO NOT throw the sun's stores away for an arrival (a texture, a program, a worker's answer): every still caster's signature sees what it draws with (its materials and their maps, its layers, its buffers), and the stores were thrown away at nearly every frame of a pan for the cells and plants landing (shadow stats, 2026-10-22).
+  const onAssetsReady = (): void => { askDraw(); };
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
   /** The shadow map is drawn only when it can have changed. */
@@ -583,24 +585,148 @@ export function createSceneRenderer(
    *  what it shows changed: `cellInstances.ts` reconcile). The same number, the same still casters, whatever the view did (`sunCascades.ts`
    *  stores). Walked with one kept stack, no closure. */
   const casterStack: Object3D[] = [];
-  const casterSignature = (): number => {
-    let h = 0x811c9dc5;
+  /** Each still caster as last seen: its own signature and the world box it stood in (empty when its bounds are not known). */
+  const casterLast = new Map<Object3D, { hash: number; readonly box: Box3; computed: boolean }>();
+  const casterSeen = new Set<Object3D>();
+  /** The boxes holding this pass's changes, apart from each other (`changeBoxes.ts`). */
+  const changeBoxes: Box3[] = [];
+  const changeBoxPool: Box3[] = [];
+  const addChange = (box: Box3): void => addChangeBox(changeBoxes, box, changeBoxPool);
+  /** An instanced mesh's instances as last seen (their places, three floats each, and how many): a change of its matrices is told by the instances that moved, came or went, each in a box of its own reach, not by the mesh's whole sphere (the signals' and the poles' blocks of a kilometre threw the near cascades' stores away at every frame of a pan, 2026-10-22). */
+  const instancePlaces = new Map<Object3D, { places: Float32Array; count: number }>();
+  const instanceBox = new Box3();
+  const instanceReach = (mesh: Mesh): number => {
+    const g = mesh.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    return (g.boundingSphere?.radius ?? 0) + (g.boundingSphere?.center.length() ?? 0);
+  };
+  /** The instances of `mesh` that differ from the last look, each added as a change box; false when the mesh's matrices are not on the page (then its box as a whole). */
+  const instanceChanges = (mesh: Mesh & { count?: number; instanceMatrix?: { version?: number; array?: ArrayLike<number> | null } }): boolean => {
+    const array = mesh.instanceMatrix?.array;
+    const count = mesh.count ?? 0;
+    if (!array || array.length < count * 16) return false;
+    let kept = instancePlaces.get(mesh);
+    if (!kept) { kept = { places: new Float32Array(0), count: 0 }; instancePlaces.set(mesh, kept); }
+    const reach = instanceReach(mesh);
+    const most = Math.max(count, kept.count);
+    if (kept.places.length < count * 4) {
+      const grown = new Float32Array(Math.max(count * 4, kept.places.length * 2));
+      grown.set(kept.places);
+      kept.places = grown;
+    }
+    const places = kept.places;
+    for (let i = 0; i < most; i++) {
+      const o = i * 16, p = i * 4;
+      const now = i < count, was = i < kept.count;
+      let scale = 0, x = 0, y = 0, z = 0;
+      if (now) {
+        x = array[o + 12]!; y = array[o + 13]!; z = array[o + 14]!;
+        scale = Math.sqrt(Math.max(array[o]! ** 2 + array[o + 1]! ** 2 + array[o + 2]! ** 2, array[o + 4]! ** 2 + array[o + 5]! ** 2 + array[o + 6]! ** 2, array[o + 8]! ** 2 + array[o + 9]! ** 2 + array[o + 10]! ** 2));
+      }
+      const same = now && was && places[p] === x && places[p + 1] === y && places[p + 2] === z && places[p + 3] === scale;
+      if (same) continue;
+      if (was) {
+        const r = reach * places[p + 3]!;
+        instanceBox.min.set(places[p]! - r, places[p + 1]! - r, places[p + 2]! - r);
+        instanceBox.max.set(places[p]! + r, places[p + 1]! + r, places[p + 2]! + r);
+        instanceBox.applyMatrix4(mesh.matrixWorld);
+        addChange(instanceBox);
+      }
+      if (now) {
+        const r = reach * scale;
+        instanceBox.min.set(x - r, y - r, z - r);
+        instanceBox.max.set(x + r, y + r, z + r);
+        instanceBox.applyMatrix4(mesh.matrixWorld);
+        addChange(instanceBox);
+        places[p] = x; places[p + 1] = y; places[p + 2] = z; places[p + 3] = scale;
+      }
+    }
+    kept.count = count;
+    return true;
+  };
+  /** A still caster's world bounds into `out`: a layer's batch of instances says where its pieces stand (`userData.wholeBox`, `farParts.ts`); an instanced mesh by its instances' box (a part run's set by `partCells.ts`, else worked out once from its matrices and again when they change); a mesh by its geometry's box in the world. False when no box is to be had (a batch of the town's walls: `shellBatch.ts` says what changed in it, `userData.castBox`). */
+  const boundsOf = (mesh: Mesh & { isInstancedMesh?: boolean; isBatchedMesh?: boolean; boundingBox?: Box3 | null; boundingSphere?: Sphere | null; instanceMatrix?: { version?: number; array?: ArrayLike<number> | null }; computeBoundingBox?: () => void }, entry: { readonly box: Box3; computed: boolean }, changed: boolean): boolean => {
+    const whole = mesh.userData['wholeBox'] as Box3 | undefined;
+    if (whole) { entry.box.copy(whole); return !whole.isEmpty(); }
+    if (mesh.isBatchedMesh) return false;
+    if (mesh.isInstancedMesh) {
+      if (!mesh.boundingBox || (entry.computed && changed)) {
+        const sphere = mesh.boundingSphere;
+        if (!mesh.boundingBox && sphere) {
+          // Its instances' sphere as the layer set it (a cell's panes, `buildingMesh.ts`): the box round it.
+          entry.box.min.copy(sphere.center).subScalar(sphere.radius);
+          entry.box.max.copy(sphere.center).addScalar(sphere.radius);
+          entry.box.applyMatrix4(mesh.matrixWorld);
+          return !entry.box.isEmpty();
+        }
+        // DO NOT work its box out from matrices that are on the GPU alone (`gpuOnly.ts`: the array is null once uploaded): three reads the null array and the frame dies (2026-10-22).
+        if (!mesh.instanceMatrix?.array) return false;
+        mesh.computeBoundingBox!();
+        entry.computed = true;
+      }
+      if (!mesh.boundingBox) return false;
+      entry.box.copy(mesh.boundingBox).applyMatrix4(mesh.matrixWorld);
+      return !entry.box.isEmpty();
+    }
+    // A mesh: the box round its geometry's sphere in the world (the sphere is in the mesh's own frame by three's contract; a geometry's box may be kept in the world instead - `massCells.ts` cellMesh - and transformed again it spanned a million units, 2026-10-22).
+    const g = mesh.geometry;
+    if (!g.boundingSphere) {
+      if (!(g.getAttribute('position') as { array?: ArrayLike<number> | null } | undefined)?.array) return false;
+      g.computeBoundingSphere();
+    }
+    const sphere = g.boundingSphere!;
+    entry.box.min.copy(sphere.center).subScalar(sphere.radius);
+    entry.box.max.copy(sphere.center).addScalar(sphere.radius);
+    entry.box.applyMatrix4(mesh.matrixWorld);
+    return !entry.box.isEmpty();
+  };
+  /** What casts and stands still, mesh by mesh, against the last pass: whether any changed (came, went, or draws otherwise: its
+   *  instances, its draw range, its geometry, the versions of its buffers, where it stands), and the world box holding every change
+   *  (the box a changed caster stood in and stands in; what a layer's batch says changed in it), or null when a change has no box to
+   *  tell (the sun's stores are then thrown away: `sunCascades.ts` `ShadowPassInput.patch`). Walked with one kept stack, no closure. */
+  /** The names of the casters whose change had no box to tell at the last pass (`shadowStats`: what to give bounds to). */
+  const casterUnknown: string[] = [];
+  /** The widest change boxes seen since the stats were last taken (`shadowStats`): the caster's name and its box's longest side, m - what throws the stores away for a box over half the map. */
+  const casterWidest: { name: string; side: number }[] = [];
+  const noteWidest = (mesh: Object3D, box: Box3): void => {
+    const side = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    const at = casterWidest.findIndex((w) => w.name === (mesh.name || mesh.type));
+    if (at >= 0) { if (side > casterWidest[at]!.side) casterWidest[at]!.side = side; return; }
+    if (casterWidest.length < 16) casterWidest.push({ name: mesh.name || mesh.type, side });
+  };
+  /** What of a material the casters' signature reads (r186 `Material.id`, `Texture.id` and `version`; the typings leave the ids out). */
+  type MaterialKey = { readonly id: number; readonly map?: { readonly id: number; readonly version: number } | null; readonly alphaMap?: { readonly id: number; readonly version: number } | null };
+  const casterChanges = (): { readonly any: boolean; readonly boxes: readonly Box3[] | null } => {
+    let any = false, unknown = false;
+    clearChangeBoxes(changeBoxes, changeBoxPool);
+    casterSeen.clear();
+    casterUnknown.length = 0;
+    const noBox = (mesh: Object3D): void => { unknown = true; if (casterUnknown.length < 12) casterUnknown.push(mesh.name || mesh.type); };
+    let h = 0;
     const mix = (v: number): void => { h = Math.imul(h ^ (v | 0), 16777619); };
+    const mixMaterial = (one: MaterialKey): void => {
+      mix(one.id);
+      mix(one.map?.id ?? -1);
+      mix(one.map?.version ?? -1);
+      mix(one.alphaMap?.id ?? -1);
+      mix(one.alphaMap?.version ?? -1);
+    };
     casterStack.length = 0;
     for (const child of scene.children) casterStack.push(child);
     while (casterStack.length > 0) {
       const o = casterStack.pop()!;
       if (!o.visible || moverRoots.has(o)) continue;
       for (const child of o.children) casterStack.push(child);
-      const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number; instanceMatrix?: { version: number } };
+      const mesh = o as Mesh & { isInstancedMesh?: boolean; isBatchedMesh?: boolean; count?: number; instanceMatrix?: { version: number } };
       if (!mesh.isMesh || !mesh.castShadow || swayMeshes.has(mesh)) continue;
       const g = mesh.geometry;
-      mix(mesh.id);
+      h = 0x811c9dc5;
       mix(g.id);
-      // Its programs: a level drawn with another material casts as it draws (three numbers every material, r186 `Material.id`; its typings leave it out).
-      const material = mesh.material as unknown as { id: number } | { id: number }[];
-      if (Array.isArray(material)) for (const one of material) mix(one.id); else mix(material.id);
-      mix((mesh.customDepthMaterial as unknown as { id: number } | undefined)?.id ?? -1);
+      // Its programs: a level drawn with another material casts as it draws (three numbers every material, r186 `Material.id`; its typings leave it out), and the maps they cut their shadow by (an alpha-tested card: its texture landing changes its shadow; r186 `Texture.id`, `version`).
+      const material = mesh.material as unknown as MaterialKey | MaterialKey[];
+      if (Array.isArray(material)) for (const one of material) mixMaterial(one); else mixMaterial(material);
+      const depth = mesh.customDepthMaterial as unknown as MaterialKey | undefined;
+      if (depth) mixMaterial(depth); else mix(-1);
       // Its layers: a mesh held at the door until its programs are built is visible and casts nothing (`uploads.ts` gateUntilBuilt).
       mix(mesh.layers.mask);
       // Where it stands (a caster moved is another shadow), to a hundredth of a unit.
@@ -615,10 +741,59 @@ export function createSceneRenderer(
       mix((mesh.userData['castVersion'] as number | undefined) ?? -1);
       const attributes = g.attributes as Record<string, { version?: number; data?: { version: number } }>;
       for (const name in attributes) { const a = attributes[name]!; mix(a.version ?? a.data?.version ?? -1); }
+      casterSeen.add(mesh);
+      const castBox = mesh.userData['castBox'] as Box3 | undefined;
+      const castBoxes = mesh.userData['castBoxes'] as Box3[] | undefined;
+      let entry = casterLast.get(mesh);
+      if (!entry) {
+        // Came: where it stands.
+        any = true;
+        entry = { hash: h, box: new Box3(), computed: false };
+        casterLast.set(mesh, entry);
+        if (mesh.isInstancedMesh && !castBox && !castBoxes && instanceChanges(mesh)) { /* each instance its own box */ }
+        else if (boundsOf(mesh, entry, false)) { addChange(entry.box); noteWidest(mesh, entry.box); } else noBox(mesh);
+        castBox?.makeEmpty();
+        if (castBoxes) castBoxes.length = 0;
+      } else if (entry.hash !== h) {
+        entry.hash = h;
+        if (castBoxes) {
+          // A layer's cells (`cellInstances.ts`): the boxes of what came and went in them, nothing else; none, nothing of the picture changed (its buffers written for the same things in other positions).
+          if (castBoxes.length) { any = true; for (const box of castBoxes) { addChange(box); noteWidest(mesh, box); } castBoxes.length = 0; }
+        } else if (castBox) {
+          // A batch: what it says changed in it, nothing else (its pieces stand all over the town).
+          if (!castBox.isEmpty()) { any = true; addChange(castBox); noteWidest(mesh, castBox); castBox.makeEmpty(); }
+        } else if (mesh.isInstancedMesh && instanceChanges(mesh)) {
+          // Its instances that moved, came or went, each in its own box.
+          any = true;
+        } else {
+          any = true;
+          // Where it stood and where it stands.
+          if (entry.box.isEmpty()) noBox(mesh); else addChange(entry.box);
+          if (boundsOf(mesh, entry, true)) { addChange(entry.box); noteWidest(mesh, entry.box); } else noBox(mesh);
+        }
+      }
     }
-    return h;
+    // Went (hidden, taken out of the scene, no longer casting): where it stood.
+    for (const [mesh, entry] of casterLast) {
+      if (casterSeen.has(mesh)) continue;
+      any = true;
+      const kept = instancePlaces.get(mesh);
+      if (kept) {
+        // Each instance where it stood.
+        const reach = instanceReach(mesh as Mesh);
+        for (let i = 0; i < kept.count; i++) {
+          const p = i * 4, r = reach * kept.places[p + 3]!;
+          instanceBox.min.set(kept.places[p]! - r, kept.places[p + 1]! - r, kept.places[p + 2]! - r);
+          instanceBox.max.set(kept.places[p]! + r, kept.places[p + 1]! + r, kept.places[p + 2]! + r);
+          instanceBox.applyMatrix4(mesh.matrixWorld);
+          addChange(instanceBox);
+        }
+        instancePlaces.delete(mesh);
+      } else if (entry.box.isEmpty()) noBox(mesh); else { addChange(entry.box); noteWidest(mesh, entry.box); }
+      casterLast.delete(mesh);
+    }
+    return { any, boxes: unknown ? null : changeBoxes };
   };
-  let lastCasterSignature = 0;
   /** The camera at the last shadow pass: whether the view stood still since (`ShadowPassInput.keep`). */
   const shadowView = new Matrix4();
   const shadowProjection = new Matrix4();
@@ -2869,7 +3044,10 @@ export function createSceneRenderer(
       return programs.ready;
     },
     shadowStats() {
-      return environment.shadowStats();
+      const stats = environment.shadowStats();
+      const widest = casterWidest.sort((a, b) => b.side - a.side).map((w) => `${w.name} ${Math.round(w.side)}`);
+      casterWidest.length = 0;
+      return stats ? { ...stats, unknown: [...casterUnknown], widest } : null;
     },
     setGeometryBudget(budget) {
       geometryBudget = budget;
@@ -3536,16 +3714,16 @@ export function createSceneRenderer(
         // had another signature than the one last taken (2026-10-20). It costs 0.15-0.2 ms a pass in the large city.
         // DO NOT take the buildings' error scale moving for changed casters either (`frameBudget.ts`): it follows the frame's time and wanders under load
         // while a level changes only past a threshold, which the signature sees; every cascade was drawn whole at every frame for ~20 s after each move.
-        const signature = casterSignature();
-        const still = signature === lastCasterSignature && !castersStirred;
+        // What changed among the still casters, and the world box holding it: a cascade's store is drawn again only there (`sunCascades.ts` patches) - DO NOT throw the stores away for a level swapped or a run come or gone as the view moves: cascades 0 and 1 were drawn whole in 121 of 121 frames of a street pan (shadow stats, 2026-10-22).
+        const changes = casterChanges();
+        const still = !changes.any;
         // Where the view stands, a cascade drawn whole is kept for the frames after (`ShadowPassInput.keep`).
         // DO NOT keep one behind the curtain: the town is hidden there (`buildings.hidden`), which no caster's signature says, and a cascade drawn then without the buildings was kept past the reveal - a reopened city, its cells in from the store before the curtain fell, had no building's shadow at all, its streets lit bright (2026-10-21).
         const viewStill = reveal.opened && shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
         shadowView.copy(rig.camera.matrixWorld);
         shadowProjection.copy(rig.camera.projectionMatrix);
-        lastCasterSignature = signature;
-        castersStirred = false;
-        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still, keep: viewStill })) {
+        const patch = changes.any ? changes.boxes : undefined;
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still, keep: viewStill, patch })) {
           renderer.shadowMap.needsUpdate = true;
         }
         shadowMoved = false;

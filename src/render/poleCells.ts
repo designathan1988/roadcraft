@@ -122,17 +122,11 @@ export class PoleCells implements Utilities {
     const block = this.build(rect);
     const held: HeldBlock = { block, waiting: 0 };
     const buffers: (BufferAttribute | InterleavedBuffer)[] = [];
-    block.parts.forEach((part, index) => {
+    // The parts' matrices stay on the page (tens of KB a block): the sun's shadow stores are drawn again under each pole that came, went or moved (`renderer.ts` casterChanges reads the matrices), not thrown away for a block of a kilometre coming into view. The wires' instances go to the GPU alone.
+    for (const part of block.parts) {
       const matrices = part.seal();
-      if (!matrices) return;
-      buffers.push(matrices);
-      gpuOnlyAttributes(part.drawn!, { [`part${index}`]: matrices }, () => {
-        const again = this.build(rect);
-        const array = again.parts[index]!.matrices;
-        this.release(again);
-        return array ? { [`part${index}`]: array } : {};
-      });
-    });
+      if (matrices) buffers.push(matrices);
+    }
     const wires = block.wires.seal();
     if (wires) {
       buffers.push(wires);
