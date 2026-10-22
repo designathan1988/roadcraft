@@ -8,6 +8,7 @@ import type { NodeId, SegmentId } from './ids';
 import { PolylineCache, orientedPolyline, segmentStartsAt } from './geometry';
 import { Level, type SurfaceLevel, footwayOn, roadProfile, roadType } from './roadTypes';
 import type { Junction } from './junction/build';
+import type { JunctionLevels } from './junction/levels';
 import { TRANSITION_BEND } from './junction/transition';
 import { WalkableSurface } from './walkable';
 import {
@@ -50,11 +51,11 @@ export class Network {
   /** DO NOT work a landing out again for each asker. */
   private readonly crossingLandings = new Map<SegmentId, Map<NodeId, CrossingLanding | null>>();
   /** The junctions and ribbons by id, in the order the rebuilds filed them, never id order: a reader that needs id order sorts what it takes (`CellFiling.idsMeeting`). */
-  readonly junctions = new Map<NodeId, Map<SurfaceLevel, Junction>>();
+  readonly junctions = new Map<NodeId, JunctionLevels>();
   readonly ribbons = new Map<SegmentId, SegmentRibbon>();
   /** The ribbons and the junctions filed by the cells their surfaces reach (`world/cells.ts`) */
   readonly segmentCells = new CellFiling<SegmentId, SegmentRibbon>();
-  readonly junctionCells = new CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>();
+  readonly junctionCells = new CellFiling<NodeId, JunctionLevels>();
   /** The ribbons with a footway laid flush on a side, filed like `segmentCells` */
   readonly flushCells = new CellFiling<SegmentId, SegmentRibbon>();
   /** DO NOT go back to a rank of every ribbon made again at each revision (`ribbonOrder`) */

@@ -53,6 +53,31 @@ export function cornerOf(c: Corner): Corner {
   return new PackedCorner(c.i, c.j, c.mode, c.x !== null, v);
 }
 
+/** The corners' modes by number, for `packCorners`. */
+const MODES: readonly CornerMode[] = ['fillet', 'bevel', 'collinear', 'taper'];
+
+/** Corners as one run of numbers (`packLegs`): each its legs, mode, whether it has a point, its run's length, then its run (`PackedCorner`). */
+export function packCorners(corners: readonly Corner[]): number[] {
+  const out: number[] = [];
+  for (const c of corners) {
+    const f = c.fillet;
+    out.push(c.i, c.j, MODES.indexOf(c.mode), c.x ? 1 : 0, f ? RUN + 1 : XY + 1, c.psi, c.trimI, c.trimJ, c.x ? c.x.x : NaN, c.x ? c.x.y : NaN);
+    if (f) out.push(f.ta.x, f.ta.y, f.tb.x, f.tb.y, f.c.x, f.c.y, f.r, f.run);
+  }
+  return out;
+}
+
+/** The corners of `packCorners`. */
+export function unpackCorners(nums: readonly number[]): Corner[] {
+  const out: Corner[] = [];
+  for (let k = 0; k < nums.length;) {
+    const n = nums[k + 4]!;
+    out.push(new PackedCorner(nums[k]!, nums[k + 1]!, MODES[nums[k + 2]!]!, nums[k + 3] === 1, nums.slice(k + 5, k + 5 + n)));
+    k += 5 + n;
+  }
+  return out;
+}
+
 /** A corner's fields as plain data (`CornerData`). */
 export function cornerData(c: Corner): CornerData {
   return { i: c.i, j: c.j, mode: c.mode, x: c.x, psi: c.psi, fillet: c.fillet, trimI: c.trimI, trimJ: c.trimJ };

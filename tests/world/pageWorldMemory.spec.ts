@@ -17,7 +17,10 @@ import { rampsMeeting } from '@world/curbRamps';
  * roads' heights, the open lots and the buildings by place - the JS heap and the typed arrays' memory outside it measured after a full
  * collection, system by system. What grows from the small city to the large one, divided by the buildings it gained, is what each
  * building costs the page's world: 14.5 KB before the network's rings, junctions and cell indexes were kept as runs of numbers
- * (2026-10-21), 8.7 KB after.
+ * (2026-10-21), 8.7 KB after; 4.9 KB once the junctions' outer levels and the roads' levels were made again from what is kept when
+ * asked (`junction/levels.ts`, `ribbons.ts` LeanRibbon), a pass's junction solved again let go, the dropped kerbs worked out by
+ * region (`curbRamps.ts`) and the street furniture filed by its cell alone (`pointFiling.ts`) (2026-10-22: the city of 70,000
+ * buildings' world 613 MB before, 441 MB after; the network 3.2 KB a building before, 1.7 KB after; the kerbs 0.46 KB, 0.03 KB).
  */
 
 setFlagsFromString('--expose_gc');
@@ -84,9 +87,11 @@ describe("the page's world memory", () => {
     const per = (held: Held): string => Object.entries(held.systems).map(([system, bytes]) => `${system} ${(bytes / held.buildings).toFixed(0)}`).join(', ');
     console.log(`[pageWorldMemory] small ${small.buildings} buildings ${(small.total / 1e6).toFixed(1)} MB (${per(small)}); large ${large.buildings} buildings ${(large.total / 1e6).toFixed(1)} MB (${per(large)}); ${(growth / 1024).toFixed(2)} KB a building gained`);
     expect(large.buildings).toBeGreaterThan(small.buildings * 4);
-    // 8.7 KB measured (2026-10-21; 14.5 KB before): a regression of the network's or the indexes' compact forms passes 10 KB.
-    expect(growth).toBeLessThan(10 * 1024);
-    // The network alone: ~3.4 KB a building of the large city (7.9 KB before its rings were runs of numbers).
-    expect(large.systems['network']! / large.buildings).toBeLessThan(4.5 * 1024);
+    // 4.9 KB measured (2026-10-22; 8.7 KB before, 14.5 KB before that): a regression of the compact forms passes 5.6 KB.
+    expect(growth).toBeLessThan(5.6 * 1024);
+    // The network alone: ~1.7 KB a building of the large city (3.4 KB with every level of every junction and road kept, 7.9 KB before its rings were runs of numbers).
+    expect(large.systems['network']! / large.buildings).toBeLessThan(2.2 * 1024);
+    // The dropped kerbs of one small rectangle: its region's alone (~0.2 KB a building; 1.2 KB when every ramp of the map was worked out at the first ask).
+    expect(large.systems['curbRamps']! / large.buildings).toBeLessThan(0.5 * 1024);
   }, 120_000);
 });

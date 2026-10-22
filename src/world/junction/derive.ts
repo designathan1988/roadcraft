@@ -32,12 +32,32 @@ export function deriveJunctionLevel(
   base: Junction,
   level: SurfaceLevel,
 ): Junction | null {
-  if (base.transition) return deriveTransitionLevel(doc, cache, base, level);
-  if (base.usedHullFallback || base.ring.isEmpty || base.legs.length < 2) return null;
-  const nodeId: NodeId = base.nodeId;
+  if (!derivable(base)) return null;
+  return deriveFromLegs(base, level, buildLegs(doc, cache, base.nodeId, level, { trims: baseTrims(base) }));
+}
+
+/** Whether an outer level can be carried out from `base` (`deriveJunctionLevel`) at all. */
+function derivable(base: Junction): boolean {
+  if (base.transition) return base.legs.length === 2;
+  return !(base.usedHullFallback || base.ring.isEmpty || base.legs.length < 2);
+}
+
+/** The carriageway's trims by road, the last leg of a road standing (a road that comes back to its node). */
+export function baseTrims(base: Junction): Map<SegmentId, number> {
   const trimOf = new Map<SegmentId, number>();
   base.legs.forEach((leg, i) => trimOf.set(leg.seg, base.trims[i] as number));
-  const legs = buildLegs(doc, cache, nodeId, level, { trims: trimOf });
+  return trimOf;
+}
+
+/**
+ * One outer level of `base` from its legs at that level (`buildLegs` framed at the carriageway's trims, or the same legs kept as
+ * numbers, `junction/levels.ts`): reads no document, so a level let go is made again, the same, from what the junction keeps.
+ */
+export function deriveFromLegs(base: Junction, level: SurfaceLevel, legs: readonly Leg[]): Junction | null {
+  if (!derivable(base)) return null;
+  if (base.transition) return deriveTransitionFromLegs(base, level, legs);
+  const nodeId: NodeId = base.nodeId;
+  const trimOf = baseTrims(base);
   if (legs.length !== base.legs.length) return null;
   const index = new Map<SegmentId, number>();
   legs.forEach((leg, i) => index.set(leg.seg, i));
@@ -166,11 +186,8 @@ export function deriveJunctionLevel(
 }
 
 /** One surface of a transition, as an offset of the carriageway's. */
-function deriveTransitionLevel(doc: RoadDoc, cache: PolylineCache, base: Junction, level: SurfaceLevel): Junction | null {
-  if (base.legs.length !== 2) return null;
-  const trimOf = new Map<SegmentId, number>();
-  base.legs.forEach((leg, i) => trimOf.set(leg.seg, base.trims[i] as number));
-  const legs = buildLegs(doc, cache, base.nodeId, level, { trims: trimOf });
+function deriveTransitionFromLegs(base: Junction, level: SurfaceLevel, legs: readonly Leg[]): Junction | null {
+  const trimOf = baseTrims(base);
   if (legs.length !== 2) return null;
   const trims = legs.map((leg) => trimOf.get(leg.seg) as number);
   const ring = transitionRing(legs, trims);
