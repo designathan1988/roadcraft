@@ -77,6 +77,7 @@ import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { ROAD_INPUT_RESIDENCY, SurfaceInputs, TILE, TILE_ORIGIN } from './roadSurfaceInputs';
 import { NetworkFarRoads } from './networkFarRoads';
+import { FarBlockBatches } from './mesh/farBlockBatches';
 import { roadProgramStandIns } from './roadProgramStandIns';
 import { forgetDerivedKeys, forgetDerivedKinds, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { DerivedWriterLane } from './derivedWriterLane';
@@ -1079,7 +1080,11 @@ export function createSceneRenderer(
   };
   /** The cells the network's far level draws: the ones the far budget let go and the ones the map's view hands it (`roadResidency.ts` parked). */
   const farShown = (): string[] => [...(roadResidency.dropped ?? []), ...(roadResidency.parked ?? [])];
+  // The road blocks' far levels drawn in batches, one a material (`mesh/farBlockBatches.ts`).
+  const farBlocks = new FarBlockBatches();
+  world.add(farBlocks.group);
   const surfaceReuse: SurfaceReuse = {
+    farBatches: farBlocks,
     tiles: new Map(),
     depends: new Map(),
     // Each pass as the last build left it: a tile put in visits its own road tiles, not the region's (`roadSurfaces.ts` PassState).
@@ -1482,6 +1487,7 @@ export function createSceneRenderer(
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     refillArrays(scene);
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
+    farBlocks.refill();
     buildings.refill();
     signs.refill();
     wantAllTexels();
@@ -3872,6 +3878,8 @@ export function createSceneRenderer(
         }
         if (optimizer.reliefDue()) terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }
+      // The far blocks' instances shown as their levels are (`mesh/farBlockBatches.ts`): every frame, after the levels were chosen.
+      farBlocks.sync();
       {
         // The painted fog: its map again when the fog or the land under it changed (never in the middle of a sculpting stroke).
         const doc = net.doc;

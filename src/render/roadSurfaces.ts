@@ -16,6 +16,7 @@ import type { SceneMaterials } from './materials';
 import { type PassLook, passDesc, passRaised, passReads, polysOf, tileBundle } from './roadSurfacePass';
 import { attachFarLevel, blockArraysOf, blockBox, cloneBlock, concat, joinBlocks, memberSizes, mergeTiles, splitBlock, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
+import type { FarBlockBatches } from './mesh/farBlockBatches';
 import { type BlockArrays, levelsOf } from './mesh/roadLod';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR } from './roadTones';
 import type { TileSource } from './roadTileShape';
@@ -73,6 +74,8 @@ export interface SurfaceReuse {
   /** The store's prefix the road tile workers keep the tiles they make under (none: the page keeps them, `keep`); `kept` tells the page a key is kept. */
   readonly workersKeep?: string | null;
   readonly kept?: (key: string) => void;
+  /** The batches the blocks' far levels are drawn in, one a look (`farBlockBatches.ts`). None: each far level a mesh of its own. */
+  readonly farBatches?: FarBlockBatches;
 }
 
 /** A block into the group with its far level, which waits hidden beside it (`mesh/roadLod.ts`). */
@@ -669,7 +672,9 @@ export function* roadSurfaceSteps(
                   if (made.some((m) => m !== null)) {
                     const coarse = made.length === 1 ? made[0]! : joinBlocks(made.map((m, i) => m ?? whole[i]!));
                     const level = attachFarLevel(block, coarse, group.options, sources.map((s, i) => ({ source: s, lock: locks![i]! })), near);
-                    if (!near) void warmLooseAhead([level]);
+                    // Drawn by its look's batch (`farBlockBatches.ts`): copied there, never uploaded on its own.
+                    if (reuse?.farBatches) reuse.farBatches.adopt(level);
+                    else if (!near) void warmLooseAhead([level]);
                   } else if (!near) void warmLooseAhead([block]);
                 }).catch((error: unknown) => {
                   // No far level for this block: it stays at full detail, sent to the GPU.

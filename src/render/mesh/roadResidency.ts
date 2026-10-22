@@ -2,6 +2,7 @@ import { Box3, type BufferGeometry, type Frustum, type Mesh } from 'three';
 import { geometryCost } from '../gpuLedger';
 import { fillArrays } from './gpuOnly';
 import { type BlockLevels, giveBackArrays, levelsOf, makeFar } from './roadLod';
+import { batchedFar } from './farBlockBatches';
 import { restoreFarLevel } from './surfaceTiles';
 import { cancelWarm, warmLooseAhead } from '../uploads';
 
@@ -206,8 +207,8 @@ function restoreCell(cell: Cell, residency: RoadResidency): void {
       restoreFarLevel(levels.coarse, made[i] ?? null);
       levels.dropped = false;
       levels.coarse.visible = !levels.full;
-      // Sent to the GPU ahead of its first draw, as a far level made by the build is (`roadSurfaces.ts`).
-      void warmLooseAhead([levels.coarse]);
+      // Sent to the GPU ahead of its first draw, as a far level made by the build is (`roadSurfaces.ts`); one its batch draws is copied there.
+      if (!batchedFar(levels.coarse)) void warmLooseAhead([levels.coarse]);
     });
     for (const mesh of cell.blocks) if (!levelsOf(mesh)?.coarse) mesh.visible = true;
     residency.dropped!.delete(key);
