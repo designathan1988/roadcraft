@@ -70,30 +70,51 @@ export interface QualitySettings {
 /**
  * THE GEOMETRY EACH TIER MAY HOLD ON THE GPU (vertex and index buffers, `memoryCounters.ts` geometryBytes; textures and render targets
  * apart), for cards of 4 to 12 GB: the whole under `totalMB`, the buildings' masses (cells, 1 km tiles, 2 km plates, and the base
- * kept for good, `massCells.ts`) under `massesMB`, the roads' blocks at their full level under `roadsNearMB` (`mesh/roadResidency.ts`), the far props' and poles' blocks (`viewCells.ts` gpuBudget, 192 MB and 128 MB at ultra) at `viewCellsShare` of their
+ * kept for good, `massCells.ts`) under `massesMB`, the roads' blocks at their full level under `roadsNearMB` and at their far level under
+ * `roadsFarMB` (`mesh/roadResidency.ts`: past it a cell's blocks go and the network's far level, `networkFarRoads.ts`, draws it), the far props' and poles' blocks (`viewCells.ts` gpuBudget, 192 MB and 128 MB at ultra) at `viewCellsShare` of their
  * own. What is out of the view goes first, the least recently seen first (Cesium's `cacheBytes` LRU, 3DTilesRendererJS `lruCache`); the
  * buildings' detail (`detailMemoryMB`) gives way to its facade level and masses only when that is not enough (`renderer.ts` governGeometry).
  *
- * | tier   | total | masses | view cells | roads near | detail at most |
- * |--------|-------|--------|------------|------------|----------------|
- * | ultra  | 1200  | 320    | 1          | 192        | 1024           |
- * | high   | 900   | 240    | 0.75       | 128        | 768            |
- * | medium | 600   | 160    | 0.5        | 96         | 448            |
- * | low    | 350   | 96     | 0.25       | 48         | 256            |
+ * | tier   | total | masses | view cells | roads near | roads far | detail at most |
+ * |--------|-------|--------|------------|------------|-----------|----------------|
+ * | ultra  | 1200  | 320    | 1          | 192        | 160       | 1024           |
+ * | high   | 900   | 240    | 0.75       | 128        | 128       | 768            |
+ * | medium | 600   | 160    | 0.5        | 96         | 96        | 448            |
+ * | low    | 400   | 96     | 0.25       | 48         | 48        | 256            |
+ *
+ * LOW AT 400, NOT 350: what the view itself needs there is more than 350 MB. The city of 25,000 buildings' district view, back to it at
+ * the end of the tour (`tests/perf/geometryBudget.spec.ts`, the roads' far levels under their budget), holds 380 MB with the detail cut
+ * to the least the governor gives it: its cells', tiles' and plates' masses in the view (205 MB, never let go for the budget), the far
+ * gardens and the roads. Choosing the levels in the view coarser (a floor under the frame's error scale) left the masses as they were up
+ * to twice the error, and went under 350 only at 4.8 times it, where every cell of the district lost its detail and the town was drawn
+ * in plates (2026-10-21): the budget is set to the need, not the town to the budget. At 384 the same view held 386 MB (the detail's
+ * least is a sixteenth of the whole, `renderer.ts` governGeometry): 400 holds it with that least and some room.
+ *
+ * THE ROADS' WHOLE (`roadBudgetMB`): their near and far levels' budgets, and the network's far level kept for good for the whole map.
+ * That last one grows with the map, not with the view: 10 MB for the city of 25,000 buildings (`tests/perf/noHoles.spec.ts`, 21 bytes a
+ * vertex), some 80 MB for one of 200,000 by its area; the blocks' far levels it stands for took 264 MB for the 25,000 (2.1 GB for the
+ * 200,000), every block of the map kept.
  */
 export interface GeometryBudget {
   readonly totalMB: number;
   readonly massesMB: number;
   readonly viewCellsShare: number;
-  /** The roads' blocks at their full level (`mesh/roadResidency.ts`): their far level stays for good, their full level only in the view and under this. */
+  /** The roads' blocks at their full level (`mesh/roadResidency.ts`): only in the view and under this. */
   readonly roadsNearMB: number;
+  /** The roads' blocks at their far level (`mesh/roadResidency.ts`): the cells nearest the view in it, past it the network's far level. */
+  readonly roadsFarMB: number;
 }
 export const GEOMETRY_BUDGETS: Readonly<Record<QualityLevel, GeometryBudget>> = {
-  ultra: { totalMB: 1200, massesMB: 320, viewCellsShare: 1, roadsNearMB: 192 },
-  high: { totalMB: 900, massesMB: 240, viewCellsShare: 0.75, roadsNearMB: 128 },
-  medium: { totalMB: 600, massesMB: 160, viewCellsShare: 0.5, roadsNearMB: 96 },
-  low: { totalMB: 350, massesMB: 96, viewCellsShare: 0.25, roadsNearMB: 48 },
+  ultra: { totalMB: 1200, massesMB: 320, viewCellsShare: 1, roadsNearMB: 192, roadsFarMB: 160 },
+  high: { totalMB: 900, massesMB: 240, viewCellsShare: 0.75, roadsNearMB: 128, roadsFarMB: 128 },
+  medium: { totalMB: 600, massesMB: 160, viewCellsShare: 0.5, roadsNearMB: 96, roadsFarMB: 96 },
+  low: { totalMB: 400, massesMB: 96, viewCellsShare: 0.25, roadsNearMB: 48, roadsFarMB: 48 },
 };
+
+/** The network's far level a city of 25,000 buildings keeps for good (`networkFarRoads.ts`), MB, with room: what `ROAD_BUDGET_MB` counts it at. */
+export const NETWORK_FAR_MB = 16;
+/** The roads' surfaces' whole on each tier, MB: their near and far levels' budgets and the network's far level (see `GEOMETRY_BUDGETS`). */
+export const roadBudgetMB = (budget: GeometryBudget): number => budget.roadsNearMB + budget.roadsFarMB + NETWORK_FAR_MB;
 
 export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {

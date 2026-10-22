@@ -109,7 +109,7 @@ import { PLATE_SIZE, platesOver, plateRegion } from '@world/bounds';
 import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
 import { paintCatalogue } from './markings';
-import { type RoadResidency, isNear, updateRoadLevels } from './mesh/roadResidency';
+import { type RoadResidency, forgetRoadCells, isNear, updateRoadLevels } from './mesh/roadResidency';
 import { JournalCursor } from '@world/derived';
 import { RoadStandIn } from './roadStandIn';
 import { Engine } from '@core/engine';
@@ -938,6 +938,13 @@ export function createSceneRenderer(
   const fillAwaiting = new Set<string>();
   /** The player's road edits read by the fill (`takeEditedCells`), from the fill's start on. */
   const fillEditRead = new JournalCursor(['roads']);
+  /** The player's road edits read since the network's far level was last asked (`requestNetworkFar`): one landing outdates it. */
+  const networkFarRead = new JournalCursor(['roads']);
+  /** The network's far level for the whole map asked (`networkFarRoads.ts`), the edits read so far in it. */
+  const requestNetworkFar = (net: Network, heights: RoadElevation): void => {
+    networkFarRead.read(net.doc.changes);
+    networkFar.request(net, heights, terrain.renderedHeightAt, FAR_ROAD_CELL, TILE_ORIGIN, null);
+  };
   /** The squares the fill's running step builds (`buildWorld` full); null, the whole network's extent. */
   let fillRects: Rect[] | null = null;
   /** A map was opened since the last world build (`beginLoad`): the solve standing is another map's, nothing of the new one follows from it. */
@@ -1045,7 +1052,7 @@ export function createSceneRenderer(
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
   /** The roads' blocks at their full level: in the view's frustum (the buildings' detail's, set each frame) and under the tier's budget (`applyGeometryBudget`). */
-  const roadResidency: RoadResidency = { view: detailFrustum, budget: Infinity };
+  const roadResidency: RoadResidency = { view: detailFrustum, budget: Infinity, farBudget: Infinity, network: networkFar };
   const detailProjection = new Matrix4();
   const crowdProjection = new Matrix4();
   const crowdBounds = new Sphere(new Vector3(), 8);
@@ -1128,6 +1135,7 @@ export function createSceneRenderer(
     const budget = budgetNow();
     buildings.setMassBudget(budget.massesMB * 1048576);
     roadResidency.budget = budget.roadsNearMB * 1048576;
+    roadResidency.farBudget = budget.roadsFarMB * 1048576;
     ViewCells.gpuShare = budget.viewCellsShare;
     governedDetail = Infinity;
   };
@@ -2093,6 +2101,7 @@ export function createSceneRenderer(
     if (opening) {
       const lo = (v: number): number => Math.ceil((v - TILE_ORIGIN) / TILE - 1) * TILE + TILE_ORIGIN;
       const hi = (v: number): number => (Math.floor((v - TILE_ORIGIN) / TILE) + 1) * TILE + TILE_ORIGIN;
+      networkFarRead.read(net.doc.changes);
       networkFar.request(net, elevation, terrain.renderedHeightAt, FAR_ROAD_CELL, TILE_ORIGIN,
         [lo(centre.x - openingHalf), lo(centre.y - openingHalf), hi(centre.x + openingHalf), hi(centre.y + openingHalf)]);
     }
@@ -2187,11 +2196,18 @@ export function createSceneRenderer(
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     mapRoadsIn = true;
-    // The fill's cells this build made in detail: their far level goes, the blocks and their own far levels stand for their roads now.
+    // The roads drawn changed by an edit since the network's far level was asked: it stands for none of them (`NetworkFarRoads.covers`), not shown for a cell let go till made again.
+    const roadEdits = networkFarRead.read(net.doc.changes);
+    if (roadEdits === null || roadEdits.some((entry) => !isStreaming(entry))) networkFar.outdate();
+    // The fill's cells this build made in detail: their far level hidden, the blocks and their own far levels stand for their roads now.
     for (const key of fillLanding) { networkFar.hide(key); fillAwaiting.delete(key); }
-    // The whole fill landed: the network's far level goes, the tiles are no longer scoped.
-    if (fillLeft !== null && fillLeft.size === 0 && fillAwaiting.size === 0) { fillLeft = null; openingWithin = null; networkFar.clear(); }
-    else if (fillLeft === null && !openingBuild && openingWithin === null) networkFar.clear();
+    // The whole fill landed: the tiles are no longer scoped, and the network's far level stays as the roads' top level (`mesh/roadResidency.ts`), hidden but where the far budget let blocks go; made again for the whole map (the opening's view no longer cut out of it, every road at its solved height).
+    if (fillLeft !== null && fillLeft.size === 0 && fillAwaiting.size === 0) {
+      fillLeft = null;
+      openingWithin = null;
+      networkFar.settle(roadResidency.dropped ?? []);
+      requestNetworkFar(net, solve);
+    } else if (fillLeft === null && !openingBuild && openingWithin === null && !networkFar.settled) networkFar.settle(roadResidency.dropped ?? []);
     performance.mark('world:roads');
     roads.adopt();
     world.add(roads.group);
@@ -2875,6 +2891,7 @@ export function createSceneRenderer(
       fillTaken.clear();
       fillAwaiting.clear();
       networkFar.clear();
+      forgetRoadCells(roadResidency);
       scopeNextOpening = false;
       mapOpened = true;
       mapRoadsIn = false;
@@ -3559,6 +3576,11 @@ export function createSceneRenderer(
           const blocks: Mesh[] = [];
           for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
           updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach, roadResidency);
+          // Over the far budget with cells the network's far level does not stand for (none made, or made before the roads changed): made again for the roads drawn, off the page.
+          if (roadResidency.wantsNetwork && elevation && worldJob === null && !openingBuild && fillLeft === null && !networkFar.pending && networkFar.outdated()) {
+            networkFar.settle(roadResidency.dropped ?? []);
+            requestNetworkFar(net, elevation);
+          }
         }
         if (optimizer.reliefDue()) terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }

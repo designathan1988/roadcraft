@@ -656,9 +656,10 @@ export function* roadSurfaceSteps(
           const shares = memberSizes(memberTiles);
           mesh = mergeTiles(memberTiles.flat(), group.options, source,
             lock ? {
-              lock, near, also: locks!.slice(1),
+              lock, near, also: locks!.slice(1), cell: chunk,
               start: (block, arrays) => {
                 coarsening++;
+                levelsOf(block)!.pending = true;
                 // Each surface simplified on its own, as when it was a block of its own; one too small to gain is drawn whole in the far level.
                 const pieces = shares.length === 1 ? [cloneBlock(arrays)] : splitBlock(arrays, shares);
                 const whole = shares.length === 1 ? [] : splitBlock(arrays, shares);
@@ -674,7 +675,7 @@ export function* roadSurfaceSteps(
                   // No far level for this block: it stays at full detail, sent to the GPU.
                   console.warn('[roads] the far level of a block could not be made', error);
                   if (chunks?.get(key)?.mesh === block) void warmLooseAhead([block]);
-                }).finally(() => { coarsening--; });
+                }).finally(() => { coarsening--; const levels = levelsOf(block); if (levels) levels.pending = false; });
               },
             } : undefined);
           // Its full level, when it comes back near, copied from the kept tiles (`reuse.stored`): DO NOT cut and triangulate the block's tiles on the page again (`roadResidency.ts` makeNear).
@@ -693,6 +694,19 @@ export function* roadSurfaceSteps(
                 }
               }
               return blockArraysOf(read, material);
+            };
+          }
+          // Its far level made again when its cell comes back from the network's far level (`roadResidency.ts`): the full level's arrays (kept tiles, else cut here) simplified by the workers, a surface at a time as `start` does.
+          if (mesh && levels && coarsen) {
+            const material = group.options.material;
+            levels.remake = async (): Promise<BlockArrays | null> => {
+              const full = ((await levels.bring?.()) as BlockArrays | null | undefined) ?? blockArraysOf(sources.flatMap((s) => s()), material);
+              if (!full) return null;
+              const whole = shares.length === 1 ? [] : splitBlock(full, shares);
+              const pieces = shares.length === 1 ? [full] : splitBlock(full, shares);
+              const made = await Promise.all(pieces.map((piece, i) => coarsen(piece, locks![i]!)));
+              if (made.every((m) => m === null)) return null;
+              return made.length === 1 ? made[0]! : joinBlocks(made.map((m, i) => m ?? whole[i]!));
             };
           }
           if (mesh && group.renderOrder !== undefined) mesh.renderOrder = group.renderOrder;
