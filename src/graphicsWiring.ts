@@ -136,9 +136,9 @@ export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void, 
 
   const save = (): void => writeStorage(OPTIONS_KEY, JSON.stringify(kept));
   const fps = (): number => kept.fpsLimit ?? 0;
-  // ON unless the player switched it off: with the tier held (no `auto` dropping the facades' maps), only the drawn resolution keeps the frame in its
-  // budget - off by default, the held ultra tier missed 16.7 ms and the game stuttered (the player, 2026-10-22: "o jogo está travando").
-  const dynamicOn = (): boolean => kept.dynamicResolution ?? true;
+  // OFF unless the player switches it on. DO NOT turn it on by default: each step resizes the canvas and the screen's targets (`applyScale`), down to half
+  // the pixel ratio - the picture came out pixelated and blurred, and flickered at every step (the player, 2026-10-22: "piscando", "pixelizado, borrado").
+  const dynamicOn = (): boolean => kept.dynamicResolution ?? false;
   /** The whole ratio the tier allows on this display; the dynamic resolution draws a share of it. */
   const fullRatio = (): number => Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), settings.pixelRatio);
   const applyScale = (scale: number): void => {
