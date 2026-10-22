@@ -16,7 +16,8 @@ import { ASPHALT_REFERENCE, FOOTWAY_TINT } from './roadTones';
  * each road's and junction's real outline (`Network.ribbons`, `Network.junctions`: the carriageway, and the casing its footways and
  * kerbs fill) at its class's colour over the street textures' means (as the blocks' far level paints them), at the solved heights where
  * the opening's solve took the road and on the ground elsewhere, merged a cell at a time in a job worker: O(the outlines' vertices).
- * The area the opening built in detail is cut out of it; it goes whole once the fill's blocks are in (`clear`).
+ * The area the opening built in detail is cut out of it; once the fill's blocks are in it is made again whole and kept, hidden, as the
+ * roads' top level (`mesh/roadResidency.ts`): shown in a cell whose blocks' far levels the far budget let go.
  */
 
 /** What the outlines' heights are read from: the opening's solve (`RoadElevation`), the roads it left for later, the ground. */
@@ -79,7 +80,15 @@ export function farRoadInput(net: Network, heights: FarRoadHeights, groundAt: (x
   return { input, transfer: [input.points.buffer as ArrayBuffer, input.counts.buffer as ArrayBuffer, input.layers.buffer as ArrayBuffer, input.colors.buffer as ArrayBuffer] };
 }
 
-/** The whole network's far roads (see the file's comment). */
+/** A vertex's colour as stored (`Uint16Array` normalized: 0-65535 read as 0-1, three's `BufferAttribute.normalized`): a third of a float's bytes twice over, a step of 1.5e-5 against the darkest asphalt's 0.04. */
+const COLOUR_STEPS = 65535;
+
+/**
+ * The whole network's far roads (see the file's comment), KEPT FOR GOOD AS THE ROADS' TOP LEVEL (`mesh/roadResidency.ts`): a cell is shown
+ * where no block draws it in detail - the opening's cells till the fill's blocks land (`hide`), and later the cells whose blocks' far
+ * levels the far budget let go (`show`), hidden again once they are back. Its vertices are kept small (a position, a normal of three
+ * bytes, a colour of three shorts: 21 bytes where floats took 36).
+ */
 export class NetworkFarRoads {
   readonly group = new Group();
   private readonly materials = [layerMaterial(2), layerMaterial(3)] as const;
@@ -90,10 +99,16 @@ export class NetworkFarRoads {
   private triangleCount = 0;
   /** Each cell's triangles, by its key (`x,y` on the cells' grid): what the probes count. */
   readonly cells = new Map<string, number>();
-  /** Each cell's meshes, by its key: a cell goes once the fill's blocks drawing it in detail landed (`hide`). */
+  /** Each cell's meshes, by its key. */
   private readonly meshesOf = new Map<string, Mesh[]>();
-  /** The cells let go before the level came (`hide`): left out of it when it lands. */
-  private readonly hidden = new Set<string>();
+  /** Whether a cell is hidden unless shown (`settle`: the blocks draw every cell) or shown unless hidden (the opening's, till the fill lands). */
+  private settledLevel = false;
+  /** The cells against the rule (`settledLevel`): shown ones once settled, hidden ones before. */
+  private readonly against = new Set<string>();
+  /** The level standing: the request it answers (`asked`), its cells' side and origin, the area it left to the detailed surfaces. Null: none landed. */
+  private made: { id: number; cell: number; origin: number; exclude: readonly [number, number, number, number] | null } | null = null;
+  /** The last request made before the roads drawn changed (`outdate`): a level answering it or one before stands for none of them. */
+  private staleThrough = 0;
 
   constructor() {
     this.group.name = 'road-far-network';
@@ -108,12 +123,18 @@ export class NetworkFarRoads {
     return this.triangleCount;
   }
 
-  /** The level made for the network as it stands (replacing any), the area `exclude` left to the detailed surfaces. */
+  /** Whether the blocks draw every cell, the level shown only where it is asked to (`show`). */
+  get settled(): boolean {
+    return this.settledLevel;
+  }
+
+  /** The level made for the network as it stands (replacing any when it lands), the area `exclude` left to the detailed surfaces. */
   request(net: Network, heights: FarRoadHeights, groundAt: (x: number, y: number) => number, cell: number, origin: number, exclude: readonly [number, number, number, number] | null): void {
     const id = ++this.asked;
     this.waiting = true;
+    const asking = { id, cell, origin, exclude };
     const { input, transfer } = farRoadInput(net, heights, groundAt, cell, origin, exclude);
-    const landed = (cells: readonly FarRoadCell[]): void => { if (id === this.asked) { this.show(cells); this.waiting = false; } };
+    const landed = (cells: readonly FarRoadCell[]): void => { if (id === this.asked) { this.made = asking; this.place(cells); this.waiting = false; } };
     const failed = (why: unknown): void => {
       console.warn('[roads] the far roads could not be made off the page; made here', why);
       this.worker = null;
@@ -134,17 +155,23 @@ export class NetworkFarRoads {
     }
   }
 
-  private show(cells: readonly FarRoadCell[]): void {
+  private shown(key: string): boolean {
+    return this.settledLevel === this.against.has(key);
+  }
+
+  private place(cells: readonly FarRoadCell[]): void {
     this.clearMeshes();
     for (const c of cells) {
-      if (this.hidden.has(c.key)) continue;
       const g = new BufferGeometry();
-      const normals = new Float32Array(c.positions.length);
-      for (let i = 1; i < normals.length; i += 3) normals[i] = 1;
+      const count = c.positions.length / 3;
+      const normals = new Int8Array(count * 3);
+      for (let i = 1; i < normals.length; i += 3) normals[i] = 127;
+      const colours = new Uint16Array(c.colors.length);
+      for (let i = 0; i < colours.length; i++) colours[i] = Math.round(Math.min(1, Math.max(0, c.colors[i]!)) * COLOUR_STEPS);
       g.setAttribute('position', new BufferAttribute(c.positions, 3));
-      g.setAttribute('normal', new BufferAttribute(normals, 3));
-      g.setAttribute('color', new BufferAttribute(c.colors, 3));
-      g.setIndex(new BufferAttribute(c.positions.length / 3 > 0xffff ? c.indices : new Uint16Array(c.indices), 1));
+      g.setAttribute('normal', new BufferAttribute(normals, 3, true));
+      g.setAttribute('color', new BufferAttribute(colours, 3, true));
+      g.setIndex(new BufferAttribute(count > 0xffff ? c.indices : new Uint16Array(c.indices), 1));
       g.computeBoundingSphere();
       g.computeBoundingBox();
       const mesh = new Mesh(g, this.materials[c.layer === 0 ? 0 : 1]);
@@ -152,6 +179,7 @@ export class NetworkFarRoads {
       mesh.renderOrder = c.layer === 0 ? 1 : 2;
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
+      mesh.visible = this.shown(c.key);
       this.group.add(mesh);
       const n = c.indices.length / 3;
       this.triangleCount += n;
@@ -166,16 +194,45 @@ export class NetworkFarRoads {
     return [...this.cells.keys()];
   }
 
-  /** A cell let go: the detailed blocks of its square landed (`renderer.ts` the opening's fill). */
+  /** Whether the level standing draws the cell's roads as the blocks do: made of the roads drawn, with roads there, none of it left to the detailed surfaces (`RoadResidency.network`). */
+  covers(key: string): boolean {
+    const made = this.made;
+    if (!made || made.id <= this.staleThrough || !this.meshesOf.has(key)) return false;
+    const e = made.exclude;
+    if (!e) return true;
+    const [i, j] = key.split(',').map(Number) as [number, number];
+    const x0 = made.origin + i * made.cell, y0 = made.origin + j * made.cell;
+    return !(e[0] < x0 + made.cell && e[2] > x0 && e[1] < y0 + made.cell && e[3] > y0);
+  }
+
+  /** Whether the level standing is not of the roads drawn (none, made before they changed, or cut by the opening's view): made again when a cell must be let go (`RoadResidency.wantsNetwork`). */
+  outdated(): boolean {
+    return !this.made || this.made.id <= this.staleThrough || this.made.exclude !== null;
+  }
+
+  /** The roads drawn changed (a build of a road edit landed, `renderer.ts`): every level asked so far stands for none of them. */
+  outdate(): void {
+    this.staleThrough = this.asked;
+  }
+
+  /** A cell hidden: the detailed blocks of its square stand (the opening's fill landed, or a cell made again, `roadResidency.ts`). */
   hide(key: string): void {
-    this.hidden.add(key);
-    for (const mesh of this.meshesOf.get(key) ?? []) {
-      this.triangleCount -= (mesh.geometry.index?.count ?? 0) / 3;
-      this.group.remove(mesh);
-      mesh.geometry.dispose();
-    }
-    this.meshesOf.delete(key);
-    this.cells.delete(key);
+    if (this.settledLevel) this.against.delete(key); else this.against.add(key);
+    for (const mesh of this.meshesOf.get(key) ?? []) mesh.visible = false;
+  }
+
+  /** A cell shown: its blocks' far levels let go (`roadResidency.ts` dropCell). */
+  show(key: string): void {
+    if (this.settledLevel) this.against.add(key); else this.against.delete(key);
+    for (const mesh of this.meshesOf.get(key) ?? []) mesh.visible = true;
+  }
+
+  /** The blocks draw every cell now (the fill landed): the level hidden but where `shown` (the cells let go) asks. */
+  settle(shown: Iterable<string>): void {
+    this.settledLevel = true;
+    this.against.clear();
+    for (const key of shown) this.against.add(key);
+    for (const [key, meshes] of this.meshesOf) for (const mesh of meshes) mesh.visible = this.shown(key);
   }
 
   private clearMeshes(): void {
@@ -188,9 +245,12 @@ export class NetworkFarRoads {
     this.triangleCount = 0;
   }
 
-  /** The level let go: the detailed blocks stand everywhere (the fill landed), or another map opened. */
+  /** The level let go: another map opened. */
   clear(): void {
-    this.hidden.clear();
+    this.against.clear();
+    this.settledLevel = false;
+    this.made = null;
+    this.staleThrough = this.asked + 1;
     this.asked++;
     this.waiting = false;
     this.clearMeshes();

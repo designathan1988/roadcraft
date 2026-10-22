@@ -5,7 +5,7 @@ import { buildLargeCityMap } from '@editor/smallCityMap';
 import { prepareCity } from '@editor/preparedCity';
 import { geometryCost, gpuLedger } from '@render/gpuLedger';
 import { levelsOf } from '@render/mesh/roadLod';
-import { GEOMETRY_BUDGETS, type QualityLevel } from '@render/quality';
+import { GEOMETRY_BUDGETS, NETWORK_FAR_MB, type QualityLevel, roadBudgetMB } from '@render/quality';
 import { m } from '@world/units';
 import { installNullPage, primeCookedSurfaces } from '../support/nullGpu';
 import { HEIGHT, WIDTH, openCityMap, setView, type City, type View } from '../support/sceneHarness';
@@ -18,7 +18,9 @@ import { HEIGHT, WIDTH, openCityMap, setView, type City, type View } from '../su
  * - every 256 m cell of buildings is drawn by something (its detail, its masses, its tile's or plate's, the base's: `buildingCensus`,
  *   `render/buildings/massBase.ts`), the base's meshes in the scene and shown;
  * - every road block's cell (614.4 m) in the view's frustum that has roads has road surface drawn (a block's full or far level, or the
- *   network's far level), and the blocks' full levels hold no more than the tier's `roadsNearMB` (`render/mesh/roadResidency.ts`).
+ *   network's far level), and the blocks' full levels hold no more than the tier's `roadsNearMB` (`render/mesh/roadResidency.ts`);
+ * - once the fill has built the whole map in detail and each view stands, the blocks' far levels hold no more than the tier's
+ *   `roadsFarMB` (the cells past it drawn by the network's far level), and the roads' surfaces together no more than `roadBudgetMB`.
  */
 
 const OPEN: View = [0, 0, 1.8, 45, 79];
@@ -26,8 +28,8 @@ const TIERS = (process.env['CENSUS_TIERS'] ?? 'low,medium,high,ultra').split(','
 /** Frames a tour's view may take to stand, and frames in a row alike for it to stand. */
 const MOST = 200;
 const STILL = 8;
-/** Frames the road fill is let build the map in detail before the tour (on the null GPU its tiles are cut on the page and the whole map takes far more; it builds on through the tour). */
-const FILL_FRAMES = 1500;
+/** Frames the road fill may take to build the whole map in detail before the tour (on the null GPU its tiles are cut on the page: some 6,000 frames). */
+const FILL_FRAMES = 20000;
 const MIB = 1048576;
 /** The city's reach from its middle, m (`buildLargeCityMap` radius). */
 const REACH = m(2800);
@@ -70,19 +72,23 @@ function roadCells(city: City): Set<string> {
   return cells;
 }
 
-/** The road cells in the camera's frustum with roads and no road surface drawn; and the blocks' full and far levels' bytes. */
-function roadCensus(city: City, wanted: ReadonlySet<string>): { missing: string[]; nearMB: number; farMB: number } {
+/** The road cells in the camera's frustum with roads and no road surface drawn; the blocks' full and far levels' bytes, the network's far level's, and every road surface's together. */
+function roadCensus(city: City, wanted: ReadonlySet<string>): { missing: string[]; nearMB: number; farMB: number; networkMB: number; roadsMB: number } {
   const camera = city.scene.viewCamera();
   camera.updateMatrixWorld();
   const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
   const drawn = new Set<string>();
   const box = new Box3();
-  let near = 0, far = 0;
+  let near = 0, far = 0, network = 0, roads = 0;
   city.scene.scene.traverse((o: Object3D) => {
     const mesh = o as Mesh;
-    const levels = mesh.isMesh ? levelsOf(mesh) : undefined;
-    if (levels?.coarse && levels.full) near += geometryCost(mesh.geometry).bytes;
-    if (mesh.isMesh && mesh.name.endsWith('-far') && mesh.parent?.name === 'road-network') far += geometryCost(mesh.geometry).bytes;
+    if (!mesh.isMesh) return;
+    const levels = levelsOf(mesh);
+    const bytes = geometryCost(mesh.geometry).bytes;
+    if (levels?.coarse && levels.full) near += bytes;
+    if (mesh.name.endsWith('-far') && mesh.parent?.name === 'road-network') far += bytes;
+    if (mesh.name === 'road-far-network') network += bytes;
+    if (mesh.parent?.name === 'road-network' || mesh.name === 'road-far-network') roads += bytes;
   });
   city.scene.scene.traverseVisible((o: Object3D) => {
     const mesh = o as Mesh;
@@ -104,12 +110,13 @@ function roadCensus(city: City, wanted: ReadonlySet<string>): { missing: string[
     box.max.set((i + 1) * ROAD_CELL, 100, -j * ROAD_CELL);
     if (frustum.intersectsBox(box) && !drawn.has(key)) missing.push(key);
   }
-  return { missing, nearMB: near / MIB, farMB: far / MIB };
+  return { missing, nearMB: near / MIB, farMB: far / MIB, networkMB: network / MIB, roadsMB: roads / MIB };
 }
 
 interface Stop {
   readonly name: string; readonly holes: readonly string[]; readonly by: Record<string, number>; readonly baseMB: number; readonly massesMB: number; readonly evictions: number;
-  readonly roadsMissing: readonly string[]; readonly roadsNearMB: number; readonly roadsFarMB: number; readonly fillLeft: number;
+  readonly roadsMissing: readonly string[]; readonly roadsNearMB: number; readonly roadsFarMB: number; readonly roadsNetworkMB: number; readonly roadsMB: number;
+  readonly fillLeft: number;
 }
 
 async function tour(tier: QualityLevel): Promise<{ stops: Stop[]; frames: number; fillFrames: number }> {
@@ -120,12 +127,12 @@ async function tour(tier: QualityLevel): Promise<{ stops: Stop[]; frames: number
   const stops: Stop[] = [];
   const stop = (name: string): void => {
     const { holes, by } = buildingCensus(city);
-    const { missing, nearMB, farMB } = roadCensus(city, roads);
+    const { missing, nearMB, farMB, networkMB, roadsMB } = roadCensus(city, roads);
     const masses = ['plate masses', 'tile masses', 'cell masses', 'base masses'] as const;
     stops.push({
       name, holes: holes.slice(0, 12), by, baseMB: gpuLedger.bytes('base masses') / MIB,
       massesMB: masses.reduce((sum, cls) => sum + gpuLedger.bytes(cls), 0) / MIB, evictions: city.scene.buildingLevels()['evictions'] ?? 0,
-      roadsMissing: missing, roadsNearMB: nearMB, roadsFarMB: farMB, fillLeft: city.scene.openingState().fillCellsLeft,
+      roadsMissing: missing, roadsNearMB: nearMB, roadsFarMB: farMB, roadsNetworkMB: networkMB, roadsMB, fillLeft: city.scene.openingState().fillCellsLeft,
     });
   };
   let fillFrames = 0;
@@ -141,7 +148,7 @@ async function tour(tier: QualityLevel): Promise<{ stops: Stop[]; frames: number
     }
     // The road fill builds the whole map in detail (what made the roads' near level grow past any budget, step-25k).
     setView(city.scene, [0, 0, 2.5, 45, 48]);
-    for (; fillFrames < FILL_FRAMES &&city.scene.openingState().fillCellsLeft > 0; fillFrames++) await frame(city);
+    for (; fillFrames < FILL_FRAMES && (city.scene.openingState().fillCellsLeft > 0 || city.scene.worldBusy); fillFrames++) await frame(city);
     stop('filled');
     // The tour: each view till it stands, the governor's read every frame; a census on arrival and once it stands.
     const views: [string, View][] = [
@@ -201,6 +208,18 @@ describe('the city of 25,000 buildings has no hole in its town or its streets at
     for (const [tier, { stops }] of tours) {
       const budget = GEOMETRY_BUDGETS[tier].roadsNearMB;
       for (const stop of stops) expect(stop.roadsNearMB, `${tier} ${stop.name}: the roads' full levels, MB`).toBeLessThanOrEqual(budget);
+    }
+  });
+
+  it('holds the roads\' far levels and the roads\' whole under the tier\'s budgets once the map is filled and each view stands', () => {
+    for (const [tier, { stops }] of tours) {
+      const budget = GEOMETRY_BUDGETS[tier];
+      for (const stop of stops.filter((s) => s.name.endsWith('settled'))) {
+        expect(stop.fillLeft, `${tier} ${stop.name}: the fill's cells left`).toBe(0);
+        expect(stop.roadsFarMB, `${tier} ${stop.name}: the roads' far levels, MB`).toBeLessThanOrEqual(budget.roadsFarMB);
+        expect(stop.roadsNetworkMB, `${tier} ${stop.name}: the network's far level, MB`).toBeLessThanOrEqual(NETWORK_FAR_MB);
+        expect(stop.roadsMB, `${tier} ${stop.name}: the roads' surfaces, MB`).toBeLessThanOrEqual(roadBudgetMB(budget));
+      }
     }
   });
 });

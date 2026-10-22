@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { coarseArrays, levelsOf } from '@render/mesh/roadLod';
 import { marksRoadSection } from '@render/mesh/roadEdges';
 import { COARSE_ERROR } from '@render/mesh/roadLodPure';
-import { FAR_MARGIN, type RoadResidency, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
+import { type CellCover, FAR_MARGIN, type RoadResidency, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
 import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, memberSizes, mergeTiles, splitBlock } from '@render/mesh/surfaceTiles';
 import { refillArrays } from '@render/mesh/gpuOnly';
 import type { Tile } from '@render/mesh/tileMesh';
@@ -260,6 +260,65 @@ describe('the near level under the budget and the view (`RoadResidency`)', () =>
     makeFar(a);
     expect(position.keptBytes).toBeUndefined();
     expect(bytes(a)).toBe(0);
+  });
+});
+
+describe('the far levels under the far budget, the network\'s far level standing for a cell let go (`RoadResidency.farBudget`)', () => {
+  /** A far block alone in its cell, centred at `x` (box x to x + W), made again as the workers would (`BlockLevels.remake`). */
+  const far = (x: number, cell: string): Mesh => {
+    const mesh = make(false);
+    const lv = levelsOf(mesh)!;
+    Object.assign(lv, { x: x + W / 2, z: 0, cell, remake: () => Promise.resolve(coarseArrays(blockArraysOf([strip()], options.material)!, lock)) });
+    mesh.geometry.boundingBox = new Box3(new Vector3(x, 0, -H), new Vector3(x + W, 1, 0));
+    lv.coarse!.geometry.boundingBox = mesh.geometry.boundingBox.clone();
+    return mesh;
+  };
+  /** The network's far level as the residency sees it: the cells it covers, the ones shown. */
+  const network = (covered: (key: string) => boolean = () => true): CellCover & { shown: Set<string> } => {
+    const shown = new Set<string>();
+    return { shown, covers: covered, show: (key) => { shown.add(key); }, hide: (key) => { shown.delete(key); } };
+  };
+  const over = (x0: number, x1: number): Frustum => new Frustum(
+    new Plane(new Vector3(1, 0, 0), -x0), new Plane(new Vector3(-1, 0, 0), x1),
+    new Plane(new Vector3(0, 1, 0), 1e6), new Plane(new Vector3(0, -1, 0), 1e6), new Plane(new Vector3(0, 0, 1), 1e6), new Plane(new Vector3(0, 0, -1), 1e6));
+  const farBytes = (mesh: Mesh): number => geometryCost(levelsOf(mesh)!.coarse!.geometry).bytes;
+  const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+  it('lets the farthest cells of the view go past the budget, the network\'s level shown there, and makes a cell again when the view comes to it', async () => {
+    const blocks = [far(0, '0,0'), far(1000, '1,0'), far(2000, '2,0')];
+    const one = farBytes(blocks[0]!);
+    const cover = network();
+    const residency: RoadResidency = { view: over(-1e5, 1e5), budget: Infinity, farBudget: 2 * one, network: cover };
+    updateRoadLevels(blocks, 0, 0, 10, residency);
+    // The farthest from the eye goes: its far level given back and hidden, the network's level shown in its cell.
+    expect([...cover.shown]).toEqual(['2,0']);
+    expect(farBytes(blocks[2]!)).toBe(0);
+    expect(levelsOf(blocks[2]!)!.coarse!.visible).toBe(false);
+    expect(blocks.slice(0, 2).every((m) => levelsOf(m)!.coarse!.visible)).toBe(true);
+    // The eye over the third alone: the first, out of the view and farthest, goes; the third is made again and replaces the network's level.
+    residency.view = over(2000, 2200);
+    updateRoadLevels(blocks, 2100, 0, 10, residency);
+    expect(cover.shown.has('0,0')).toBe(true);
+    await settle();
+    expect(cover.shown.has('2,0')).toBe(false);
+    expect(levelsOf(blocks[2]!)!.coarse!.visible).toBe(true);
+    expect(farBytes(blocks[2]!)).toBe(one);
+    expect(levelsOf(blocks[0]!)!.coarse!.visible).toBe(false);
+  });
+
+  it('keeps a cell the network\'s level does not cover, and asks for the level', () => {
+    const blocks = [far(0, '0,0'), far(1000, '1,0')];
+    const residency: RoadResidency = { view: null, budget: Infinity, farBudget: 0, network: network((key) => key === '0,0') };
+    updateRoadLevels(blocks, 0, 0, 10, residency);
+    expect(levelsOf(blocks[0]!)!.dropped).toBe(true);
+    expect(levelsOf(blocks[1]!)!.dropped).toBeFalsy();
+    expect(residency.wantsNetwork).toBe(true);
+  });
+
+  it('keeps every far level with no network\'s level to stand for them', () => {
+    const blocks = [far(0, '0,0'), far(1000, '1,0')];
+    updateRoadLevels(blocks, 0, 0, 10, { view: null, budget: Infinity, farBudget: 0 });
+    expect(blocks.every((m) => levelsOf(m)!.coarse!.visible && !levelsOf(m)!.dropped)).toBe(true);
   });
 });
 
