@@ -2208,7 +2208,9 @@ function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, tab
   if (large) scene.scopeOpening(true);
   // Taken by the rebuild of the map put in place (`restoreInto`): offered right before it, so no rebuild of the map before takes it.
   if (bake) net.offerBake(bake);
-  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import', table);
+  // A new map's ecosystem as well as its relief (`newNature`): the generator's document has none, and taken whole it set `nature` to null - no tree of the
+  // ecosystem on a city made by the worker; the cooked city showed them only from the boot map's ecology its plates had not refreshed yet (2026-10-22).
+  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br', nature: data.nature ?? newNature() }, 'import', table);
   // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).
   history.end(doc);
   roadTool.reset();

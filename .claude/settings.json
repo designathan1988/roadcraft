@@ -2,33 +2,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Bash|PowerShell|mcp__chrome-devtools__.*|mcp__threejs-devtools-mcp__.*|mcp__claude-in-chrome__.*|mcp__Claude_Browser__.*",
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/guard-game-edit.mjs"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/mark-game-change.mjs"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/require-photos.mjs"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/code-first-gate.mjs\""
           }
         ]
       }
