@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   CylinderGeometry,
@@ -7,7 +8,6 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { weldGeometry } from '../mesh/weld';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type FurnitureKind } from '@world/buildings/interior';
 
 /** The furniture people use inside buildings, as models */
@@ -46,11 +46,44 @@ function paint(g: BufferGeometry, c: RGB, x = 0, y = 0, z = 0): BufferGeometry {
   return g.index ? g : weldGeometry(g);
 }
 
-/** A box with rounded edges, its bottom at `y`. One segment a corner: 108 triangles, the same smooth normals; DO NOT give it two (three's
- *  default): 300 triangles a box, two-thirds of them the corners' patches of a few millimetres, and a bookshelf of books 54,600 (the audit, 2026-10-22).
- *  The edge's arc in two facets instead of four stands within 5 % of the radius of the true one (1.5 mm on a 3 cm edge). */
-const rbox = (w: number, h: number, d: number, x: number, y: number, z: number, c: RGB, r = 0.03): BufferGeometry =>
-  paint(new RoundedBoxGeometry(w, h, d, 1, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)), c, x, y + h / 2, z);
+/** The rounding a box's fragments shade by (`ROUND_GLSL`): each vertex's place in its box's own frame, the box's half size and radius (w 0: none), its axes. */
+const ROUND_P = 'aRoundP', ROUND_B = 'aRoundB', ROUND_X = 'aRoundX', ROUND_Y = 'aRoundY';
+
+/** A box with rounded edges, its bottom at `y`: a plain box (12 triangles), its edges rounded in the shading (`createFurnitureMaterial`).
+ *  DO NOT model the rounding: three's RoundedBoxGeometry was 300 triangles a box, a bookshelf of books 55,200 (the audit, 2026-10-22). */
+function rbox(w: number, h: number, d: number, x: number, y: number, z: number, c: RGB, r = 0.03): BufferGeometry {
+  const g = new BoxGeometry(w, h, d);
+  const n = g.getAttribute('position').count;
+  const radius = Math.max(0, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
+  const p = new Float32Array(n * 3), b = new Float32Array(n * 4), ax = new Float32Array(n * 3), ay = new Float32Array(n * 3);
+  const position = g.getAttribute('position');
+  for (let i = 0; i < n; i++) {
+    p.set([position.getX(i), position.getY(i), position.getZ(i)], i * 3);
+    b.set([w / 2, h / 2, d / 2, radius], i * 4);
+    ax.set([1, 0, 0], i * 3);
+    ay.set([0, 1, 0], i * 3);
+  }
+  g.setAttribute(ROUND_P, new BufferAttribute(p, 3));
+  g.setAttribute(ROUND_B, new BufferAttribute(b, 4));
+  g.setAttribute(ROUND_X, new BufferAttribute(ax, 3));
+  g.setAttribute(ROUND_Y, new BufferAttribute(ay, 3));
+  return paint(g, c, x, y + h / 2, z);
+}
+
+/** A part turned about the up axis, its rounding's axes turned with it (three turns only its positions and normals). */
+function turnY(g: BufferGeometry, angle: number): BufferGeometry {
+  g.rotateY(angle);
+  const c = Math.cos(angle), s = Math.sin(angle);
+  for (const name of [ROUND_X, ROUND_Y]) {
+    const a = g.getAttribute(name);
+    if (!a) continue;
+    for (let i = 0; i < a.count; i++) {
+      const vx = a.getX(i), vz = a.getZ(i);
+      a.setXYZ(i, c * vx + s * vz, a.getY(i), -s * vx + c * vz);
+    }
+  }
+  return g;
+}
 
 /** An upright cylinder, its bottom at `y`. */
 const cyl = (r: number, h: number, x: number, y: number, z: number, c: RGB, top = r, seg = 12): BufferGeometry =>
@@ -149,7 +182,7 @@ function build(kind: FurnitureKind): BufferGeometry[] {
         const a = (i / 5) * Math.PI * 2;
         const leg = rbox(0.04, 0.03, 0.28, 0, 0.04, 0, BLACK, 0.01);
         leg.translate(0, 0, -0.14);
-        leg.rotateY(a);
+        turnY(leg, a);
         out.push(leg, ball(0.03, Math.sin(a) * 0.27, 0.03, -Math.cos(a) * 0.27, BLACK));
       }
       return out;
@@ -305,8 +338,15 @@ export function createFurnitureGeometries(): Record<FurnitureKind, BufferGeometr
   const out = {} as Record<FurnitureKind, BufferGeometry>;
   for (const kind of FURNITURE_KINDS) {
     const parts = build(kind).map((g) => {
-      // Every part with the same attributes, so they merge.
-      if (!g.getAttribute('uv')) g.setAttribute('uv', new BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+      // Every part with the same attributes, so they merge: a part that is no box keeps its own normals (no rounding, radius 0).
+      const n = g.getAttribute('position').count;
+      if (!g.getAttribute('uv')) g.setAttribute('uv', new BufferAttribute(new Float32Array(n * 2), 2));
+      if (!g.getAttribute(ROUND_P)) {
+        g.setAttribute(ROUND_P, new BufferAttribute(new Float32Array(n * 3), 3));
+        g.setAttribute(ROUND_B, new BufferAttribute(new Float32Array(n * 4), 4));
+        g.setAttribute(ROUND_X, new BufferAttribute(new Float32Array(n * 3), 3));
+        g.setAttribute(ROUND_Y, new BufferAttribute(new Float32Array(n * 3), 3));
+      }
       return g;
     });
     const merged = mergeGeometries(parts) as BufferGeometry;
@@ -317,9 +357,58 @@ export function createFurnitureGeometries(): Record<FurnitureKind, BufferGeometr
   return out;
 }
 
+/** The rounding of a box's edges in its shading: the normal of the rounded box at the point of the plain one, the gradient of its distance
+ *  outside its inner box (Quilez, "distance functions", sdRoundBox: q = abs(p) - b + r, https://iquilezles.org/articles/distfunctions/).
+ *  On a face's middle it is the face's own normal; within r of an edge or a corner it turns as the rounded surface does. The outline stays square. */
+const ROUND_VERTEX = /* glsl */ `
+attribute vec3 ${ROUND_P};
+attribute vec4 ${ROUND_B};
+attribute vec3 ${ROUND_X};
+attribute vec3 ${ROUND_Y};
+varying vec3 vRoundP;
+varying vec4 vRoundB;
+varying vec3 vRoundX;
+varying vec3 vRoundY;
+varying vec3 vRoundZ;
+// A model direction carried to view space as three carries a normal (r186 defaultnormal_vertex): the instance's turn and scale, then normalMatrix.
+vec3 roundToView(vec3 v) {
+#ifdef USE_INSTANCING
+  mat3 im = mat3(instanceMatrix);
+  v /= vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
+  v = im * v;
+#endif
+  return normalMatrix * v;
+}`;
+const ROUND_VERTEX_MAIN = /* glsl */ `
+  vRoundP = ${ROUND_P};
+  vRoundB = ${ROUND_B};
+  vRoundX = roundToView(${ROUND_X});
+  vRoundY = roundToView(${ROUND_Y});
+  vRoundZ = roundToView(cross(${ROUND_X}, ${ROUND_Y}));`;
+const ROUND_FRAGMENT = /* glsl */ `
+varying vec3 vRoundP;
+varying vec4 vRoundB;
+varying vec3 vRoundX;
+varying vec3 vRoundY;
+varying vec3 vRoundZ;`;
+const ROUND_FRAGMENT_MAIN = /* glsl */ `
+  if (vRoundB.w > 0.0) {
+    vec3 roundQ = max(abs(vRoundP) - vRoundB.xyz + vRoundB.w, 0.0) * sign(vRoundP);
+    if (dot(roundQ, roundQ) > 0.0) normal = normalize(roundQ.x * vRoundX + roundQ.y * vRoundY + roundQ.z * vRoundZ);
+  }`;
+
 export function createFurnitureMaterial(): MeshStandardMaterial {
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.68, metalness: 0.04 });
   material.name = 'building-furniture';
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>${ROUND_VERTEX}`)
+      .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>${ROUND_VERTEX_MAIN}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>${ROUND_FRAGMENT}`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>${ROUND_FRAGMENT_MAIN}`);
+  };
+  material.customProgramCacheKey = () => 'building-furniture-rounded';
   return material;
 }
 

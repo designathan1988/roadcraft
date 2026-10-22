@@ -197,15 +197,23 @@ export const materialsOf = (object: Object3D): Material[] => {
   return Array.isArray(mat) ? mat : mat ? [mat] : [];
 };
 
-/** Triangles under an object (its subtree), as drawn once each (instances counted). */
+/** Triangles under an object (its subtree) as three submits them in one pass (r186 `WebGLRenderer.renderBufferDirect`): visible objects only,
+ *  the draw range from its start, instances counted, a BatchedMesh by the lists of its last draw. DO NOT count the whole buffer: a hidden layer
+ *  or a range of freed slots read as triangles drawn. */
 export function trianglesUnder(object: Object3D): number {
   let total = 0;
-  object.traverse((o) => {
+  object.traverseVisible((o) => {
     const g = (o as { geometry?: BufferGeometry }).geometry;
     if (!g || !(o as { isMesh?: boolean }).isMesh) return;
+    const batched = o as { isBatchedMesh?: boolean; _multiDrawCount?: number; _multiDrawCounts?: ArrayLike<number> };
+    if (batched.isBatchedMesh && batched._multiDrawCounts) {
+      for (let i = 0; i < (batched._multiDrawCount ?? 0); i++) total += Math.floor(batched._multiDrawCounts[i]! / 3);
+      return;
+    }
     const index = g.index;
     const count = index ? index.count : g.attributes['position']?.count ?? 0;
-    const drawn = Math.min(count, g.drawRange.count) / 3;
+    const start = Math.max(0, g.drawRange.start);
+    const drawn = Math.max(0, Math.min(count, start + g.drawRange.count) - start) / 3;
     const inst = (o as { isInstancedMesh?: boolean; count?: number }).isInstancedMesh ? (o as { count: number }).count : 1;
     total += Math.floor(drawn) * inst;
   });
