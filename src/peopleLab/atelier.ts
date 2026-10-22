@@ -20,7 +20,7 @@ export class Atelier {
   readonly body: GroomBody;
   sim: ClothSim;
   pattern = 'vestido';
-  cut: Cut = { length: 0, ease: 1.12, flare: 0.8 };
+  cut: Cut = { length: 0, ease: 1.12, flare: 0.8, sleeve: 1.6, neck: 0.1 };
   colour = 0x3b6fd1;
   running = true;
   stiffness = 0.4;

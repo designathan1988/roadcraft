@@ -265,8 +265,9 @@ function pair(name: string, outline: readonly (readonly [number, number])[], m: 
   return { name, patterns: [{ name: `${name}-frente`, outline, angle: 0, radius: r, top, ...b }, { name: `${name}-costas`, outline, angle: Math.PI, radius: r, top, ...b }], seams };
 }
 
-/** Pattern options: length added (dm), ease (fullness, 1 snug), flare at the hem (dm). */
-export interface Cut { readonly length: number; readonly ease: number; readonly flare: number }
+/** Pattern options: length added (dm), ease (fullness, 1 snug), flare at the hem (dm); the sleeve's length past the shoulder (dm, 0 a tank top,
+ *  1.6 a T-shirt, 2 to the elbow) and the neckline's depth (dm), as the bodice blocks of pattern making (FreeSewing's Brian/Teagan) take them. */
+export interface Cut { readonly length: number; readonly ease: number; readonly flare: number; readonly sleeve?: number; readonly neck?: number }
 
 export const PATTERNS: Readonly<Record<string, (m: Measures, c: Cut) => Garment>> = {
   // Hem at y 0, waist at the top; corners 0 hem-left, 1 hem-right, 2 waist-right, 3 waist-left.
@@ -276,16 +277,30 @@ export const PATTERNS: Readonly<Record<string, (m: Measures, c: Cut) => Garment>
   },
   // 0 hem-left, 1 hem-right, 2 underarm-right, 3 sleeve-bottom-right, 4 sleeve-top-right, 5 neck-right, 6 neck-left, 7 sleeve-top-left, 8 sleeve-bottom-left, 9 underarm-left.
   camiseta: (m, c) => {
-    const w = m.radius * Math.PI * c.ease, len = m.shoulderY - m.hipY + 0.5 + c.length, sl = 1.6;
-    return pair('camiseta', [[-w / 2 - c.flare * 0.3, 0], [w / 2 + c.flare * 0.3, 0], [w / 2, len - 1.5], [w / 2 + sl, len - 1.0], [w / 2 + sl * 0.7, len], [w / 4, len + 0.1],
-      [-w / 4, len + 0.1], [-w / 2 - sl * 0.7, len], [-w / 2 - sl, len - 1.0], [-w / 2, len - 1.5]], m, m.shoulderY + 0.35, c.ease,
-    [[[1, 2], [9, 10]], [[2, 3], [8, 9]], [[4, 5], [6, 7]]]);
+    const w = m.radius * Math.PI * c.ease, len = m.shoulderY - m.hipY + 0.5 + c.length;
+    // Drafted before sleeves and necklines were options: its outline as it was, so a garment kept then still matches its particles.
+    if (c.sleeve === undefined && c.neck === undefined) {
+      const sl = 1.6;
+      return pair('camiseta', [[-w / 2 - c.flare * 0.3, 0], [w / 2 + c.flare * 0.3, 0], [w / 2, len - 1.5], [w / 2 + sl, len - 1.0], [w / 2 + sl * 0.7, len], [w / 4, len + 0.1],
+        [-w / 4, len + 0.1], [-w / 2 - sl * 0.7, len], [-w / 2 - sl, len - 1.0], [-w / 2, len - 1.5]], m, m.shoulderY + 0.35, c.ease,
+      [[[1, 2], [9, 10]], [[2, 3], [8, 9]], [[4, 5], [6, 7]]]);
+    }
+    // 0 hem-left, 1 hem-right, 2 underarm-right, 3 sleeve-bottom-right, 4 sleeve-top-right, 5 neck-right, 6 neck-middle, 7 neck-left, 8 sleeve-top-left, 9 sleeve-bottom-left, 10 underarm-left.
+    // A longer sleeve hangs down the arm: its bottom edge drops as it reaches out.
+    const sl = Math.max(0.15, c.sleeve ?? 1.6), neck = c.neck ?? 0.1, drop = Math.min(1.0, 0.5 + sl * 0.1), top = sl > 2 ? 0.3 : 0;
+    return pair('camiseta', [[-w / 2 - c.flare * 0.3, 0], [w / 2 + c.flare * 0.3, 0], [w / 2, len - 1.5], [w / 2 + sl, len - 0.5 - drop], [w / 2 + sl * 0.85, len - top], [w / 4, len + 0.1],
+      [0, len + 0.1 - neck], [-w / 4, len + 0.1], [-w / 2 - sl * 0.85, len - top], [-w / 2 - sl, len - 0.5 - drop], [-w / 2, len - 1.5]], m, m.shoulderY + 0.35, c.ease,
+    [[[1, 2], [10, 11]], [[2, 3], [9, 10]], [[4, 5], [7, 8]]]);
   },
-  // 0 hem-left, 1 hem-right, 2 underarm-right, 3 shoulder-right, 4 neck-right, 5 neck-left, 6 shoulder-left, 7 underarm-left.
+  // 0 hem-left, 1 hem-right, 2 underarm-right, 3 shoulder-right, 4 neck-right, (neck-middle,) neck-left, shoulder-left, underarm-left.
   vestido: (m, c) => {
     const w = m.radius * Math.PI * c.ease, len = m.shoulderY - m.kneeY + 0.6 + c.length, f = c.flare;
-    return pair('vestido', [[-w / 2 - f, 0], [w / 2 + f, 0], [w / 2, len - 2.0], [w / 2 - 0.3, len], [w / 5, len + 0.1], [-w / 5, len + 0.1], [-w / 2 + 0.3, len], [-w / 2, len - 2.0]],
-      m, m.shoulderY + 0.3, c.ease, [[[1, 2], [7, 8]], [[3, 4], [5, 6]]]);
+    if (c.neck === undefined) {
+      return pair('vestido', [[-w / 2 - f, 0], [w / 2 + f, 0], [w / 2, len - 2.0], [w / 2 - 0.3, len], [w / 5, len + 0.1], [-w / 5, len + 0.1], [-w / 2 + 0.3, len], [-w / 2, len - 2.0]],
+        m, m.shoulderY + 0.3, c.ease, [[[1, 2], [7, 8]], [[3, 4], [5, 6]]]);
+    }
+    return pair('vestido', [[-w / 2 - f, 0], [w / 2 + f, 0], [w / 2, len - 2.0], [w / 2 - 0.3, len], [w / 5, len + 0.1], [0, len + 0.1 - c.neck], [-w / 5, len + 0.1], [-w / 2 + 0.3, len], [-w / 2, len - 2.0]],
+      m, m.shoulderY + 0.3, c.ease, [[[1, 2], [8, 9]], [[3, 4], [6, 7]]]);
   },
   // A tube top: 0 hem-left, 1 hem-right, 2 top-right, 3 top-left.
   top: (m, c) => {

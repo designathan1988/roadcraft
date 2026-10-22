@@ -136,6 +136,12 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
   const sex = (): 'female' | 'male' => c.sex();
   const outfitPics = (names: readonly string[]): HTMLElement =>
     pics(names.map((n) => ({ id: n, label: nameOf(n), variant: withLook({ outfit: n }) })), p().spec.look.outfit, (id) => c.setLook({ outfit: id }), 'body');
+  /** An action as an icon, named by its tooltip. */
+  const iconButton = (ico: string, title: string, run: () => void): HTMLButtonElement => {
+    const b = el('button', { cls: 'toggle wide', title }, icon(ico, 18));
+    b.onclick = run;
+    return b;
+  };
   const allToggle = (): HTMLElement => c.ui.toggle('globe', 'Mostrar tudo (todos os sexos e estilos)', c.showAll, (v) => c.setShowAll(v));
   const opts = (kind: WardrobeItem['kind']): readonly string[] => itemsOf(kind, { street: !c.showAll, sex: sex() });
   const child = (): boolean => yearsFromAge(b().age) < 16;
@@ -160,7 +166,7 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
         slider('Proporções', 0, 1, 0.01, b().proportions, (v) => c.setBody('proportions', v)),
         ...(sex() === 'female' ? [slider('Busto', 0, 1, 0.01, b().cupsize, (v) => c.setBody('cupsize', v)), slider('Firmeza', 0, 1, 0.01, b().firmness, (v) => c.setBody('firmness', v))] : []),
       ]],
-      ['esculpir', 'Esculpir', () => { const b = el('button', { cls: 'big save' }, icon('sculpt', 16), 'Esculpir corpo e rosto'); b.onclick = () => c.openCarver(); return [b]; }],
+      ['esculpir', 'Esculpir', () => [el('div', { cls: 'bar' }, iconButton('sculpt', 'Esculpir corpo e rosto', () => c.openCarver()))]],
       ['tronco', 'Tronco', () => sliderList(BODY_SLIDERS['tronco']!)],
       ['bracos', 'Braços', () => sliderList(BODY_SLIDERS['bracos']!)],
       ['pernas', 'Pernas', () => sliderList(BODY_SLIDERS['pernas']!)],
@@ -175,8 +181,7 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
     rosto: [
       ['rosto', 'Rosto', () => {
         const f = p().spec.features;
-        const fit = el('button', { cls: 'big alt', textContent: 'Proporção do cânone' });
-        fit.onclick = () => c.fitFace();
+        const fit = iconButton('style', 'Proporção do cânone', () => c.fitFace());
         return [
           pics(FACES.map((face) => ({ id: face.label, label: face.label, variant: withFeatures(withFace(mf(), face)) })), null,
             (id) => c.setSpec({ features: withFace(f, FACES.find((x) => x.label === id)!) }), 'face'),
@@ -211,7 +216,7 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       ['bochechas', 'Bochechas', partGroup('cheeks')],
       ['queixo', 'Queixo', partGroup('jaw')],
       ['orelhas', 'Orelhas', partGroup('ears')],
-      ['esculpir', 'Esculpir', () => { const b = el('button', { cls: 'big save' }, icon('sculpt', 16), 'Esculpir rosto'); b.onclick = () => c.openCarver(); return [b]; }],
+      ['esculpir', 'Esculpir', () => [el('div', { cls: 'bar' }, iconButton('sculpt', 'Esculpir rosto', () => c.openCarver()))]],
       ['maquiagem', 'Maquiagem', () => [slider('Intensidade', 0, 1, 0.01, p().spec.look.makeup ?? 0, (v) => c.setLook({ makeup: v }))]],
     ],
     estilo: [
@@ -271,9 +276,9 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       ['roupa', 'Roupa', () => {
         const l = p().spec.look;
         return [
-          el('h3', { textContent: 'Em cima' }), seg([['tank', 'Regata'], ['tshirt', 'Camiseta'], ['longsleeve', 'Manga longa']] as const, l.top === 'none' ? 'tshirt' : l.top, (v) => c.setLook({ top: v })),
+          c.ui.iconSeg([['tank', 'tube', 'Regata'], ['tshirt', 'tshirt', 'Camiseta'], ['longsleeve', 'longsleeve', 'Manga longa']] as const, l.top === 'none' ? 'tshirt' : l.top, (v) => c.setLook({ top: v })),
           swatches(CLOTH, l.topColour, (col) => c.setLook({ topColour: col })),
-          el('h3', { textContent: 'Embaixo' }), seg([['shorts', 'Bermuda'], ['trousers', 'Calça'], ['skirt', 'Saia']] as const, l.bottom, (v) => c.setLook({ bottom: v })),
+          c.ui.iconSeg([['shorts', 'shorts', 'Bermuda'], ['trousers', 'trousers', 'Calça'], ['skirt', 'skirt', 'Saia']] as const, l.bottom, (v) => c.setLook({ bottom: v })),
           swatches(CLOTH, l.bottomColour, (col) => c.setLook({ bottomColour: col })),
         ];
       }],
@@ -302,9 +307,7 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       ['oculos', 'Óculos', () => [extraPics('glasses', 'Sem')]],
       ['joias', 'Joias', () => [extraPics('jewelry', 'Sem')]],
       ['criar', 'Criar', () => {
-        const make = el('button', { cls: 'big save' }, icon('pattern', 16), 'Ateliê');
-        make.onclick = () => c.openAtelier();
-        return [make];
+        return [el('div', { cls: 'bar' }, iconButton('pattern', 'Ateliê: molde, costura e caimento', () => c.openAtelier()))];
       }],
     ],
     expressao: [
