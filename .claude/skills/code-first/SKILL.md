@@ -14,12 +14,12 @@ Running the game or any part of it: `look.mjs`, `look-compare.mjs`, `verify.mjs`
 1. **Read the code** with Read / Grep / Glob: from the symptom's entry point (the frame, the open path, the layer that draws the thing) follow every call and every condition until the line that produces the wrong result. Read whole functions, not snippets. Follow data from where it is made to where it is used. Read `git log -p` / `git show` of the files involved to see what changed.
 2. **Write `.claude/diagnosis.md`** with these sections, all filled, nothing guessed:
    - `Symptom:` what is wrong, seen where.
-   - `Trace:` the chain of code that leads to it, one line each, every step as `src/<file>.ts:<line>` with what that line does. At least 3 steps.
-   - `Root cause:` the exact line(s) `src/<file>.ts:<line>` and why they produce the symptom.
+   - `Trace:` the chain of code that leads to it, one line each, every step as `src/<file>.ts:<line>` or `scripts/<file>.ts:<line>` with what that line does. At least 3 steps.
+   - `Root cause:` the exact line(s) `src/…:<line>` or `scripts/…:<line>` and why they produce the symptom.
    - `Fix:` the code change and why it removes the cause without breaking what the code was there for.
    Words like "maybe", "probably", "likely", "suspect", "hypothesis", "talvez", "provavelmente", "suspeito", "hipótese" make the gate refuse it: if you are not sure, you have not read enough code.
-3. **Edit the code** (`src/`) to apply the fix. The gate opens only when `src/` changed after the diagnosis was written.
-4. **One verification**: the fewest commands that prove the fix (the related specs, one photo plan). After it, the gate closes again until `src/` changes again. A failed verification means the diagnosis was wrong: go back to step 1 and read more code; never re-run hoping for a different result.
+3. **Edit the code** (`src/`, or `scripts/` for the build and tools; the photo plans in `scripts/look/` are data and do not count) to apply the fix. The gate opens only when such code changed after the diagnosis was written.
+4. **One verification**: at most 4 gated commands for one state of the code (start the server, the related specs, one photo plan, its comparison; chain them). After it, the gate closes again until the code changes again. A failed verification means the diagnosis was wrong: go back to step 1 and read more code; never re-run hoping for a different result.
 
 ## Forbidden
 - Running anything "to see what happens", "to confirm a hypothesis", "to measure first", or to bisect by reverting files and shooting photos.
