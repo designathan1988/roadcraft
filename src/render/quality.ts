@@ -231,7 +231,10 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     // DO NOT turn on 4x here for the district's sparkle: measured alone it cost ~4 ms of GPU there (p95 13 -> 17 ms) and left 32 % of its
     // pixels off a supersampled frame against 34 % (`npm run diagnose`, 2026-10-22): the sparkle is the shading's, not the edges'.
     msaa: 0,
-    aoFull: false,
+    // At the frame's own size, alone (not with the 3072 shadow nor the MSAA of 80074433): at half size the occlusion made the district's
+    // frame differ from a supersampled one in 34 % of its pixels, 27 % without it (`npm run diagnose`, 2026-10-22, per-pass ablation).
+    // Its GPU paid back by the parts' coarser levels (`partCells.ts` PART_ERROR_PX).
+    aoFull: true,
     sharpen: 0.45,
     anisotropy: 16,
     detailProps: true,

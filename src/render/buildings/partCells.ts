@@ -18,6 +18,10 @@ import { DRAW_TRIANGLES, LEAVES, type PartFiling } from './partFiling';
 
 /** A level is left for a coarser one once that one's error is under this share of a pixel (a shadow under this share of a texel), and taken back at a whole one. */
 const COARSEN = 0.85;
+/** Pixels a coarser level's error may span before a finer one is drawn. 1.5, not 1: the parts were 47 % of the district's triangles
+ *  (9.3 M of 20 M, `npm run diagnose`, 2026-10-22), and the full-resolution occlusion of the top tier is paid from them. Whether a part
+ *  is drawn at all is still judged by a pixel (`levelAt`). */
+const PART_ERROR_PX = 1.5;
 /** A sub-cell not drawn: every instance in it under a pixel. */
 const NONE = 127;
 /** A part made of bars (a frame's rails and stiles, a railing's, a brise's blades: its `pieces`) leaves the drawing once its bars span under this many pixels: what it covers is its bars, not its box. DO NOT keep it until its whole diagonal is under a pixel: 300 thousand window frames of 6 cm bars were drawn to 1-2 km as lines a fifth of a pixel wide, 6 M triangles of shimmer (2026-10-20). */
@@ -340,7 +344,7 @@ export class PartCell {
       const metres = next < levels.length
         ? (shell ? shellPartError(band.scale, m * 3) : largest(levels[next]!.error, band.scale, m * 3))
         : bars ? barsAcross(band, m) : diagonal(extent, band.scale, m * 3);
-      if (metres * perMetre >= (bars ? BAR_PIXELS : 1) * (next <= held ? 1 : COARSEN)) break;
+      if (metres * perMetre >= (next < levels.length ? PART_ERROR_PX : bars ? BAR_PIXELS : 1) * (next <= held ? 1 : COARSEN)) break;
     }
     // Under a pixel across its diagonal: not drawn, a shell's part too.
     return k === levels.length ? NONE : k;
