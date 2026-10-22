@@ -1,3 +1,4 @@
+import { PLAIN_SHAPE } from './hairShape';
 import {
   ACESFilmicToneMapping, BufferAttribute, CylinderGeometry, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
   PMREMGenerator, PerspectiveCamera, Scene, ShadowMaterial, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D, type SkinnedMesh,
@@ -358,6 +359,8 @@ function startLab(): void {
     act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; heldAt = null; if (player) player.hold = null; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
     render, openSculptor: (item) => { void openSculptor(item); }, fitFace: () => { void fitFace(); },
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
+    hairShape: () => person.hairShape ?? PLAIN_SHAPE,
+    setHairShape: (hs) => { person = { ...person, hairShape: hs }; rebuild(200); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
     openCarver: () => { void openCarver(); }, openAtelier: () => { void openAtelier(); },

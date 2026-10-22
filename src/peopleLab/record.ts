@@ -1,4 +1,5 @@
 import type { PersonSpec } from '@people/spec';
+import { isPlain, type HairShape } from './hairShape';
 import type { HairStyle } from '@people/hair/procedural';
 import type { CartoonStyle } from '@render/people/cartoon';
 import type { HairSculpt } from './sculpt';
@@ -26,6 +27,8 @@ export interface LabPerson {
   readonly garment?: GarmentRecord;
   /** The body and face sculpted with brushes (`bodySculpt.ts`): moves of the base mesh's vertices. */
   readonly body?: HairSculpt;
+  /** The worn hairstyle's length, volume and waves (`hairShape.ts`). */
+  readonly hairShape?: HairShape;
 }
 
 export interface LabRoster {
@@ -68,6 +71,7 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.sculpts?.length ? { sculpts: person.sculpts } : {}),
     ...(person.motion && Object.keys(person.motion).length ? { motion: person.motion } : {}),
     ...(person.body ? { body: person.body } : {}),
+    ...(!isPlain(person.hairShape) ? { hairShape: person.hairShape } : {}),
     ...(person.garment && spec.look.extras?.includes(ATELIER) ? { garment: person.garment } : {}),
   };
 }

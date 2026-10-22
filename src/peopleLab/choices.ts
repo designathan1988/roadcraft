@@ -76,7 +76,7 @@ export const HAIR_CATALOGUE = {
     'elvs_50s_updo', 'elvs_daisy_hair', 'elvs_hazel_hair', 'elvs_katherine_hair', 'elvs_short_daisy_hair', 'elvs_that_80s_babe_hair', 'elvs_wavy_bob',
     'elvs_witchy_lil_bob', 'elvs_ashley_may_hair', 'elvs_island_princess_hair', 'elvs_french_braid_variation', 'faydaen_hair_1', 'littleright_bobcut_hair',
     'toigo_blunt_bob', 'toigo_blunt_bob_with_bangs', 'toigo_curled_under_bob', 'toigo_curled_under_bob_with_bangs', 'toigo_inverted_bob',
-    'toigo_inverted_bob_with_bangs', 'rehmanpolanski_hair_bun_brown', 'elvs_micky_afro'],
+    'toigo_inverted_bob_with_bangs', 'rehmanpolanski_hair_bun_brown', 'elvs_micky_afro', 'elvs_braid_bun'],
   male: ['short02', 'short01', 'short03', 'short04', 'culturalibre_hair_02', 'culturalibre_hair_05', 'culturalibre_hair_14', 'elvs_maxwell_hair',
     'elvs_short_side_do', 'elvs_grump_hair', 'elvs_keylth_hair', 'afro01', 'elvs_braided_rows'],
 } as const;
@@ -95,7 +95,7 @@ export const SHOES_CATALOGUE = {
 export const HAIR_FRINGED: readonly string[] = ['cortu_straight_bangs', 'culturalibre_hair_18', 'elvs_katherine_hair', 'toigo_blunt_bob_with_bangs',
   'toigo_curled_under_bob_with_bangs', 'toigo_inverted_bob_with_bangs'];
 export const HAIR_TIED: readonly string[] = ['ponytail01', 'braid01', 'elvs_50s_updo', 'elvs_french_braid_variation', 'rehmanpolanski_hair_bun_brown',
-  'elvs_micky_afro', 'elvs_braided_rows'];
+  'elvs_micky_afro', 'elvs_braided_rows', 'elvs_braid_bun'];
 
 export const HAIR_LABELS: Readonly<Record<string, string>> = {
   long01: 'Longo liso', bob02: 'Chanel', bob01: 'Chanel de lado', ponytail01: 'Rabo de cavalo', braid01: 'Trança', culturalibre_hair_01: 'Longo solto',
@@ -104,7 +104,7 @@ export const HAIR_LABELS: Readonly<Record<string, string>> = {
   elvs_that_80s_babe_hair: 'Anos 80', elvs_wavy_bob: 'Chanel retrô', elvs_witchy_lil_bob: 'Chanel curto', elvs_ashley_may_hair: 'Cachos soltos',
   elvs_island_princess_hair: 'Praiano', elvs_french_braid_variation: 'Trança embutida', faydaen_hair_1: 'Médio liso', littleright_bobcut_hair: 'Joãozinho',
   toigo_blunt_bob: 'Chanel reto', toigo_blunt_bob_with_bangs: 'Chanel reto franja', toigo_curled_under_bob: 'Chanel virado', toigo_curled_under_bob_with_bangs: 'Virado com franja',
-  toigo_inverted_bob: 'Chanel invertido', toigo_inverted_bob_with_bangs: 'Invertido franja', rehmanpolanski_hair_bun_brown: 'Coque', elvs_micky_afro: 'Puffs',
+  toigo_inverted_bob: 'Chanel invertido', toigo_inverted_bob_with_bangs: 'Invertido franja', rehmanpolanski_hair_bun_brown: 'Coque', elvs_braid_bun: 'Coque trançado', elvs_micky_afro: 'Puffs',
   short02: 'Curto clássico', short01: 'Curto', short03: 'Curto penteado', short04: 'Raspado', culturalibre_hair_02: 'Topete', culturalibre_hair_05: 'Curto bagunçado',
   culturalibre_hair_14: 'Ondulado curto', elvs_maxwell_hair: 'Social', elvs_short_side_do: 'De lado', elvs_grump_hair: 'Despenteado', elvs_keylth_hair: 'Médio',
   afro01: 'Black', elvs_braided_rows: 'Tranças nagô',

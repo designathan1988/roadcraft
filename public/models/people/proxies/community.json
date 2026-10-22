@@ -6196,58 +6196,1057 @@
    "street": false,
    "vertices": 1812,
    "triangles": 3026
-  }
- ],
- "skipped": [
+  },
   {
    "name": "elvs_braid_bun",
+   "kind": "hair",
    "pack": "hair02",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\hair02\\hair\\elvs_braid_bun\\bunstex12.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_braid_bun.webp 512 1\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\hair02\\\\hair\\\\elvs_braid_bun\\\\bunstex12.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "female",
+    "casual",
+    "contemporary",
+    "hair"
+   ],
+   "street": true,
+   "vertices": 11029,
+   "triangles": 21016
   },
   {
    "name": "elvs_double_handkerchief_halter_dress",
+   "kind": "dress",
    "pack": "dress02",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\dress02\\clothes\\elvs_double_handkerchief_halter_dress\\chiefdoubletex1.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_double_handkerchief_halter_dress.webp 512 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\dress02\\\\clothes\\\\elvs_double_handkerchief_halter_dress\\\\chiefdoubletex1.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "dress",
+    "ladiesware",
+    "female",
+    "halter",
+    "halter dress"
+   ],
+   "street": true,
+   "vertices": 21648,
+   "triangles": 21954
   },
   {
    "name": "elvs_fringe_hippy_dress",
+   "kind": "dress",
    "pack": "dress02",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\dress02\\clothes\\elvs_fringe_hippy_dress\\fringestex12.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_fringe_hippy_dress.webp 512 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\dress02\\\\clothes\\\\elvs_fringe_hippy_dress\\\\fringestex12.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "female",
+    "formal",
+    "festive",
+    "vintage",
+    "dress",
+    "fringe club"
+   ],
+   "street": true,
+   "vertices": 9630,
+   "triangles": 6768
   },
   {
    "name": "elvs_halter_dress_long",
+   "kind": "dress",
    "pack": "dress02",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\dress02\\clothes\\elvs_halter_dress_long\\halterdresslongtex2.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_halter_dress_long.webp 512 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\dress02\\\\clothes\\\\elvs_halter_dress_long\\\\halterdresslongtex2.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "dress",
+    "ladiesware",
+    "female",
+    "halter",
+    "halter dress"
+   ],
+   "street": true,
+   "vertices": 15755,
+   "triangles": 15548
   },
   {
    "name": "elvs_halter_dress_tiered",
+   "kind": "dress",
    "pack": "dress02",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\dress02\\clothes\\elvs_halter_dress_tiered\\tieredtex2b.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_halter_dress_tiered.webp 512 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\dress02\\\\clothes\\\\elvs_halter_dress_tiered\\\\tieredtex2b.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "dress",
+    "ladiesware",
+    "female",
+    "halter",
+    "halter dress"
+   ],
+   "street": true,
+   "vertices": 20871,
+   "triangles": 21076
+  },
+  {
+   "name": "culturalibre_cl_gun",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "gun",
+    "weapon"
+   ],
+   "street": true,
+   "vertices": 3440,
+   "triangles": 4926
+  },
+  {
+   "name": "culturalibre_cl_gun_left_hand",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "gun",
+    "weapon"
+   ],
+   "street": true,
+   "vertices": 3440,
+   "triangles": 4926
+  },
+  {
+   "name": "jaldmic_akm_base",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "russian",
+    "weapon"
+   ],
+   "street": true,
+   "vertices": 22630,
+   "triangles": 19509
+  },
+  {
+   "name": "jaldmic_l1a1",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "jaldmic",
+    "weapon"
+   ],
+   "street": true,
+   "vertices": 39356,
+   "triangles": 63128
+  },
+  {
+   "name": "jaldmic_m1911a1",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "jaldmic",
+    "weapon",
+    "pistol"
+   ],
+   "street": true,
+   "vertices": 5308,
+   "triangles": 6998
+  },
+  {
+   "name": "maciekg_hammer",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "weapon"
+   ],
+   "street": true,
+   "vertices": 397,
+   "triangles": 528
+  },
+  {
+   "name": "maciekg_short_bow",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "weapon"
+   ],
+   "street": true,
+   "vertices": 894,
+   "triangles": 1216
+  },
+  {
+   "name": "punkduck_p-ivy_weapon",
+   "kind": "equipment",
+   "pack": "equipment02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "ivy",
+    "sword",
+    "weapon"
+   ],
+   "street": true,
+   "vertices": 10503,
+   "triangles": 10352
+  },
+  {
+   "name": "culturalibre_suitcase",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 354,
+   "triangles": 228
+  },
+  {
+   "name": "mindfront_tactical_vest_female",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "work",
+    "sport",
+    "female"
+   ],
+   "street": true,
+   "vertices": 22052,
+   "triangles": 37056
+  },
+  {
+   "name": "mindfront_tactical_vest_male",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "work",
+    "sport",
+    "male"
+   ],
+   "street": true,
+   "vertices": 22052,
+   "triangles": 37056
+  },
+  {
+   "name": "punkduck_diver_scuba_rig",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "sport",
+    "unsorted"
+   ],
+   "street": true,
+   "vertices": 3950,
+   "triangles": 5676
+  },
+  {
+   "name": "punkduck_electric_guitar",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "carried",
+    "guitar"
+   ],
+   "street": true,
+   "vertices": 5177,
+   "triangles": 7700
+  },
+  {
+   "name": "punkduck_handbag01",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "bag",
+    "carried"
+   ],
+   "street": true,
+   "vertices": 2155,
+   "triangles": 3460
+  },
+  {
+   "name": "punkduck_head_mirror",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "punkduck",
+   "tags": [
+    "unisex",
+    "profession",
+    "contemporary",
+    "carried-item"
+   ],
+   "street": true,
+   "vertices": 1301,
+   "triangles": 2020
+  },
+  {
+   "name": "punkduck_microphone",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "carried"
+   ],
+   "street": true,
+   "vertices": 385,
+   "triangles": 544
+  },
+  {
+   "name": "punkduck_shopping_bag01",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "bag",
+    "carried"
+   ],
+   "street": true,
+   "vertices": 831,
+   "triangles": 1336
+  },
+  {
+   "name": "punkduck_stethoscope",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "punkduck",
+   "tags": [
+    "unisex",
+    "profession",
+    "contemporary",
+    "carried-item"
+   ],
+   "street": true,
+   "vertices": 2727,
+   "triangles": 4668
+  },
+  {
+   "name": "punkduck_tennis_racket",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "sport",
+    "carried"
+   ],
+   "street": true,
+   "vertices": 1423,
+   "triangles": 2068
+  },
+  {
+   "name": "punkduck_wireless_headset",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "carried"
+   ],
+   "street": true,
+   "vertices": 2224,
+   "triangles": 3432
+  },
+  {
+   "name": "elvs_covid_goggles1",
+   "kind": "glasses",
+   "pack": "glasses02",
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "unisex",
+    "casual",
+    "profession",
+    "contemporary",
+    "extension",
+    "glasses"
+   ],
+   "street": true,
+   "vertices": 1686,
+   "triangles": 2880
+  },
+  {
+   "name": "elvs_ladies_sunglass1",
+   "kind": "glasses",
+   "pack": "glasses02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 30591,
+   "triangles": 37550
+  },
+  {
+   "name": "punkduck_glasses_modern_form",
+   "kind": "glasses",
+   "pack": "glasses02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "glasses"
+   ],
+   "street": true,
+   "vertices": 2651,
+   "triangles": 4520
+  },
+  {
+   "name": "punkduck_goggles",
+   "kind": "glasses",
+   "pack": "glasses02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "sport",
+    "swimming",
+    "triathlon"
+   ],
+   "street": true,
+   "vertices": 1375,
+   "triangles": 2060
+  },
+  {
+   "name": "punkduck_sport-sunglasses",
+   "kind": "glasses",
+   "pack": "glasses02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "glasses",
+    "sport"
+   ],
+   "street": true,
+   "vertices": 1692,
+   "triangles": 2872
+  },
+  {
+   "name": "culturalibre_cl_bowler_hat",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hat"
+   ],
+   "street": true,
+   "vertices": 1704,
+   "triangles": 2368
+  },
+  {
+   "name": "culturalibre_cl_don_quixote_hat",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hat"
+   ],
+   "street": true,
+   "vertices": 4104,
+   "triangles": 2872
+  },
+  {
+   "name": "elvs_basic_brave_feathers1",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 4591,
+   "triangles": 5852
+  },
+  {
+   "name": "elvs_charity_veil1",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "female",
+    "formal",
+    "traditional",
+    "hat",
+    "veil"
+   ],
+   "street": true,
+   "vertices": 4193,
+   "triangles": 4109
+  },
+  {
+   "name": "elvs_male_trilby_hat",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 19682,
+   "triangles": 28602
+  },
+  {
+   "name": "elvs_santa_hat",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 2651,
+   "triangles": 3200
+  },
+  {
+   "name": "elvs_slouchy_beanie1",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "unisex",
+    "casual",
+    "leisure",
+    "contemporary",
+    "hat",
+    "beanie"
+   ],
+   "street": true,
+   "vertices": 662,
+   "triangles": 1180
+  },
+  {
+   "name": "elvs_tophat1",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hat"
+   ],
+   "street": true,
+   "vertices": 1060,
+   "triangles": 1168
+  },
+  {
+   "name": "elvs_unisex_chef_hat_1",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "unisex",
+    "formal",
+    "profession",
+    "traditional",
+    "hat",
+    "toque"
+   ],
+   "street": true,
+   "vertices": 4240,
+   "triangles": 8160
+  },
+  {
+   "name": "elvs_witchy_hallows_hat1",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 1255,
+   "triangles": 1219
+  },
+  {
+   "name": "maciekg_wizard_hat",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats"
+   ],
+   "street": true,
+   "vertices": 319,
+   "triangles": 472
+  },
+  {
+   "name": "mindfront_fishing_hat_01",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats"
+   ],
+   "street": true,
+   "vertices": 1459,
+   "triangles": 2488
+  },
+  {
+   "name": "mindfront_knitted_hat_01",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats"
+   ],
+   "street": true,
+   "vertices": 237,
+   "triangles": 448
+  },
+  {
+   "name": "mindfront_patrol_cap",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats",
+    "cap"
+   ],
+   "street": true,
+   "vertices": 497,
+   "triangles": 724
+  },
+  {
+   "name": "mindfront_sherpa_hat",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats"
+   ],
+   "street": true,
+   "vertices": 1294,
+   "triangles": 2032
+  },
+  {
+   "name": "punkduck_sun_visor_sports_visor",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "sport"
+   ],
+   "street": true,
+   "vertices": 513,
+   "triangles": 812
+  },
+  {
+   "name": "punkduck_swim_cap",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "sport",
+    "swimming",
+    "triathlon"
+   ],
+   "street": true,
+   "vertices": 560,
+   "triangles": 924
+  },
+  {
+   "name": "culturalibre_warrior_helmet_02",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 9659,
+   "triangles": 7131
+  },
+  {
+   "name": "drednicolson_pith_helmet",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats"
+   ],
+   "street": true,
+   "vertices": 2650,
+   "triangles": 4676
+  },
+  {
+   "name": "jaldmic_m1951_72",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats",
+    "helmet",
+    "jaldmic"
+   ],
+   "street": true,
+   "vertices": 4163,
+   "triangles": 4748
+  },
+  {
+   "name": "maciekg_horned_helmet",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "helmets"
+   ],
+   "street": true,
+   "vertices": 347,
+   "triangles": 432
+  },
+  {
+   "name": "maciekg_leather_helmet",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 566,
+   "triangles": 928
+  },
+  {
+   "name": "mindfront_helmet_kz45",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "hats"
+   ],
+   "street": true,
+   "vertices": 10709,
+   "triangles": 18996
+  },
+  {
+   "name": "punkduck_riding_helmet",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "riding",
+    "female",
+    "helmet"
+   ],
+   "street": true,
+   "vertices": 3420,
+   "triangles": 5356
+  },
+  {
+   "name": "culturalibre_bandana_mask",
+   "kind": "mask",
+   "pack": "masks02",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 1008,
+   "triangles": 1428
+  },
+  {
+   "name": "elvs_covid_mask",
+   "kind": "mask",
+   "pack": "masks02",
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "unisex",
+    "casual",
+    "contemporary",
+    "extension",
+    "mask"
+   ],
+   "street": true,
+   "vertices": 2286,
+   "triangles": 3688
+  },
+  {
+   "name": "elvs_plague_doctor_mask",
+   "kind": "mask",
+   "pack": "masks02",
+   "license": "CC-BY-4.0",
+   "author": "Elvaerwyn",
+   "tags": [
+    "female",
+    "fantasy",
+    "play",
+    "vintage",
+    "mask",
+    "mask"
+   ],
+   "street": true,
+   "vertices": 35647,
+   "triangles": 31094
+  },
+  {
+   "name": "gredal_gas_mask",
+   "kind": "mask",
+   "pack": "masks02",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 5975,
+   "triangles": 4714
   },
   {
    "name": "elvs_caesar_sandals1",
+   "kind": "shoes",
    "pack": "shoes02",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\shoes02\\clothes\\elvs_caesar_sandals1\\sandaltex.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_caesar_sandals1.webp 256 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\shoes02\\\\clothes\\\\elvs_caesar_sandals1\\\\sandaltex.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "sandal",
+    "ladiesware",
+    "female",
+    "shoe",
+    "ceasar"
+   ],
+   "street": true,
+   "vertices": 91012,
+   "triangles": 91704
+  },
+  {
+   "name": "toigo_female_double-breasted_suit",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 6021,
+   "triangles": 10062
+  },
+  {
+   "name": "toigo_female_suit_2",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 9781,
+   "triangles": 16214
+  },
+  {
+   "name": "toigo_male_double-breasted_suit",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 6021,
+   "triangles": 10062
+  },
+  {
+   "name": "toigo_male_suit_3",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 9795,
+   "triangles": 16250
+  },
+  {
+   "name": "toigo_male_suit_tie_and_jacket",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [
+    "pants"
+   ],
+   "street": true,
+   "vertices": 10982,
+   "triangles": 19202
+  },
+  {
+   "name": "toigo_suit_with_dinner_jacket",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 9292,
+   "triangles": 15300
+  },
+  {
+   "name": "toigo_suit_with_jacket_and_bowtie",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 14115,
+   "triangles": 24654
   },
   {
    "name": "elvs_lace_panty",
+   "kind": "underwear",
    "pack": "underwear02",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\underwear02\\clothes\\elvs_lace_panty\\pantytex2.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_lace_panty.webp 256 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\underwear02\\\\clothes\\\\elvs_lace_panty\\\\pantytex2.png'\r\n"
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [
+    "panty",
+    "lingerie",
+    "female",
+    "ladiesware",
+    "scalloped"
+   ],
+   "street": true,
+   "vertices": 6371,
+   "triangles": 6496
   },
   {
    "name": "elvs_bandeau_swimwear_top_1",
+   "kind": "underwear",
    "pack": "underwear03",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\underwear03\\clothes\\elvs_bandeau_swimwear_top_1\\bratex2.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_bandeau_swimwear_top_1.webp 256 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\underwear03\\\\clothes\\\\elvs_bandeau_swimwear_top_1\\\\bratex2.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "bandeau",
+    "swimwear",
+    "female",
+    "ladiesware",
+    "gathered"
+   ],
+   "street": true,
+   "vertices": 21847,
+   "triangles": 23320
   },
   {
    "name": "elvs_camisole1",
+   "kind": "underwear",
    "pack": "underwear03",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\underwear03\\clothes\\elvs_camisole1\\camitext2a.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_camisole1.webp 256 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\underwear03\\\\clothes\\\\elvs_camisole1\\\\camitext2a.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "camisole",
+    "lingerie",
+    "female",
+    "ladiesware",
+    "scalloped"
+   ],
+   "street": true,
+   "vertices": 25853,
+   "triangles": 26091
   },
   {
    "name": "elvs_swimwear_micro_shorts",
+   "kind": "underwear",
    "pack": "underwear03",
-   "why": "texture: Command failed: python C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py C:\\Codex-Shared\\Road\\.cache\\makehuman-community\\x\\underwear03\\clothes\\elvs_swimwear_micro_shorts\\microshorttex2.png C:\\Codex-Shared\\Road\\public\\models\\people\\proxies\\elvs_swimwear_micro_shorts.webp 256 0\nTraceback (most recent call last):\r\n  File \"C:\\Codex-Shared\\Road\\scripts\\texture-to-webp.py\", line 14, in <module>\r\n    img = Image.open(src).convert('RGBA').resize((size, size), Image.Resampling.BILINEAR)\r\n          ^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jonathanrodriguesti\\AppData\\Roaming\\Python\\Python312\\site-packages\\PIL\\Image.py\", line 3715, in open\r\n    raise UnidentifiedImageError(msg)\r\nPIL.UnidentifiedImageError: cannot identify image file 'C:\\\\Codex-Shared\\\\Road\\\\.cache\\\\makehuman-community\\\\x\\\\underwear03\\\\clothes\\\\elvs_swimwear_micro_shorts\\\\microshorttex2.png'\r\n"
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "bandeau",
+    "swimwear",
+    "female",
+    "ladiesware",
+    "gathered"
+   ],
+   "street": true,
+   "vertices": 4421,
+   "triangles": 4161
+  },
+  {
+   "name": "punkduck_bicycle_helmet_time_trial_aero_helmet",
+   "kind": "hat",
+   "pack": "hats04",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "sport",
+    "triathlon",
+    "helmet"
+   ],
+   "street": true,
+   "vertices": 2376,
+   "triangles": 4170
+  },
+  {
+   "name": "elvs_sling_purse1",
+   "kind": "equipment",
+   "pack": "equipment03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "bag",
+    "purse"
+   ],
+   "street": true,
+   "vertices": 34154,
+   "triangles": 51080
+  },
+  {
+   "name": "elvs_dirty_lil_maid_bonnet",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [],
+   "street": true,
+   "vertices": 2329,
+   "triangles": 3118
+  },
+  {
+   "name": "elvs_male_flat_cap1",
+   "kind": "hat",
+   "pack": "hats03",
+   "license": "CC-BY-4.0",
+   "author": "unknown",
+   "tags": [
+    "cap",
+    "hat",
+    "mensware",
+    "flat_cap",
+    "traditional"
+   ],
+   "street": true,
+   "vertices": 2067,
+   "triangles": 2632
+  },
+  {
+   "name": "toigo_female_suit",
+   "kind": "suit",
+   "pack": "suits01",
+   "license": "CC0-1.0",
+   "author": "unknown",
+   "tags": [
+    "suit",
+    "female"
+   ],
+   "street": true,
+   "vertices": 15758,
+   "triangles": 27938
   }
- ]
+ ],
+ "skipped": []
 }

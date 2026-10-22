@@ -15,6 +15,7 @@ import { ClothSim, PATTERNS } from './cloth';
 import { garmentPack } from './atelier';
 import type { StudioBody } from './groom';
 import { FaceProportions } from './proportions';
+import { isPlain, shapedPack } from './hairShape';
 import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
 import type { HairSculpt } from './sculpt';
 
@@ -164,12 +165,16 @@ export class LabBuilder {
       const item = proxies.get(piece.base);
       if (item) proxies.set(piece.base, { ...item, pack: sculptedPack(item.pack, decodeSculpt(piece, item.pack.refs.length / 3)) });
     }
+    const body = sculpted(cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), person.body);
+    // The worn hairstyle's length, volume and waves, on this body (`hairShape.ts`).
+    const shaped = cut ? proxies.get(cut) : undefined;
+    if (cut && shaped && !isPlain(person.hairShape)) proxies.set(cut, { ...shaped, pack: shapedPack(shaped.pack, body, person.hairShape!) });
     const sex = spec.body.gender < 0.5 ? 'female' : 'male';
     const input = {
       proxies,
       texturedSkin: true,
       data: a.mesh, skeleton: a.skeleton, bodyRange: a.bodyRange,
-      positions: sculpted(cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), person.body), look: spec.look,
+      positions: body, look: spec.look,
       capture: captureBind(sex), captureAxes: captureBindRotations(sex),
     };
     await personSimplifier;

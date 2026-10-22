@@ -1,4 +1,5 @@
 import { ageFromYears, yearsFromAge, type MacroParams } from '@people/body/macro';
+import type { HairShape } from './hairShape';
 import { EYE_COLOURS, WARDROBE, type PersonLook, type PersonSpec } from '@people/spec';
 import { itemsOf, type WardrobeItem } from '@people/wardrobe';
 import type { CartoonStyle } from '@render/people/cartoon';
@@ -34,6 +35,9 @@ export interface PanelContext {
   /** Takes a piece's sculpt off. */
   dropPiece(item: string): void;
   dropSculpt(): void;
+  /** The worn hairstyle's length, volume and waves (`hairShape.ts`). */
+  hairShape(): HairShape;
+  setHairShape(s: HairShape): void;
   fitFace(): void;
   extraOf(kinds: readonly WardrobeItem['kind'][]): string;
   setExtra(kinds: readonly WardrobeItem['kind'][], name: string): void;
@@ -238,6 +242,7 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
         const group = (k: 'fringe' | 'tied' | 'loose'): HTMLElement =>
           pics(all.filter((n) => kind(n) === k).map((n) => ({ id: n, label: HAIR_LABELS[n] ?? nameOf(n), variant: withLook({ hairCut: n }) })),
             p().spec.look.hairCut, (id) => c.setLook({ hairCut: id }), 'head');
+        const hs = c.hairShape();
         const shape = el('button', { cls: 'big save' }, icon('sculpt', 16), 'Esculpir este penteado');
         shape.onclick = () => c.openSculptor();
         return [
@@ -245,6 +250,10 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
           el('h3', { textContent: 'Solto' }), group('loose'),
           el('h3', { textContent: 'Com franja' }), group('fringe'),
           el('h3', { textContent: 'Preso' }), group('tied'),
+          el('h3', { textContent: 'Ajustar' }),
+          slider('Comprimento', 0.5, 1.6, 0.01, hs.length, (v) => c.setHairShape({ ...c.hairShape(), length: v }), (v) => `${Math.round(v * 100)}%`),
+          slider('Volume', -0.4, 2, 0.05, hs.volume * 10, (v) => c.setHairShape({ ...c.hairShape(), volume: v / 10 }), (v) => `${v.toFixed(1)} cm`),
+          slider('Ondas', 0, 1.2, 0.05, hs.wave * 10, (v) => c.setHairShape({ ...c.hairShape(), wave: v / 10 }), (v) => `${v.toFixed(1)} cm`),
           shape,
         ];
       }],
