@@ -119,7 +119,9 @@ export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void, 
   const saved = readStorage(PRESET_KEY);
   /** The tier this GPU can hold: where `auto` starts, and the most it climbs to. A run playing a weaker machine (`core/weakMachine.ts`) plays `auto` from that machine's tier, whatever this one kept. */
   const hardware = tierForGpu(gpuName());
-  let preset: QualityPreset = WEAK_MACHINE.gpu ? 'auto' : isQualityPreset(saved) ? saved : 'auto';
+  // DO NOT start a player with nothing chosen on `auto`: the governor dropped the tier whenever a frame missed 16.7 ms, and the buildings lost their
+  // facades' maps on the player's own browser (the player, 2026-10-22: "gráficos piores"). Nothing chosen: this GPU's own tier, held; `auto` only when picked.
+  let preset: QualityPreset = WEAK_MACHINE.gpu ? 'auto' : isQualityPreset(saved) ? saved : hardware;
   let level: QualityLevel = preset === 'auto' ? hardware : preset;
   const governor = new QualityGovernor(level, hardware);
   let lastFrame = 0;
