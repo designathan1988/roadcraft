@@ -1,6 +1,6 @@
 import {
   AdditiveBlending, AlwaysDepth, NeverDepth, Color, DataTexture, LinearFilter, LinearMipmapLinearFilter, MeshBasicMaterial, NearestFilter, RepeatWrapping, RGBAFormat, SRGBColorSpace,
-  type Material, type Scene, type WebGLProgramParametersWithUniforms, type WebGLRenderer,
+  type BufferGeometry, type Material, type Scene, type WebGLProgramParametersWithUniforms, type WebGLRenderer,
 } from 'three';
 
 /** THE LAB'S DEBUG VIEWS.
@@ -24,7 +24,7 @@ export interface DebugViews {
   /** Whether draws are to be substituted (the probe hooked in for it). */
   readonly substituting: boolean;
   /** The material a draw of the scene pass uses under the view (the probe's draw hook); the same when the view changes nothing; null: not drawn (a material whose colour cannot be replaced - a raw shader's sky drawn as itself covered the whole overdraw). */
-  substitute(material: Material): Material | null;
+  substitute(material: Material, geometry: BufferGeometry): Material | null;
   dispose(): void;
 }
 
@@ -149,8 +149,10 @@ export function createDebugViews(scene: Scene, reversedDepth: boolean, changed: 
       scene.overrideMaterial = override(view) ?? before;
       changed(view);
     },
-    substitute(material) {
+    substitute(material, geometry) {
       if (!views.substituting) return material;
+      // A geometry whose arrays went once on the GPU (`render/mesh/gpuOnly.ts`) has no triangles left to read its edges from: three's line index of a wireframe reads them (r186 `WebGLGeometries` updateWireframeAttribute) and threw. Drawn as itself.
+      if (current === 'wireframe' && !(geometry.index ?? geometry.getAttribute('position'))?.array) return material;
       if (current !== 'wireframe' && !recolourable(material)) return null;
       let m = standIns.get(material);
       if (!m) {

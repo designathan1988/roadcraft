@@ -5,7 +5,6 @@ import {
   BoxGeometry,
   BufferAttribute,
   Color,
-  CylinderGeometry,
   DynamicDrawUsage,
   Group,
   InstancedBufferAttribute,
@@ -24,6 +23,7 @@ import {
   type Material,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { cylinderWith } from './mesh/cylinder';
 
 import { signalPostPlace } from '@world/signalPosts';
 import { JournalCursor } from '@world/derived';
@@ -112,16 +112,17 @@ export function createSignalHeads(
   holdStill(group);
   scene.add(group);
 
-  const postGeometry = new CylinderGeometry(POST_RADIUS, POST_RADIUS, POST_HEIGHT, 8);
-  const armGeometry = new CylinderGeometry(ARM_RADIUS, ARM_RADIUS, ARM_LENGTH, 8);
+  // The post's foot stands on the footway (its cap faces the ground); the arm's ends lie inside the post (wider) and inside the housing.
+  const postGeometry = cylinderWith(POST_RADIUS, POST_RADIUS, POST_HEIGHT, 8, { top: true, bottom: false });
+  const armGeometry = cylinderWith(ARM_RADIUS, ARM_RADIUS, ARM_LENGTH, 8, { top: false, bottom: false });
   const housingGeometry = new BoxGeometry(HEAD_WIDTH, HEAD_HEIGHT, HEAD_DEPTH);
-  // A flat disc rather than a sphere
-  const lensGeometry = new CylinderGeometry(LAMP_RADIUS, LAMP_RADIUS, u(0.06), 12).rotateX(
+  // A flat disc rather than a sphere; its back against the housing's face never shows (the face -1 lenses are turned half round, `lens`).
+  const lensGeometry = cylinderWith(LAMP_RADIUS, LAMP_RADIUS, u(0.06), 12, { top: true, bottom: false }).rotateX(
     Math.PI / 2,
   );
   // DO NOT make it wider than the housing's face: a disc past its sides hung off the head, a lens out of its can (look 21-street-zoom, 2026-10-18).
   const HALO_RADIUS = Math.min(LAMP_RADIUS * 1.8, HEAD_WIDTH / 2 - u(0.015));
-  const haloGeometry = new CylinderGeometry(HALO_RADIUS, HALO_RADIUS, u(0.02), 12)
+  const haloGeometry = cylinderWith(HALO_RADIUS, HALO_RADIUS, u(0.02), 12, { top: true, bottom: false })
     .rotateX(Math.PI / 2);
   const visorGeometry = new BoxGeometry(LAMP_RADIUS * 2.5, u(0.06), VISOR_DEPTH);
 
@@ -134,12 +135,15 @@ export function createSignalHeads(
   const lens: Record<Lamp, Matrix4[]> = { red: [], amber: [], green: [] };
   const halos: Record<Lamp, Matrix4[]> = { red: [], amber: [], green: [] };
   const visors: Matrix4[] = [];
+  /** A lens or a halo, its open back towards the housing: the face -1 ones turned half round (the disc is the same turned). */
+  const facing = (y: number, z: number, face: number): Matrix4 =>
+    face < 0 ? new Matrix4().makeRotationY(Math.PI).setPosition(ARM_LENGTH, y, z) : at(ARM_LENGTH, y, z);
   LAMPS.forEach((name, index) => {
     const y = HEAD_CENTRE + LAMP_PITCH * (1 - index);
     for (const face of FACES) {
       const z = (HEAD_DEPTH / 2 + u(0.03)) * face;
-      halos[name].push(at(ARM_LENGTH, y, z * 0.96));
-      lens[name].push(at(ARM_LENGTH, y, z));
+      halos[name].push(facing(y, z * 0.96, face));
+      lens[name].push(facing(y, z, face));
       // A hood over each lens.
       visors.push(at(ARM_LENGTH, y + LAMP_RADIUS * 1.15, z + (VISOR_DEPTH / 2) * face));
     }

@@ -46,9 +46,11 @@ function paint(g: BufferGeometry, c: RGB, x = 0, y = 0, z = 0): BufferGeometry {
   return g.index ? g : weldGeometry(g);
 }
 
-/** A box with rounded edges, its bottom at `y`. */
+/** A box with rounded edges, its bottom at `y`. One segment a corner: 108 triangles, the same smooth normals; DO NOT give it two (three's
+ *  default): 300 triangles a box, two-thirds of them the corners' patches of a few millimetres, and a bookshelf of books 54,600 (the audit, 2026-10-22).
+ *  The edge's arc in two facets instead of four stands within 5 % of the radius of the true one (1.5 mm on a 3 cm edge). */
 const rbox = (w: number, h: number, d: number, x: number, y: number, z: number, c: RGB, r = 0.03): BufferGeometry =>
-  paint(new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)), c, x, y + h / 2, z);
+  paint(new RoundedBoxGeometry(w, h, d, 1, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)), c, x, y + h / 2, z);
 
 /** An upright cylinder, its bottom at `y`. */
 const cyl = (r: number, h: number, x: number, y: number, z: number, c: RGB, top = r, seg = 12): BufferGeometry =>

@@ -1803,6 +1803,9 @@ export class BuildingTool {
     }
     if (!first) return;
     this.problem = first.problem;
+    // The same ghost as shown (the pointer still over the same bay): DO NOT bump the serial, the renderer would build the whole building again (as `showDraft`).
+    const shown = this.preview;
+    if (shown && shown.hides === b.id && shown.problem === first.problem && samePlain(shown.building, first.building)) return;
     this.setPreview({ building: first.building, valid: first.problem === null, problem: first.problem, hides: b.id, serial: 0 });
   }
 

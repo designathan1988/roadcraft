@@ -46,7 +46,7 @@ export interface GpuProbe {
   /** Draws counted by layer while set (the live counters). */
   layers: Map<string, LayerCount> | null;
   /** The debug views whose materials stand in for the scene pass's (`views.ts`): hooked in while one is on. */
-  views: { readonly substituting: boolean; substitute(material: Material): Material | null } | null;
+  views: { readonly substituting: boolean; substitute(material: Material, geometry: BufferGeometry): Material | null } | null;
   /** The pass being drawn now. */
   readonly pass: string | null;
   /** Hooks in while anything above is set; out (as far as nobody wrapped over them) when nothing is. */
@@ -104,7 +104,7 @@ export function createGpuProbe(renderer: WebGLRenderer, scene: Scene): GpuProbe 
   const draw = function (this: unknown, ...[camera, s, geometry, material, object, group]: Parameters<WebGLRenderer['renderBufferDirect']>): void {
     const capture = probe.capture, layers = probe.layers, views = probe.views;
     // The scene's objects in the scene pass only: the shadow maps keep their depth materials, the passes' quads (no parent: the scene's copy) their own.
-    const drawn = views?.substituting && shadowLight === null && object.parent !== null && passes[passes.length - 1] === 'scene' ? views.substitute(material) : material;
+    const drawn = views?.substituting && shadowLight === null && object.parent !== null && passes[passes.length - 1] === 'scene' ? views.substitute(material, geometry) : material;
     if (!drawn) return;
     if (!capture && !layers) { drawBase.call(renderer, camera, s, geometry, drawn, object, group); return; }
     const calls = info.calls, triangles = info.triangles, lines = info.lines, points = info.points;

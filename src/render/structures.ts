@@ -1,7 +1,6 @@
 import {
   BoxGeometry,
   BufferGeometry,
-  CylinderGeometry,
   BufferAttribute,
   Group,
   InstancedBufferAttribute,
@@ -33,6 +32,7 @@ import {
 } from '@world/structures';
 import type { SceneMaterials } from './materials';
 import { m } from '@world/units';
+import { cylinderWith } from './mesh/cylinder';
 
 /** The parts of a raised structure that are not its deck */
 
@@ -203,7 +203,10 @@ interface Placement {
 }
 
 /** A column's foot over its width: `CylinderGeometry(1, 1.08, ...)` scaled by the width (`buildStructureDetails`). */
-export const PIER_FOOT_FLARE = 1.08;
+const PIER_FOOT_FLARE = 1.08;
+
+/** A column's shape: open at its foot, half a metre under the ground (`placeBent`); its top kept, a wide column's disc reaching past the crossbeam's ends. */
+export const pierShape = (): BufferGeometry => cylinderWith(1, PIER_FOOT_FLARE, 1, 16, { top: true, bottom: false });
 
 /** DO NOT file a road by the cells round its vertices again */
 export function onAnotherCasing(net: Network, self: SegmentId, x: number, y: number, clearance = 0): boolean {
@@ -681,7 +684,7 @@ export function structureMeshes(parts: StructureParts, materials: SceneMaterials
     const count = mesh.geometry.index?.count ?? mesh.geometry.getAttribute('position').count;
     triangles += (count / 3) * (mesh instanceof InstancedMesh ? mesh.count : 1);
   };
-  const pierGeometry = shapes?.pier ?? new CylinderGeometry(1, PIER_FOOT_FLARE, 1, 16);
+  const pierGeometry = shapes?.pier ?? pierShape();
   const boxGeometry = shapes?.box ?? new BoxGeometry(1, 1, 1);
   attach(instanced('structure-piers', pierGeometry, materials.concrete, parts.piers));
   attach(instanced('structure-pier-caps', boxGeometry, materials.concrete, parts.caps));

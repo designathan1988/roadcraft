@@ -1,11 +1,11 @@
-import { BoxGeometry, CylinderGeometry, Group, type Material } from 'three';
+import { BoxGeometry, Group, type Material } from 'three';
 import type { ChangeRect } from '@world/changes';
 import { CellFiling } from '@world/cells';
 import type { RoadElevation } from '@world/elevation';
 import type { Network, SegmentRibbon } from '@world/network';
 import { m } from '@world/units';
 import type { SceneMaterials } from './materials';
-import { PIER_FOOT_FLARE, SPAN_REACH, buildStructureDetails, type StructureDetails } from './structures';
+import { SPAN_REACH, buildStructureDetails, pierShape, type StructureDetails } from './structures';
 
 /** DO NOT build every viaduct and tunnel of the map again because an edit reached one of them */
 
@@ -38,7 +38,7 @@ export function createStructureCells(materials: SceneMaterials, groundMaterial?:
   const group = new Group();
   group.name = 'road-structure-details';
   // The shapes every cell's instances are drawn with, made once.
-  const shapes = { pier: new CylinderGeometry(1, PIER_FOOT_FLARE, 1, 16), box: new BoxGeometry(1, 1, 1) };
+  const shapes = { pier: pierShape(), box: new BoxGeometry(1, 1, 1) };
   const cells = new Map<number, Cell>();
   /** The cells by the box their structures read: what an edit there reaches. */
   const filing = new CellFiling<number, Cell>();

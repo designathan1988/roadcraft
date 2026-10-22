@@ -35,6 +35,10 @@ function quad(sink: QuadSink, color: string, a: Vec2, b: Vec2, half: number): vo
 /** One stroke as quads, dashed as its pattern says. */
 export function strokeQuads(sink: QuadSink, spec: StrokeSpec): void {
   const color = spec.color;
+  if (spec.fill) {
+    if (spec.points.length >= 3) sink(color, spec.points.map((p) => [p.x, p.y]));
+    return;
+  }
   const pattern = spec.dash;
   if (!pattern?.length) {
     for (let i = 1; i < spec.points.length; i++) {

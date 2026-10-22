@@ -1,4 +1,5 @@
 import type { Digest } from '@core/digest';
+import { simplifyLine } from '@core/simplifyLine';
 import type { Vec2 } from '@core/vec2';
 import type { Polyline } from '@core/polyline';
 import type { RoadDoc } from './doc';
@@ -54,6 +55,8 @@ export const PARKING_PAINT: readonly string[] = Object.freeze([WHITE, YELLOW, CY
 const ENTRANCE_MARGIN = m(1);
 /** Step of the paint along a run, so a line follows a curve. */
 const RUN_STEP = m(1);
+/** A point of a run's line nearer than this to the line through its neighbours carries no shape: left out. */
+const STRAIGHT = m(0.001);
 
 /** DO NOT hand every entrance of the map to every street: each street with parking tested every gate of the city. */
 export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] | null = null): ParkingLayout {
@@ -132,7 +135,7 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
           const f = line.sampleAt(run[0] + ((run[1] - run[0]) * i) / (n - 1));
           pts.push({ x: f.p.x + f.n.x * offset * side, y: f.p.y + f.n.y * offset * side });
         }
-        return pts;
+        return simplifyLine(pts, STRAIGHT);
       };
       lines.push({ segment: ribbon.id, points: along(half - depth / 2), width: depth - m(0.1), color: CYCLE_RED, dash: null });
       lines.push({ segment: ribbon.id, points: along(half - depth + m(0.06)), width: m(0.12), color: WHITE, dash: null });
@@ -148,6 +151,9 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
       return { x: f.p.x + f.n.x * offset * side, y: f.p.y + f.n.y * offset * side };
     };
     const kerb = half, inner = half - depth;
+    /** A line `offset` from the road's, from `lo` to `hi`: a point a metre where the street bends, none where it runs straight
+     *  (DO NOT keep the metre's points on a straight kerb: each cut the line into another quad and each dash in two, `paintQuads.ts`). */
+    const runLine = (lo: number, hi: number, offset: number): Vec2[] => simplifyLine(stations(lo, hi).map((s) => at(s, offset)), STRAIGHT);
     let parked: [number, number][] = [];
     for (const [lo, hi] of runs) {
       const count = Math.floor((hi - lo) / pitch + 1e-6);
@@ -169,7 +175,7 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
       lines.push({ segment: ribbon.id, points: [at(first, kerb), at(first, inner)], width: BAY_LINE, color: WHITE, dash: null });
       lines.push({ segment: ribbon.id, points: [at(last, kerb), at(last, inner)], width: BAY_LINE, color: WHITE, dash: null });
       // The parking lane's edge, dashed along the whole run, following the road.
-      lines.push({ segment: ribbon.id, points: stations(first, last).map((s) => at(s, inner)), width: BAY_LINE, color: WHITE, dash: MER_DASH });
+      lines.push({ segment: ribbon.id, points: runLine(first, last, inner), width: BAY_LINE, color: WHITE, dash: MER_DASH });
       parked.push([first, last]);
     }
     parked = parked.sort((p, q) => p[0] - q[0]);
@@ -177,7 +183,7 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
     const offset = kerb - m(0.25);
     for (const [lo, hi] of subtract([[mouthA, mouthB]], parked)) {
       if (hi - lo < m(0.5)) continue;
-      lines.push({ segment: ribbon.id, points: stations(lo, hi).map((s) => at(s, offset)), width: NO_PARKING_LINE, color: YELLOW, dash: null });
+      lines.push({ segment: ribbon.id, points: runLine(lo, hi, offset), width: NO_PARKING_LINE, color: YELLOW, dash: null });
     }
   }
 }

@@ -593,18 +593,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= 1.0 + uDark * vGlow;');
   };
   lampMaterial.customProgramCacheKey = () => 'vehicle-lamp-glow';
-  const cloth = new MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
 
   const unitBox = new BoxGeometry(1, 1, 1);
-  // A dog's body: shoulders a little wider than the waist.
-  const torsoGeometry = new BoxGeometry(1, 1, 1);
-  taper(torsoGeometry, 0.92, 1.2);
   const wheelGeometry = tyreGeometry();
   const hubGeometry = rimGeometry();
   // A bicycle's tyre is a thin hoop and its wheel is spokes, not a disc.
   const thinTyreGeometry = tyreGeometry(0.035);
   const spokedGeometry = spokedRimGeometry();
-  const headGeometry = new SphereGeometry(0.5, 10, 7);
 
   const wheels = instanced('vehicle-wheels', wheelGeometry, rubber);
   const hubs = instanced('vehicle-hubs', hubGeometry, trim, false);
@@ -2581,33 +2576,18 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       for (const part of allParts) part.mesh.dispose();
       for (const geometry of [
         unitBox,
-        torsoGeometry,
         wheelGeometry,
         hubGeometry,
         thinTyreGeometry,
         spokedGeometry,
-        headGeometry,
         helmetGeometry,
       ]) {
         geometry.dispose();
       }
       for (const geometry of modelGeometries) geometry.dispose();
-      for (const material of [paint, joinedPaint, trim, glassMaterial, rubber, lampMaterial, cloth, cabinMaterial]) {
+      for (const material of [paint, joinedPaint, trim, glassMaterial, rubber, lampMaterial, cabinMaterial]) {
         material.dispose();
       }
     },
   };
-}
-
-/** Narrows a unit box towards its top, in place. */
-function taper(geometry: BufferGeometry, topX: number, topZ: number): void {
-  const position = geometry.getAttribute('position');
-  for (let i = 0; i < position.count; i++) {
-    if (position.getY(i) > 0) {
-      position.setX(i, position.getX(i) * topX);
-      position.setZ(i, position.getZ(i) * topZ);
-    }
-  }
-  position.needsUpdate = true;
-  geometry.computeVertexNormals();
 }

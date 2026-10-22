@@ -38,6 +38,8 @@ export interface StrokeSpec {
   readonly dash: readonly number[] | null;
   /** Dash phase in world units, so a split does not reflow the pattern. */
   readonly dashOffset: number;
+  /** The points close a ring painted whole (`width` and `dash` unused): an area, not a line. */
+  readonly fill?: true;
 }
 
 /** Dash pattern used for every broken line, in world units. */
@@ -454,11 +456,13 @@ export function miniRoundaboutAt(net: Network, nodeId: NodeId, out: StrokeSpec[]
   if (!node || node.control !== 'mini' || node.incident.length < 3) return;
   const mouth = Math.min(...node.incident.map((seg) => net.mouthDistance(seg, node.id)));
   const r = Math.max(m(2), Math.min(m(4), mouth * 0.4));
-  const ring = (radius: number): Vec2[] => Array.from({ length: 41 }, (_, i) => {
+  // One painted disc, its 40 sides where a 0.2 m line round a 40-gon of radius r had its outer edges.
+  // DO NOT paint it as rings of strokes: 18 rings of 40 quads each, 720 shapes for the paint's union to merge, and a hole left at the middle.
+  const half = Math.PI / 40;
+  const outer = (r * Math.cos(half) + m(0.1)) / Math.cos(half);
+  const points = Array.from({ length: 40 }, (_, i) => {
     const a = (i / 40) * Math.PI * 2;
-    return { x: node.x + Math.cos(a) * radius, y: node.y + Math.sin(a) * radius };
+    return { x: node.x + Math.cos(a) * outer, y: node.y + Math.sin(a) * outer };
   });
-  out.push({ points: ring(r), width: m(0.2), color: LANE_LINE, dash: null, dashOffset: 0 });
-  // The middle filled with paint: rings close enough to read as one disc.
-  for (let k = r - m(0.22); k > m(0.12); k -= m(0.22)) out.push({ points: ring(k), width: m(0.248), color: LANE_LINE, dash: null, dashOffset: 0 });
+  out.push({ points, width: 0, color: LANE_LINE, dash: null, dashOffset: 0, fill: true });
 }
