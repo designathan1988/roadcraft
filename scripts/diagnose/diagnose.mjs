@@ -8,6 +8,7 @@
 //
 // Its own build (`.cache/diagnose-dist`, `--mode probe`) on its own port (5302): another session saving files never reloads it.
 // DO NOT measure a city that came from a file (cooked/cities, IndexedDB): the player creating a city pays its generation, and so does this.
+import { holdDisplayAwake } from '../lib/displayAwake.mjs';
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -87,6 +88,8 @@ if ((gpuBusy.length && !has('--shared-gpu')) || ((machine.busy.length || machine
   process.exit(2);
 }
 
+// The display on for the run: off, the desktop composes at 30 Hz and every frame reads 33 ms (`lib/displayAwake.mjs`).
+holdDisplayAwake();
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: CHROME_ARGS });
 const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
 await context.addInitScript(instrument);
