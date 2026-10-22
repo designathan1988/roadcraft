@@ -91,8 +91,9 @@ interface Plate {
   readonly cy: number;
   readonly source: PlateSource;
   /** The document's stamps and dabs that reach it, moved to its map (about its centre). */
-  readonly stampCopies: WeakMap<TerrainStamp, TerrainStamp | null>;
-  readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
+  /** The copies, moved to the plate's map, of the stamps and dabs that reach it (`copyOn`): none for the others. */
+  readonly stampCopies: WeakMap<TerrainStamp, TerrainStamp>;
+  readonly dabCopies: WeakMap<PaintDab, PaintDab>;
   surface: PlateSurface | null;
   shown: boolean;
   /** Its surface's programs built (`uploads.ts` programsReady): not shown before, the far patch standing in. */
@@ -375,13 +376,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     for (const p of shownList) if (p.top > highest) highest = p.top;
   };
 
-  const copyOn = <T extends { readonly x: number; readonly y: number; readonly radius: number; readonly ox?: number; readonly oy?: number }>(copies: WeakMap<T, T | null>, p: Plate, item: T): T | null => {
-    let local = copies.get(item);
-    if (local === undefined) {
-      copies.set(item, local = reaches(p, item.x, item.y, item.radius)
-        ? { ...item, x: item.x - p.cx, y: item.y - p.cy, ...(item.ox !== undefined && item.oy !== undefined ? { ox: item.ox - p.cx, oy: item.oy - p.cy } : {}) }
-        : null);
-    }
+  /** DO NOT remember a null for every stamp and dab that misses a plate (each plate's weak map held an entry for every dab of the map: plates x dabs, 59 MB in the city of 70,000 buildings, 2026-10-21): only the copies of those that reach it, the test (`reaches`) asked again for the others. */
+  const copyOn = <T extends { readonly x: number; readonly y: number; readonly radius: number; readonly ox?: number; readonly oy?: number }>(copies: WeakMap<T, T>, p: Plate, item: T): T | null => {
+    const known = copies.get(item);
+    if (known !== undefined) return known;
+    if (!reaches(p, item.x, item.y, item.radius)) return null;
+    const local = { ...item, x: item.x - p.cx, y: item.y - p.cy, ...(item.ox !== undefined && item.oy !== undefined ? { ox: item.ox - p.cx, oy: item.oy - p.cy } : {}) };
+    copies.set(item, local);
     return local;
   };
   /** A plate's stamps from the document: those that reach it, moved to its map; true when they changed. */
