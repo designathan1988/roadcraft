@@ -344,7 +344,7 @@ function startLab(): void {
       }, (error: unknown) => { console.warn('[people-lab] the motion library could not be loaded; the lab poses instead', error); });
       if (!shaping) dragWeights = null;
       shaper = nextShaper;
-      reshaper = next.morph && next.heads && next.meshes[0] ? new Reshaper(next.meshes[0], next.morph, next.heads) : null;
+      reshaper = next.reshape && next.meshes[0] ? new Reshaper(next.meshes[0], next.reshape) : null;
       committed = target;
       measureHeight();
       // Changed while it was built: drawn now (`reshapeTo`) or built again.

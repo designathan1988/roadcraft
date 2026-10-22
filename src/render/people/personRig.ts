@@ -125,14 +125,20 @@ export interface PersonRig {
   readonly morph?: (positions: Float32Array) => Float32Array;
   /** An item fitted to this body as a piece of its own: on the body as built, or on a changed shape of it */
   readonly wear?: (item: ProxyItem, shape?: Float32Array) => WornPiece;
-  /** Each bone's head (in the skeleton's order) in the bind posture for a changed body shape (decimetres, as `positions`), metres, the scene's frame: the joints refitted, as MakeHuman refits them, without building again. */
-  readonly heads?: (shape: Float32Array) => Vector3[];
+  /** A changed body shape (decimetres, as `positions`) as the build would make it, without building: the mesh's vertex moves and each bone's head in the bind posture (skeleton order, metres). */
+  readonly reshape?: (shape: Float32Array) => Reshaped;
   /** A changed body shape (decimetres, as `positions`) as moves of every base mesh vertex in the bind posture, metres */
   readonly deltas?: (shape: Float32Array) => Float32Array;
   /** `deltas(positions + offset)` at the listed vertices only */
   readonly deltasAt?: (offset: Float32Array, vertices: ArrayLike<number>) => Float32Array;
   /** What `deltasAt` reads of this body, to work it out on another thread (`rigDeltasAt`, `proceduralCrowd.ts` faces in a worker). */
   readonly deltasData?: RigDeltas;
+}
+
+/** `PersonRig.reshape`: a changed shape as relative moves of the mesh's vertices and the bones' heads in the bind posture (metres). */
+export interface Reshaped {
+  readonly moves: Float32Array;
+  readonly heads: Vector3[];
 }
 
 /** A body's shape and posture as `deltasAt` reads them: its positions (decimetres), its lowest body vertex, and each bone's posture as a 3 x 3 (column-major, nine a bone). */
@@ -193,30 +199,35 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
   meta.bones.forEach((b, i) => {
     if (b.parent === null) visit(i);
   });
-  const correction = meta.bones.map(() => new Matrix4());
   const target = new Map(POSTURE);
-  for (const i of order) {
-    const bone = meta.bones[i]!;
-    const parent = bone.parent === null ? undefined : index.get(bone.parent);
-    const c = parent === undefined ? new Matrix4() : correction[parent]!.clone();
-    const towards = target.get(bone.name);
-    const child = towards === undefined ? undefined : index.get(towards);
-    const from = capture.get(CAPTURE_NAME[bone.name] ?? '');
-    const to = towards === undefined ? undefined : capture.get(CAPTURE_NAME[towards] ?? '');
-    if (child !== undefined && from && to) {
-      const head = heads[i]!.clone().applyMatrix4(c);
-      const now = heads[child]!.clone().applyMatrix4(c).sub(head).normalize();
-      const want = to.clone().sub(from).normalize();
-      const turn = new Matrix4().makeRotationFromQuaternion(new Quaternion().setFromUnitVectors(now, want));
-      c.premultiply(new Matrix4().makeTranslation(-head.x, -head.y, -head.z))
-        .premultiply(turn)
-        .premultiply(new Matrix4().makeTranslation(head.x, head.y, head.z));
+  /** The posture for a body whose bones' heads are `heads` (metres): each bone turned towards the capture, about its own head. */
+  const postureOf = (heads: readonly Vector3[]): Matrix4[] => {
+    const correction = meta.bones.map(() => new Matrix4());
+    for (const i of order) {
+      const bone = meta.bones[i]!;
+      const parent = bone.parent === null ? undefined : index.get(bone.parent);
+      const c = parent === undefined ? new Matrix4() : correction[parent]!.clone();
+      const towards = target.get(bone.name);
+      const child = towards === undefined ? undefined : index.get(towards);
+      const from = capture.get(CAPTURE_NAME[bone.name] ?? '');
+      const to = towards === undefined ? undefined : capture.get(CAPTURE_NAME[towards] ?? '');
+      if (child !== undefined && from && to) {
+        const head = heads[i]!.clone().applyMatrix4(c);
+        const now = heads[child]!.clone().applyMatrix4(c).sub(head).normalize();
+        const want = to.clone().sub(from).normalize();
+        const turn = new Matrix4().makeRotationFromQuaternion(new Quaternion().setFromUnitVectors(now, want));
+        c.premultiply(new Matrix4().makeTranslation(-head.x, -head.y, -head.z))
+          .premultiply(turn)
+          .premultiply(new Matrix4().makeTranslation(head.x, head.y, head.z));
+      }
+      correction[i] = c;
     }
-    correction[i] = c;
-  }
+    return correction;
+  };
+  const correction = postureOf(heads);
 
   // The mesh follows by its skin weights; the bones' heads by their parents.
-  const poseBody = (from: Float32Array): Float32Array => {
+  const poseBody = (from: Float32Array, posture: readonly Matrix4[] = correction): Float32Array => {
     const out = new Float32Array(from.length);
     const p = new Vector3();
     const q = new Vector3();
@@ -227,7 +238,7 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
       for (let k = 0; k < 4; k++) {
         const w = data.weights[v * 4 + k]! / 65535;
         if (w === 0) continue;
-        q.copy(p).applyMatrix4(correction[data.joints[v * 4 + k]!]!);
+        q.copy(p).applyMatrix4(posture[data.joints[v * 4 + k]!]!);
         x += q.x * w;
         y += q.y * w;
         z += q.z * w;
@@ -284,21 +295,21 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
   // Dressed in the look's MakeHuman garments when they are all to hand; the older tailored shells otherwise.
   const items = wornItems(look);
   const dressed = items.length > 0 && items.every((name) => input.proxies?.has(name));
-  const pose = (dm: Float32Array, skin: { joints: Uint16Array; weights: Float32Array }): Float32Array => {
+  const pose = (dm: Float32Array, skin: { joints: Uint16Array; weights: Float32Array }, posture: readonly Matrix4[] = correction, lowDm = lowestDm, low = lowest): Float32Array => {
     // The steps the body went through
     const out = new Float32Array(dm.length);
     const at = new Vector3(), moved = new Vector3();
     for (let v = 0; v < dm.length / 3; v++) {
-      at.set(dm[v * 3]! / 10, (dm[v * 3 + 1]! - lowestDm) / 10, dm[v * 3 + 2]! / 10);
+      at.set(dm[v * 3]! / 10, (dm[v * 3 + 1]! - lowDm) / 10, dm[v * 3 + 2]! / 10);
       let x = 0, y = 0, z = 0, sum = 0;
       for (let k = 0; k < 4; k++) {
         const w = skin.weights[v * 4 + k]!;
         if (w <= 0) continue;
-        moved.copy(at).applyMatrix4(correction[skin.joints[v * 4 + k]!]!);
+        moved.copy(at).applyMatrix4(posture[skin.joints[v * 4 + k]!]!);
         x += moved.x * w; y += moved.y * w; z += moved.z * w; sum += w;
       }
       out[v * 3] = sum > 0 ? x / sum : at.x;
-      out[v * 3 + 1] = (sum > 0 ? y / sum : at.y) - lowest;
+      out[v * 3 + 1] = (sum > 0 ? y / sum : at.y) - low;
       out[v * 3 + 2] = sum > 0 ? z / sum : at.z;
     }
     return out;
@@ -389,17 +400,36 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
   const deltasData: RigDeltas = { positions, lowestDm, bodyRange, linear };
   const deltasAt = (offset: Float32Array, vertices: ArrayLike<number>): Float32Array =>
     rigDeltasAt(deltasData, data.weights, data.joints, offset, vertices);
-  const headsOf = (shape: Float32Array): Vector3[] => {
+  // A changed shape as the build would make it: the joints refitted (each the mean of its vertex group, MakeHuman's `skeleton.py`), the posture
+  // worked out again about them and the feet stood on the ground - only the vertices' moves and the bones' heads, nothing built.
+  const reshape = morph && source ? (shape: Float32Array): Reshaped => {
     const inMetres = new Float32Array(shape.length);
     toMetres(shape, inMetres, bodyRange);
-    return meta.bones.map((b, i) => {
+    const h = meta.bones.map((b) => headOf(b, data, inMetres));
+    const posture = postureOf(h);
+    const body = poseBody(inMetres, posture);
+    let low = Infinity, lowDm = Infinity;
+    for (const [a, b] of bodyRange) for (let v = a; v <= b; v++) { low = Math.min(low, body[v * 3 + 1]!); lowDm = Math.min(lowDm, shape[v * 3 + 1]!); }
+    const garments = fitted.map((w) => pose(fitProxy(w.item.pack, shape), w.skin, posture, lowDm, low));
+    const moves = new Float32Array(source.kind.length * 3);
+    for (let o = 0; o < source.kind.length; o++) {
+      const kind = source.kind[o]!, i = source.index[o]!;
+      const to = kind === -1 ? body : kind >= 0 ? garments[kind]! : null;
+      if (!to) continue;
+      const from = kind === -1 ? posed : fitted[kind]!.positions;
+      moves[o * 3] = to[i * 3]! - from[i * 3]!;
+      moves[o * 3 + 1] = to[i * 3 + 1]! - (kind === -1 ? low : 0) - from[i * 3 + 1]!;
+      moves[o * 3 + 2] = to[i * 3 + 2]! - from[i * 3 + 2]!;
+    }
+    const heads = meta.bones.map((b, i) => {
       const parent = b.parent === null ? undefined : index.get(b.parent);
-      const h = headOf(b, data, inMetres).applyMatrix4(parent === undefined ? correction[i]! : correction[parent]!);
-      h.y -= lowest;
-      return h;
+      const head = h[i]!.applyMatrix4(parent === undefined ? posture[i]! : posture[parent]!);
+      head.y -= low;
+      return head;
     });
-  };
-  return { scene, mesh, height: highest - lowest, wear, deltas, deltasAt, deltasData, heads: headsOf, ...(morph ? { morph } : {}) };
+    return { moves, heads };
+  } : undefined;
+  return { scene, mesh, height: highest - lowest, wear, deltas, deltasAt, deltasData, ...(morph ? { morph } : {}), ...(reshape ? { reshape } : {}) };
 }
 
 // ---------------------------------------------------------------- geometry

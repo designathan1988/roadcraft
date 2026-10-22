@@ -1,9 +1,10 @@
 import { Matrix4, Vector3, type Bone, type BufferAttribute, type SkinnedMesh } from 'three';
+import type { Reshaped } from '@render/people/personRig';
 import { smoothSeams } from './polish';
 
 /** RESHAPING THE BUILT PERSON, NOT BUILDING IT AGAIN, as MakeHuman does it (`modifierslider.py`: the target moved while the slider is dragged,
  *  everything refitted on release; `skeleton.py`: each joint the mean of its vertex group). A slider's shape is sampled along its range
- *  (`rig.morph`: the body and everything worn on it, each item by its three-vertex binding), and while it moves the mesh is the samples
+ *  (`PersonRig.reshape`: the body and everything worn on it, each item by its three-vertex binding, the joints refitted and the posture worked out again), and while it moves the mesh is the samples
  *  blended on the CPU into its own `position` (three.js r186 keeps morph target data fixed once drawn: `BufferGeometry` docs), the bones'
  *  heads blended the same way. When it rests the exact shape is written, the normals worked out again and the skeleton rebound
  *  (`Skeleton.boneInverses` from the new rest pose) - no new geometry, material or shader. */
@@ -51,8 +52,7 @@ export class Reshaper {
   private readonly l = new Matrix4();
   private readonly v = new Vector3();
 
-  constructor(private readonly mesh: SkinnedMesh, private readonly morph: (shape: Float32Array) => Float32Array,
-    private readonly heads: (shape: Float32Array) => Vector3[]) {
+  constructor(private readonly mesh: SkinnedMesh, private readonly reshape: (shape: Float32Array) => Reshaped) {
     this.position = mesh.geometry.getAttribute('position') as BufferAttribute;
     this.origin = new Float32Array(this.position.array as Float32Array);
     this.current = new Float32Array(this.origin.length);
@@ -92,9 +92,8 @@ export class Reshaper {
         const v = s.todo.shift()!;
         const shape = await axis.at(v);
         if (this.sampled.get(axis.key) !== s || !this.mesh.parent) continue;
-        const heads = new Float32Array(this.currentHeads.length);
-        this.heads(shape).forEach((h, i) => h.toArray(heads, i * 3));
-        s.samples.push({ v, delta: this.morph(shape), heads });
+        const { moves, heads } = this.flat(shape);
+        s.samples.push({ v, delta: moves, heads });
         s.samples.sort((a, b) => a.v - b.v);
         this.dirty = true;
         await new Promise((r) => requestAnimationFrame(r));
@@ -102,6 +101,14 @@ export class Reshaper {
     } finally {
       this.sampling = false;
     }
+  }
+
+  /** `reshape(shape)` with the heads as one array. */
+  private flat(shape: Float32Array): { moves: Float32Array; heads: Float32Array } {
+    const r = this.reshape(shape);
+    const heads = new Float32Array(this.currentHeads.length);
+    r.heads.forEach((h, i) => h.toArray(heads, i * 3));
+    return { moves: r.moves, heads };
   }
 
   /** Each moving slider's two samples round its value and their blend weights; none before a second sample is in. */
@@ -136,9 +143,8 @@ export class Reshaper {
 
   /** The exact shape (decimetres) written, its normals and its skeleton's rest refitted. The moving sliders' samples stay (still the same context). */
   commit(shape: Float32Array): void {
-    this.current = this.morph(shape);
-    const heads = new Float32Array(this.currentHeads.length);
-    this.heads(shape).forEach((h, i) => h.toArray(heads, i * 3));
+    const { moves, heads } = this.flat(shape);
+    this.current = moves;
     this.currentHeads = heads;
     const out = this.position.array as Float32Array;
     for (let i = 0; i < out.length; i++) out[i] = this.origin[i]! + this.current[i]!;
