@@ -13,8 +13,12 @@ const OUT = path.join('cooked', 'surfaces');
 /** Basis Universal's transcoder as three ships it, served at `/basis/` for `KTX2Loader.setTranscoderPath`. */
 const BASIS = path.join('node_modules', 'three', 'examples', 'jsm', 'libs', 'basis');
 const BASIS_FILES = ['basis_transcoder.js', 'basis_transcoder.wasm'] as const;
-/** The codec: `rgba8` keeps every texel of mip 0 (the image the canvas bakes made); `uastc` is lossy, a quarter of the memory, and waits for the player's yes on shots */
-const CODEC: TextureCodec = process.env['ROADCRAFT_TEXTURE_CODEC'] === 'uastc' ? 'uastc' : 'rgba8';
+/**
+ * The codec: `uastc` (Basis Universal, transcoded by three's KTX2Loader to the GPU's own block format, BC7 on a desktop: a quarter of RGBA8's memory, kept
+ * compressed on the GPU); `rgba8` (`ROADCRAFT_TEXTURE_CODEC=rgba8`) keeps every texel of mip 0 as the canvas bakes made it. DO NOT go back to RGBA8 by
+ * default: the surfaces held 124 MB of the GPU (the facades' arrays 3 × 17 MB), 31 MB as BC7 (2026-10-22).
+ */
+const CODEC: TextureCodec = process.env['ROADCRAFT_TEXTURE_CODEC'] === 'rgba8' ? 'rgba8' : 'uastc';
 /** The path aliases of `tsconfig.json`, for the recipes run in Node. */
 const ALIASES = ['core', 'world', 'sim', 'render', 'view', 'editor', 'ui', 'people'] as const;
 

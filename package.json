@@ -49,6 +49,7 @@
     "eslint": "^10.9.0",
     "happy-dom": "^20.11.6",
     "knip": "6.38.0",
+    "ktx2-encoder": "^0.6.0",
     "meshoptimizer": "1.2.0",
     "patch-package": "^8.0.1",
     "typescript": "^5.9.3",
