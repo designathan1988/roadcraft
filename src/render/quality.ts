@@ -80,15 +80,18 @@ export interface QualitySettings {
  * | ultra  | 1200  | 320    | 1          | 192        | 160       | 1024           |
  * | high   | 900   | 240    | 0.75       | 128        | 128       | 768            |
  * | medium | 600   | 160    | 0.5        | 96         | 96        | 448            |
- * | low    | 400   | 96     | 0.25       | 48         | 48        | 256            |
+ * | low    | 448   | 96     | 0.25       | 48         | 48        | 256            |
  *
- * LOW AT 400, NOT 350: what the view itself needs there is more than 350 MB. The city of 25,000 buildings' district view, back to it at
- * the end of the tour (`tests/perf/geometryBudget.spec.ts`, the roads' far levels under their budget), holds 380 MB with the detail cut
- * to the least the governor gives it: its cells', tiles' and plates' masses in the view (205 MB, never let go for the budget), the far
- * gardens and the roads. Choosing the levels in the view coarser (a floor under the frame's error scale) left the masses as they were up
- * to twice the error, and went under 350 only at 4.8 times it, where every cell of the district lost its detail and the town was drawn
- * in plates (2026-10-21): the budget is set to the need, not the town to the budget. At 384 the same view held 386 MB (the detail's
- * least is a sixteenth of the whole, `renderer.ts` governGeometry): 400 holds it with that least and some room.
+ * LOW AT 448: the governor's whole is every holder of the scene (`countMemory` over the scene, what `__roadcraft.memory()` reports:
+ * the people, vehicles, props and roads with the buildings). The tiles and plates IN the view that their children draw are let go for
+ * the masses' budget too (`massCells.ts` evictLevels): they stood beside them, 125 MB of the 244 MB of masses of the city of 25,000
+ * buildings' district view on low. With them gone the game's district view at 1920x1080 holds 425 MB (506 before), the street 404, the
+ * map 343 (step-25k on low, 2026-10-21), the Node tour at 1280x720 199 to 311 (`tests/perf/geometryBudget.spec.ts` BUDGET_TIER=low,
+ * none chosen coarser). What is left at the district is the view's own need with the detail at its least (21 MB): the cells' masses of
+ * the 1.4 km the player keeps every facade in (`DETAIL_REACH`, 132 MB, the triangle budget holding most of them far), the roads (89),
+ * the people (23), the far gardens (22). 400 could only be met by drawing that reach in tiles: the budget is set to the need, with room.
+ * The whole GPU on low adds the textures (~400 MB in the game) and no render target of its own (no post chain): some 0.85 GB of the
+ * 1.4 GB the device's cap gives the weak machine (`gpuLedger.ts` deviceGpuCap: an UHD 770 sharing 8 GB, at 1080p).
  *
  * THE ROADS' WHOLE (`roadBudgetMB`): their near and far levels' budgets, and the network's far level kept for good for the whole map.
  * That last one grows with the map, not with the view: 10 MB for the city of 25,000 buildings (`tests/perf/noHoles.spec.ts`, 21 bytes a
@@ -108,7 +111,7 @@ export const GEOMETRY_BUDGETS: Readonly<Record<QualityLevel, GeometryBudget>> = 
   ultra: { totalMB: 1200, massesMB: 320, viewCellsShare: 1, roadsNearMB: 192, roadsFarMB: 160 },
   high: { totalMB: 900, massesMB: 240, viewCellsShare: 0.75, roadsNearMB: 128, roadsFarMB: 128 },
   medium: { totalMB: 600, massesMB: 160, viewCellsShare: 0.5, roadsNearMB: 96, roadsFarMB: 96 },
-  low: { totalMB: 400, massesMB: 96, viewCellsShare: 0.25, roadsNearMB: 48, roadsFarMB: 48 },
+  low: { totalMB: 448, massesMB: 96, viewCellsShare: 0.25, roadsNearMB: 48, roadsFarMB: 48 },
 };
 
 /** The network's far level a city of 25,000 buildings keeps for good (`networkFarRoads.ts`), MB, with room: what `ROAD_BUDGET_MB` counts it at. */

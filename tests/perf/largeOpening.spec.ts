@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildLargeCityMap } from '@editor/smallCityMap';
 import { prepareCity } from '@editor/preparedCity';
+import type { QualityLevel } from '@render/quality';
 import { m } from '@world/units';
 import { installNullPage, primeCookedSurfaces } from '../support/nullGpu';
 import { DISTRICT, HEIGHT, WIDTH, openCityMap, setView, type City, type View } from '../support/sceneHarness';
@@ -14,6 +15,9 @@ import { DISTRICT, HEIGHT, WIDTH, openCityMap, setView, type City, type View } f
  * every road of its map is drawn from the first frame after the curtain (the network's far level, `render/networkFarRoads.ts`) at
  * the map, mid-distance, corner and edge views, and its district view settles with as many cells in detail as the large city's: the
  * view is the same, so its detail must not scale with the city (the GPU book's room for detail, `render/gpuLedger.ts`).
+ *
+ * ON EVERY TIER: the weak machine starts on low (`core/weakMachine.ts`), whose budgets are the tightest (`quality.ts`
+ * GEOMETRY_BUDGETS); the opening must never wait on a level its budget lets go. `LARGE_OPENING_TIERS` (comma-separated) runs a few.
  */
 
 /** The opening's view of a large city (`main.ts` fitOpeningView: a district from nearly overhead). */
@@ -71,11 +75,11 @@ function missingRoads(city: City, wanted: ReadonlySet<string>): string[] {
 
 interface Opened { readonly frames: number; readonly districtDetail: number; readonly districtShown: number; readonly room: number; readonly missing: Record<string, string[]>; readonly cells: number }
 
-async function open(radius?: number): Promise<Opened> {
+async function open(quality: QualityLevel, radius?: number): Promise<Opened> {
   // The baked textures again: the scene before let them go with it (`SceneHandle.dispose`).
   primeCookedSurfaces(process.cwd());
   const { data, buildings } = prepareCity(buildLargeCityMap(7, radius));
-  const { city, frames: opened } = await openCityMap(data, buildings, { large: true, view: OPEN });
+  const { city, frames: opened } = await openCityMap(data, buildings, { large: true, view: OPEN, quality });
   try {
     const wanted = roadCells(city);
     const missing: Record<string, string[]> = {};
@@ -106,15 +110,17 @@ async function open(radius?: number): Promise<Opened> {
   }
 }
 
-describe('a larger city opens as the large one does', () => {
+const TIERS = (process.env['LARGE_OPENING_TIERS'] ?? 'ultra,medium,low').split(',') as QualityLevel[];
+
+describe.each(TIERS)('a larger city opens as the large one does (%s)', (quality) => {
   let page: { restore(): void };
   let large: Opened, larger: Opened;
   beforeAll(async () => {
     page = installNullPage(WIDTH, HEIGHT, process.cwd());
-    large = await open();
-    if (process.env['LARGE_OPENING_OUT']) writeFileSync(process.env['LARGE_OPENING_OUT'], JSON.stringify({ large }, null, 1));
-    larger = await open(m(2800));
-    if (process.env['LARGE_OPENING_OUT']) writeFileSync(process.env['LARGE_OPENING_OUT'], JSON.stringify({ large, larger }, null, 1));
+    large = await open(quality);
+    if (process.env['LARGE_OPENING_OUT']) writeFileSync(`${process.env['LARGE_OPENING_OUT']}.${quality}.json`, JSON.stringify({ large }, null, 1));
+    larger = await open(quality, m(2800));
+    if (process.env['LARGE_OPENING_OUT']) writeFileSync(`${process.env['LARGE_OPENING_OUT']}.${quality}.json`, JSON.stringify({ large, larger }, null, 1));
   }, 1_500_000);
   afterAll(() => page.restore());
 
