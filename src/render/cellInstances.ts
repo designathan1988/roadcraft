@@ -76,6 +76,9 @@ export interface KindLevels {
   readonly least?: number;
   /** A small thing (a bin, a bench): cast into a cascade only where it spans `SMALL_CAST_TEXELS` (`makeMesh`). */
   readonly small?: boolean;
+  /** Its far model is the colour's alone (a street light's light column, `propGeometry.ts` lampFarGeometry): every one drawn casts by its
+   *  near model (`COVER`), the swap between the two never a change of the shadow. */
+  readonly shadowNear?: boolean;
   /** Whether the far pictures can be drawn (taken, `plantImpostors.ts`): until then every size is drawn near. */
   readonly ready?: () => boolean;
   /** Told each view culled for and half the screen's height, device pixels (the far pictures' uniforms). */
@@ -936,6 +939,10 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
           probe.radius = r;
           cover = keepBox!.intersectsSphere(probe);
         }
+        // A far model for the colour alone (`KindLevels.shadowNear`): drawn, it casts by its near model wherever it stands. DO NOT let its
+        // level swap reach the shadow: the street lights' far model (828d6e19) swapped in a ring round every view, and drew the near cascade
+        // whole at two passes in five (`street-lights-far` ten times any other change under it, `npm run diagnose`, 2026-10-22).
+        if (inFrame && levels?.shadowNear === true && casts[k.index]) cover = true;
         if (!inFrame && !cover) continue;
         const prev = seen[i] === was ? lv[i]! : UNKNOWN;
         seen[i] = now;

@@ -95,5 +95,16 @@ export function posePart<M extends Material>(material: M): M {
 export function partPoseDepth(material: Material): MeshDepthMaterial {
   const caster = material as Posed;
   // // No colour: the sun's maps are read by their depth texture alone (three r186 PCF compares `shadow.map.depthTexture`), nothing reads the packed colour (AGT-35).
-  return posePart(caster[POSE_DEPTH] ??= new MeshDepthMaterial({ colorWrite: false }));
+  // A material that draws less than its model (`kit.ts` louvreMaterial: the slats drawn in their box) casts the same: its depth patch on its depth material.
+  const patch = material.userData['depthPatch'] as { readonly key: string; patch(shader: { vertexShader: string; fragmentShader: string }): void } | undefined;
+  let depth = caster[POSE_DEPTH];
+  if (!depth) {
+    depth = new MeshDepthMaterial({ colorWrite: false });
+    if (patch) {
+      depth.onBeforeCompile = (shader) => patch.patch(shader);
+      depth.customProgramCacheKey = () => patch.key;
+    }
+    caster[POSE_DEPTH] = depth;
+  }
+  return posePart(depth);
 }

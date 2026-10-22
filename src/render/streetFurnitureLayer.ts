@@ -101,7 +101,8 @@ export function furnitureStores(kit: SceneryKit, pictures: SceneryPictures): Run
     far?: RunStore['geometry']): RunStore =>
     ({ name, geometry, material, castShadow, receiveShadow, ...(renderOrder !== undefined ? { renderOrder } : {}), tinted: false, cards: false,
       ...(small ? {
-        levels: { reach: radiusOf(geometry), far: PROP_FAR_PX, small: true },
+        // Its own far model is for the colour alone: it casts by its near one (`KindLevels.shadowNear`).
+        levels: { reach: radiusOf(geometry), far: PROP_FAR_PX, small: true, ...(far ? { shadowNear: true } : {}) },
         with: [{ name: `${name}-far`, geometry: far ?? farBox(geometry), material, castShadow, receiveShadow, cards: false, far: true }],
       } : {}) });
   const f = kit.furniture;

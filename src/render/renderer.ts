@@ -783,7 +783,11 @@ export function createSceneRenderer(
         noteChanger(mesh);
         entry = { hash: h, box: new Box3(), computed: false };
         casterLast.set(mesh, entry);
-        if (mesh.isInstancedMesh && !castBox && !castBoxes && instanceChanges(mesh)) { /* each instance its own box */ }
+        // A layer's cells come back into the scene (`cellInstances.ts` settleInScene): what it casts again told by its boxes, the slots that came.
+        // DO NOT tell a layer's mesh put back by the box of its whole layer: the street lights' far model came and went at nearly every frame of
+        // a flight, each time a box of three kilometres over the near cascade (`street-lights-far` 575922 m under it, `npm run diagnose`, 2026-10-22).
+        if (castBoxes) { for (const box of castBoxes) { addChange(box); noteWidest(mesh, box); } }
+        else if (mesh.isInstancedMesh && !castBox && instanceChanges(mesh)) { /* each instance its own box */ }
         else if (boundsOf(mesh, entry, false)) { addChange(entry.box); noteWidest(mesh, entry.box); } else noBox(mesh);
         castBox?.makeEmpty();
         if (castBoxes) releaseBoxes(mesh, castBoxes);
@@ -814,7 +818,12 @@ export function createSceneRenderer(
       any = true;
       noteChanger(mesh);
       const kept = instancePlaces.get(mesh);
-      if (kept) {
+      const leftBoxes = mesh.userData['castBoxes'] as Box3[] | undefined;
+      if (leftBoxes) {
+        // A layer's cells out of the scene, none left to draw: the slots that left told by its boxes (`reconcile`), not its whole layer's box.
+        for (const box of leftBoxes) { addChange(box); noteWidest(mesh, box); }
+        releaseBoxes(mesh, leftBoxes);
+      } else if (kept) {
         // Each instance where it stood.
         const reach = instanceReach(mesh as Mesh);
         for (let i = 0; i < kept.count; i++) {
@@ -1300,8 +1309,11 @@ export function createSceneRenderer(
   /** The box the sun's cascades cover (`crowdFrustum.keep`), and the margin past it, world units. */
   const cascadeCover = new Box3();
   const CASCADE_KEEP_MARGIN = m(24);
-  /** The widest cover kept, world units a side: a street's or a district's near cascade, not the map's. Past it (a high flight) the cover is off: at 1,200 m the flight drew its near cascade whole more, not less (98 against 77 of ~650 passes, 2026-10-22). */
-  const CASCADE_KEEP_MOST = m(600);
+  /** The widest cover kept, world units a side: a street's, a district's and a flight's near cascade, not the map's. DO NOT hold it at 600 m:
+   *  past it the cover was off in a flight, and the street lights' swaps between their near and far models (828d6e19) were joined into boxes of
+   *  3 km over the near cascade, its store thrown away at a pass in three (2026-10-22). Under the cover only what casts there by its size is
+   *  walked (`cellInstances.ts` keepTexel), so a wide cover costs little; the map's view is wider still. */
+  const CASCADE_KEEP_MOST = m(2500);
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
   /** The roads' blocks at their full level: in the view's frustum (the buildings' detail's, set each frame) and under the tier's budget (`applyGeometryBudget`). */

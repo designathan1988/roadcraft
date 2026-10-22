@@ -189,7 +189,7 @@ async function diagnose() {
       if (!window.__labGpu) return null;
       await window.__labGpu.capture();
       const c = window.__labGpu.report()?.capture;
-      const rows = (list) => (list ?? []).slice(0, 12).map((r) => ({ key: r.key, calls: r.calls, triangles: r.triangles, instances: r.instances }));
+      const rows = (list) => (list ?? []).slice(0, 30).map((r) => ({ key: r.key, calls: r.calls, triangles: r.triangles, instances: r.instances }));
       // By the mesh's name (digits taken out: one row a kind of run or cell) and pass: which object of a layer holds its triangles.
       const byName = new Map();
       for (const d of window.__labGpu.lastCapture()?.records ?? []) {
@@ -199,7 +199,9 @@ async function diagnose() {
         byName.set(k, row);
       }
       const named = [...byName.values()].sort((a, b) => b.triangles - a.triangles).slice(0, 25);
-      return c ? { calls: c.calls, triangles: c.triangles, byLayer: rows(c.byLayer), byPass: rows(c.byPass), byMaterial: rows(c.byMaterial), byName: named } : null;
+      // And by draws: what costs the page its calls holds few triangles, and never shows among the heaviest (a crowd's pieces, 2026-10-22).
+      const byCalls = [...byName.values()].sort((a, b) => b.calls - a.calls).slice(0, 30);
+      return c ? { calls: c.calls, triangles: c.triangles, byLayer: rows(c.byLayer), byPass: rows(c.byPass), byMaterial: rows(c.byMaterial), byName: named, byCalls } : null;
     });
     row.memory = await memory();
     // The programs built while this view landed (its first frames in play): named, so each can be built before the curtain.

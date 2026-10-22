@@ -29,6 +29,7 @@ import { CARD, CARD_ATTRIBUTE, prefilterThinParts, twoSided } from './thinParts'
 import { roomBehindGlass } from './glassRoom';
 import { FACADE_PROP_KINDS, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
 import type { PartKind } from './chunk';
+import { LOUVRE_BOX_HALF, LOUVRE_BOX_Z0, LOUVRE_BOX_Z1, LOUVRE_FRAME, louvreMaterial } from './louvreSlats';
 import { AC_FRONT_GLSL, AC_FRONT_Z, acFarGeometry, createFacadePropGeometries } from './facadePropModels';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { m } from '@world/units';
@@ -348,26 +349,24 @@ function doorGeometry(): BufferGeometry {
 }
 
 /** A shop awning: a sloped canvas from the wall (y 0, z 0) down and out, with a valance. */
-/** A louvred shutter leaf: a stile-and-rail frame round slats tilted to shed rain */
+
+/** A louvred shutter leaf: a stile-and-rail frame round slats tilted to shed rain. The slats are one box, drawn by the material
+ *  (`LOUVRE_SLATS_GLSL`): each pixel of the box casts its ray into it and draws the slat it meets, or nothing (the wall behind shows). DO NOT
+ *  model the nine slats: ~90 triangles a leaf, ~110 thousand in a district view (the polygon audit, 2026-10-22), for what the box's 12 draw. */
 function louvreGeometry(): BufferGeometry {
-  const t = 0.09;
+  const t = LOUVRE_FRAME;
   // The stiles' ends lie in the rails' outer faces, the middle rail's in the stiles': left out (`boxWithout`).
   const parts: BufferGeometry[] = [
     box(1, t, 1, 0, 0.5 - t / 2, 0), box(1, t, 1, 0, -0.5 + t / 2, 0),
     boxWithout(t, 1, 1, 0.5 - t / 2, 0, 0, ['+y', '-y']), boxWithout(t, 1, 1, -0.5 + t / 2, 0, 0, ['+y', '-y']),
     boxWithout(1, 0.6 * t, 0.6, 0, 0, -0.2, ['+x', '-x']),
+    // The slats' box fills the frame's opening, its sides in the frame's inner faces: left out, its front and back alone. DO NOT stand it
+    // inside the opening: the wall showed through a hairline at its top and bottom (the shutter photos against 828d6e19, 2026-10-22).
+    boxWithout(2 * LOUVRE_BOX_HALF, 2 * LOUVRE_BOX_HALF, LOUVRE_BOX_Z1 - LOUVRE_BOX_Z0, 0, 0, (LOUVRE_BOX_Z0 + LOUVRE_BOX_Z1) / 2, ['+x', '-x', '+y', '-y']),
   ];
-  for (let k = 0; k < 9; k++) {
-    const y = -0.42 + k * 0.105;
-    // A slat tilted within the frame's height ends in the stiles' inner faces; the outer ones reach past it and keep their ends.
-    const inside = Math.abs(y) + (0.7 * Math.sin(0.6) + 0.07 * Math.cos(0.6)) / 2 <= 0.5;
-    const slat = boxWithout(1 - 2 * t, 0.07, 0.7, 0, 0, 0, inside ? ['+x', '-x'] : []);
-    slat.rotateX(-0.6);
-    slat.translate(0, y, -0.1);
-    parts.push(slat);
-  }
   return mergedParts(parts);
 }
+
 
 /** A glass parapet: a clear pane the full width standing on the slab, a slim metal cap along its top. */
 function glassRailGeometry(): BufferGeometry {
@@ -530,7 +529,7 @@ export function createBuildingKit(anisotropy = 4): BuildingKit {
     // Brise-soleil racks, concrete or painted metal in the trim's colour per instance.
     brise: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0 }),
     // Louvred shutters, painted wood, coloured per instance.
-    louvre: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.65, metalness: 0 }),
+    louvre: louvreMaterial(),
     // A balcony's glass parapet: pale green-grey laminated glass, half seen through.
     glassRail: new MeshStandardMaterial({
       color: 0xa9c4c4, roughness: 0.05, metalness: 0.2, envMapIntensity: 1.4, transparent: true, opacity: 0.42, depthWrite: false,
