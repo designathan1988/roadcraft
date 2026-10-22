@@ -4,11 +4,7 @@ import { RecentCache } from '@core/recentCache';
 import type { NodeId, SegmentId } from '../ids';
 import type { ChangeRect } from '../changes';
 import { Level, type RoadType, SURFACE_LEVELS, type SurfaceLevel, halfWidth, sideHalfWidth, symmetric } from '../roadTypes';
-import type { Junction } from './build';
-import { type Leg, legOf, packLegs, unpackLegs } from './legs';
-import { type Corner, packCorners, unpackCorners } from './corners';
-import { legTongue, nodeCap, nodeCentre } from './polygon';
-import { baseTrims, deriveFromLegs } from './derive';
+import type { Corner, Junction, JunctionKit, Leg } from './types';
 
 /**
  * A NODE'S JUNCTION AT EVERY SURFACE LEVEL, KEPT SMALL (`Network.junctions`).
@@ -21,6 +17,8 @@ import { baseTrims, deriveFromLegs } from './derive';
  * outline is kept as well (the network's far level draws it for every junction of the map, `render/networkFarRoads.ts`), and the
  * box of every ring of every level (`bounds`), worked out when the junction was solved. A level the carriageway could not be carried
  * out to (built on its own, `buildJunction`) is kept whole.
+ * The solver's functions it makes them again with are handed in by who solves (`JunctionKit`, `networkBuild.ts`): DO NOT import them
+ * here - through them this cache stood in the world's import cycle with every reader of the network (`tests/arch/imports.spec.ts`).
  */
 
 /** How many outer levels made again are held, per level: the junctions of the cells being drawn and walked. */
@@ -44,9 +42,9 @@ const madeAt = (level: SurfaceLevel): RecentCache<JunctionLevels, Junction | nul
   level === Level.Casing ? madeCasing : level === Level.Sidewalk ? madeSidewalk : madeCurb;
 
 /** The tongues and rings `buildJunctionRing` and `deriveJunctionLevel` lay round a junction's outline: one tongue a leg cut back, a cap where every leg leaves on one side. */
-function fill(legs: readonly Leg[], trims: readonly number[], ring: Ring): { readonly tongues: readonly Ring[]; readonly rings: readonly Ring[] } {
-  const tongues = legs.map((leg, i) => legTongue(leg, trims[i] as number)).filter((r): r is Ring => r !== null);
-  const cap = nodeCap(legs, nodeCentre(legs));
+function fill(kit: JunctionKit, legs: readonly Leg[], trims: readonly number[], ring: Ring): { readonly tongues: readonly Ring[]; readonly rings: readonly Ring[] } {
+  const tongues = legs.map((leg, i) => kit.legTongue(leg, trims[i] as number)).filter((r): r is Ring => r !== null);
+  const cap = kit.nodeCap(legs, kit.nodeCentre(legs));
   return { tongues, rings: [ring, ...tongues, ...(cap ? [cap] : [])] };
 }
 
@@ -63,6 +61,8 @@ class LeanJunction implements Junction {
     readonly transition: boolean,
     /** Its tongues and rings when they are not the ones `fill` makes (`filled`). */
     readonly keptRings: { readonly tongues: readonly Ring[]; readonly rings: readonly Ring[] } | null,
+    /** The solver's functions its rings are made again with. */
+    readonly kit: JunctionKit,
   ) {}
 
   get tongues(): readonly Ring[] {
@@ -74,35 +74,35 @@ class LeanJunction implements Junction {
   }
 }
 
-const made = (j: LeanJunction): { readonly tongues: readonly Ring[]; readonly rings: readonly Ring[] } => fill(j.legs, j.trims, j.ring);
+const made = (j: LeanJunction): { readonly tongues: readonly Ring[]; readonly rings: readonly Ring[] } => fill(j.kit, j.legs, j.trims, j.ring);
 
 /** Whether a junction's tongues and rings are the ones `fill` makes from it (checked by identity and count, never assumed). */
-function filled(j: Junction): boolean {
+function filled(kit: JunctionKit, j: Junction): boolean {
   if (j.legs.length < 2) return false;
   let cut = 0;
   for (const trim of j.trims) if (trim > COARSE_EPS) cut++;
   const { tongues, rings } = j;
   if (tongues.length !== cut || rings[0] !== j.ring) return false;
   for (let k = 0; k < cut; k++) if (rings[k + 1] !== tongues[k]) return false;
-  const capped = nodeCap(j.legs, nodeCentre(j.legs)) !== null;
+  const capped = kit.nodeCap(j.legs, kit.nodeCentre(j.legs)) !== null;
   return rings.length === 1 + cut + (capped ? 1 : 0);
 }
 
 /** A junction kept small (`LeanJunction`). */
-export function leanJunction(j: Junction): Junction {
+export function leanJunction(j: Junction, kit: JunctionKit): Junction {
   if (j instanceof LeanJunction) return j;
-  const kept = filled(j) ? null
+  const kept = filled(kit, j) ? null
     : j.tongues.length === 0 && j.rings.length === 0 ? { tongues: EMPTY_RINGS, rings: EMPTY_RINGS } : { tongues: j.tongues, rings: j.rings };
-  return new LeanJunction(j.nodeId, j.level, j.legs, j.corners, j.trims, j.ring, j.usedHullFallback, j.transition, kept);
+  return new LeanJunction(j.nodeId, j.level, j.legs, j.corners, j.trims, j.ring, j.usedHullFallback, j.transition, kept, kit);
 }
 
 /** A leg at `level` from a frame of `frames` (`JunctionLevels.frames`) and the carriageway's leg of the same road: `buildLegs`'s numbers, the same. */
-function legAt(frames: readonly number[], k: number, base: Leg, level: SurfaceLevel): Leg {
+function legAt(kit: JunctionKit, frames: readonly number[], k: number, base: Leg, level: SurfaceLevel): Leg {
   const rt = base.road;
   const startsHere = base.plusSide === 'left';
   const hwLeft = sideHalfWidth(rt, level, startsHere ? 'left' : 'right');
   const hwRight = sideHalfWidth(rt, level, startsHere ? 'right' : 'left');
-  return legOf({
+  return kit.legOf({
     seg: base.seg, far: base.far,
     origin: { x: frames[k + OX]!, y: frames[k + OY]! }, dir: { x: frames[k + DX]!, y: frames[k + DY]! },
     nrm: { x: frames[k + NX]!, y: frames[k + NY]! }, ang: frames[k + ANG]!,
@@ -138,19 +138,19 @@ export interface JunctionData {
   readonly kept: { readonly tongues: readonly RingRun[]; readonly rings: readonly RingRun[] } | null;
 }
 
-function junctionData(j: Junction, roads: RoadType[]): JunctionData {
-  const kept = (leanJunction(j) as LeanJunction).keptRings;
+function junctionData(kit: JunctionKit, j: Junction, roads: RoadType[]): JunctionData {
+  const kept = (leanJunction(j, kit) as LeanJunction).keptRings;
   return {
-    nodeId: j.nodeId, level: j.level, legs: packLegs(j.legs, roads), corners: packCorners(j.corners), trims: j.trims, ring: runOf(j.ring),
+    nodeId: j.nodeId, level: j.level, legs: kit.packLegs(j.legs, roads), corners: kit.packCorners(j.corners), trims: j.trims, ring: runOf(j.ring),
     usedHullFallback: j.usedHullFallback, transition: j.transition,
     kept: kept ? { tongues: kept.tongues.map(runOf), rings: kept.rings.map(runOf) } : null,
   };
 }
 
-function junctionOf(d: JunctionData, roads: readonly RoadType[]): Junction {
+function junctionOf(kit: JunctionKit, d: JunctionData, roads: readonly RoadType[]): Junction {
   const kept = d.kept ? { tongues: d.kept.tongues.map(Ring.fromRun), rings: d.kept.rings.map(Ring.fromRun) } : null;
-  return new LeanJunction(d.nodeId, d.level, unpackLegs(d.legs, roads), unpackCorners(d.corners), d.trims, Ring.fromRun(d.ring), d.usedHullFallback,
-    d.transition, kept);
+  return new LeanJunction(d.nodeId, d.level, kit.unpackLegs(d.legs, roads), kit.unpackCorners(d.corners), d.trims, Ring.fromRun(d.ring), d.usedHullFallback,
+    d.transition, kept, kit);
 }
 
 /** A node's levels as plain data (`JunctionLevels.data`, `fromData`). */
@@ -197,15 +197,17 @@ export class JunctionLevels implements ReadonlyMap<SurfaceLevel, Junction> {
     private readonly casingRing: Ring | null,
     /** The box of every ring of every level, worked out as solved. */
     readonly bounds: ChangeRect | null,
+    /** The solver's functions its levels are made again with; none for the empty one (nothing to make). */
+    private readonly kit: JunctionKit | null,
   ) {}
 
-  static readonly EMPTY = new JunctionLevels(null, 0, 0, null, [], null, null);
+  static readonly EMPTY = new JunctionLevels(null, 0, 0, null, [], null, null, null);
 
   /** A node's levels as one solve made them, `derived` naming those carried out from the carriageway. */
-  static of(byLevel: ReadonlyMap<SurfaceLevel, Junction>, derived: ReadonlySet<SurfaceLevel>): JunctionLevels {
+  static of(byLevel: ReadonlyMap<SurfaceLevel, Junction>, derived: ReadonlySet<SurfaceLevel>, kit: JunctionKit): JunctionLevels {
     if (byLevel.size === 0) return JunctionLevels.EMPTY;
     const asphalt = byLevel.get(Level.Asphalt);
-    const carriageway = asphalt ? leanJunction(asphalt) : null;
+    const carriageway = asphalt ? leanJunction(asphalt, kit) : null;
     let present = 0, derivedBits = 0;
     let frames: number[] | null = null;
     const kept: Junction[] = [];
@@ -216,28 +218,28 @@ export class JunctionLevels implements ReadonlyMap<SurfaceLevel, Junction> {
       if (carriageway && derived.has(level)) {
         // The frames from the first level carried out; every one after must read back from them, number for number, or is kept whole.
         frames ??= framesOf(carriageway, j.legs);
-        if (frames && sameLegs(legsFrom(frames, carriageway, level), j.legs)) {
+        if (frames && sameLegs(legsFrom(kit, frames, carriageway, level), j.legs)) {
           derivedBits |= bit(level);
           if (level === Level.Casing) casingRing = j.ring;
           continue;
         }
       }
-      kept.push(leanJunction(j));
+      kept.push(leanJunction(j, kit));
     }
-    return new JunctionLevels(carriageway, present, derivedBits, derivedBits ? frames : null, kept, casingRing, boundsOf(byLevel));
+    return new JunctionLevels(carriageway, present, derivedBits, derivedBits ? frames : null, kept, casingRing, boundsOf(byLevel), kit);
   }
 
-  static fromData(d: JunctionLevelsData): JunctionLevels {
+  static fromData(d: JunctionLevelsData, kit: JunctionKit): JunctionLevels {
     if (d.present === 0) return JunctionLevels.EMPTY;
-    return new JunctionLevels(d.carriageway ? junctionOf(d.carriageway, d.roads) : null, d.present, d.derived, d.frames,
-      d.kept.map((k) => junctionOf(k, d.roads)), d.casingRing ? Ring.fromRun(d.casingRing) : null, d.bounds);
+    return new JunctionLevels(d.carriageway ? junctionOf(kit, d.carriageway, d.roads) : null, d.present, d.derived, d.frames,
+      d.kept.map((k) => junctionOf(kit, k, d.roads)), d.casingRing ? Ring.fromRun(d.casingRing) : null, d.bounds, kit);
   }
 
   data(): JunctionLevelsData {
     const roads: RoadType[] = [];
     return {
-      carriageway: this.carriageway ? junctionData(this.carriageway, roads) : null, present: this.present, derived: this.derived, frames: this.frames,
-      kept: this.kept.map((k) => junctionData(k, roads)), casingRing: this.casingRing ? runOf(this.casingRing) : null, bounds: this.bounds, roads,
+      carriageway: this.carriageway ? junctionData(this.kit!, this.carriageway, roads) : null, present: this.present, derived: this.derived, frames: this.frames,
+      kept: this.kept.map((k) => junctionData(this.kit!, k, roads)), casingRing: this.casingRing ? runOf(this.casingRing) : null, bounds: this.bounds, roads,
     };
   }
 
@@ -260,14 +262,14 @@ export class JunctionLevels implements ReadonlyMap<SurfaceLevel, Junction> {
 
   /** A derived level made again from the frames and the carriageway (`deriveFromLegs`). */
   private make(level: SurfaceLevel): Junction | null {
-    return deriveFromLegs(this.carriageway!, level, this.legsAt(level));
+    return this.kit!.deriveFromLegs(this.carriageway!, level, this.legsAt(level));
   }
 
   /** A level's legs, without making the level (`elevation.ts` reads the casing's widths at every junction). */
   legsAt(level: SurfaceLevel): readonly Leg[] {
     if (!(this.present & bit(level))) return [];
     if (level === Level.Asphalt) return this.carriageway!.legs;
-    if (this.derived & bit(level)) return legsFrom(this.frames!, this.carriageway!, level);
+    if (this.derived & bit(level)) return legsFrom(this.kit!, this.frames!, this.carriageway!, level);
     return this.kept.find((j) => j.level === level)!.legs;
   }
 
@@ -284,7 +286,7 @@ export class JunctionLevels implements ReadonlyMap<SurfaceLevel, Junction> {
       if (!(this.present & bit(level))) continue;
       if (this.derived & bit(level)) {
         // A derived level's trims are the carriageway's by road (`deriveFromLegs`), its legs those of the frames.
-        const trimOf = baseTrims(this.carriageway!);
+        const trimOf = this.kit!.baseTrims(this.carriageway!);
         const frames = this.frames!, legs = this.carriageway!.legs;
         for (let k = 0; k < frames.length; k += FRAME) {
           const seg = legs[frames[k + BASE]!]!.seg;
@@ -329,9 +331,9 @@ function framesOf(carriageway: Junction, legs: readonly Leg[]): number[] | null 
   return out;
 }
 
-function legsFrom(frames: readonly number[], carriageway: Junction, level: SurfaceLevel): Leg[] {
+function legsFrom(kit: JunctionKit, frames: readonly number[], carriageway: Junction, level: SurfaceLevel): Leg[] {
   const out: Leg[] = [];
-  for (let k = 0; k < frames.length; k += FRAME) out.push(legAt(frames, k, carriageway.legs[frames[k + BASE]!]!, level));
+  for (let k = 0; k < frames.length; k += FRAME) out.push(legAt(kit, frames, k, carriageway.legs[frames[k + BASE]!]!, level));
   return out;
 }
 

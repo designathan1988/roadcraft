@@ -24,6 +24,8 @@ const LAYERS: Readonly<Record<string, readonly string[]>> = {
   ui: ['core', 'people', 'world', 'sim', 'view', 'ui'],
   /** The debugging lab (F7, `lab/lab.ts`): it watches every layer, so it sits above them all; nothing imports it but `main.ts`. */
   lab: ['core', 'people', 'world', 'sim', 'view', 'jobs', 'render', 'editor', 'ui', 'lab'],
+  /** The people lab ("Criar Pessoa", `peopleLab/main.ts`): a page of its own over the people and their drawing; nothing of the game imports it. */
+  peopleLab: ['core', 'people', 'render', 'peopleLab'],
 };
 
 const posix = (p: string): string => p.split(sep).join('/');

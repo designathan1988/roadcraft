@@ -5,33 +5,9 @@ import type { NodeId, SegmentId } from '../ids';
 import { type RoadSide, type RoadType, type SurfaceLevel, halfWidth, roadProfile, sideHalfWidth, sidewalkHalf, symmetric, travelShift } from '../roadTypes';
 import { type PolylineCache, frameFromNode, farNode, segmentStartsAt } from '../geometry';
 
-/** One approach arm of a junction, resolved at a specific surface level. */
-export interface Leg {
-  readonly seg: SegmentId;
-  readonly far: NodeId;
-  readonly origin: Vec2;
-  readonly dir: Vec2;
-  readonly nrm: Vec2;
-  readonly ang: number;
-  /** Half-width of this leg at the level being built: the wider of its two sides. */
-  readonly hw: number;
-  /** Half-width on the `+nrm` side and on the `-nrm` side of the leg */
-  readonly hwLeft: number;
-  readonly hwRight: number;
-  /** Which side of its road the leg's `+nrm` side is: the left from `a`, the right from `b`. */
-  readonly plusSide: RoadSide;
-  /** Half-width at the sidewalk level, used to size curb radii consistently. */
-  readonly hwSidewalk: number;
-  /** Total arc length of the segment carrying this leg. */
-  readonly length: number;
-  readonly typeIndex: number;
-  readonly direction: SegmentDirection;
-  /** Whether any traffic on this leg travels TOWARD the junction. */
-  readonly approaching: boolean;
-  readonly road: RoadType;
-  /** The travel way's offset from the centreline in this leg's frame (+nrm positive) */
-  readonly shift: number;
-}
+// What a leg is (`types.ts`): here for the solver's readers.
+import type { Leg } from './types';
+export type { Leg };
 
 /** A leg as plain data, every field its own (`legData`, `legOf`): what a message's clone keeps of it (`NetworkBake`). */
 export type LegData = { -readonly [K in keyof Leg]: Leg[K] };

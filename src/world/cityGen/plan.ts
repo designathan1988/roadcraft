@@ -3,7 +3,7 @@ import type { Vec2 } from '@core/vec2';
 import { m } from '../units';
 import type { ZoneDensity, ZoneUse } from '../zones';
 import { TensorField, valueNoise, type BasisField } from './field';
-import { MAP_HALF } from './wholeMap';
+import { MAP_HALF } from './mapSize';
 import { planarize, traceStreets, type StreetEdge, type StreetGraph, type StreetLevel } from './streets';
 
 /** A GENERATED CITY'S PLAN: what the player asks for (`CityOptions`) made into the city's grain */

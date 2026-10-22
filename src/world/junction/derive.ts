@@ -8,11 +8,12 @@ import type { RoadDoc } from '../doc';
 import type { NodeId, SegmentId } from '../ids';
 import type { PolylineCache } from '../geometry';
 import { Level, type SurfaceLevel } from '../roadTypes';
-import { type Leg, buildLegs, mouthLeft, mouthRight } from './legs';
-import { type Corner, computeCorners, cornerOf } from './corners';
+import { type Leg, buildLegs, legOf, mouthLeft, mouthRight, packLegs, unpackLegs } from './legs';
+import { type Corner, computeCorners, cornerOf, packCorners, unpackCorners } from './corners';
 import { transitionRing } from './transition';
 import { legTongue, nodeCap, nodeCentre } from './polygon';
 import type { Junction } from './build';
+import type { JunctionKit } from './types';
 import { m } from '../units';
 
 /** Every outer surface of a junction, derived from its kerb line. */
@@ -196,3 +197,6 @@ function deriveTransitionFromLegs(base: Junction, level: SurfaceLevel, legs: rea
     tongues: [], rings: [ring], usedHullFallback: false, transition: true,
   };
 }
+
+/** The solver's functions a node's levels are made again with (`levels.ts` reads none of them itself, `JunctionKit`). */
+export const JUNCTION_KIT: JunctionKit = { legOf, packLegs, unpackLegs, packCorners, unpackCorners, nodeCentre, legTongue, nodeCap, baseTrims, deriveFromLegs };

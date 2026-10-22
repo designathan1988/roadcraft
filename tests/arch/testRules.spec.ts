@@ -13,7 +13,10 @@ const files = (dir: string): string[] =>
 /** Comments blanked (a word in a note is not code), lines kept where they were; strings stay. */
 const code = (src: string): string =>
   src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' ')).replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
-const TESTS = files('tests').filter((f) => !f.split('/').some((part) => part.startsWith('_') || part.startsWith('zz')));
+// The suite's own (`vitest.config.ts` exclude): the benchmarks and the browser runs (`tests/perf`, `tests/scale`, `tests/e2e`) time a real
+// clock on purpose and run under their own configuration (`vitest.scale.config.ts`, Playwright), never in the suite these rules keep.
+const OWN_RUN = ['tests/perf/', 'tests/scale/', 'tests/e2e/'];
+const TESTS = files('tests').filter((f) => !f.split('/').some((part) => part.startsWith('_') || part.startsWith('zz')) && !OWN_RUN.some((dir) => f.startsWith(dir)));
 const SOURCE = new Map(TESTS.map((f) => [f, code(readFileSync(join(root, f), 'utf8'))]));
 const RULES = 'tests/arch/testRules.spec.ts';
 

@@ -15,7 +15,7 @@ import {
   symmetric,
 } from '../roadTypes';
 import { type Leg, buildLegs } from './legs';
-import { type Corner, computeCorners } from './corners';
+import { computeCorners } from './corners';
 import { computeTrims } from './trim';
 import { isTransition, legWidthStep, transitionRing, transitionRunFor } from './transition';
 import { buildJunctionRing, findSlabViolations } from './polygon';
@@ -40,23 +40,9 @@ const SLAB_BUMP_CAP = 40;
 const MERGE_BEND = (30 * Math.PI) / 180;
 
 
-export interface Junction {
-  readonly nodeId: NodeId;
-  readonly level: SurfaceLevel;
-  readonly legs: readonly Leg[];
-  readonly corners: readonly Corner[];
-  /** Trim distance per leg, indexed the same way as `legs`. */
-  readonly trims: readonly number[];
-  /** The corner boundary: mouth cuts joined by curb returns. */
-  readonly ring: Ring;
-  /** Per-leg carriageway rectangles from the node out to each mouth. */
-  readonly tongues: readonly Ring[];
-  /** Everything this junction contributes to its level, unioned by the painter. */
-  readonly rings: readonly Ring[];
-  readonly usedHullFallback: boolean;
-  /** True for a node of two legs where one road carries on at another width: the outline is a taper */
-  readonly transition: boolean;
-}
+// What a junction is (`types.ts`): here for the solver's readers.
+export type { Junction } from './types';
+import type { Junction } from './types';
 
 /** Classifies a node. */
 export function surfaceMode(doc: RoadDoc, cache: PolylineCache, nodeId: NodeId): SurfaceMode {

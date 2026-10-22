@@ -7,7 +7,7 @@ import type { RoadDoc, RoadNode, RoadSegment } from './doc';
 import type { NodeId, SegmentId } from './ids';
 import { Level, SURFACE_LEVELS, type SurfaceLevel, flushOn } from './roadTypes';
 import { type Junction, buildJunction, surfaceMode } from './junction/build';
-import { deriveJunctionLevel } from './junction/derive';
+import { JUNCTION_KIT, deriveJunctionLevel } from './junction/derive';
 import { JunctionLevels, type JunctionLevelsData } from './junction/levels';
 import { SUMMARY, SUMMARY_FLOOR, trimSummary } from './junction/trimSummary';
 import { clampSegmentTrims } from './junction/trim';
@@ -90,7 +90,7 @@ function memoData(entry: MemoEntry | undefined): BakedMemo | null {
 }
 
 function memoOf(baked: BakedMemo): MemoEntry {
-  return { key: baked.key, byLevel: baked.levels ? JunctionLevels.fromData(baked.levels) : null, size: baked.size, plate: baked.plate, summary: baked.summary };
+  return { key: baked.key, byLevel: baked.levels ? JunctionLevels.fromData(baked.levels, JUNCTION_KIT) : null, size: baked.size, plate: baked.plate, summary: baked.summary };
 }
 export interface BakedSegment {
   readonly id: SegmentId;
@@ -641,7 +641,7 @@ export class NetworkBuild {
       const j = level === Level.Asphalt ? carriageway : carried ?? build(level);
       if (j) byLevel.set(level, j);
     }
-    return memoEntry(key, JunctionLevels.of(byLevel, derived), plate);
+    return memoEntry(key, JunctionLevels.of(byLevel, derived, JUNCTION_KIT), plate);
   }
 
   /** What a pass hands a node's junction beyond the node and its roads */

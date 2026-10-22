@@ -44,8 +44,9 @@ describe('determinism', () => {
 
     for (const file of tsFilesUnder(SRC)) {
       const rel = relative(SRC, file).split(sep).join('/');
-      // The debugging lab inspects the scene itself (picking, its materials, its draws): the one place above render that holds three's objects.
-      if (rel.startsWith('render/') || rel.startsWith('lab/')) continue;
+      // The debugging lab inspects the scene itself (picking, its materials, its draws), and the people lab is a 3D page of its own (sculpting,
+      // posing, dressing one figure): the places above render that hold three's objects. Nothing of the game imports either.
+      if (rel.startsWith('render/') || rel.startsWith('lab/') || rel.startsWith('peopleLab/')) continue;
       const body = code(readFileSync(file, 'utf8'));
       if (/from '(three|three\/[^']*)'/.test(body)) offenders.push(rel);
     }

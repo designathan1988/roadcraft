@@ -4,24 +4,9 @@ import { lineLine } from '@core/intersect';
 import { CURB_R_MAX, acuteSetback, curbRadius, filletCorner, type Fillet } from '@core/fillet';
 import { type Leg } from './legs';
 
-type CornerMode = 'fillet' | 'bevel' | 'collinear' | 'taper';
-
-export interface Corner {
-  /** Index of the leg whose LEFT boundary feeds this corner. */
-  readonly i: number;
-  /** Index of the leg whose RIGHT boundary leaves this corner. */
-  readonly j: number;
-  readonly mode: CornerMode;
-  /** Intersection of the two boundary lines. Null in collinear/taper mode. */
-  readonly x: Vec2 | null;
-  /** Wedge angle at `x`, in radians. */
-  readonly psi: number;
-  readonly fillet: Fillet | null;
-  /** Trim contribution this corner demands of leg `i`. */
-  readonly trimI: number;
-  /** Trim contribution this corner demands of leg `j`. */
-  readonly trimJ: number;
-}
+// What a corner is (`types.ts`): here for the solver's readers.
+import type { Corner, CornerMode } from './types';
+export type { Corner };
 
 /** A corner as plain data (`cornerData`, `cornerOf`): what a message's clone keeps of it (`NetworkBake`). */
 export type CornerData = { -readonly [K in keyof Corner]: Corner[K] };
