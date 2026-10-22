@@ -176,7 +176,8 @@ export class HairStudio {
 
   /** A stroke starts; false when the pointer is on nothing. */
   begin(ndc: Vector2, camera: Camera, invert: boolean): boolean {
-    const at = this.hit(ndc, camera);
+    // A lock may be drawn from anywhere (it is rooted on the head when the stroke ends, `rooted`): off the head, on the plane through it facing the view.
+    const at = this.hit(ndc, camera) ?? (this.tool === 'draw' ? this.onViewPlane(ndc, camera) : null);
     if (!at) return false;
     this.remember();
     const facing = new Vector3();
@@ -195,9 +196,22 @@ export class HairStudio {
     }
     if (this.tool === 'draw') { const skin = this.hit(ndc, camera, true); this.drawing = [this.drawPoint(skin ?? at, true)]; }
     if (this.tool === 'erase') {
-      const ray = this.ray(ndc, camera);
-      const r2 = this.radius * this.radius;
-      this.style.locks = this.locks().filter((l) => { for (let i = 0; i + 2 < l.pts.length; i += 3) if (ray.distanceSqToPoint(new Vector3(l.pts[i], l.pts[i + 1], l.pts[i + 2])) < r2) return false; return true; });
+      // The one lock nearest the pointer (within the brush), and its mirror twin when drawing mirrored.
+      const ray = this.ray(ndc, camera), mid = this.body.skull[0];
+      const near = (l: Lock, r: Ray): number => { let best = Infinity; for (let i = 0; i + 2 < l.pts.length; i += 3) best = Math.min(best, r.distanceSqToPoint(new Vector3(l.pts[i], l.pts[i + 1], l.pts[i + 2]))); return best; };
+      const locks = this.locks();
+      let pick = -1, bd = this.radius * this.radius;
+      locks.forEach((l, i) => { const d = near(l, ray); if (d < bd) { bd = d; pick = i; } });
+      if (pick >= 0) {
+        const gone = new Set([pick]);
+        if (this.mirror) {
+          const m = mirrorRay(ray, mid);
+          let twin = -1, td = this.radius * this.radius;
+          locks.forEach((l, i) => { if (i === pick) return; const d = near(l, m); if (d < td) { td = d; twin = i; } });
+          if (twin >= 0) gone.add(twin);
+        }
+        this.style.locks = locks.filter((_, i) => !gone.has(i));
+      }
     }
     if (this.tool === 'part') this.style.part = Math.max(-PART, Math.min(PART, at.x - this.body.skull[0]));
     this.stroke = { plane: new Plane().setFromNormalAndCoplanarPoint(facing.clone().transformDirection(this.group.matrixWorld.clone().invert()).normalize(), at), last: at, tie };
@@ -232,7 +246,7 @@ export class HairStudio {
     if (!this.stroke) return;
     this.stroke = null;
     if (this.drawing) {
-      const lock = this.lockOf(this.drawing);
+      const lock = this.lockOf(this.rooted(this.drawing));
       this.drawing = null;
       if (lock) {
         this.locks().push(lock);
@@ -256,6 +270,28 @@ export class HairStudio {
     }
     this.body.collide(q, 0, 0.04, false);
     return q;
+  }
+
+  /** The point under the pointer on the plane through the head's middle facing the view (dm), for strokes begun off the head. */
+  private onViewPlane(ndc: Vector2, camera: Camera): Vector3 | null {
+    const facing = new Vector3();
+    camera.getWorldDirection(facing);
+    const n = facing.transformDirection(this.group.matrixWorld.clone().invert()).normalize();
+    return this.ray(ndc, camera).intersectPlane(new Plane().setFromNormalAndCoplanarPoint(n, new Vector3(...this.body.head.c)), new Vector3());
+  }
+
+  /** A stroke with a root on the head: when it begins off the head (a lock drawn in from the air), it is joined to the nearest point of the hair's
+   *  surface over the scalp by a short run (hair grows from the scalp). */
+  private rooted(stroke: number[][]): number[][] {
+    const h = this.body.head, first = stroke[0]!;
+    const d = [first[0]! - h.c[0]!, first[1]! - h.c[1]!, first[2]! - h.c[2]!];
+    const root = onHead(h, [d[0]!, Math.max(d[1]!, (this.body.hugFloor - h.c[1]!) + 0.3), d[2]!], 0.13);
+    const gap = Math.hypot(root[0]! - first[0]!, root[1]! - first[1]!, root[2]! - first[2]!);
+    if (gap < 0.15) return stroke;
+    const run: number[][] = [];
+    const steps = Math.ceil(gap / LOCK_STEP);
+    for (let i = 0; i < steps; i++) { const t = i / steps; run.push([0, 1, 2].map((c) => root[c]! + (first[c]! - root[c]!) * t)); }
+    return [...run, ...stroke];
   }
 
   /** A stroke as a lock: smoothed (a few 1-2-1 passes), resampled LOCK_STEP apart; null when too short. */
