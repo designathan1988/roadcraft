@@ -13,7 +13,7 @@ import { captureBind, captureBindRotations } from '@render/citizenWalk';
 import { ATELIER, GROOM, PROC_PREFIX, type LabPerson } from './record';
 import { ClothSim, PATTERNS } from './cloth';
 import { garmentPack } from './atelier';
-import type { StudioBody } from './groom';
+import { GroomBody, type StudioBody } from './groom';
 import { FaceProportions } from './proportions';
 import { isPlain, shapedPack } from './hairShape';
 import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
@@ -168,10 +168,18 @@ export class LabBuilder {
     const body = sculpted(cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), person.body);
     // The worn hairstyle's length, volume and waves, on this body (`hairShape.ts`).
     const shaped = cut ? proxies.get(cut) : undefined;
-    if (cut && shaped && !isPlain(person.hairShape)) proxies.set(cut, { ...shaped, pack: shapedPack(shaped.pack, body, person.hairShape!) });
-    // The worn outfit's length and looseness, the same way.
     const outfit = spec.look.outfit, dressed = outfit ? proxies.get(outfit) : undefined;
-    if (outfit && dressed && !isPlain(person.outfitShape)) proxies.set(outfit, { ...dressed, pack: shapedPack(dressed.pack, body, person.outfitShape!) });
+    const shapeHair = !!(cut && shaped && !isPlain(person.hairShape)), shapeOutfit = !!(outfit && dressed && !isPlain(person.outfitShape));
+    if (shapeHair || shapeOutfit) {
+      // Moved points kept out of the skin (`GroomBody.collide`, the body's own surface).
+      const skin: number[] = [];
+      for (const [lo, hi] of a.bodyRange) for (let v = lo; v <= hi; v++) skin.push(v);
+      const surface = new GroomBody(body, skin, a.mesh.faces, a.mesh.faceGroup, a.mesh.faceGroups.indexOf('body'));
+      const out = (margin: number) => (q: number[]): void => surface.collide(q, 0, margin, false);
+      if (shapeHair) proxies.set(cut!, { ...shaped!, pack: shapedPack(shaped!.pack, body, person.hairShape!, out(0.02)) });
+      // The worn outfit's length and looseness, the same way.
+      if (shapeOutfit) proxies.set(outfit!, { ...dressed!, pack: shapedPack(dressed!.pack, body, person.outfitShape!, out(0.025)) });
+    }
     const sex = spec.body.gender < 0.5 ? 'female' : 'male';
     const input = {
       proxies,

@@ -24,8 +24,9 @@ export function isPlain(s: HairShape | undefined): boolean {
   return !s || (Math.abs(s.length - 1) < 1e-3 && Math.abs(s.volume) < 1e-4 && Math.abs(s.wave) < 1e-4);
 }
 
-/** The item with the shape applied on this body (`base`: the base mesh as shaped, dm). */
-export function shapedPack(pack: ProxyPack, base: Float32Array, s: HairShape): ProxyPack {
+/** The item with the shape applied on this body (`base`: the base mesh as shaped, dm); `outOfBody` pushes a moved point back out of the skin (a
+ *  skirt made longer over the knees, hair made longer over the shoulders, a closer fit). */
+export function shapedPack(pack: ProxyPack, base: Float32Array, s: HairShape, outOfBody?: (p: number[]) => void): ProxyPack {
   const P = fitProxy(pack, base);
   const n = P.length / 3;
   let lo = Infinity, hi = -Infinity;
@@ -61,6 +62,7 @@ export function shapedPack(pack: ProxyPack, base: Float32Array, s: HairShape): P
       const tx = -oz, tz = ox, tl = Math.hypot(tx, tz) || 1;
       nx += tx / tl * amount; nz += tz / tl * amount;
     }
+    if (outOfBody && (nx !== x || ny !== y || nz !== z)) { const q = [nx, ny, nz]; outOfBody(q); nx = q[0]!; ny = q[1]!; nz = q[2]!; }
     offsets[v * 3] = offsets[v * 3]! + (nx - x) / scale[0];
     offsets[v * 3 + 1] = offsets[v * 3 + 1]! + (ny - y) / scale[1];
     offsets[v * 3 + 2] = offsets[v * 3 + 2]! + (nz - z) / scale[2];

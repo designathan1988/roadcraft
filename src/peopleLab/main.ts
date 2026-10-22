@@ -1,3 +1,4 @@
+import { LiveShape } from './live';
 import { PLAIN_SHAPE } from './hairShape';
 import {
   ACESFilmicToneMapping, BufferAttribute, CylinderGeometry, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
@@ -50,6 +51,9 @@ function startLab(): void {
   let activity: string | undefined;
   let pose: PoseName = 'idle';
   let built: BuiltPerson | null = null;
+  /** Shape changes shown on the built person at once (`live.ts`); the rebuild waits until the slider has rested this long (ms). */
+  const live = new LiveShape();
+  const LIVE_REST = 700;
   let poser: Poser | null = null;
   /** The captured clip the body plays (`ClipPlayer`), and the player on the person built now. */
   let clipName: LibraryClipName = 'idle';
@@ -84,7 +88,19 @@ function startLab(): void {
   const female = (): boolean => person.spec.body.gender < 0.5;
   const sexName = (): 'female' | 'male' => (female() ? 'female' : 'male');
 
-  function setSpec(patch: Partial<PersonSpec>): void { person = { ...person, spec: { ...person.spec, ...patch } }; rebuild(); }
+  function setSpec(patch: Partial<PersonSpec>): void {
+    person = { ...person, spec: { ...person.spec, ...patch } };
+    // The body's and face's shape seen at once (`live.ts`), the full rebuild once the slider rests; what is worn changes by rebuilding.
+    if (('body' in patch || 'features' in patch) && !('look' in patch) && showLive()) rebuild(LIVE_REST); else rebuild();
+  }
+  /** The person's new shape shown on the built one at once; false when it cannot be (the tailored shells, or nothing built yet). */
+  function showLive(): boolean {
+    const b = built, mesh = b?.meshes[0];
+    if (!b?.morph || !mesh) return false;
+    const target = person;
+    live.show(mesh, b.morph, async () => (built === b ? builder.shape(effective(target)) : null));
+    return true;
+  }
   function setBody(k: keyof MacroParams, v: number): void { setSpec({ body: { ...person.spec.body, [k]: v } }); }
   /** Partial, where a field set to undefined is taken off. */
   type Loose<T> = { [K in keyof T]?: T[K] | undefined };
@@ -94,7 +110,7 @@ function startLab(): void {
     setSpec({ look: defined<PersonLook>(merged) });
   }
   function setFeature(k: string, v: number): void { setSpec({ features: { ...person.spec.features, [k]: v } }); }
-  function setStyle(s: CartoonStyle): void { person = { ...person, style: s }; rebuild(); }
+  function setStyle(s: CartoonStyle): void { person = { ...person, style: s }; if (showLive()) rebuild(LIVE_REST); else rebuild(); }
   function setHair(h: HairStyle): void {
     person = { ...person, hair: h, spec: { ...person.spec, look: { ...person.spec.look, hairCut: `${PROC_PREFIX}${h.name}`, hairStyle: h.length > 2 ? 'long' : 'short' } } };
     rebuild();
