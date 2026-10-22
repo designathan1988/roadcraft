@@ -167,11 +167,19 @@ function looseColumn(body: GroomBody, r: ShellRecord, k: number): number[][] {
     p = q;
     pts.push(p);
   }
-  // Hanging: straight down from where it leaves the head, leaning out a little, off the shoulders.
+  // Hanging: falling from where it leaves the head, leaning out a little; where it meets the shoulders, the back or the chest it slides on
+  // over them (its direction turned along the surface it touched), never pushed up and dropped back in (an accordion).
   const out = norm([p[0]! - h.c[0]!, 0, p[2]! - h.c[2]!]);
+  const fall = norm([out[0]! * 0.08, -1, out[2]! * 0.08]);
+  let dir = [...fall];
   while (length < want && pts.length < 400 && r.preset !== 'short') {
-    const q = [p[0]! + out[0]! * 0.08 * STEP, p[1]! - STEP, p[2]! + out[2]! * 0.08 * STEP];
+    const free = [p[0]! + dir[0]! * STEP, p[1]! + dir[1]! * STEP, p[2]! + dir[2]! * STEP];
+    const q = [...free];
     body.collide(q, 0, 0.05, false);
+    const slid = norm([q[0]! - p[0]!, q[1]! - p[1]!, q[2]! - p[2]!]);
+    for (let c = 0; c < 3; c++) q[c] = p[c]! + slid[c]! * STEP;
+    // Touching: on along the surface; free again: back towards falling.
+    dir = dist(q, free) > 1e-4 ? slid : norm([dir[0]! * 0.7 + fall[0]! * 0.3, dir[1]! * 0.7 + fall[1]! * 0.3, dir[2]! * 0.7 + fall[2]! * 0.3]);
     length += STEP;
     p = q;
     pts.push(p);
@@ -195,12 +203,15 @@ function tiedColumn(body: GroomBody, r: ShellRecord, k: number, fromParting: boo
     d0 = norm([(r.part - side * 0.04) / h.radius([1, 0, 0]), Math.cos(a), Math.sin(a)]);
   } else {
     // On the hairline at its angle round the head, all round (front, sides, nape), just above it.
-    // Pigtails: behind the ears and the nape only (the front is the parting ring's, going to the ties over the top).
-    const theta = side * (r.ties.length > 1 ? 1.5 + (Math.PI - 1.5) * t : Math.PI * t);
+    // Ties at the sides (pigtails above the ears): behind the ears and the nape only, the front being the parting ring's, going to the ties over
+    // the top. Ties anywhere else: all round.
+    const lateral = r.ties.length > 1 && r.ties.every((x) => Math.abs(x.x - h.c[0]!) > 0.5 && x.z > h.c[2]! - 0.45);
+    const theta = side * (lateral ? 1.5 + (Math.PI - 1.5) * t : Math.PI * t);
     const root = [h.c[0]! + Math.sin(theta), body.hairlineY(theta) + 0.03, h.c[2]! + Math.cos(theta)];
     d0 = norm([root[0]! - h.c[0]!, (root[1]! - h.c[1]!) / Math.max(0.3, h.radius([Math.sin(theta), 0, Math.cos(theta)])), root[2]! - h.c[2]!]);
   }
   const tie = r.ties.find((t) => Math.sign(t.x - h.c[0]!) === side && Math.abs(t.x - h.c[0]!) > 0.3) ?? r.ties[0]!;
+  if (fromParting) return brushedToTie(body, side, d0, lift, tie);
   const d1 = norm([tie.x - h.c[0]!, tie.y - h.c[1]!, tie.z - h.c[2]!]);
   const angle = Math.acos(Math.max(-1, Math.min(1, d0[0]! * d1[0]! + d0[1]! * d1[1]! + d0[2]! * d1[2]!)));
   const steps = Math.max(4, Math.ceil(angle * h.radius(d0) / STEP));
@@ -223,6 +234,58 @@ function tiedColumn(body: GroomBody, r: ShellRecord, k: number, fromParting: boo
   return pts;
 }
 
+/** A column from the parting brushed into a tie, as hair is brushed up into it: first along the comb's field over the head (down the side, as it
+ *  falls loose), turning more and more towards the tie the further it has come - so the side of the head between the parting and the hairline
+ *  is crossed, not skipped by a straight arc over the top. */
+function brushedToTie(body: GroomBody, side: number, d0: number[], lift: number, tie: Tie): number[][] {
+  const h = body.head;
+  let p = onHead(h, d0, lift);
+  const pts: number[][] = [p];
+  let travelled = 0;
+  for (let guard = 0; guard < 400; guard++) {
+    const left = Math.hypot(tie.x - p[0]!, tie.y - p[1]!, tie.z - p[2]!);
+    if (left < tie.radius * 1.3) break;
+    const n = headNormal(h, p);
+    const comb = combField(h, p, side), toward = norm([tie.x - p[0]!, tie.y - p[1]!, tie.z - p[2]!]);
+    const w = Math.min(1, 1.6 * travelled / (travelled + left));
+    let f = norm([comb[0]! * (1 - w) + toward[0]! * w, comb[1]! * (1 - w) + toward[1]! * w, comb[2]! * (1 - w) + toward[2]! * w]);
+    const fd = f[0]! * n[0]! + f[1]! * n[1]! + f[2]! * n[2]!;
+    f = norm([f[0]! - n[0]! * fd, f[1]! - n[1]! * fd, f[2]! - n[2]! * fd]);
+    const u = travelled / (travelled + left);
+    let q = onHead(h, [p[0]! + f[0]! * STEP - h.c[0]!, p[1]! + f[1]! * STEP - h.c[1]!, p[2]! + f[2]! * STEP - h.c[2]!], lift + u * u * 0.08);
+    // Never down over the forehead.
+    if (q[2]! > h.c[2]! - 0.1) {
+      const theta = Math.atan2(q[0]! - h.c[0]!, q[2]! - h.c[2]!);
+      const floor = body.hairlineY(theta) + 0.04;
+      if (q[1]! < floor && Math.abs(theta) < 1.25) q = onHead(h, [q[0]! - h.c[0]!, floor - h.c[1]!, q[2]! - h.c[2]!], lift);
+    }
+    travelled += dist(q, p);
+    p = q;
+    pts.push(p);
+  }
+  return pts;
+}
+
+/** A strand made physical again after an edit: Follow-The-Leader from its root (every segment back to its length, Müller et al. 2012 - Blender's
+ *  comb with "preserve length"), each point out of the smooth head and out of the body, off the face to its own side. */
+function constrain(body: GroomBody, pts: number[][], seg: number, side: number): void {
+  const h = body.head;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1]!, q = pts[i]!;
+      const l = dist(q, a) || 1;
+      for (let c = 0; c < 3; c++) q[c] = a[c]! + (q[c]! - a[c]!) / l * seg;
+      const d = [q[0]! - h.c[0]!, q[1]! - h.c[1]!, q[2]! - h.c[2]!];
+      const r = Math.hypot(d[0]!, d[1]!, d[2]!) || 1, min = h.radius(norm(d)) + 0.02;
+      if (r < min) for (let c = 0; c < 3; c++) q[c] = h.c[c]! + d[c]! / r * min;
+      body.collide(q, 0, 0.03, true, false, side);
+      // Back to its length along where the push left it (sliding, not stretching).
+      const l2 = dist(q, a) || 1;
+      for (let c = 0; c < 3; c++) q[c] = a[c]! + (q[c]! - a[c]!) / l2 * seg;
+    }
+  }
+}
+
 /** The surface's rings of columns, each column resampled evenly to SAMPLES points over its own length, its pulls and waves added: one ring from the
  *  parting for a loose style; for a tied one a ring from the parting and one from the hairline, both to the ties (the whole scalp covered). */
 export function layShell(body: GroomBody, r: ShellRecord): number[][][][] {
@@ -239,15 +302,31 @@ function layRing(body: GroomBody, r: ShellRecord, column: (k: number) => number[
   const cols: number[][][] = [];
   for (let k = 0; k < COLUMNS * 2; k++) {
     const even = resample(column(k), SAMPLES);
+    // Its segment's length as laid: kept through every edit (a comb turns hair about its root, it never stretches it).
+    const seg = dist(even[0]!, even[1]!);
     for (let i = 0; i < SAMPLES; i++) {
       const t = i / (SAMPLES - 1);
       // The pull at this point: the knots' pulls, linear between them, nothing at the root.
       const f = t * (KNOTS - 1), j = Math.min(KNOTS - 2, Math.floor(f)), u = f - j;
       for (let a = 0; a < 3; a++) even[i]![a] = even[i]![a]! + (r.offsets[(k * KNOTS + j) * 3 + a]! * (1 - u) + r.offsets[(k * KNOTS + j + 1) * 3 + a]! * u) * Math.min(1, t * 4);
-      // The wave: side to side across the column, growing from the root.
-      const wv = r.wave[k]!;
-      if (wv) even[i]![0] = even[i]![0]! + Math.sin(t * Math.PI * 6) * wv * t * (k < COLUMNS ? 1 : -1);
     }
+    // The wave: side to side across the column within the hair's surface (square to the column and to the way out from the head), growing from
+    // the root - never in and out of the head.
+    const wv = r.wave[k]!;
+    if (wv) {
+      const h = body.head;
+      const shifted = even.map((q) => [...q]);
+      for (let i = 1; i < SAMPLES; i++) {
+        const a = even[i - 1]!, b = even[Math.min(SAMPLES - 1, i + 1)]!;
+        const along = norm([b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]);
+        const out = norm([even[i]![0]! - h.c[0]!, even[i]![1]! - h.c[1]!, even[i]![2]! - h.c[2]!]);
+        const side = norm([along[1]! * out[2]! - along[2]! * out[1]!, along[2]! * out[0]! - along[0]! * out[2]!, along[0]! * out[1]! - along[1]! * out[0]!]);
+        const t = i / (SAMPLES - 1), amount = Math.sin(t * Math.PI * 5) * wv * Math.min(1, t * 2.5);
+        for (let c = 0; c < 3; c++) shifted[i]![c] = even[i]![c]! + side[c]! * amount;
+      }
+      even.splice(0, even.length, ...shifted);
+    }
+    constrain(body, even, seg, k < COLUMNS ? 1 : -1);
     cols.push(even);
   }
   return cols;
@@ -314,6 +393,9 @@ function ringStrands(body: GroomBody, r: ShellRecord, cols: number[][][], pos: n
           pts.push(q);
           half.push(Math.max(0.03, Math.min(MAX_HALF, 0.5 * dist(a[i]!, b[i]!) / n * r.overlap)));
         }
+        // Between two columns that went different ways a straight blend can pass through the neck or the face: every point out of the body.
+        const side = k0 % (COLUMNS * 2) < COLUMNS ? 1 : -1;
+        for (let i = 1; i < pts.length; i++) body.collide(pts[i]!, 0, 0.025 + (layer === 1 ? 0 : 0.01), true, false, side);
         const len = (r.length[k0 % (COLUMNS * 2)]! * (1 - f) + r.length[k1 % (COLUMNS * 2)]! * f) * jitter;
         strand(pts, half, len, r.blunt, body.skull, pos, nor, tan, uv, idx);
       }
@@ -351,7 +433,9 @@ function strand(pts: number[][], half: number[], len: number, blunt: boolean, ce
   for (let i = 0; i < n; i++) {
     const a = pts[Math.max(0, i - 1)]!, b = pts[Math.min(n - 1, i + 1)]!;
     const t3 = norm([b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]);
-    let o = [pts[i]![0]! - centre[0]!, pts[i]![1]! - centre[1]!, pts[i]![2]! - centre[2]!];
+    // Out from the head: from its middle above it; below it, level (straight out from the head's axis) - hair hanging under the head runs nearly
+    // along the way down from its middle, and that frame flipped and twisted the strands.
+    let o = [pts[i]![0]! - centre[0]!, Math.max(0, pts[i]![1]! - centre[1]!), pts[i]![2]! - centre[2]!];
     const od = o[0]! * t3[0]! + o[1]! * t3[1]! + o[2]! * t3[2]!;
     o = norm([o[0]! - t3[0]! * od, o[1]! - t3[1]! * od, o[2]! - t3[2]! * od]);
     const sv = [t3[1]! * o[2]! - t3[2]! * o[1]!, t3[2]! * o[0]! - t3[0]! * o[2]!, t3[0]! * o[1]! - t3[1]! * o[0]!];

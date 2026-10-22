@@ -15,6 +15,10 @@ import {
 export type HairTool = 'comb' | 'grab' | 'cut' | 'grow' | 'puff' | 'smooth' | 'curl' | 'part' | 'tie';
 
 const DM = 0.1;
+/** How far the parting may move off the middle (dm): a side parting sits 2-3 cm off it. */
+const PART = 0.3;
+/** Real limits (dm): hair up to 60 cm, standing at most 2.5 cm off the head, waves up to 1.2 cm, a lock pulled at most 15 cm. */
+const MAX_LENGTH = 6, MAX_LIFT = 0.25, MAX_WAVE = 0.12, MAX_PULL = 1.5;
 
 export interface StudioBody {
   readonly positions: Float32Array;
@@ -103,9 +107,9 @@ export class HairStudio {
   get strands(): number { return this.style.strands; }
   get overlap(): number { return this.style.overlap; }
   get length(): number { return this.style.length.reduce((s, x) => s + x, 0) / this.style.length.length; }
-  setLength(dm: number): void { const k = dm / Math.max(0.1, this.length); this.style.length = this.style.length.map((x) => Math.max(0.3, x * k)); this.rebuild(); }
+  setLength(dm: number): void { const k = dm / Math.max(0.1, this.length); this.style.length = this.style.length.map((x) => Math.max(0.3, Math.min(MAX_LENGTH, x * k))); this.rebuild(); }
   get volume(): number { return this.style.lift.reduce((s, x) => s + x, 0) / this.style.lift.length; }
-  setVolume(dm: number): void { const d = dm - this.volume; this.style.lift = this.style.lift.map((x) => Math.max(0.02, x + d)); this.rebuild(); }
+  setVolume(dm: number): void { const d = dm - this.volume; this.style.lift = this.style.lift.map((x) => Math.max(0.02, Math.min(MAX_LIFT, x + d))); this.rebuild(); }
   get blunt(): boolean { return this.style.blunt; }
   setBlunt(on: boolean): void { this.style.blunt = on; this.rebuild(); }
 
@@ -174,7 +178,7 @@ export class HairStudio {
         tie = 0;
       }
     }
-    if (this.tool === 'part') this.style.part = Math.max(-0.6, Math.min(0.6, at.x - this.body.skull[0]));
+    if (this.tool === 'part') this.style.part = Math.max(-PART, Math.min(PART, at.x - this.body.skull[0]));
     this.stroke = { plane: new Plane().setFromNormalAndCoplanarPoint(facing.clone().transformDirection(this.group.matrixWorld.clone().invert()).normalize(), at), last: at, tie };
     this.apply(ndc, camera, new Vector3(), invert);
     this.rebuild();
@@ -217,6 +221,8 @@ export class HairStudio {
             const f = this.tool === 'comb' ? w * k * Math.max(0, kt - t + 0.35) : w * Math.max(0, 1 - Math.abs(kt - t) * 2.5);
             const o = (col * KNOTS + j) * 3;
             st.offsets[o] = st.offsets[o]! + delta.x * f * mx(col); st.offsets[o + 1] = st.offsets[o + 1]! + delta.y * f; st.offsets[o + 2] = st.offsets[o + 2]! + delta.z * f;
+            const l = Math.hypot(st.offsets[o]!, st.offsets[o + 1]!, st.offsets[o + 2]!);
+            if (l > MAX_PULL) for (let c = 0; c < 3; c++) st.offsets[o + c] = st.offsets[o + c]! * MAX_PULL / l;
           }
         }
         break;
@@ -225,13 +231,13 @@ export class HairStudio {
         for (const { k: col, t, w } of hits) if (w > 0.2 && t > 0.08) st.length[col] = Math.min(st.length[col]!, st.length[col]! * t);
         break;
       case 'grow':
-        for (const { k: col, w } of hits) st.length[col] = Math.max(0.3, Math.min(8, st.length[col]! + sign * w * k * 0.12));
+        for (const { k: col, w } of hits) st.length[col] = Math.max(0.3, Math.min(MAX_LENGTH, st.length[col]! + sign * w * k * 0.12));
         break;
       case 'puff':
-        for (const { k: col, w } of hits) st.lift[col] = Math.max(0.02, Math.min(0.8, st.lift[col]! + sign * w * k * 0.03));
+        for (const { k: col, w } of hits) st.lift[col] = Math.max(0.02, Math.min(MAX_LIFT, st.lift[col]! + sign * w * k * 0.015));
         break;
       case 'curl':
-        for (const { k: col, w } of hits) st.wave[col] = Math.max(0, Math.min(0.25, st.wave[col]! + sign * w * k * 0.01));
+        for (const { k: col, w } of hits) st.wave[col] = Math.max(0, Math.min(MAX_WAVE, st.wave[col]! + sign * w * k * 0.006));
         break;
       case 'smooth': {
         // Each touched column brought towards its neighbours: lengths, lift, waves and pulls.
@@ -255,7 +261,7 @@ export class HairStudio {
         break;
       }
       case 'part':
-        if (this.stroke) this.style.part = Math.max(-0.6, Math.min(0.6, this.stroke.last.x - mid));
+        if (this.stroke) this.style.part = Math.max(-PART, Math.min(PART, this.stroke.last.x - mid));
         break;
     }
   }
