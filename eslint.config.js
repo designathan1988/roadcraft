@@ -168,12 +168,17 @@ export default tseslint.config(
       'scripts/cook-people.mjs',
       'scripts/look.mjs',
       'scripts/look/*.js',
+      'scripts/diagnose/*.mjs',
     ],
     languageOptions: {
       globals: {
         window: 'readonly',
         document: 'readonly',
         localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        getComputedStyle: 'readonly',
+        OffscreenCanvas: 'readonly',
+        FileReader: 'readonly',
         innerWidth: 'readonly',
         innerHeight: 'readonly',
         requestAnimationFrame: 'readonly',

@@ -17,6 +17,7 @@
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "typecheck:tsc": "tsc --noEmit",
     "verify": "node scripts/verify.mjs",
+    "diagnose": "node scripts/diagnose/diagnose.mjs",
     "lint": "eslint . --suppressions-location scripts/baselines/eslint-suppressions.json",
     "test": "node scripts/run-limited.mjs npm run test:raw",
     "test:raw": "vitest run",
