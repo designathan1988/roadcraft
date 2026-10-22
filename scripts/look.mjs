@@ -427,8 +427,10 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
         const r = b.getBoundingClientRect();
         return [r.x + r.width / 2, r.y + r.height / 2];
       }, step.press);
-      if (!at) throw new Error(`no control says "${step.press}"`);
-      await page.mouse.click(at[0], at[1], { button: step.button ?? 'left' });
+      // `optional`: a control one build shows and another does not (the start menu's button, absent once the desktop opened a city itself).
+      if (!at && step.optional) console.log(`no control says "${step.press}": skipped (optional)`);
+      else if (!at) throw new Error(`no control says "${step.press}"`);
+      else await page.mouse.click(at[0], at[1], { button: step.button ?? 'left' });
     }
     else if (step.key) await page.keyboard.press(step.key);
     // A key held down for `ms` (WASD panning, a held modifier), as a hand holds it.

@@ -29,7 +29,12 @@
       "polling": 250
     },
     {
-      "press": "Começar a construir"
+      "press": "Começar a construir",
+      "optional": true
+    },
+    {
+      "press": "Continuar",
+      "optional": true
     },
     {
       "eval": "window.__roadcraft.sim.setClock(720); window.__roadcraft.scene().setSkyMode('day'); window.__roadcraft.measure(true); 1"
