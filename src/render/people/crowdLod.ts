@@ -37,16 +37,52 @@ export const LEVEL_TRIANGLES: Readonly<Record<PieceRole, readonly [number, numbe
   // Trousers or a skirt worn under a separate top.
   garment: [Infinity, 900, 300, 0],
   shoes: [Infinity, 300, 80, 0],
-  hair: [SKIN_TRIANGLES_LEVEL0, 1000, 300, 120],
+  // Level 3 draws the class's far mesh alone, its hair a colour on it (`FarZone`): no piece of its own there.
+  hair: [SKIN_TRIANGLES_LEVEL0, 1000, 300, 0],
   brows: [Infinity, 100, 0, 0],
   lashes: [Infinity, 0, 0, 0],
   mouth: [Infinity, 0, 0, 0],
-  accessory: [Infinity, 200, 60, 60],
+  accessory: [Infinity, 200, 60, 0],
 };
+
+/** The tallest a person stands on the screen at each level (pixels, the hysteresis's margin in): what an item's size is held against (`itemShownAt`). */
+const LEVEL_TOP_PIXELS = [Infinity, ...LEVEL_PIXELS.slice(0, -1).map((p) => p * (1 + HYSTERESIS))] as const;
+/** Pixels across under which an item is not drawn at a level (a ring, a stud, a pin: a draw a person for nothing seen). */
+const ITEM_LEAST_PIXELS = 1.5;
+/** Whether an item `share` of its wearer's height across (its widest side) is drawn at `level`. */
+export function itemShownAt(share: number, level: number): boolean {
+  return share * LEVEL_TOP_PIXELS[level]! >= ITEM_LEAST_PIXELS;
+}
 /** Of the skin's triangles, the eyes' - simplified apart: as part of the body they were the first to go. */
 export const EYE_TRIANGLES = [Infinity, 200, 40, 0] as const;
-/** The far mesh (level 3): the skin left uncovered by the clothes, the outfit, and any garment under it. */
-export const FAR_TRIANGLES = { skin: 120, outfit: 90, garment: 60 } as const;
+/** The far mesh (level 3): a class's body whole, each person's colours on its zones (`FarZone`). */
+export const FAR_TRIANGLES = 300;
+
+/** THE ZONES OF A FAR BODY (level 3, 3 to 8 pixels tall): each vertex of a class's far mesh is one, each person has a colour a zone - the
+ *  hair's, the skin's or the garment over it (`proceduralCrowd.ts` zoneColours). One mesh draws every far person of a class. */
+export const FarZone = { hair: 0, face: 1, torso: 2, pelvis: 3, upperArm: 4, forearm: 5, hand: 6, thigh: 7, calf: 8, foot: 9 } as const;
+export const FAR_ZONES = 10;
+
+/** The zone of the bones a vertex follows most, by the bone's name (three's rig names or MakeHuman's); a head's is split into hair and face by `headZone`. */
+export function boneZone(name: string): number {
+  const n = name.toLowerCase();
+  if (/finger|hand|wrist|metacarpal|thumb/.test(n)) return FarZone.hand;
+  if (/forearm|lowerarm/.test(n)) return FarZone.forearm;
+  if (/upperarm|shoulder/.test(n)) return FarZone.upperArm;
+  if (/thigh|upperleg/.test(n)) return FarZone.thigh;
+  if (/calf|lowerleg/.test(n)) return FarZone.calf;
+  if (/foot|toe|ball/.test(n)) return FarZone.foot;
+  if (/pelvis|hip/.test(n)) return FarZone.pelvis;
+  if (/spine|clavicle|breast|chest|root|^bip01$/.test(n)) return FarZone.torso;
+  return FarZone.face;
+}
+
+/** Where a head's hair grows on a body at rest: over the brow, or round the back of the skull (`eye`: the eyes' mean height and depth, and the
+ *  head's height over them). The body faces +z. */
+export interface HeadFrame { readonly eyeY: number; readonly eyeZ: number; readonly above: number }
+export function headZone(y: number, z: number, head: HeadFrame): number {
+  return y > head.eyeY + 0.35 * head.above || (z < head.eyeZ - 0.9 * head.above && y > head.eyeY - 0.6 * head.above) ? FarZone.hair : FarZone.face;
+}
 
 export const lodReady: Promise<void> = MeshoptSimplifier.ready.catch((error: unknown) => {
   // Said, not swallowed: every piece is then drawn whole (`simplifyIndex` answers null).
@@ -184,6 +220,8 @@ export interface FarPart {
   readonly triangles: number;
   /** A vertex's own colour (linear RGB), multiplied by the person's in the shader; white without. */
   readonly colour?: (v: number) => readonly [number, number, number];
+  /** A vertex's zone (`FarZone`), in place of the part's region. */
+  readonly zoneOf?: (v: number) => number;
 }
 
 /** The far mesh of a class and outfit (level 3) */
@@ -217,7 +255,7 @@ export function farMesh(parts: readonly FarPart[], ankle: number): BufferGeometr
     order.forEach((v, i) => {
       const [r, gr, b] = part.colour?.(v) ?? [1, 1, 1];
       far[i * 4] = r; far[i * 4 + 1] = gr; far[i * 4 + 2] = b;
-      far[i * 4 + 3] = part.region === REGION.skin && position.getY(i) < ankle ? REGION.shoes : part.region;
+      far[i * 4 + 3] = part.zoneOf ? part.zoneOf(v) : part.region === REGION.skin && position.getY(i) < ankle ? REGION.shoes : part.region;
     });
     g.setAttribute('aFar', new BufferAttribute(far, 4));
     g.setIndex(out);

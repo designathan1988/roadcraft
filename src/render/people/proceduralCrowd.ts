@@ -35,8 +35,8 @@ import type { WornPiece } from './personRig';
 import { rigFromMade, sharedCopy } from './classRigMade';
 import type { PersonFaceJob } from '../citizenBake.worker';
 import {
-  EYE_TRIANGLES, FAR_TRIANGLES, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, cardCentres, cardSelections, farMesh, filterTriangles,
-  levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type FarPart, type PieceRole,
+  EYE_TRIANGLES, FAR_TRIANGLES, FAR_ZONES, FarZone, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, boneZone, cardCentres, cardSelections, farMesh,
+  filterTriangles, headZone, itemShownAt, levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type HeadFrame, type PieceRole,
 } from './crowdLod';
 import { createBlobShadows } from '../blobShadows';
 import { lodPool } from './lodPool';
@@ -52,12 +52,15 @@ providePeopleLod(lodPool);
 const WOUND_SLOTS = 8;
 /** A person's matrix as drawn this frame (with their height), read by every piece they are in: DO NOT write it into each piece. */
 const PLACE_FLOATS = 16;
-/** A person's row of `procPerson`: their wounds (`WOUND_SLOTS` texels), their expression weights (`EXPR_SLOTS` / 4 texels), then their place (4 texels). */
-const PERSON_FLOATS = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4 + PLACE_FLOATS;
+/** A person's row of `procPerson`: their wounds (`WOUND_SLOTS` texels), their expression weights (`EXPR_SLOTS` / 4 texels), their place (4
+ *  texels), then their far colours (`FAR_ZONES` texels: a zone's colour, and 0 cloth, 1 skin, 2 hair). */
+const PERSON_FLOATS = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4 + PLACE_FLOATS + FAR_ZONES * 4;
 /** Where a person's expression weights start in their row, floats. */
 const EXPR_AT = WOUND_SLOTS * 4;
 /** Where their place starts, floats. */
 const PLACE_AT = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4;
+/** Where their far colours start (`FarZone`), floats. */
+const ZONE_AT = PLACE_AT + PLACE_FLOATS;
 
 const WOUND_BONES: Readonly<Record<BodyPart, readonly string[]>> = {
   head: ['Bip01_Head'], torso: ['Bip01_Spine', 'Bip01_Spine1', 'Bip01_Spine2', 'Bip01_Pelvis'],
@@ -137,8 +140,10 @@ interface Item {
   readonly vertices: number;
   /** Settles once every level's shaders are built and its meshes are in the scene. */
   ready: Promise<void>;
-  /** Its texture's mean colour at its own vertices, linear (the skin's and the shoes' far away). */
+  /** Its texture's mean colour at its own vertices, linear: its colour on a far body (`zoneColours`). */
   readonly colour: Color;
+  /** Its widest side over its wearer's height: the levels it is too small to draw at left out (`itemShownAt`). */
+  readonly share: number;
   readonly map: Texture | null;
 }
 
@@ -203,13 +208,21 @@ interface BodyClass {
   readonly body: BufferGeometry;
   readonly skins: Map<string, Item>;
   readonly items: Map<string, Item>;
-  /** The far meshes by the clothes they wear (null while one is being made). */
-  readonly far: Map<string, Piece | null>;
+  /** The far mesh (level 3): the class's body, every far person of the class in it, each in their colours a zone (null while it is made). */
+  far: Piece | null;
+  /** Each body vertex's zone (`FarZone`), its area a zone, and the head's frame the hair is told by: what a garment covers (`zoneCover`). */
+  readonly zones: Uint8Array;
+  readonly zoneArea: Float32Array;
+  readonly head: HeadFrame;
+  /** Each item's share of a zone: covered (`deleteVerts`), or its own area over the body's there; made once a class and item. */
+  readonly zoneCover: Map<string, Float32Array>;
   /** Every piece of the class, for the frame's matrices. */
   readonly pieces: Piece[];
   readonly people: ProceduralPerson[];
-  /** Below this height at rest a skin vertex is the shoes' in the far mesh. */
-  readonly ankle: number;
+  /** Each bone's zone (`boneZone`), for an item's vertices. */
+  readonly boneZones: Uint8Array;
+  /** The body's height at rest, its own units: an item's size is held against it (`Item.share`). */
+  readonly bodyHeight: number;
   /** People drawn this frame. */
   drawn: number;
 }
@@ -564,7 +577,7 @@ if (vSkinMask < 0.5) {
   return material;
 }
 
-/** The far mesh's program (level 3): a colour a vertex from its region and the person's colours. */
+/** The far mesh's program (level 3): a vertex's colour the person's for its zone (`FarZone`, their row of `procPerson` past `ZONE_AT`). */
 function farMaterial(cls: ClassShading): Material {
   const material = new MeshStandardMaterial({ roughness: 0.8, metalness: 0, side: DoubleSide });
   material.defines = { USE_SKINNING: '' };
@@ -572,19 +585,17 @@ function farMaterial(cls: ClassShading): Material {
   material.onBeforeCompile = (shader) => {
     uniformsInto(shader, cls);
     patchVertex(shader, v);
-    shader.vertexShader = `attribute vec4 aFar; attribute vec4 aSkin; attribute vec4 aOut; attribute vec4 aShoe;
+    shader.vertexShader = `attribute vec4 aFar;
 varying vec3 vProcColour; varying float vSkinMask; varying float vProcCloth;
 varying vec3 vProcBind; varying float vProcRow; varying float vProcWounded; varying float vProcChar;
 ${shader.vertexShader}`
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 {
-  // Skin and shoes in the person's colours; the outfit its own, dyed as the close pieces dye it; another garment its own.
-  float region = aFar.w;
-  float l = dot(aFar.rgb, vec3(0.2126, 0.7152, 0.0722));
-  vec3 outfit = aOut.w > 0.5 ? aOut.rgb * (0.45 + 1.1 * l) : aFar.rgb;
-  vProcColour = region < 0.5 ? aSkin.rgb : region < 1.5 ? outfit : region < 2.5 ? aShoe.rgb : aFar.rgb;
-  vSkinMask = region < 0.5 ? 1.0 : 0.0;
-  vProcCloth = region > 0.5 && (region < 1.5 || region > 2.5) ? 1.0 : 0.0;
+  // The person's colour for the vertex's zone: their hair, their skin or the garment over it (\`zoneColours\`).
+  vec4 zone = texelFetch(procPerson, ivec2(${ZONE_AT / 4} + int(aFar.w + 0.5), int(aPerson.x)), 0);
+  vProcColour = zone.rgb;
+  vSkinMask = zone.a > 0.5 && zone.a < 1.5 ? 1.0 : 0.0;
+  vProcCloth = zone.a < 0.5 ? 1.0 : 0.0;
 }
 vProcBind = position; vProcRow = aPerson.x; vProcWounded = aPerson.z; vProcChar = aPerson.w;`);
     shader.fragmentShader = `#define appearanceDetail 1.0
@@ -731,6 +742,24 @@ function textureSampler(texture: Texture | null): ((u: number, v: number) => rea
   const known = samplers.get(texture);
   if (known !== undefined) return known;
   let sampler: ((u: number, v: number) => readonly [number, number, number]) | null = null;
+  const srgb = texture.colorSpace === SRGBColorSpace;
+  const lin = (c: number): number => { const s = c / 255; return !srgb ? s : s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  // A texture of pixels (a garment padded in a worker, `skinAppearance.ts` paddedGarment): read where it is. DO NOT draw it on a canvas: its
+  // image is no picture, and every garment came out grey on a far body (the far bodies' photos, 2026-10-22).
+  const raw = texture.image as { data?: ArrayLike<number> | null; width?: number; height?: number } | null;
+  if (raw?.data && (raw.data instanceof Uint8Array || raw.data instanceof Uint8ClampedArray) && (raw.width ?? 0) > 0 && (raw.height ?? 0) > 0
+    && raw.data.length >= raw.width! * raw.height! * 4) {
+    const px = raw.data, W = raw.width!, H = raw.height!, flip = texture.flipY;
+    sampler = (u, v) => {
+      const fu = u - Math.floor(u), fv = v - Math.floor(v);
+      const x = Math.min(W - 1, Math.max(0, Math.floor(fu * W)));
+      const y = Math.min(H - 1, Math.max(0, Math.floor((flip ? 1 - fv : fv) * H)));
+      const o = (y * W + x) * 4;
+      return [lin(px[o]!), lin(px[o + 1]!), lin(px[o + 2]!)];
+    };
+    samplers.set(texture, sampler);
+    return sampler;
+  }
   try {
     const image = texture.image as (CanvasImageSource & { width?: number; height?: number }) | null;
     const W = 128, H = 128;
@@ -745,8 +774,6 @@ function textureSampler(texture: Texture | null): ((u: number, v: number) => rea
     if (ctx && image && (image.width ?? 0) > 0) {
       ctx.drawImage(image, 0, 0, W, H);
       const px = ctx.getImageData(0, 0, W, H).data;
-      const srgb = texture.colorSpace === SRGBColorSpace;
-      const lin = (c: number): number => { const s = c / 255; return !srgb ? s : s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
       const flip = texture.flipY;
       sampler = (u, v) => {
         const fu = u - Math.floor(u), fv = v - Math.floor(v);
@@ -775,6 +802,54 @@ function meanColour(texture: Texture | null, geometry: BufferGeometry, keep?: (v
     r += cr; g += cg; b += cb; n++;
   }
   return n ? new Color(r / n, g / n, b / n) : new Color(0.3, 0.3, 0.3);
+}
+
+/** A body's head at rest (`HeadFrame`): its eyes' mean height and depth, and its top's height over them. */
+function headFrame(body: BufferGeometry): HeadFrame {
+  const position = body.getAttribute('position'), eye = body.getAttribute('eyeMask');
+  let y = 0, z = 0, n = 0, top = -Infinity;
+  for (let v = 0; v < position.count; v++) {
+    top = Math.max(top, position.getY(v));
+    if (eye && eye.getX(v) > 0.5) { y += position.getY(v); z += position.getZ(v); n++; }
+  }
+  const eyeY = n ? y / n : top * 0.93, eyeZ = n ? z / n : 0;
+  return { eyeY, eyeZ, above: Math.max(1e-6, top - eyeY) };
+}
+
+/** The zone of each vertex of a geometry skinned to a class's bones (`FarZone`): its heaviest bone's, a head's split into hair and face. */
+function vertexZones(geometry: BufferGeometry, boneZones: Uint8Array, head: HeadFrame): Uint8Array {
+  const position = geometry.getAttribute('position'), index = geometry.getAttribute('skinIndex'), weight = geometry.getAttribute('skinWeight');
+  const zones = new Uint8Array(position.count);
+  for (let v = 0; v < position.count; v++) {
+    let best = 0, most = -1;
+    for (let k = 0; k < 4; k++) { const w = weight.getComponent(v, k); if (w > most) { most = w; best = index.getComponent(v, k); } }
+    const zone = boneZones[best] ?? FarZone.torso;
+    zones[v] = zone === FarZone.face ? headZone(position.getY(v), position.getZ(v), head) : zone;
+  }
+  return zones;
+}
+
+/** A geometry's area in each zone (a triangle's by its first vertex's zone). */
+function zoneAreas(geometry: BufferGeometry, zones: Uint8Array, keep?: (v: number) => boolean): Float32Array {
+  const position = geometry.getAttribute('position'), index = geometry.getIndex();
+  const out = new Float32Array(FAR_ZONES);
+  if (!index) return out;
+  const a = new Vector3(), b = new Vector3(), c = new Vector3();
+  for (let t = 0; t + 2 < index.count; t += 3) {
+    const i = index.getX(t), j = index.getX(t + 1), k = index.getX(t + 2);
+    if (keep && !keep(i)) continue;
+    a.fromBufferAttribute(position, i); b.fromBufferAttribute(position, j); c.fromBufferAttribute(position, k);
+    const z = zones[i]!;
+    out[z] = out[z]! + b.sub(a).cross(c.sub(a)).length() / 2;
+  }
+  return out;
+}
+
+/** A colour as a far body shows it: dyed as the close pieces dye it (`pieceMaterial`: the dye by the texture's lightness), else its own. */
+function farColour(colour: Color, dye: Color | null): Color {
+  if (!dye) return colour.clone();
+  const l = 0.2126 * colour.r + 0.7152 * colour.g + 0.0722 * colour.b;
+  return dye.clone().multiplyScalar(0.45 + 1.1 * l);
 }
 
 declare const __CROWD_LOD_HASH__: string | undefined;
@@ -863,11 +938,6 @@ interface PersonState {
   /** The skin first. */
   readonly wears: readonly Wear[];
   readonly covers: readonly number[];
-  /** The far mesh they are drawn with (`BodyClass.far`). */
-  readonly farKey: string;
-  readonly skinColour: Color;
-  readonly shoeColour: Color;
-  readonly outfitDye: Color | null;
   /** Their level now (-1: not drawn), and the one this frame wants. */
   level: number;
   want: number;
@@ -1130,10 +1200,13 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     cover.needsUpdate = true;
     const metres = bodyHeight(shape, a.bodyRange) / 10;
     const unit = woundUnit(rig.mesh.geometry, metres);
-    // The shoes' top, for the far mesh: a little over the ankle joint.
-    const foot = skeletonBones.findIndex((b) => (CAPTURE_NAME[b.name] ?? b.name) === 'Bip01_L_Foot');
-    const ankle = (foot >= 0 ? new Vector3().setFromMatrixPosition(new Matrix4().copy(rig.mesh.skeleton.boneInverses[foot]!).invert()).y : 0.05 * unit)
-      + 0.03 * unit;
+    // The far mesh's zones (`FarZone`): each bone's by its name, the head's hair over the brow and round the skull.
+    const boneZones = Uint8Array.from(skeletonBones, (b) => boneZone(CAPTURE_NAME[b.name] ?? b.name));
+    const head = headFrame(body);
+    const zones = vertexZones(body, boneZones, head);
+    const eyeMask = body.getAttribute('eyeMask');
+    const zoneArea = zoneAreas(body, zones, (v) => eyeMask.getX(v) < 0.5);
+    if (!body.boundingBox) body.computeBoundingBox();
     bakeMs += performance.now() - started;
     const cls: BodyClass = {
       key: `${sex}-${band}`, sex, band, base, shape, coefficients: mo.coefficients(base), rig,
@@ -1155,9 +1228,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         procWoundUnit: { value: unit },
       },
       fit, personData, placed: [], faces, faceOf: [], reloadHead, faceVerts: sharedCopy(faceList), palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
-      skins: new Map(), items: new Map(), far: new Map(), pieces: [], people: [], ankle, drawn: 0,
+      skins: new Map(), items: new Map(), far: null, zones, zoneArea, head, boneZones, zoneCover: new Map(), bodyHeight: body.boundingBox!.max.y - body.boundingBox!.min.y,
+      pieces: [], people: [], drawn: 0,
     };
     ready.push(cls);
+    buildFar(cls);
     return cls;
   };
 
@@ -1352,7 +1427,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   /** The entries each kind of piece keeps a person (`aPerson` first). */
   const ENTRIES_SKIN = { aPerson: 4, aDye: 4, aWorn: 4 } as const;
   const ENTRIES = { aPerson: 4, aDye: 4 } as const;
-  const ENTRIES_FAR = { aPerson: 4, aSkin: 4, aOut: 4, aShoe: 4 } as const;
+  // The far mesh's colours are the person's row's (`zoneColours`): their entry is their row alone.
+  const ENTRIES_FAR = { aPerson: 4 } as const;
 
   /** An item fitted to a class, drawn at every level it has: its vertices (`source`) once, an index and a mesh a level */
   const makeItem = async (cls: BodyClass, name: string, kind: Kind, role: PieceRole, source: BufferGeometry,
@@ -1364,10 +1440,13 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     if (widen) source.setAttribute('aCard', new BufferAttribute(cardCentres(source, plan.cardOf!), 3));
     if (grown && !source.getAttribute('aFade')) source.setAttribute('aFade', new BufferAttribute(new Float32Array(source.getAttribute('position').count).fill(1), 1));
     const eye = source.getAttribute('eyeMask');
-    const colour = role === 'skin' ? meanColour(map, source, (v) => !eye || eye.getX(v) < 0.5)
-      : role === 'shoes' ? meanColour(map, source) : new Color(1, 1, 1);
+    const colour = role === 'skin' ? meanColour(map, source, (v) => !eye || eye.getX(v) < 0.5) : meanColour(map, source);
+    if (!source.boundingBox) source.computeBoundingBox();
+    const box = source.boundingBox!;
+    const tall = cls.bodyHeight;
+    const share = role === 'skin' || !(tall > 0) ? 1 : Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) / tall;
     const own: Item = {
-      name, kind, role, source, levels: [], vertices: source.getAttribute('position').count, map, colour,
+      name, kind, role, source, levels: [], vertices: source.getAttribute('position').count, map, colour, share,
       ready: Promise.resolve(),
     };
     const indexAt = (level: number): BufferAttribute | null => {
@@ -1377,7 +1456,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const jobs: Promise<void>[] = [];
     for (let level = 0; level < LEVELS; level++) {
       const index = indexAt(level);
-      if (!index) { own.levels.push(null); continue; }
+      // DO NOT draw a ring, a stud or a pin where it is under a pixel or two: a draw call a far person for nothing (the street census: a wedding
+      // ring and an ear stud each a draw of their own at level 3, 2026-10-22).
+      if (!index || !itemShownAt(share, level)) { own.levels.push(null); continue; }
       const v: Variant = { kind, level, widen, grown, lash: /lash/.test(name) };
       const geometry = new BufferGeometry();
       for (const [attribute, value] of Object.entries(source.attributes)) if (!INSTANCED.has(attribute)) geometry.setAttribute(attribute, value);
@@ -1457,38 +1538,74 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return making;
   };
 
-  /** The far mesh of a class and clothes (level 3): the skin the clothes leave bare */
-  const requestFar = (cls: BodyClass, key: string, garments: readonly { item: Item; pack: ProxyItem; outfit: boolean }[]): void => {
-    if (cls.far.has(key)) return;
-    cls.far.set(key, null);
+  /** The far mesh of a class (level 3): its body whole, simplified, each vertex its zone (`FarZone`); every far person of the class drawn in
+   *  it, in their colours a zone (`zoneColours`). DO NOT make one a class and outfit with the hair and the accessories drawn apart: a far
+   *  person 3 to 8 pixels tall was a draw call an outfit, a hairstyle, a ring and a stud (2.4 draws a person, the street census, 2026-10-22). */
+  const buildFar = (cls: BodyClass): void => {
     void (async () => {
       await lodReady;
       await breathe();
       const body = cls.body;
-      const refs = body.getAttribute('aRefs');
       const eye = body.getAttribute('eyeMask');
-      const covered = new Set<number>();
-      for (const g of garments) for (const v of g.pack.pack.deleteVerts) covered.add(v);
-      const bare = filterTriangles(body.getIndex()!.array as ArrayLike<number>,
-        (v) => !(eye && eye.getX(v) > 0.5) && !covered.has(Math.round(refs.getX(v))));
-      const parts: FarPart[] = [{ geometry: body, indices: bare, region: REGION.skin, triangles: FAR_TRIANGLES.skin }];
-      for (const g of garments) {
-        const sample = textureSampler(g.item.map);
-        const uv = g.item.source.getAttribute('uv');
-        parts.push({
-          geometry: g.item.source, indices: Uint32Array.from(g.item.source.getIndex()!.array as ArrayLike<number>),
-          region: g.outfit ? REGION.outfit : REGION.garment, triangles: g.outfit ? FAR_TRIANGLES.outfit : FAR_TRIANGLES.garment,
-          ...(sample && uv ? { colour: (v: number) => sample(uv.getX(v), uv.getY(v)) } : {}),
-        });
-      }
-      const geometry = farMesh(parts, cls.ankle);
+      const open = filterTriangles(body.getIndex()!.array as ArrayLike<number>, (v) => !(eye && eye.getX(v) > 0.5));
+      const geometry = farMesh([{ geometry: body, indices: open, region: REGION.skin, triangles: FAR_TRIANGLES, zoneOf: (v) => cls.zones[v]! }], 0);
       if (!geometry) return;
       await breathe();
       const v: Variant = { kind: 'far', level: 3, widen: false, grown: false, lash: false };
       const piece = makePiece(cls, null, v, geometry, farMaterial(cls), ENTRIES_FAR, null, null, (geometry.getIndex()?.count ?? 0) / 3);
       await piece.ready;
-      cls.far.set(key, piece);
+      cls.far = piece;
     })();
+  };
+
+  /** How much of each zone of its class's body an item covers (0 to 1): the body's vertices there it hides (`deleteVerts`), or its own area
+   *  over the body's there (a skirt hides none of the legs under it), whichever is more. Made once a class and item. */
+  const zoneCover = (cls: BodyClass, item: Item, pack: ProxyItem | null): Float32Array => {
+    const known = cls.zoneCover.get(item.name);
+    if (known) return known;
+    const out = new Float32Array(FAR_ZONES);
+    const hidden = new Float32Array(FAR_ZONES), all = new Float32Array(FAR_ZONES);
+    const deleted = pack ? new Set(pack.pack.deleteVerts) : null;
+    const refs = cls.body.getAttribute('aRefs');
+    for (let v = 0; v < cls.zones.length; v++) {
+      const z = cls.zones[v]!;
+      all[z] = all[z]! + 1;
+      if (deleted?.has(Math.round(refs.getX(v)))) hidden[z] = hidden[z]! + 1;
+    }
+    const own = item.source.getAttribute('skinIndex') ? zoneAreas(item.source, vertexZones(item.source, cls.boneZones, cls.head)) : new Float32Array(FAR_ZONES);
+    for (let z = 0; z < FAR_ZONES; z++) {
+      const area = cls.zoneArea[z]!;
+      out[z] = Math.max(all[z]! > 0 ? hidden[z]! / all[z]! : 0, area > 0 ? Math.min(1, own[z]! / area) : 0);
+    }
+    cls.zoneCover.set(item.name, out);
+    return out;
+  };
+
+  /** A garment covers a zone of a far body past this share of it. */
+  const ZONE_COVERED = 0.4;
+  /** A person's colour a zone of the far body into their row (`ZONE_AT`): the outermost garment over it, else their hair (the hair zone, with
+   *  hair) or their skin; the fourth channel 0 cloth, 1 skin, 2 hair (`farMaterial`). */
+  const zoneColours = (cls: BodyClass, row: number, skin: Color, hair: Color | null, worn: readonly { wear: Wear; pack: ProxyItem | null }[]): void => {
+    const at = row * PERSON_FLOATS + ZONE_AT;
+    const data = cls.personData;
+    for (let z = 0; z < FAR_ZONES; z++) {
+      const colour = z === FarZone.hair && hair ? hair : skin;
+      data[at + z * 4] = colour.r; data[at + z * 4 + 1] = colour.g; data[at + z * 4 + 2] = colour.b;
+      data[at + z * 4 + 3] = z === FarZone.hair && hair ? 2 : 1;
+    }
+    // Inner layers first, the outer over them: shoes, a garment, the outfit, a hat or a coat worn over all.
+    const layer = (role: PieceRole): number => (role === 'shoes' ? 0 : role === 'garment' ? 1 : role === 'outfit' ? 2 : 3);
+    const cloth = worn.filter((w) => w.wear.item.kind === 'cloth' && w.wear.item.role !== 'mouth')
+      .sort((p, q) => layer(p.wear.item.role) - layer(q.wear.item.role));
+    for (const { wear, pack } of cloth) {
+      const cover = zoneCover(cls, wear.item, pack);
+      const colour = farColour(wear.item.colour, wear.dye);
+      for (let z = 0; z < FAR_ZONES; z++) {
+        if (cover[z]! < ZONE_COVERED) continue;
+        data[at + z * 4] = colour.r; data[at + z * 4 + 1] = colour.g; data[at + z * 4 + 2] = colour.b; data[at + z * 4 + 3] = 0;
+      }
+    }
+    touchRows(cls.uniforms.procPerson.value, row, 1);
   };
 
   /** Their entry in a piece at `slot`: row, body, wounds and char; the piece's dye, cover or colours. */
@@ -1500,13 +1617,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const writeEntry = (piece: Piece, slot: number, person: ProceduralPerson, st: PersonState): void => {
     const burnt = charred.has(person);
     piece.attrs.get('aPerson')!.setXYZW(slot, person.row, st.variant, woundedRow(st.cls, person.row) ? 1 : 0, burnt ? 1 : 0);
-    if (piece.attrs.has('aSkin')) {
-      const out = st.outfitDye;
-      piece.attrs.get('aSkin')!.setXYZW(slot, st.skinColour.r, st.skinColour.g, st.skinColour.b, 0);
-      piece.attrs.get('aOut')!.setXYZW(slot, out?.r ?? 1, out?.g ?? 1, out?.b ?? 1, out ? 1 : 0);
-      piece.attrs.get('aShoe')!.setXYZW(slot, st.shoeColour.r, st.shoeColour.g, st.shoeColour.b, 0);
-      return;
-    }
+    if (!piece.item) return;
     const dye = st.wears.find((w) => w.item === piece.item)?.dye ?? null;
     // The dye's fourth channel: 1 dyed, past 1.5 burnt (the shader's char).
     piece.attrs.get('aDye')!.setXYZW(slot, dye?.r ?? 1, dye?.g ?? 1, dye?.b ?? 1, (dye ? 1 : 0) + (burnt ? 2 : 0));
@@ -1547,9 +1658,10 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     st.pieces.length = 0;
     st.level = level;
     if (level < 0) return;
+    // Far: the class's far mesh alone, their hair and their clothes its colours (`zoneColours`).
     if (level === 3) {
-      const far = st.cls.far.get(st.farKey);
-      if (far) place(far, person, st);
+      if (st.cls.far) place(st.cls.far, person, st);
+      return;
     }
     for (const w of st.wears) {
       const piece = w.item.levels[level];
@@ -1980,12 +2092,6 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const pieces = await Promise.all(worn.map(([nm, it]) => wornItem(cls, nm, roleOf(nm, it, look))));
       // Shown only with every piece's shaders built: no frame waits for a compile.
       await Promise.all([skin.ready, ...pieces.map((pc) => pc.ready)]);
-      // The far mesh of their clothes (made in the background).
-      const garments = worn.map(([nm, it], i) => ({ item: pieces[i]!, pack: it, outfit: nm === look.outfit }))
-        .filter((g) => g.item.role === 'outfit' || g.item.role === 'garment');
-      const farKey = garments.map((g) => g.item.name).sort().join('+') || 'bare';
-      requestFar(cls, farKey, garments);
-
       await breathe();
       if (epoch !== started) throw new Error('crowd cleared');
       // DO NOT take a new row for every body made
@@ -2032,11 +2138,12 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const dye = kind === 'hair' || kind === 'face' ? hair : accessory ?? (itemName === look.outfit ? tint : null);
         wears.push({ item: piece, dye });
       });
-      const shoes = pieces.find((p) => p.role === 'shoes');
+      // Their colours on the far mesh's zones: their skin, their hair, the clothes over them.
+      const hairItem = pieces.find((p) => p.kind === 'hair' && p.role === 'hair');
+      const hairFar = hairItem ? (hairItem.name.startsWith('hair:') ? hair.clone().multiplyScalar(0.85) : farColour(hairItem.colour, hair)) : null;
+      zoneColours(cls, row, skin.colour.clone().multiply(skinTint), hairFar, wears.slice(1).map((wear, i) => ({ wear, pack: worn[i]![1] })));
       states.set(person, {
-        cls, coef, variant: body.index, wears, covers, farKey,
-        skinColour: skin.colour.clone().multiply(skinTint), shoeColour: shoes ? shoes.colour.clone() : new Color(0.08, 0.07, 0.065),
-        outfitDye: tint, level: -1, want: -1, pieces: [], slotIn: new Map(), drawn: new Matrix4(),
+        cls, coef, variant: body.index, wears, covers, level: -1, want: -1, pieces: [], slotIn: new Map(), drawn: new Matrix4(),
       });
       cls.people.push(person);
       people.push(person);
@@ -2101,6 +2208,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         cls.faceOf[row] = cls.faceOf[person.row] ?? null;
         // Their wounds; DO NOT send the whole texture: its rows also carry the faces' expressions, sent a row at a time
         cls.personData.copyWithin(row * PERSON_FLOATS, person.row * PERSON_FLOATS, person.row * PERSON_FLOATS + EXPR_AT);
+        // And their far colours (`zoneColours`): the twin far away in their clothes.
+        cls.personData.copyWithin(row * PERSON_FLOATS + ZONE_AT, person.row * PERSON_FLOATS + ZONE_AT, (person.row + 1) * PERSON_FLOATS);
         touchRows(cls.uniforms.procPerson.value, row, 1);
         const twin: ProceduralPerson = { ...person, row, matrix: new Matrix4().makeScale(0, 0, 0), clip: 'idle', phase: 0, activity: undefined, lost: undefined };
         states.set(twin, { ...st, level: -1, want: -1, pieces: [], slotIn: new Map(), drawn: new Matrix4() });
@@ -2213,7 +2322,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           const hidden = e[0] === 0 && e[1] === 0 && e[2] === 0;
           let level = hidden ? -1 : levelFor(person.pixels ?? Infinity, st.level);
           // Their far mesh not made yet: a level closer meanwhile.
-          if (level === 3 && !cls.far.get(st.farKey)) level = 2;
+          if (level === 3 && !cls.far) level = 2;
           st.want = level;
           // Somebody not measured (the people lab) is drawn in full, outside the caps.
           if (person.pixels === undefined) continue;
