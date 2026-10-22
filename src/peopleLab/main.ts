@@ -422,6 +422,8 @@ function startLab(): void {
     act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; heldAt = null; if (player) player.hold = null; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
     render, openSculptor: (item) => { void openSculptor(item); }, fitFace: () => { void fitFace(); },
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
+    hairGrown: () => (person.spec.look.hairCut?.startsWith(PROC_PREFIX) && person.hair ? person.hair : null),
+    setHair: (h) => { setHair(h); },
     hairShape: () => person.hairShape ?? PLAIN_SHAPE,
     setHairShape: (hs) => { person = { ...person, hairShape: hs }; rebuild(200); },
     outfitShape: () => person.outfitShape ?? PLAIN_SHAPE,

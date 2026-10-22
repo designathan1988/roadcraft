@@ -12,6 +12,9 @@ import type { Framing, Thumbs } from './thumbs';
 import { el, type widgets } from './widgets';
 import { icon } from './icons';
 import { PickerMemory, picker } from './picker';
+import { HAIR_BASES, hairToolNodes } from './hairPanel';
+import { HAIR_STYLES, type HairStyle } from '@people/hair/procedural';
+import { PROC_PREFIX } from './record';
 
 /** THE CREATOR'S PANELS, as Create-a-Sim lays them out: pictures of every choice first, the fine sliders folded away under them */
 
@@ -36,6 +39,9 @@ export interface PanelContext {
   /** Takes a piece's sculpt off. */
   dropPiece(item: string): void;
   dropSculpt(): void;
+  /** The hair made here (`hairPanel.ts`): the grown style worn now, or null for a catalogue one; and wearing one. */
+  hairGrown(): HairStyle | null;
+  setHair(h: HairStyle): void;
   /** The worn hairstyle's length, volume and waves (`hairShape.ts`). */
   hairShape(): HairShape;
   setHairShape(s: HairShape): void;
@@ -243,6 +249,15 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
             slider('Volume', -0.4, 2, 0.05, hs.volume * 10, (v) => c.setHairShape({ ...c.hairShape(), volume: v / 10 }), (v) => `${v.toFixed(1)} cm`),
             slider('Ondas', 0, 1.2, 0.05, hs.wave * 10, (v) => c.setHairShape({ ...c.hairShape(), wave: v / 10 }), (v) => `${v.toFixed(1)} cm`),
           ]),
+        ];
+      }],
+      ['criar', 'Criar', () => {
+        // Grown from guide curves on the scalp (`procedural.ts`): a style to start from, then cut, combed, textured, fringed and tied.
+        const grown = c.hairGrown();
+        return [
+          pics(HAIR_BASES.map((n) => ({ id: n, label: n, variant: { ...withLook({ hairCut: `${PROC_PREFIX}${n}` }), hair: HAIR_STYLES[n]! } })),
+            grown ? (HAIR_BASES.includes(grown.name) ? grown.name : null) : null, (id) => c.setHair(HAIR_STYLES[id]!), 'head'),
+          ...(grown ? hairToolNodes(c.ui, grown, (h) => c.setHair(h)) : []),
         ];
       }],
       ['cor', 'Cor', () => [swatches(HAIR_COLOURS, p().spec.look.hair, (col) => c.setLook({ hair: col }))]],
