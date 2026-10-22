@@ -51,3 +51,28 @@ export interface BlockLevels {
 export const LOD_KEY = 'lod';
 
 export const levelsOf = (mesh: Mesh): BlockLevels | undefined => mesh.userData[LOD_KEY] as BlockLevels | undefined;
+
+/** The arrays of a mesh's attributes and index let go (made again by `refillArrays`). */
+export function giveBackArrays(mesh: Mesh): void {
+  const geometry = mesh.geometry as BufferGeometry;
+  // Its size forgotten with it (`gpuOnly.ts` keptBytes): the geometry is disposed below, nothing of it stays on the GPU. DO NOT keep it: the memory counters and the ledger counted every far block's full level as held (`memoryCounters.ts`).
+  const letGo = (attribute: BufferAttribute): void => {
+    const own = attribute as unknown as { array: ArrayLike<number> | null; keptBytes?: number };
+    own.array = null;
+    delete own.keptBytes;
+  };
+  for (const attribute of Object.values(geometry.attributes)) letGo(attribute as BufferAttribute);
+  if (geometry.index) letGo(geometry.index);
+}
+
+/** The block's far level shown, its full mesh's buffers given back. */
+export function makeFar(mesh: Mesh): void {
+  const levels = levelsOf(mesh);
+  if (!levels?.coarse || !levels.full) return;
+  levels.full = false;
+  mesh.visible = false;
+  levels.coarse.visible = true;
+  // Its arrays may still be here (never drawn, so never uploaded): none is kept for a block nobody sees.
+  giveBackArrays(mesh);
+  mesh.geometry.dispose();
+}

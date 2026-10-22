@@ -217,6 +217,10 @@ describe('scene census', () => {
               "drawn": 7,
               "objects": 2,
             },
+            "nature-tree-cypress--far": {
+              "drawn": 0,
+              "objects": 1,
+            },
             "nature-tree-oak-": {
               "drawn": 6,
               "objects": 2,
@@ -235,7 +239,7 @@ describe('scene census', () => {
             },
             "nature-tree-palm--far": {
               "drawn": 1,
-              "objects": 1,
+              "objects": 2,
             },
             "sign-plates": {
               "drawn": 2,
@@ -309,9 +313,9 @@ describe('scene census', () => {
           "drawn": 473386,
           "draws": 259,
           "lines": 0,
-          "objects": 301,
+          "objects": 303,
           "points": 4000,
-          "triangles": 5274368,
+          "triangles": 5236168,
         },
         "street": {
           "byName": {
@@ -319,7 +323,7 @@ describe('scene census', () => {
               "drawn": 4,
               "objects": 4,
             },
-            "benches": {
+            "benches-far": {
               "drawn": 60,
               "objects": 1,
             },
@@ -413,7 +417,7 @@ describe('scene census', () => {
             },
             "building-louvre": {
               "drawn": 4486,
-              "objects": 11,
+              "objects": 21,
             },
             "building-massing": {
               "drawn": 25,
@@ -483,12 +487,20 @@ describe('scene census', () => {
               "drawn": 28,
               "objects": 1,
             },
+            "garden-bushes-hedge-far": {
+              "drawn": 0,
+              "objects": 1,
+            },
             "garden-trees-broadleaf": {
               "drawn": 121,
               "objects": 1,
             },
             "garden-trees-broadleaf-cards": {
               "drawn": 121,
+              "objects": 1,
+            },
+            "garden-trees-broadleaf-far": {
+              "drawn": 0,
               "objects": 1,
             },
             "garden-trees-broadleafTall": {
@@ -531,11 +543,15 @@ describe('scene census', () => {
               "drawn": 33,
               "objects": 1,
             },
+            "garden-trees-ipeYellow-far": {
+              "drawn": 0,
+              "objects": 1,
+            },
             "gardens-far-cells": {
               "drawn": 34274,
               "objects": 4,
             },
-            "hydrants": {
+            "hydrants-far": {
               "drawn": 21,
               "objects": 1,
             },
@@ -567,6 +583,30 @@ describe('scene census', () => {
               "drawn": 4,
               "objects": 4,
             },
+            "nature-tree-cypress-": {
+              "drawn": 0,
+              "objects": 2,
+            },
+            "nature-tree-cypress--cards": {
+              "drawn": 0,
+              "objects": 2,
+            },
+            "nature-tree-oak-": {
+              "drawn": 0,
+              "objects": 2,
+            },
+            "nature-tree-oak--cards": {
+              "drawn": 0,
+              "objects": 2,
+            },
+            "nature-tree-palm-": {
+              "drawn": 0,
+              "objects": 2,
+            },
+            "nature-tree-palm--cards": {
+              "drawn": 0,
+              "objects": 2,
+            },
             "sign-plates": {
               "drawn": 2,
               "objects": 2,
@@ -579,7 +619,7 @@ describe('scene census', () => {
               "drawn": 1,
               "objects": 1,
             },
-            "street-bins": {
+            "street-bins-far": {
               "drawn": 59,
               "objects": 1,
             },
@@ -673,11 +713,11 @@ describe('scene census', () => {
             },
           },
           "drawn": 597346,
-          "draws": 384,
+          "draws": 383,
           "lines": 0,
-          "objects": 540,
+          "objects": 565,
           "points": 4000,
-          "triangles": 5490932,
+          "triangles": 5328874,
         },
       }
     `);

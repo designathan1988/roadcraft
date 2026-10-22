@@ -1,8 +1,7 @@
 import { Box3, BufferGeometry, Sphere, type Material, type Mesh } from 'three';
 import { type GeometryArrays, gpuOnly } from './gpuOnly';
-import { type BlockArrays, type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry } from './roadLod';
+import { type BlockArrays, type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry, makeFar } from './roadLod';
 import { readsRoadSection } from './roadEdges';
-import { makeFar } from './roadResidency';
 import { finish, type SurfaceMeshOptions, type Tile, type TileRect } from './surfaceMesh';
 
 /** The attributes a surface's material reads besides position, normal and uv: no other is sent to the GPU. */

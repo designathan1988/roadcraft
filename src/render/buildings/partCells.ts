@@ -183,6 +183,8 @@ export class PartCell {
         mesh.geometry = this.posedLevel(band, mesh, level);
         // A card casts nothing: its bars are under the texel where it is drawn, and its face would cast whole (`kit.ts` cards).
         mesh.castShadow = casts && !band.screen.levels[level]!.card;
+        // Drawn into a cascade only where its widest piece spans the texel (`castInto`): its changes nowhere coarser (`ChangeBox.reach`).
+        mesh.userData['castReach'] = band.width;
         mesh.visible = visible;
         band.drawn.set(key, level);
       }

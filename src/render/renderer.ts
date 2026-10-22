@@ -9,7 +9,7 @@ import type { Occupant, RagdollProbe } from './ragdoll';
 import type { PlayEffects } from './playEffects';
 import { createLotOverlay, type LotOverlayInput } from './lotOverlay';
 import { onCarriageway } from '@world/carriageway';
-import { addChangeBox, clearChangeBoxes } from './changeBoxes';
+import { type ChangeBox, addChangeBox, clearChangeBoxes } from './changeBoxes';
 import {
   BufferGeometry,
   ShaderMaterial,
@@ -98,7 +98,7 @@ import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather, sways } from './wind';
 import { holdStill, updateMoving } from './stillTree';
 import { castCastersInto } from './shadowCasters';
-import { screenHalf, setShadowSun } from './cellInstances';
+import { type KeptFrustum, screenHalf, setShadowSun } from './cellInstances';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -591,7 +591,10 @@ export function createSceneRenderer(
   /** The boxes holding this pass's changes, apart from each other (`changeBoxes.ts`). */
   const changeBoxes: Box3[] = [];
   const changeBoxPool: Box3[] = [];
-  const addChange = (box: Box3): void => addChangeBox(changeBoxes, box, changeBoxPool);
+  /** The near cascade's cover at this pass (`cascadeCover`, set as the crowd's cull takes it), or null: what changed under it kept apart (`addChangeBox`). */
+  let changeNear: Box3 | null = null;
+  /** `reach`: the widest cascade texel the change shows in (`ChangeBox.reach`), the box's own or its mesh's (`userData.castReach`). */
+  const addChange = (box: Box3, reach?: number): void => addChangeBox(changeBoxes, box, changeBoxPool, undefined, changeNear, reach ?? (box as ChangeBox).reach ?? Infinity);
   /** An instanced mesh's instances as last seen (their places, three floats each, and how many): a change of its matrices is told by the instances that moved, came or went, each in a box of its own reach, not by the mesh's whole sphere (the signals' and the poles' blocks of a kilometre threw the near cascades' stores away at every frame of a pan, 2026-10-22). */
   const instancePlaces = new Map<Object3D, { places: Float32Array; count: number }>();
   const instanceBox = new Box3();
@@ -772,9 +775,10 @@ export function createSceneRenderer(
           any = true;
         } else {
           any = true;
-          // Where it stood and where it stands.
-          if (entry.box.isEmpty()) noBox(mesh); else addChange(entry.box);
-          if (boundsOf(mesh, entry, true)) { addChange(entry.box); noteWidest(mesh, entry.box); } else noBox(mesh);
+          // Where it stood and where it stands; only in the cascades it is drawn into (a building's parts: `partCells.ts` castInto).
+          const reach = mesh.userData['castReach'] as number | undefined;
+          if (entry.box.isEmpty()) noBox(mesh); else addChange(entry.box, reach);
+          if (boundsOf(mesh, entry, true)) { addChange(entry.box, reach); noteWidest(mesh, entry.box); } else noBox(mesh);
         }
       }
     }
@@ -1023,7 +1027,8 @@ export function createSceneRenderer(
     const unique = [...new Set(keys)];
     const missing = unique.filter((key) => !tileReads.has(key));
     if (missing.length) {
-      const batch = readDerivedSome<TileBundle>(tilesPrefix, missing);
+      // Read off the page where there is a writer (`DerivedWriterLane.read`), else here (tests).
+      const batch = tileWrites ? tileWrites.read<TileBundle>(tilesPrefix, missing) : readDerivedSome<TileBundle>(tilesPrefix, missing);
       for (const key of missing) {
         const one = batch.then((got) => got.get(key));
         tileReads.set(key, one);
@@ -1262,7 +1267,10 @@ export function createSceneRenderer(
     // The land alone: whether a walker off the streets is on screen at all, before the yards are asked.
     (x, y) => terrain.renderedHeightAt(x, y));
 
-  const crowdFrustum = new Frustum();
+  const crowdFrustum: KeptFrustum = new Frustum();
+  /** The box the sun's cascades cover (`crowdFrustum.keep`), and the margin past it, world units. */
+  const cascadeCover = new Box3();
+  const CASCADE_KEEP_MARGIN = m(24);
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
   /** The roads' blocks at their full level: in the view's frustum (the buildings' detail's, set each frame) and under the tier's budget (`applyGeometryBudget`). */
@@ -3569,6 +3577,10 @@ export function createSceneRenderer(
       const cullCamera = rig.camera;
       crowdProjection.multiplyMatrices(cullCamera.projectionMatrix, cullCamera.matrixWorldInverse);
       crowdFrustum.setFromProjectionMatrix(crowdProjection, cullCamera.coordinateSystem, cullCamera.reversedDepth);
+      // What casts under the sun's cascades kept by the layers' culls whatever the frame holds (`cellInstances.ts` KeptFrustum): the box
+      // the cascades covered at the last pass, a margin past it so things come and go where no cascade draws.
+      crowdFrustum.keep = renderer.shadowMap.enabled && environment.shadowCover(cascadeCover, CASCADE_KEEP_MARGIN) ? cascadeCover : null;
+      changeNear = crowdFrustum.keep;
       cameraRight.setFromMatrixColumn(cullCamera.matrixWorld, 0).normalize();
       // The canvas's CSS size read once a frame, before the vehicles ask `screenScale`
       cssHalfW = css.w * 0.5;

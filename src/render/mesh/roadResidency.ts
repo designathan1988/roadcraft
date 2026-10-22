@@ -1,11 +1,14 @@
-import { Box3, type BufferAttribute, type BufferGeometry, type Frustum, type Mesh } from 'three';
+import { Box3, type BufferGeometry, type Frustum, type Mesh } from 'three';
 import { geometryCost } from '../gpuLedger';
 import { fillArrays } from './gpuOnly';
-import { type BlockLevels, levelsOf } from './roadLod';
+import { type BlockLevels, giveBackArrays, levelsOf, makeFar } from './roadLod';
 import { restoreFarLevel } from './surfaceTiles';
 import { cancelWarm, warmLooseAhead } from '../uploads';
 
 /** DO NOT keep a far block's full mesh: no pixel of it is resolved from there. */
+
+// Here for the residency's callers; it lives with the levels (`roadLod.ts`), which the tiles use too, never importing back.
+export { makeFar };
 
 /** A block goes far when it is this much farther than `reach`, so one near the line is not asked twice. */
 export const FAR_MARGIN = 1.25;
@@ -18,31 +21,6 @@ const distance = (levels: BlockLevels, focusX: number, focusY: number): number =
   for (const [x, z] of levels.also ?? []) d = Math.min(d, Math.hypot(x - focusX, z + focusY));
   return d;
 };
-
-/** The arrays of a mesh's attributes and index let go (made again by `refillArrays`). */
-function giveBackArrays(mesh: Mesh): void {
-  const geometry = mesh.geometry as BufferGeometry;
-  // Its size forgotten with it (`gpuOnly.ts` keptBytes): the geometry is disposed below, nothing of it stays on the GPU. DO NOT keep it: the memory counters and the ledger counted every far block's full level as held (`memoryCounters.ts`).
-  const letGo = (attribute: BufferAttribute): void => {
-    const own = attribute as unknown as { array: ArrayLike<number> | null; keptBytes?: number };
-    own.array = null;
-    delete own.keptBytes;
-  };
-  for (const attribute of Object.values(geometry.attributes)) letGo(attribute as BufferAttribute);
-  if (geometry.index) letGo(geometry.index);
-}
-
-/** The block's far level shown, its full mesh's buffers given back. */
-export function makeFar(mesh: Mesh): void {
-  const levels = levelsOf(mesh);
-  if (!levels?.coarse || !levels.full) return;
-  levels.full = false;
-  mesh.visible = false;
-  levels.coarse.visible = true;
-  // Its arrays may still be here (never drawn, so never uploaded): none is kept for a block nobody sees.
-  giveBackArrays(mesh);
-  mesh.geometry.dispose();
-}
 
 /** The block's full mesh shown, the coarse one hidden. */
 function showFull(mesh: Mesh, levels: BlockLevels): void {

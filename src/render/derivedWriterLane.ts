@@ -4,11 +4,19 @@ import { WriteBudget } from '@core/derivedCache';
 export class DerivedWriterLane {
   private readonly budget: WriteBudget;
   private readonly open = new Map<number, () => void>();
+  /** Reads asked of the writer (`read`), by id: answered with the entries it found. */
+  private readonly reads = new Map<number, (got: Map<string, unknown>) => void>();
   private next = 1;
 
   constructor(private readonly port: Worker, most: number) {
     this.budget = new WriteBudget(most);
-    port.onmessage = (event: MessageEvent<{ readonly done?: number }>) => {
+    port.onmessage = (event: MessageEvent<{ readonly done?: number; readonly got?: number; readonly entries?: readonly [string, unknown][] }>) => {
+      const got = event.data.got;
+      if (got !== undefined) {
+        this.reads.get(got)?.(new Map(event.data.entries ?? []));
+        this.reads.delete(got);
+        return;
+      }
       const id = event.data.done;
       if (id === undefined) return;
       this.open.get(id)?.();
@@ -19,6 +27,15 @@ export class DerivedWriterLane {
   /** Bytes posted and not committed yet. */
   get bytes(): number {
     return this.budget.bytes;
+  }
+
+  /** The entries of `keys` under `prefix`, read by the writer off the page, their arrays handed over (`derivedWriter.worker.ts`). */
+  read<T>(prefix: string, keys: readonly string[]): Promise<Map<string, T>> {
+    const id = this.next++;
+    return new Promise((resolve) => {
+      this.reads.set(id, resolve as (got: Map<string, unknown>) => void);
+      this.port.postMessage({ read: id, prefix, keys });
+    });
   }
 
   /** `entries` posted to be kept under `prefix`, `transfer` handed over; false when they did not fit (nothing posted). */

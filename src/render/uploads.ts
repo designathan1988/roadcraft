@@ -36,7 +36,7 @@ export function drainUploads(renderer: WebGLRenderer): void {
 /** A pass drawn into a target of its own, in a scene of its own: its programs are keyed by that scene's lights and that target (three's `WebGLPrograms` getParameters). */
 interface OwnPass { readonly camera: Camera; readonly target: WebGLRenderTarget }
 /** Objects whose shaders must be compiled before they are first drawn */
-const toCompile: { object: Object3D; shadow: boolean; done: () => void; pass?: OwnPass; lights?: readonly Object3D[] }[] = [];
+const toCompile: { object: Object3D; shadow: boolean; entry: CompileEntry; pass?: OwnPass; lights?: readonly Object3D[] }[] = [];
 /** What a shadow program is built for: a render target as a shadow map is (no colour space, no tone mapping). */
 let shadowTarget: WebGLRenderTarget | null = null;
 /** Whether a renderer is answering (none in tests: nothing is waited for there). */
@@ -145,7 +145,11 @@ export function compileCopy(object: Object3D): Object3D {
 }
 
 /** Every compile asked for and not settled, and since when (`performance.now`). DO NOT settle one after a count of frames: the door opened on a program still linking, its first draw waited for the link in the frame (three's onFirstUse, getProgramInfoLog: 716 ms of the conferencia 110 move). It settles when three says its programs are ready (linked, or failed: the error said by onShaderError at the first draw, as ever), when a material of it is disposed (its programs never come, nothing of it is drawn), or past `COMPILE_GIVE_UP_MS`, said. */
-const inFlight = new Set<{ readonly since: number; readonly what: string; started: number; settle: () => void }>();
+const inFlight = new Set<CompileEntry>();
+/** A program as three keeps it: ready once linked (r186 `WebGLProgram.isReady`, COMPLETION_STATUS_KHR, true kept once seen). */
+interface ReadyProgram { isReady(): boolean }
+/** A compile asked for: `waits`, the programs it was built into and not seen ready yet (`drainCompiles` asks each once a frame), `built` once they are listed. */
+interface CompileEntry { readonly since: number; readonly what: string; started: number; settle: () => void; readonly waits: Set<ReadyProgram>; built: boolean }
 // TEMPORARY (DEV only, to be taken out): every compile at the door, asked, started, settled and how many were in flight (`window.__compileLog`).
 const compileLog: { what: string; asked: number; started: number; settled: number; waitedMs: number; builtMs: number; inFlight: number; programs: number; how: string }[] = [];
 const programSamples: { at: number; programs: number; inFlight: number; queued: number }[] = [];
@@ -198,11 +202,10 @@ const programsTable = (): unknown => {
   return { total: programs.length, groups: rows.length, parallelCompile: extensions?.has?.('KHR_parallel_shader_compile') ?? null, rows };
 };
 if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { __programsTable: programsTable });
-const entryOf = new WeakMap<() => void, { started: number }>();
 /** A driver that never says a program is built: given up on and said, never a mesh held for ever (a slow driver shows in the opening's time, `programsReady`). */
 const COMPILE_GIVE_UP_MS = 10_000;
 /** `done` once, however many times it is called, and taken off `inFlight`; settled too when a material of `object` is disposed. */
-function once(done: () => void, object: Object3D): () => void {
+function once(done: () => void, object: Object3D): CompileEntry {
   const materials = new Set<Material>();
   object.traverse((o) => {
     const m = (o as Mesh).material;
@@ -210,7 +213,7 @@ function once(done: () => void, object: Object3D): () => void {
   });
   // What it is, said if it is given up on: the object and its materials, by name or type.
   const what = `${object.name || object.type} [${[...materials].map((m) => m.name || m.type).slice(0, 4).join(', ')}]`;
-  const entry = { since: performance.now(), what, started: -1, settle: () => {} };
+  const entry: CompileEntry = { since: performance.now(), what, started: -1, settle: () => {}, waits: new Set(), built: false };
   entry.settle = () => {
     if (!inFlight.delete(entry)) return;
     if (import.meta.env.DEV) {
@@ -224,8 +227,7 @@ function once(done: () => void, object: Object3D): () => void {
   };
   for (const m of materials) m.addEventListener('dispose', entry.settle);
   inFlight.add(entry);
-  if (import.meta.env.DEV) entryOf.set(entry.settle, entry);
-  return entry.settle;
+  return entry;
 }
 
 /** What waits for the door to be quiet (`compilesQuiet`): told at the first drain with nothing asked and nothing in flight. */
@@ -239,19 +241,19 @@ export function compilesQuiet(): Promise<void> {
 /** `shadow`: the object's material is a shadow's depth material, compiled for a shadow map. */
 export function compileAhead(object: Object3D, shadow = false): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow, done: once(done, object) }));
+  return new Promise((done) => toCompile.push({ object, shadow, entry: once(done, object) }));
 }
 
 /** `object`'s programs as they are drawn under another set of the scene's lights (`lights`, every one counted lit or not): the variant a light switched on or off asks for, built before it is. */
 export function compileAheadWith(object: Object3D, lights: readonly Object3D[]): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow: false, done: once(done, object), lights }));
+  return new Promise((done) => toCompile.push({ object, shadow: false, entry: once(done, object), lights }));
 }
 
 /** DO NOT draw a pass of its own (`people/crowdAnimation.ts` palette pass) before its program is built: compiled on its first draw, in the frame (2026-10-16) */
 export function compilePassAhead(scene: Scene, camera: Camera, target: WebGLRenderTarget): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done: once(done, scene), pass: { camera, target } }));
+  return new Promise((done) => toCompile.push({ object: scene, shadow: false, entry: once(done, scene), pass: { camera, target } }));
 }
 
 /** Starts compiling what is waiting; each promise settles when its shaders are ready. */
@@ -277,6 +279,20 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
     const last = programSamples[programSamples.length - 1];
     if (!last || now - last.at >= 250) { programSamples.push({ at: Math.round(now), programs: lastProgramCount, inFlight: inFlight.size, queued: toCompile.length }); if (programSamples.length > 5000) programSamples.splice(0, 1000); }
   }
+  // The programs the compiles wait for, each asked once this frame, however many compiles wait for it. DO NOT poll each compile on a timer
+  // of its own (three's `compileAsync`: every 10 ms, each of its materials): one program still linking was asked by every compile it is in,
+  // and each ask can wait for the driver - 4,588 asks, 374 ms of the page stopped while a city was made (`npm run diagnose`, 2026-10-22).
+  if (inFlight.size) {
+    const linking = new Set<ReadyProgram>();
+    for (const entry of [...inFlight]) {
+      if (!entry.built) continue;
+      for (const program of entry.waits) {
+        if (linking.has(program)) continue;
+        if (program.isReady()) entry.waits.delete(program); else linking.add(program);
+      }
+      if (entry.waits.size === 0) entry.settle();
+    }
+  }
   if (!toCompile.length) {
     if (inFlight.size === 0) for (const done of quietWaiters.splice(0)) done();
     return;
@@ -284,10 +300,24 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   // Without the parallel compile, three's compileAsync polls each program with a timer: built here at once instead, off the draw, and settled.
   const extensions = (renderer as { extensions?: { has?: (name: string) => boolean } }).extensions;
   const parallel = extensions?.has?.('KHR_parallel_shader_compile') ?? true;
-  const build = (object: Object3D, cameraFor: Camera, targetScene: Scene): Promise<unknown> => {
+  // The programs three built for the compile listed on its entry, asked at each drain (above); a renderer that cannot tell them (none: a test's) waits on three's own.
+  const properties = (renderer as { properties?: { get(material: Material): { currentProgram?: ReadyProgram } } }).properties;
+  const listed = parallel && typeof renderer.compile === 'function' && properties !== undefined;
+  const build = (object: Object3D, cameraFor: Camera, targetScene: Scene, entry: CompileEntry): Promise<unknown> => {
+    if (listed) {
+      for (const material of renderer.compile(object, cameraFor, targetScene)) {
+        const program = properties.get(material).currentProgram;
+        if (program) entry.waits.add(program);
+      }
+      return Promise.resolve();
+    }
     if (parallel) return renderer.compileAsync(object, cameraFor, targetScene);
     renderer.compile(object, cameraFor, targetScene);
     return Promise.resolve();
+  };
+  /** The compile's units all built: settled when three's own say so, or at the next drains as its programs are seen ready (`listed`). */
+  const built = (entry: CompileEntry, compiled: Promise<unknown>): void => {
+    void compiled.then(() => { if (!listed) entry.settle(); else { entry.built = true; if (entry.waits.size === 0) entry.settle(); } }, () => entry.settle());
   };
   // For the target the scene is really drawn into: its colour space and tone mapping are part of every program.
   const previous = renderer.getRenderTarget();
@@ -295,13 +325,14 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   const lit = litScene(scene);
   try {
     while (toCompile.length) {
-      const { object, shadow, done, pass, lights } = toCompile.shift()!;
-      if (import.meta.env.DEV) { const asked = entryOf.get(done); if (asked && asked.started < 0) asked.started = performance.now(); }
+      const { object, shadow, entry, pass, lights } = toCompile.shift()!;
+      const done = entry.settle;
+      if (import.meta.env.DEV && entry.started < 0) entry.started = performance.now();
       if (pass) {
         // Its own scene's lights (none) and its own target, as it is drawn.
         renderer.setRenderTarget(pass.target);
         try {
-          build(object, pass.camera, object as Scene).then(() => done(), () => done());
+          built(entry, build(object, pass.camera, object as Scene, entry));
         } catch (error) {
           console.error('[uploads] the program of a pass could not be compiled ahead', error);
           done();
@@ -324,12 +355,12 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
         // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
         try {
-          compiled.push(build(unit.object, camera, lightsFor(unit.object, scene, lights ?? litScenes.get(scene)!.lights, lights ? null : lit)));
+          compiled.push(build(unit.object, camera, lightsFor(unit.object, scene, lights ?? litScenes.get(scene)!.lights, lights ? null : lit), entry));
         } catch (error) {
           console.error('[uploads] a program could not be compiled ahead', error);
         }
       }
-      Promise.all(compiled).then(() => done(), () => done());
+      built(entry, Promise.all(compiled));
     }
   } finally {
     renderer.setRenderTarget(previous);

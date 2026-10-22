@@ -370,15 +370,18 @@ export class CellPool {
     return `${CELL_PREFIX}${kind}|${cell}|${d.value()}`;
   }
 
-  /** The kit's boxes and tones as one number, worked out once a set of boxes. */
+  /** The kit's boxes and tones as one number: the boxes hashed once a set (`kitBoxes` gives the same `parts` and `furniture` every call), the
+   *  bandings (a few numbers a kind) each call. DO NOT key it by the object `boxes()` returns: it is new every call (its bandings follow the
+   *  kit's levels), and the whole kit was hashed again for every cell job of a move (`Digest.addPlain` 333 ms self in the player's probe,
+   *  612 ms in `npm run diagnose`, 2026-10-22). */
   private kitDigest(): number {
     const boxes = this.boxes();
-    if (this.kitSeen?.boxes === boxes) return this.kitSeen.digest;
-    const digest = new Digest().addPlain(boxes).addPlain(this.tone ?? null).value();
-    this.kitSeen = { boxes, digest };
-    return digest;
+    if (this.kitSeen?.parts !== boxes.parts || this.kitSeen.furniture !== boxes.furniture) {
+      this.kitSeen = { parts: boxes.parts, furniture: boxes.furniture, digest: new Digest().addPlain(boxes.parts).addPlain(boxes.furniture).addPlain(this.tone ?? null).value() };
+    }
+    return new Digest().add(this.kitSeen.digest).addPlain(boxes.bandings ?? null).value();
   }
-  private kitSeen: { readonly boxes: KitBoxes; readonly digest: number } | null = null;
+  private kitSeen: { readonly parts: KitBoxes['parts']; readonly furniture: KitBoxes['furniture']; readonly digest: number } | null = null;
 
   /** The floors a job stood its buildings on, kept for their next jobs. */
   private learn(asked: Asked, result: CellResult): void {

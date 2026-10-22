@@ -1,4 +1,5 @@
 import {
+  type Box3,
   ShaderChunk,
   AmbientLight,
   BackSide,
@@ -53,6 +54,8 @@ export interface SceneEnvironment {
   setQuality(quality: EnvironmentQuality): void;
   /** The far cascades drawn at most every `n` passes (`SunCascades.setFarEvery`). */
   setFarCascadeEvery(n: number): void;
+  /** The world box the sun's cascades cover, grown by `margin` (`SunCascades.coverBox`): false without shadows. */
+  shadowCover(target: Box3, margin: number): boolean;
   /** The cascades' maps made again for the renderer's shadow map type (`SunCascades.remakeMaps`). */
   remakeShadowMaps(): void;
   /** The time of day, minutes after midnight: the sun's path, the sky, the light; the moon at night. */
@@ -288,6 +291,7 @@ export function createEnvironment(
     setSmog(k) { smog = Math.max(0, Math.min(1, k)); },
     setWeather(k, f) { overcast = Math.max(0, Math.min(1, k)); flash = Math.max(0, Math.min(1.5, f)); },
     setFarCascadeEvery: (n) => cascades.setFarEvery(n),
+    shadowCover: (target, margin) => cascades.coverBox(target, margin),
     remakeShadowMaps: () => cascades.remakeMaps(),
     setQuality(next) {
       cascades.setEnabled(next.shadows, next.shadowMapSize);

@@ -16,7 +16,7 @@ import {
   type Object3D,
 } from 'three';
 import { m } from '@world/units';
-import { addChangeBox } from './changeBoxes';
+import { LAYER_BOXES, addChangeBox } from './changeBoxes';
 import { type Bounds, growInto, planeMask } from './instanceCull';
 import { impostorPick, thinWant } from './plantImpostors';
 import { trianglesOf } from './propGeometry';
@@ -52,8 +52,19 @@ export interface KindMesh {
   readonly made?: (mesh: InstancedMesh) => void;
 }
 
+/**
+ * The frustum a layer culls by, with the box the sun's cascades cover (`SunCascades.coverBox`): what casts there is kept whether the
+ * camera frames it or not. DO NOT let the shadows' casters follow the frame alone: as the view moved, the posts, props and plants coming in
+ * and going out at its edges were changes all round the near cascade, whose store was thrown away and drawn whole in half the frames of a
+ * flight (318 of 606, `npm run diagnose`, 2026-10-22). Kept under the cascades, they come and go past them, where no cascade draws.
+ */
+export type KeptFrustum = Frustum & { keep?: Box3 | null };
+
 /** Texels a small kind's widest instance must span (radius) to cast into a cascade (`makeMesh`). */
 const SMALL_CAST_TEXELS = 2;
+/** The texels a kind's largest must span to cast into a cascade (`castBySize`). */
+const castTexelsOf = (k: { readonly spec: { readonly levels?: { readonly least?: number; readonly small?: boolean } } }): number =>
+  k.spec.levels?.least !== undefined || k.spec.levels?.small === true ? SMALL_CAST_TEXELS : 1;
 
 /** How a kind's level is chosen by its size on the screen: its bounding diameter, device pixels. */
 export interface KindLevels {
@@ -269,6 +280,8 @@ export const HYSTERESIS = 0.15;
 const PICK_SLACK = 1e-4;
 /** Levels an instance was drawn at. */
 const NEAR = 0, FAR = 1, NONE = 2, UNKNOWN = 255;
+/** A slot's `want` with this bit: drawn at its level for the sun's cascades alone, off the frame under them (`keepBox`); the level in the bits under it. */
+const SHADE = 0x80, LEVEL_BITS = 0x7f;
 
 /** Half the drawing buffer's height, device pixels, as the meshes last drew (`onBeforeRender`): the screen sizes are in it. */
 const screen = { half: 540 };
@@ -362,6 +375,8 @@ interface Level {
   fresh: boolean;
   /** The widest instance it drew at its last cull (radius, world units): what a cascade's texel is measured against (`shadowCasters.ts`). */
   largest: number;
+  /** Positions from 0 drawn in the colour pass; those after them, to `drawn`, only into the sun's cascades (`SHADE`, `castBySize` counts). */
+  colour: number;
 }
 
 interface MeshState {
@@ -436,7 +451,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       if (!s) continue;
       if (!centre) { centre = s.center.clone(); reach = s.radius; } else reach = Math.max(reach, centre.distanceTo(s.center) + s.radius);
     }
-    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), at: new Int32Array(0), live: false, drawn: 0, entering: new IntList(), changed: new IntList(), fresh: false, largest: 0 });
+    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), at: new Int32Array(0), live: false, drawn: 0, entering: new IntList(), changed: new IntList(), fresh: false, largest: 0, colour: 0 });
     const levels = [level(), level()] as const;
     return {
       index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1, levels,
@@ -598,7 +613,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     // not drawn under a pixel, `least`: a bin, a bench, a hydrant) only where it spans `SMALL_CAST_TEXELS`. DO NOT cast a bin a texel or two
     // wide into every cascade: at the district's view the street furniture drew twice its own triangles again into the shadows (bins 0.8 M
     // in the scene, 1.5 M in the cascades, `npm run diagnose`, 2026-10-22) for shadows PCF spreads to nothing.
-    s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest, texels: k.spec.levels?.least !== undefined || k.spec.levels?.small === true ? SMALL_CAST_TEXELS : 1 });
+    // Drawn in the colour pass to `colour`, into the cascades to `drawn`: what stands off the frame under them casts, and is not drawn there.
+    s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest, texels: castTexelsOf(k),
+      counts: { colour: () => (s.wasDrawn ? b.colour : 0), shadow: () => (s.wasDrawn ? b.drawn : 0) } });
     return mesh;
   };
 
@@ -639,6 +656,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       if (pack) {
         b.shown.fill(-1);
         b.drawn = 0;
+        b.colour = 0;
         for (const s of b.meshes) if (s.mesh) s.mesh.count = 0;
       } else at.set(b.at.subarray(0, Math.min(b.at.length, capacity)));
       b.at = at;
@@ -696,6 +714,14 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   /** Whether a mesh is drawn at all now: a kind with no far pictures (or none taken yet) leaves its cards out at the map zoom. */
   const drawnNow = (k: Kind, s: MeshState): boolean => s.mesh !== null && s.mesh.visible && !(s.spec.cards && mapMode === true && !k.pictured);
   const probe = new Sphere();
+  /** A node's sphere tested against the cascades' box (`keepBox`). */
+  const nodeProbe = new Sphere();
+  /** The box the sun's cascades cover (`KeptFrustum.keep`) at the cull in progress, or null: what casts is kept there off the frame too. */
+  let keepBox: Box3 | null = null;
+  /** The same box for the cull's `reconcile` (`keepBox` is the walk's alone): the changes under it kept apart from those past it (`addChangeBox`). */
+  let nearBox: Box3 | null = null;
+  /** Per kind: whether any of its meshes casts (`keepBox` keeps only those). */
+  const casts = kinds.map((k) => k.spec.meshes.some((s) => s.castShadow));
   let cullFrustum: Frustum | null = null;
   /** The view's numbers for a size on the screen: row 1's length times half the height (pixels a unit at w = 1), and row 3 (w). */
   let perUnitAtOne = 0, w0 = 0, w1 = 0, w2 = 0, w3 = 1, wReach = 0;
@@ -703,9 +729,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   /** The margin as the cull tests it: a thing's shadow falls from it away from the sun, `margin` along the ray at most, so its sphere is tested moved half that way and grown by half (it holds that ray, and lies within the margin's sphere round the thing); with no sun known, the margin round every way. */
   let reachX = 0, reachY = 0, reachZ = 0, reachR = margin;
 
-  /** Slot `i` of the kind drawn at `level` by the cull in progress (`NONE`: not drawn): a slot new to its level asked a position (`reconcile`). */
-  const mark = (k: Kind, i: number, level: number): void => {
-    k.want[i] = level;
+  /** Slot `i` of the kind drawn at `level` by the cull in progress (`NONE`: not drawn), `shade`: for the cascades alone; a slot new to its level asked a position (`reconcile`). */
+  const mark = (k: Kind, i: number, level: number, shade = false): void => {
+    k.want[i] = level === NONE || !shade ? level : level | SHADE;
     if (level === NONE) return;
     const b = k.levels[level === FAR ? 1 : 0];
     const radius = k.spheres[i * 4 + 3]!;
@@ -735,6 +761,10 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     let n = b.drawn;
     // The spheres of the slots that leave this level and of those that come: what the shadow stores must draw again (`castBoxes`), each in a box of its own joined to the ones it touches. A slot moved to another position draws the same thing: not a change of the picture.
     const spheres = k.spheres;
+    // The widest cascade texel the level's changes show in: its meshes cast only where its largest spans its texels (`makeMesh` castBySize).
+    // DO NOT give a bin's level swap to every cascade: the street furniture's swaps in a ring round the camera threw the near stores away
+    // for cascades the bins are not even drawn into (`tooBig` in 382 of 451 passes, `npm run diagnose`, 2026-10-22).
+    const reach = b.largest / castTexelsOf(k);
     const dirty = (i: number): void => {
       const o = i * 4, r = spheres[o + 3]!;
       if (!(r > -Infinity)) return;
@@ -742,12 +772,12 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       dirtyBox.max.set(spheres[o]! + r, spheres[o + 1]! + r, spheres[o + 2]! + r);
       for (const s of b.meshes) {
         const boxes = s.mesh?.userData['castBoxes'] as Box3[] | undefined;
-        if (boxes) addChangeBox(boxes, dirtyBox, s.mesh!.userData['castBoxPool'] as Box3[]);
+        if (boxes) addChangeBox(boxes, dirtyBox, s.mesh!.userData['castBoxPool'] as Box3[], LAYER_BOXES, nearBox, reach);
       }
     };
     for (let p = 0; p < n;) {
       const s = shown[p]!;
-      if (seen[s] === now && want[s] === id) { p++; continue; }
+      if (seen[s] === now && (want[s]! & LEVEL_BITS) === id) { p++; continue; }
       at[s] = -1;
       dirty(s);
       n--;
@@ -763,6 +793,20 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     const entering = b.entering.items;
     for (let e = 0, count = b.entering.length; e < count; e++) { const i = entering[e]!; if (at[i]! < 0) { put(k, b, i, n++); dirty(i); } }
     b.drawn = n;
+    // The colour's positions first, the cascades' alone after them: a slot crossing the frame's edge under a cascade moves between the two,
+    // not out of the level - nothing of the shadow changed, no box (`dirty`). DO NOT draw what is kept for the shadows in the colour pass:
+    // the small city's trees drawn went from 7 to 147 (the scene census, 2026-10-22).
+    // DO NOT read the positions through \`shown\` here: the level grown above (\`sizeLevel\`) has a new array of them.
+    const order = b.shown;
+    let lo = 0, hi = n - 1;
+    while (lo <= hi) {
+      if ((want[order[lo]!]! & SHADE) === 0) { lo++; continue; }
+      if ((want[order[hi]!]! & SHADE) !== 0) { hi--; continue; }
+      const a = order[lo]!, c = order[hi]!;
+      put(k, b, c, lo++);
+      put(k, b, a, hi--);
+    }
+    b.colour = lo;
     // A quarter of the buffers in use or less: shrunk to twice what is drawn, so they follow the view, not the most it ever held.
     if (b.capacity > MIN_CAPACITY && n * 4 < b.capacity) sizeLevel(k, b, Math.max(MIN_CAPACITY, n * 2), n);
     if (b.fresh) return;
@@ -805,7 +849,14 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     let inner = mask;
     if (mask !== 0) {
       inner = planeMask(cullFrustum!, node.x + reachX, node.y + reachY, node.z + reachZ, node.r + PAD + reachR, mask);
-      if (inner < 0) return;
+      if (inner < 0) {
+        // Off the frame but under a cascade: its casters kept, every slot tested (`keepBox`).
+        if (!keepBox) return;
+        nodeProbe.center.set(node.x, node.y, node.z);
+        nodeProbe.radius = node.r + PAD;
+        if (!keepBox.intersectsSphere(nodeProbe)) return;
+        inner = ALL_PLANES;
+      }
     }
     if (node.children) {
       for (const child of node.children) if (child) visit(child, inner);
@@ -828,15 +879,23 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         const r = sp[i * 4 + 3]!;
         if (r === -Infinity) continue;
         if (picks[i]! > stopAt) break;
+        let shade = false;
         if (inner !== 0) {
           // A cell across the view's edge: its slots one by one.
           probe.center.set(sp[i * 4]! + reachX, sp[i * 4 + 1]! + reachY, sp[i * 4 + 2]! + reachZ);
           probe.radius = r + reachR;
-          if (!cullFrustum!.intersectsSphere(probe)) continue;
+          if (!cullFrustum!.intersectsSphere(probe)) {
+            // Off the frame: kept while it stands under a cascade and its kind casts (`keepBox`).
+            if (!keepBox || !casts[k.index]) continue;
+            probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
+            probe.radius = r;
+            if (!keepBox.intersectsSphere(probe)) continue;
+            shade = true;
+          }
         }
         const prev = seen[i] === was ? lv[i]! : UNKNOWN;
         seen[i] = now;
-        if (!levels) { mark(k, i, NEAR); continue; }
+        if (!levels) { mark(k, i, NEAR, shade); continue; }
         const w = wOf(feet[i * 3]!, feet[i * 3 + 1]!, feet[i * 3 + 2]!);
         const across = sizes[i]! * (w > 1e-4 ? perUnitAtOne / w : Infinity);
         let level: number;
@@ -849,7 +908,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         } else level = NEAR;
         lv[i] = level;
         // A far picture past the share its size keeps is thinned out (the GPU grows the ones kept, `impostorThin`).
-        mark(k, i, level === FAR && picks[i]! > thinWant(across) + PICK_SLACK ? NONE : level);
+        mark(k, i, level === FAR && picks[i]! > thinWant(across) + PICK_SLACK ? NONE : level, shade);
       }
     }
   };
@@ -861,7 +920,8 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
    */
   const settleInScene = (s: MeshState): void => {
     const mesh = s.mesh!;
-    if (mesh.count === 0) {
+    // Kept while the cascades draw any of it (`colour` none, `drawn` some): three walks only what is in the scene.
+    if ((s.wasDrawn ? s.level.drawn : 0) === 0) {
       if (mesh.parent) { s.home = mesh.parent; mesh.parent.remove(mesh); }
     } else if (!mesh.parent && s.home) {
       s.home.add(mesh);
@@ -977,12 +1037,15 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       w0 = e[3]!; w1 = e[7]!; w2 = e[11]!; w3 = e[15]!;
       wReach = Math.hypot(w0, w1, w2);
       cullFrustum = frustum;
+      keepBox = (frustum as KeptFrustum).keep ?? null;
       if (shadowSun.known && margin > 0) {
         reachX = -shadowSun.x * margin / 2; reachY = -shadowSun.y * margin / 2; reachZ = -shadowSun.z * margin / 2;
         reachR = margin / 2;
       } else { reachX = reachY = reachZ = 0; reachR = margin; }
       for (const root of rootOrder) visit(root, ALL_PLANES);
       cullFrustum = null;
+      nearBox = keepBox;
+      keepBox = null;
       for (const k of kinds) {
         if (!k.active) continue;
         k.active = false;
@@ -990,9 +1053,10 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         k.levels.forEach((b, id) => { if (b.live && b.poses) reconcile(k, b, id === 0 ? NEAR : FAR); });
         for (const s of k.meshes) {
           s.wasDrawn = drawnNow(k, s);
-          if (s.mesh) { s.mesh.count = s.wasDrawn ? s.level.drawn : 0; settleInScene(s); }
+          if (s.mesh) { s.mesh.count = s.wasDrawn ? s.level.colour : 0; settleInScene(s); }
         }
       }
+      nearBox = null;
     },
     dispose() {
       for (const k of kinds) for (const s of k.meshes) { s.uncast?.(); s.uncast = null; }

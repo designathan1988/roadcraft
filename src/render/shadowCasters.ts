@@ -9,6 +9,8 @@ export interface SizedCaster {
   radius(): number;
   /** Texels its radius must span to cast (1 when none): a small thing's shadow narrower than that is a smudge PCF spreads away. */
   readonly texels?: number;
+  /** Its instances drawn in the colour pass and into the cascades, when they differ (`cellInstances.ts`: what stands off the frame under a cascade casts and is not drawn): `count` set to each for its passes. */
+  readonly counts?: { colour(): number; shadow(): number };
 }
 
 const casters = new Set<SizedCaster>();
@@ -27,8 +29,9 @@ export function castBySize(caster: SizedCaster): () => void {
 export function castCastersInto(texel: number | null): void {
   casterTexel.value = texel ?? 0;
   for (const c of casters) {
-    if (texel === null) { c.mesh.castShadow = c.casts; continue; }
     const instanced = c.mesh as InstancedMesh;
+    if (c.counts) instanced.count = texel === null ? c.counts.colour() : c.counts.shadow();
+    if (texel === null) { c.mesh.castShadow = c.casts; continue; }
     const holds = !instanced.isInstancedMesh || instanced.count > 0;
     c.mesh.castShadow = c.casts && holds && c.radius() >= texel * (c.texels ?? 1);
   }

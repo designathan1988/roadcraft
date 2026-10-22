@@ -581,6 +581,7 @@ export class SimClient implements JournalReader {
       const id = data[at + V.id]!;
       const parked = data[at + V.free] === 2;
       let view = parked ? this.parkedById.get(id) : this.vehicles.get(id);
+      const fresh = !view;
       if (!view) {
         view = newView(id);
         if (parked) this.addParked(view); else this.vehicles.set(id, view);
@@ -595,6 +596,7 @@ export class SimClient implements JournalReader {
         view.peopleAge = r.peopleAge;
       }
       const f = view.frames;
+      const wasX = f.x, wasY = f.y, wasAngle = f.angle, wasBx = f.bx, wasBy = f.by, wasBangle = f.bangle, wasSlain = view.slain, wasSeats = view.seats;
       setFrames(f, data[at + V.bx]!, data[at + V.by]!, data[at + V.bangle]!, data[at + V.x]!, data[at + V.y]!, data[at + V.angle]!);
       f.yawBefore = data[at + V.yawBefore]!; f.yawNow = data[at + V.yawNow]!; f.jump = data[at + V.jump] === 1;
       const lot = data[at + V.lot]!;
@@ -610,7 +612,9 @@ export class SimClient implements JournalReader {
       view.seats = data[at + V.seats]!;
       view.slain = data[at + V.slain] === 1;
       if (parked) {
-        this.parkedGrid.place(view);
+        // Filed again only when it came, moved or changed its look: DO NOT move its cell's version for a car standing as it stood - the
+        // agents' kept parked cells are made again whenever it moves (`agents.ts` cellRecord.version), every tick for every such car.
+        if (fresh || r || f.x !== wasX || f.y !== wasY || f.angle !== wasAngle || f.bx !== wasBx || f.by !== wasBy || f.bangle !== wasBangle || view.slain !== wasSlain || view.seats !== wasSeats) this.parkedGrid.place(view);
         if (f.bx !== f.x || f.by !== f.y) this.settling.add(view);
         continue;
       }
