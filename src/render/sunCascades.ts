@@ -110,6 +110,9 @@ export interface ShadowPassInput {
   readonly keep?: boolean;
   /** With `still` false: the world boxes holding every still caster that changed since the last pass (`renderer.ts` casterChanges, a few apart from each other) - each cascade's store is drawn again under them alone (`patched`), and stands untouched where they fall outside its square; null: a change with no box to tell, the stores thrown away as before. Absent: the stores thrown away. */
   readonly patch?: readonly Box3[] | null | undefined;
+  /** The town is shown (the curtain is down, `renderer.ts` reveal): a cascade drawn whole is kept as its store whatever the view does, the
+   *  frames after it scrolling and patching it. Absent: kept only as above (behind the curtain the town is hidden, and no store of it stands). */
+  readonly opened?: boolean;
 }
 
 export interface SunCascades {
@@ -808,7 +811,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       for (const k of Object.keys(stats.why) as (keyof typeof stats.why)[]) stats.why[k] = 0;
       return out;
     },
-    pass({ changed, effects, still = false, keep = false, patch }) {
+    pass({ changed, effects, still = false, keep = false, patch, opened = false }) {
       if (!enabled) return false;
       stats.passes++;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
@@ -861,10 +864,12 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           stats.whole[i]!++;
           if (refitted[i]) stats.why.refit++; else if (changed || wasCarried) stats.why.changed++; else if (effects) stats.why.effects++; else if (framesSince[i]! >= SAFETY_FRAMES) stats.why.safety++; else stats.why.noStore++;
           lights[i]!.shadow.needsUpdate = true;
-          // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame): the movers drawn in the same pass, no copy, no second pass over them.
+          // Kept whenever the town is shown (`opened`): the frames after it scroll and patch it. DO NOT draw it whole unkept in a move: the next
+          // frame's movers found no store and drew it whole again (`noStore`), a move's near cascade drawn whole at one pass in five, its
+          // scrolls and patches lost (`npm run diagnose`, 2026-10-22). A store costs a copy of the map, and the movers drawn over it.
           // Kept where the view stands (`keep`) as well: DO NOT draw the town whole twice for one change of a caster in a still view (once unkept, then again to keep it, the next frame): two cascade passes of 11 M triangles each for a signal head written again (2026-10-21).
           // Kept as well when what changed is known by its box: the next frames scroll and patch it rather than draw the town again.
-          whole[i] = renderer !== null && (still || keep || (patch !== undefined && patch !== null));
+          whole[i] = renderer !== null && (opened || still || keep || (patch !== undefined && patch !== null));
           patched[i] = null;
           // Drawn for safety alone: its turn kept; drawn with the others (a change, a refit, effects): its turn set apart from theirs.
           const safetyAlone = !refitted[i] && !changed && !wasCarried && !effects && framesSince[i]! >= SAFETY_FRAMES;

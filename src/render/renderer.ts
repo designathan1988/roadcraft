@@ -3790,7 +3790,7 @@ export function createSceneRenderer(
         shadowView.copy(rig.camera.matrixWorld);
         shadowProjection.copy(rig.camera.projectionMatrix);
         const patch = changes.any ? changes.boxes : undefined;
-        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still, keep: viewStill, patch })) {
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still, keep: viewStill, patch, opened: reveal.opened })) {
           renderer.shadowMap.needsUpdate = true;
         }
         shadowMoved = false;
