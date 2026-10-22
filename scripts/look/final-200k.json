@@ -1,0 +1,134 @@
+{
+  "storage": {
+    "roadcraft.quality": "ultra"
+  },
+  "viewport": [
+    1920,
+    1080
+  ],
+  "steps": [
+    {
+      "eval": "performance.clearMarks(); window.__cityAt = undefined; window.__roadcraft.generateCity({ seed: 7, size: 'large', radiusMetres: 7900 }); 'started'"
+    },
+    {
+      "until": "(() => { const e = performance.getEntriesByName('city:applied')[0]; if (e && window.__cityAt === undefined) window.__cityAt = e.startTime; return window.__cityAt !== undefined; })()",
+      "name": "city applied",
+      "timeout": 1800000,
+      "polling": 250
+    },
+    {
+      "until": "(() => { const at = window.__cityAt ?? 0; return performance.getEntriesByName('opening:shown').some((e) => e.startTime > at) || !window.__roadcraft.scene().opening; })()",
+      "name": "city shown",
+      "timeout": 900000,
+      "polling": 250
+    },
+    {
+      "until": "(() => { const c = document.getElementById('loading-curtain'); return !!c && getComputedStyle(c).display === 'none'; })()",
+      "name": "curtain gone",
+      "timeout": 600000,
+      "polling": 250
+    },
+    {
+      "press": "Começar a construir"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "eval": "window.__roadcraft.sim.setClock(720); window.__roadcraft.scene().setSkyMode('day'); window.__roadcraft.measure('running'); 1"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        0.12,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 10000
+    },
+    {
+      "shot": "map"
+    },
+    {
+      "record": "map"
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "recordEnd": true
+    },
+    {
+      "eval": "JSON.stringify({ stepMs: window.__roadcraft.sim.stats?.stepMs ?? null, lastStepMs: window.__roadcraft.sim.lastStepMs ?? null, vehicles: window.__roadcraft.sim.vehicles?.size ?? null })"
+    },
+    {
+      "memory": "exact"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 10000
+    },
+    {
+      "shot": "district"
+    },
+    {
+      "record": "district"
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "recordEnd": true
+    },
+    {
+      "eval": "JSON.stringify({ stepMs: window.__roadcraft.sim.stats?.stepMs ?? null, lastStepMs: window.__roadcraft.sim.lastStepMs ?? null, vehicles: window.__roadcraft.sim.vehicles?.size ?? null })"
+    },
+    {
+      "memory": "exact"
+    },
+    {
+      "setView": [
+        150,
+        0,
+        5,
+        20,
+        35
+      ]
+    },
+    {
+      "wait": 10000
+    },
+    {
+      "shot": "street"
+    },
+    {
+      "record": "street"
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "recordEnd": true
+    },
+    {
+      "eval": "JSON.stringify({ stepMs: window.__roadcraft.sim.stats?.stepMs ?? null, lastStepMs: window.__roadcraft.sim.lastStepMs ?? null, vehicles: window.__roadcraft.sim.vehicles?.size ?? null })"
+    },
+    {
+      "memory": "exact"
+    },
+    {
+      "eval": "window.__roadcraft.measure(false); 1"
+    }
+  ]
+}
