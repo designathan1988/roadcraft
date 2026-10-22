@@ -9,7 +9,7 @@ import type { NodeId, SegmentId } from '../ids';
 import type { PolylineCache } from '../geometry';
 import { Level, type SurfaceLevel } from '../roadTypes';
 import { type Leg, buildLegs, mouthLeft, mouthRight } from './legs';
-import { type Corner, computeCorners } from './corners';
+import { type Corner, computeCorners, cornerOf } from './corners';
 import { transitionRing } from './transition';
 import { legTongue, nodeCap, nodeCentre } from './polygon';
 import type { Junction } from './build';
@@ -124,7 +124,7 @@ export function deriveJunctionLevel(
       });
       mode = c.mode;
     }
-    corners.push({ i, j, mode, x, psi: c.psi, fillet, trimI: c.trimI, trimJ: c.trimJ });
+    corners.push(cornerOf({ i, j, mode, x, psi: c.psi, fillet, trimI: c.trimI, trimJ: c.trimJ }));
   }
 
   // The outline: each mouth one straight cut, each corner its shape.
