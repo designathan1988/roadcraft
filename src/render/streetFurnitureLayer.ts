@@ -96,15 +96,18 @@ export function furnitureStores(kit: SceneryKit, pictures: SceneryPictures): Run
    *  pictures are (`plantImpostors.ts` thinWant) - a lamp's glow and its pools are seen from afar, never small.
    *  DO NOT draw a bin of 250 triangles a few pixels across: at the district's view the small props drew ~3.5 M triangles, scene and shadows
    *  (`npm run diagnose`, 2026-10-22). */
-  const prop = (name: string, geometry: RunStore['geometry'], material: RunStore['material'], castShadow = true, receiveShadow = true, renderOrder?: number, small = false): RunStore =>
+  /** `far`: the prop's own far model in place of its box (a lamp, whose box would be a block nine metres tall). */
+  const prop = (name: string, geometry: RunStore['geometry'], material: RunStore['material'], castShadow = true, receiveShadow = true, renderOrder?: number, small = false,
+    far?: RunStore['geometry']): RunStore =>
     ({ name, geometry, material, castShadow, receiveShadow, ...(renderOrder !== undefined ? { renderOrder } : {}), tinted: false, cards: false,
       ...(small ? {
         levels: { reach: radiusOf(geometry), far: PROP_FAR_PX, small: true },
-        with: [{ name: `${name}-far`, geometry: farBox(geometry), material, castShadow, receiveShadow, cards: false, far: true }],
+        with: [{ name: `${name}-far`, geometry: far ?? farBox(geometry), material, castShadow, receiveShadow, cards: false, far: true }],
       } : {}) });
   const f = kit.furniture;
   const stores: RunStore[] = [
-    prop('street-lights', f.lamp, kit.props),
+    // A column a dozen pixels tall drawn with its coarse model (`lampFarGeometry`).
+    prop('street-lights', f.lamp, kit.props, true, true, undefined, true, kit.lampFar),
     // The lens is lit from inside; it neither casts nor takes a shadow.
     prop('street-light-lamps', kit.lampLens, kit.posedGlow, false),
     prop('street-light-pools', kit.pool, kit.posedPoolGlow, false, false, 3),

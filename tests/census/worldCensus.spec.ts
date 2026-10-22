@@ -42,7 +42,7 @@ describe('world census', () => {
         "buildings": 1348,
         "gardenPlants": 18052,
         "layerMeshes": 253,
-        "layerTriangles": 2126075,
+        "layerTriangles": 1788913,
         "lots": 1348,
         "plantedTrees": 663,
         "segments": 294,

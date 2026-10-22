@@ -34,6 +34,7 @@ import {
   bushParts,
   grassTuftGeometry,
   hydrantGeometry,
+  lampFarGeometry,
   lampGeometry,
   lampLensGeometry,
   postboxGeometry,
@@ -138,6 +139,8 @@ export interface SceneryKit {
   readonly shrubCardsDepth: MeshDepthMaterial;
   readonly furniture: Record<Exclude<FurnitureKind, 'streetTree' | 'shrub'>, BufferGeometry>;
   readonly lampLens: BufferGeometry;
+  /** The lighting column drawn a dozen pixels tall or less (`lampFarGeometry`). */
+  readonly lampFar: BufferGeometry;
   readonly treePit: BufferGeometry;
   readonly tuft: BufferGeometry;
   readonly flower: BufferGeometry;
@@ -190,6 +193,7 @@ export function createSceneryKit(): SceneryKit {
     drain: drainGeometry(),
   };
   const lampLens = lampLensGeometry();
+  const lampFar = lampFarGeometry();
   lampLens.computeBoundingBox();
   const lensBox = lampLens.boundingBox!;
   const lens = { reach: (lensBox.min.x + lensBox.max.x) / 2, height: (lensBox.min.y + lensBox.max.y) / 2 };
@@ -247,6 +251,7 @@ export function createSceneryKit(): SceneryKit {
     ...Object.values(cards) as BufferGeometry[],
     ...Object.values(furniture),
     lampLens,
+    lampFar,
     treePit,
     tuft,
     flower,
@@ -265,6 +270,7 @@ export function createSceneryKit(): SceneryKit {
     shrubCardsDepth: shrubCardKit.depth,
     furniture,
     lampLens,
+    lampFar,
     treePit,
     tuft,
     flower,

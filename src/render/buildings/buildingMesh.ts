@@ -1657,8 +1657,18 @@ function emitBay(
   // No two rows alike: some rooms darker, some with the roller shutter part way down - picked from the bay, so stable.
   const pick = bay.component === 'sashWindow' ? 13 : bayHash(bay) % 20;
   const sash = bay.component === 'window' || bay.component === 'sashWindow';
-  // A plain window (no shutter in its recess, nothing else in it): its wall one face and its pane on it, the pane drawing the recess (`glazedRecessed`).
-  const flush = !e.flat && recess <= 0 && o.h0 > 1e-6 && (bay.component === 'wideWindow' || (sash && !(pick >= 9 && pick < 13)));
+  // An opening with nothing in its recess but its glass and frame (what else it has stands on the wall or out of it: a balcony's slab and
+  // railing, an awning, fins, folded shutters, a sill): its wall one face and its pane on it, the pane drawing the recess (`glazedRecessed`).
+  // Not one with a roller shutter or a transom inside, a door, or an opening down to the floor (its threshold is a step of its own).
+  const clear = (sash && !(pick >= 9 && pick < 13)) || bay.component === 'wideWindow' || bay.component === 'balcony' || bay.component === 'shopfront'
+    || bay.component === 'brise' || bay.component === 'shutteredWindow' || bay.component === 'gourmet'
+    || ((bay.component === 'frenchWindow' || bay.component === 'bayWindow' || bay.component === 'ribbon') && found.h1 - found.h0 <= m(2.2));
+  const flush = !e.flat && recess <= 0 && o.h0 > 1e-6 && clear;
+  /** The opening's pane: laid on the wall's face where the opening is clear (`flush`), else at its glass. */
+  const glaze = (kind: 'glass' | 'glassDark', thickness: number): void => {
+    if (flush) e.glazedRecessed(kind, f, am, hm, o.depth, w, h, thickness, tc);
+    else e.glazed(kind, f, am, hm, o.depth, w, h, thickness, tc);
+  };
   if (flush) e.rect(f, 0, W, 0, H, 0, out, wall);
   // The wall around the hole, then the four reveals into it (a flattened bay's wall is its run's, `emitFacadeRuns`).
   if (!e.flat && !flush) {
@@ -1682,8 +1692,7 @@ function emitBay(
   switch (bay.component) {
     case 'window':
     case 'sashWindow': {
-      if (flush) e.glazedRecessed(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
-      else e.glazed(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
+      glaze(pick < 5 ? 'glassDark' : 'glass', m(0.06));
       // The shutter a little inside the frame's edges: as wide as it, its sides lay in the frame's own and fought it for depth.
       if (pick >= 9 && pick < 13) {
         const down = h * (0.25 + (pick - 9) * 0.15) - PART_INSET;
@@ -1695,11 +1704,10 @@ function emitBay(
       break;
     }
     case 'wideWindow':
-      if (flush) e.glazedRecessed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
-      else e.glazed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
+      glaze('glass', m(0.05));
       break;
     case 'balcony':
-      e.glazed('glass', f, am, hm, o.depth, w, h, m(0.06), tc);
+      glaze('glass', m(0.06));
       e.put('concrete', f, W / 2, -m(0.09), -m(0.65), W - m(0.3), m(0.18), m(1.3));
       e.put('railing', f, W / 2, 0, 0, W - m(0.3), m(1.05), m(1.3), tc);
       break;
@@ -1716,7 +1724,7 @@ function emitBay(
       }
       break;
     case 'shopfront':
-      e.glazed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
+      glaze('glass', m(0.05));
       e.put('awning', f, W / 2, o.h1 + m(0.45), 0, W - m(0.2), m(0.75), m(1.3), awning);
       break;
     case 'loadingDoor':
@@ -1753,14 +1761,14 @@ function emitBay(
       break;
     }
     case 'brise': {
-      e.glazed(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.05), tc);
+      glaze(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', m(0.05));
       // Vertical fins the storey's height, standing out of the wall: the brise-soleil of the Brazilian modern block
       const fd = m(0.6);
       e.put('brise', f, W / 2, H / 2, -fd / 2, W, H, fd, tc);
       break;
     }
     case 'shutteredWindow': {
-      e.glazed(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
+      glaze(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', m(0.06));
       // A moulded surround in the trim, then the louvred leaves folded back on the wall either side, in the shutter paint
       const band = m(0.14);
       e.put('fin', f, am, o.h1 + band / 2, -m(0.03), w + band * 2, band, m(0.06), tc);
@@ -1772,7 +1780,7 @@ function emitBay(
     }
     case 'gourmet': {
       // Sliding glass the bay's width, and the deep balcony: its slab, a glass parapet along its front edge.
-      e.glazed(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.05), tc);
+      glaze(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', m(0.05));
       const slab = slabColour(wall);
       // Where the run of balconies ends, the side wall that carries the slabs storey on storey and closes the balcony
       const closedLeft = left !== 'gourmet', closedRight = right !== 'gourmet';
@@ -1793,7 +1801,7 @@ function emitBay(
     case 'frenchWindow':
     case 'bayWindow':
     case 'ribbon': {
-      e.glazed(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
+      glaze(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', m(0.06));
       // A transom across a tall pane, and a sill under the raised ones.
       if (h > m(2.2)) e.put('frame', f, am, o.h0 + h * 0.72, o.depth - m(0.03), w, m(0.08), m(0.07), tc);
       if (o.h0 > m(0.3)) {

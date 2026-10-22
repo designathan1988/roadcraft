@@ -262,6 +262,26 @@ export function lampGeometry(): BufferGeometry {
   ]);
 }
 
+/** The lighting column a dozen pixels tall or less (`streetFurnitureLayer.ts` far level): its column a four-sided prism as wide as the round one
+ *  on average (a polygon's mean width is its perimeter over pi), the plinth's collar and the cap left out (centimetres there), the arm and the
+ *  housing as they are. 28 triangles where the column drew 132. */
+export function lampFarGeometry(): BufferGeometry {
+  const armY = LAMP_HEIGHT - m(0.12);
+  const rise = 0.1;
+  const widen = Math.PI / (4 * Math.sin(Math.PI / 4));
+  return merge([
+    part(cylinderWith(m(0.07) * widen, m(0.19) * widen, LAMP_HEIGHT, 4, { top: true, bottom: false }), LAMP_METAL, { at: [0, LAMP_HEIGHT / 2, 0] }),
+    part(boxWithout(LAMP_OUTREACH, m(0.08), m(0.08), ['px', 'nx']), LAMP_METAL, {
+      at: [LAMP_OUTREACH / 2, armY + Math.sin(rise) * (LAMP_OUTREACH / 2), 0],
+      rotate: [0, 0, rise],
+    }),
+    part(new BoxGeometry(m(0.78), m(0.14), m(0.38)), rgb(0xa9b0ad), {
+      at: [LAMP_OUTREACH, armY + Math.sin(rise) * LAMP_OUTREACH - m(0.02), 0],
+      rotate: [0, 0, rise * 0.4],
+    }),
+  ]);
+}
+
 /** The lamp's lens, in the lamp's own frame, for the unlit glow material. */
 export function lampLensGeometry(): BufferGeometry {
   const armY = LAMP_HEIGHT - m(0.12);

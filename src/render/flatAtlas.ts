@@ -131,7 +131,8 @@ export function createFlatFar(slots: number): FlatFar {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array(slots * FAR_VERTS * 3), 3));
   geometry.setAttribute('normal', new BufferAttribute(new Float32Array(slots * FAR_VERTS * 3), 3));
-  geometry.setIndex(new BufferAttribute(new Uint32Array(slots * FAR_INDICES), 1));
+  // Half the index's bytes where every slot's corners fit 16 bits (three uploads a Uint16Array index as UNSIGNED_SHORT).
+  geometry.setIndex(new BufferAttribute(slots * FAR_VERTS <= 0x10000 ? new Uint16Array(slots * FAR_INDICES) : new Uint32Array(slots * FAR_INDICES), 1));
   geometry.setDrawRange(0, 0);
   return { geometry, slots };
 }
@@ -191,7 +192,7 @@ export interface FarPatchDrawn { readonly slot: number; readonly rim: readonly [
 /** Writes into the far ground's index the patches given (the far plates not drawn in full); returns how many indices. */
 export function farIndexInto(far: FlatFar, patches: Iterable<FarPatchDrawn>): number {
   const index = far.geometry.getIndex()!;
-  const all = index.array as Uint32Array;
+  const all = index.array as Uint16Array | Uint32Array;
   let w = 0;
   for (const { slot, rim, quadsX = FAR_QUADS, quadsY = FAR_QUADS } of patches) {
     const first = slot * FAR_VERTS;
