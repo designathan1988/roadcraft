@@ -2557,6 +2557,11 @@ export class RoadDoc {
     return this.serialized(true);
   }
 
+  /** `toJSON` with the buildings' list empty in its place, as a city's data goes with its buildings' table apart (`editor/preparedCity.ts`): DO NOT read every record to throw the list away (a city grown off the page holds its buildings in a table, `editor/smallCityMap.ts` buildCityTable). */
+  toJSONBuildingsApart(): SerializedDoc {
+    return this.serialized('apart');
+  }
+
   /** The map as an image (`docBinary.ts`): each part's JSON on its own (a long list in runs), the buildings as their table and what was written over it - no text of the whole map, the table shared, never copied. */
   image(): DocImage {
     return imageOf(this.serialized(false), this.buildings.sections());
@@ -2627,8 +2632,8 @@ export class RoadDoc {
     if (Number.isInteger(buildings) && buildings! > this.buildings.nextId) this.buildings.restoreNextId(buildings!);
   }
 
-  /** `toJSON`, the buildings left out when `withBuildings` is false (`clone` shares them). */
-  private serialized(withBuildings: boolean, withRecords = true): SerializedDoc {
+  /** `toJSON`, the buildings left out when `withBuildings` is false (`clone` shares them); 'apart': their list written empty, in its place (their table goes apart, `toJSONBuildingsApart`). */
+  private serialized(withBuildings: boolean | 'apart', withRecords = true): SerializedDoc {
     return {
       version: 1,
       unit: METERS_PER_UNIT,
@@ -2652,7 +2657,7 @@ export class RoadDoc {
       // Only when there are any, so a map without them serialises as before.
       ...(withRecords && this.barriers.size > 0 ? { barriers: inIdOrder(this.barriers.values()).map(savedBarrier) } : {}),
       // Only when there are any, so a map without buildings serialises exactly as it did before buildings existed.
-      ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
+      ...(withBuildings && this.buildings.size > 0 ? { buildings: withBuildings === 'apart' ? [] : this.buildings.toJSON() } : {}),
       ...this.worldPart('zones'),
       ...(withRecords && (this.lotStore.size > 0 || this.lotStore.keys.length > 0) ? {
         lots: this.lotStore.toJSON(),

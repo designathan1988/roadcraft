@@ -1,9 +1,8 @@
 import type { SerializedDoc } from '@world/doc';
-import { buildLargeCityMap, buildSmallCityMap } from './editor/smallCityMap';
-import { prepareCity } from './editor/preparedCity';
+import { buildCityTableOf } from './editor/smallCityMap';
 import type { JobScope } from './jobs/jobScope';
 
-/** THE CITY MADE OFF THE PAGE (`main.ts` `cityData`): the game's own generator (`buildCityMap`) building a whole finite city in a job worker, so the page is not frozen for its seconds. */
+/** THE CITY MADE OFF THE PAGE (`main.ts` `cityData`): the game's own generator (`buildCityTable`) building a whole finite city in a job worker, so the page is not frozen for its seconds. */
 
 export interface CityGenAsk {
   readonly id: number;
@@ -14,15 +13,17 @@ export interface CityGenAsk {
   readonly radius?: number;
 }
 
-/** `buildings`: the city's buildings as one shared table (`prepareCity`), its `data` holding none: the page reads them from it (`preparedCity`). */
+/** `buildings`: the city's buildings as one table (`buildCityTable`, as `prepareCity` makes it), its `data` holding none: the page reads them from it (`preparedCity`). */
 export type CityGenReply = { readonly id: number; readonly data?: SerializedDoc; readonly buildings?: ArrayBufferLike; readonly error?: string };
 
 export function serve(scope: JobScope): void {
   scope.onmessage = (event: MessageEvent<CityGenAsk>) => {
     const ask = event.data;
     try {
-      const { data, buildings } = prepareCity(ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7, ask.radius) : buildSmallCityMap(ask.seed ?? 7));
-      scope.postMessage({ id: ask.id, data, buildings } satisfies CityGenReply);
+      // DO NOT grow the whole city as objects and prepare it after (`prepareCity`): `buildCityTable` spills its buildings into tables as they grow.
+      const { data, buildings } = buildCityTableOf(ask.kind, ask.seed ?? 7, ask.radius);
+      // The table moved, not copied, where it is a plain buffer (in shared memory it is posted as a handle, MDN "SharedArrayBuffer").
+      scope.postMessage({ id: ask.id, data, buildings } satisfies CityGenReply, buildings instanceof ArrayBuffer ? [buildings] : []);
     } catch (error) {
       scope.postMessage({ id: ask.id, error: String((error as Error)?.stack ?? error) } satisfies CityGenReply);
     }

@@ -154,6 +154,11 @@ export function planLots(doc: RoadDoc, net: Network): LotPlan {
   return planner.update();
 }
 
+/** A network's planner let go (`planLots` makes it again when asked): a city generated once (`editor/smallCityMap.ts`), whose land is planned once while its network lives on for the growth - its rasters and blocks held for nothing (17 MB of the city of 25,000 buildings, 2026-10-22). */
+export function forgetLotPlans(net: Network): void {
+  planners.delete(net);
+}
+
 /** The work of the lots' plans: raster tiles made, land cells flooded, blocks and streets planned. A count for the scale specs. */
 export const lotPlanWork = { tiles: 0, cells: 0, planned: 0 };
 
