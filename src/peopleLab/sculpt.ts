@@ -3,6 +3,7 @@ import {
   type Camera, type Intersection,
 } from 'three';
 import { fitProxy, type ProxyPack, type ProxyTexture } from '@people/body/proxy';
+import { GroomBody } from './groom';
 
 /** THE HAIR SCULPTOR: a solid hairstyle shaped with brushes on the person's own head; kept as moves of the item's offsets, so it fits any body */
 
@@ -100,12 +101,17 @@ export class HairSculptor {
   mirror = true;
   /** The skull, for shortening towards it. */
   private readonly skull = new Vector3();
+  /** The body every stroke stays out of (`GroomBody.collide`): hair off the skin, round the ears and off the face; a garment off the skin. */
+  private readonly surface: GroomBody;
 
   constructor(private readonly pack: ProxyPack, body: SculptBody, start: Float32Array | null, colour: number, skinColour: number, texture: ProxyTexture | null = null) {
     const lowest = (() => { let y = Infinity; for (let i = 1; i < body.positions.length; i += 3) y = Math.min(y, body.positions[i]!); return y; })();
     this.group.scale.setScalar(DM);
     this.group.position.y = -lowest * DM;
     this.fitted = fitProxy(pack, body.positions);
+    const skinVerts = new Set<number>();
+    for (let f = 0; f < body.faceGroup.length; f++) if (body.faceGroup[f] === body.skinGroup) for (let k = 0; k < 4; k++) skinVerts.add(body.faces[f * 4 + k]!);
+    this.surface = new GroomBody(body.positions, [...skinVerts], body.faces, body.faceGroup, body.skinGroup);
     this.scales = axisScales(pack, body.positions);
     this.work = new Float32Array(this.fitted);
     if (start) for (let v = 0; v < this.work.length; v++) this.work[v] = this.work[v]! + start[v]! * this.scales[v % 3]!;
@@ -234,13 +240,20 @@ export class HairSculptor {
   private static readonly MAX_MOVE = 2.5;
 
   private refresh(): void {
+    const hair = this.pack.kind === 'hair';
     for (let v = 0; v < this.weld.length; v++) {
       const dx = this.work[v * 3]! - this.fitted[v * 3]!, dy = this.work[v * 3 + 1]! - this.fitted[v * 3 + 1]!, dz = this.work[v * 3 + 2]! - this.fitted[v * 3 + 2]!;
       const d = Math.hypot(dx, dy, dz);
+      if (d < 1e-6) continue;
       if (d > HairSculptor.MAX_MOVE) {
         const k = HairSculptor.MAX_MOVE / d;
         this.work[v * 3] = this.fitted[v * 3]! + dx * k; this.work[v * 3 + 1] = this.fitted[v * 3 + 1]! + dy * k; this.work[v * 3 + 2] = this.fitted[v * 3 + 2]! + dz * k;
       }
+      // Never through the body: a moved vertex kept out of the skin (hair also round the ears and off the face).
+      const margin = hair ? 0.05 : 0.03;
+      this.surface.collide(this.work, v * 3, margin, hair);
+      // The ears' dome and the face's clearing move it sideways after the skin's push: pushed out again where it now is.
+      for (let k = 0; k < 2; k++) this.surface.collide(this.work, v * 3, margin, false);
     }
     // Welded copies share one place, so seams never open.
     for (let v = 0; v < this.weld.length; v++) {
