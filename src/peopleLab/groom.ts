@@ -1,7 +1,7 @@
 import { nearestThree } from '@people/hair/procedural';
 import type { ProxyPack } from '@people/body/proxy';
 import { MeshStandardMaterial } from 'three';
-import { HairVolume } from './hairVolume';
+import { FLAT, HairVolume, type Cap } from './hairVolume';
 
 /** A GROOM: hair made of guide strands, as the grooming tools build it (Blender's hair curves, XGen and Ornatrix guides).
  *  Each guide grows from a scalp vertex as a chain of points a fixed length apart; it is drawn as a clump (a tapered, flattened tube, the solid
@@ -26,6 +26,10 @@ export interface Guide {
   /** Its curtain: the ring round the head it was planted in (0 at the crown), and its angle round the head (0 at the brow); -1 when planted by hand. */
   row: number;
   theta: number;
+  /** How near the hairline it grows (1 on it, 0 a few centimetres in): there the clump starts fine and flat on the skin, a thin edge as on real hair. */
+  edge?: number;
+  /** Cut straight across (a blunt end, as a bob is cut), not tapering to a point. */
+  blunt?: boolean;
 }
 
 export interface Tie { x: number; y: number; z: number; radius: number }
@@ -90,12 +94,24 @@ export class GroomBody {
     });
     // The face: from the brow (the hairline's front, a little lower) to the chin, as wide as the head less the temples, its front the skull's middle.
     const inScalp = new Set(this.scalp);
+    const border = new Set<number>();
     for (let f = 0; f < faceGroup.length; f++) {
       if (faceGroup[f] !== skinGroup) continue;
       const q = [faces[f * 4]!, faces[f * 4 + 1]!, faces[f * 4 + 2]!, faces[f * 4 + 3]!];
-      if (!q.every((v) => inScalp.has(v))) continue;
+      if (!q.every((v) => inScalp.has(v))) {
+        for (const v of q) if (inScalp.has(v)) border.add(v);
+        continue;
+      }
       this.capTris.push(q[0]!, q[1]!, q[2]!);
       if (q[3] !== q[2]) this.capTris.push(q[0]!, q[2]!, q[3]!);
+    }
+    // Each scalp vertex's nearness to the hairline (the scalp's border), over 3 cm.
+    const rim = [...border];
+    for (const v of this.scalp) {
+      let best = Infinity;
+      for (const b of rim) best = Math.min(best, (P[v * 3]! - P[b * 3]!) ** 2 + (P[v * 3 + 1]! - P[b * 3 + 1]!) ** 2 + (P[v * 3 + 2]! - P[b * 3 + 2]!) ** 2);
+      const e = 1 - Math.sqrt(best) / 0.3;
+      if (e > 0) this.edges.set(v, e);
     }
     // The skull's middle from the head's box (the mean of the skin was pulled forward by the face's dense vertices).
     this.skull = [mid[0]!, top - 1.0, mid[2]!];
@@ -103,6 +119,25 @@ export class GroomBody {
     // Hair lies on the head down to the ears' middle; below it hangs free.
     this.hugFloor = mid[1]! - ry * 0.55;
   }
+
+  /** The hair's cap over the scalp (`hairVolume.ts`): a point just off the skin at every scalp vertex where hair grows (a guide's root within 2.5 cm),
+   *  finer towards the hairline. */
+  cap(guides: readonly Guide[]): Cap {
+    const P = this.positions, N = this.normals;
+    const roots = guides.map((g) => g.root);
+    const grown = this.scalp.filter((v) => roots.some((r) => (P[r * 3]! - P[v * 3]!) ** 2 + (P[r * 3 + 1]! - P[v * 3 + 1]!) ** 2 + (P[r * 3 + 2]! - P[v * 3 + 2]!) ** 2 < 0.0625));
+    const points = new Float32Array(grown.length * 3), radius = new Float32Array(grown.length);
+    grown.forEach((v, i) => {
+      const e = this.edges.get(v) ?? 0;
+      for (let a = 0; a < 3; a++) points[i * 3 + a] = P[v * 3 + a]! + N[v * 3 + a]! * 0.02;
+      // Its surface about level with the hair lying over it (`groomMargin` plus a lock's depth), thinner at the hairline.
+      radius[i] = 0.17 * (1 - 0.4 * e);
+    });
+    return { points, radius };
+  }
+
+  /** Scalp vertices near the hairline: how near (1 on it). */
+  readonly edges = new Map<number, number>();
 
   /** Down to here (dm) hair lies combed on the head; below it hangs. */
   hugFloor = 0;
@@ -114,6 +149,22 @@ export class GroomBody {
 
   /** The face's box (dm): hair kept out of it, round to the sides, as hair is worn off the face. Set from the skull and the hairline. */
   face = { x: 0, half: 0.7, front: 0, top: 0, bottom: 0 };
+
+  /** The skin vertex nearest a point, within a cell or so of the grid (-1 when none). */
+  nearest(x: number, y: number, z: number): number {
+    const P = this.positions, c = GroomBody.CELL;
+    const cx = Math.floor(x / c), cy = Math.floor(y / c), cz = Math.floor(z / c);
+    let best = -1, bestD = Infinity;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const list = this.grid.get(((cx + dx + 512) * 1024 + (cy + dy + 512)) * 1024 + (cz + dz + 512));
+      if (!list) continue;
+      for (const v of list) {
+        const d = (P[v * 3]! - x) ** 2 + (P[v * 3 + 1]! - y) ** 2 + (P[v * 3 + 2]! - z) ** 2;
+        if (d < bestD) { bestD = d; best = v; }
+      }
+    }
+    return best;
+  }
 
   /** A point in front of the face moved out to its side (unless above the brow, where a fringe may lie). */
   private clearFace(p: Float32Array, i: number, margin: number, side: number): void {
@@ -134,18 +185,9 @@ export class GroomBody {
   /** The point pushed out of the body to `margin` above the skin (the nearest skin vertex's tangent plane, as a signed distance near the surface). */
   /** With `hug`, a point near the head above `hugFloor` is also drawn in to `margin`: hair lies on the skull, it does not stand off it. */
   collide(p: Float32Array, i: number, margin: number, face = true, hug = false, side = 0): void {
-    const P = this.positions, N = this.normals, c = GroomBody.CELL;
+    const P = this.positions, N = this.normals;
     const x = p[i]!, y = p[i + 1]!, z = p[i + 2]!;
-    const cx = Math.floor(x / c), cy = Math.floor(y / c), cz = Math.floor(z / c);
-    let best = -1, bestD = Infinity;
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
-      const list = this.grid.get(((cx + dx + 512) * 1024 + (cy + dy + 512)) * 1024 + (cz + dz + 512));
-      if (!list) continue;
-      for (const v of list) {
-        const d = (P[v * 3]! - x) ** 2 + (P[v * 3 + 1]! - y) ** 2 + (P[v * 3 + 2]! - z) ** 2;
-        if (d < bestD) { bestD = d; best = v; }
-      }
-    }
+    const best = this.nearest(x, y, z);
     if (best >= 0) {
       const d = (x - P[best * 3]!) * N[best * 3]! + (y - P[best * 3 + 1]!) * N[best * 3 + 1]! + (z - P[best * 3 + 2]!) * N[best * 3 + 2]!;
       // Drawn onto the head only off the face: never down onto the brow or the eyes.
@@ -178,35 +220,47 @@ export function plant(body: GroomBody, root: number, length: number, radius: num
   const seg = length / (points - 1);
   const pts = new Float32Array(points * 3);
   const o = [P[root * 3]! + N[root * 3]! * 0.04, P[root * 3 + 1]! + N[root * 3 + 1]! * 0.04, P[root * 3 + 2]! + N[root * 3 + 2]! * 0.04];
-  // Combed from a centre parting: to the left or right of it, down and a little back, along the scalp, lifted a little off it.
-  const n = [N[root * 3]!, N[root * 3 + 1]!, N[root * 3 + 2]!];
+  // Combed from a centre parting: to the left or right of it, down and a little back, along the scalp.
   const side = Math.sign(o[0]! - body.skull[0]) || 1;
-  // The front of the head combed to the sides along the forehead, off the face (a centre parting framing it).
+  // From the centre parting to the sides: across the top of the forehead (not along its edge) and down in front of the ears, framing the face.
   const front = Math.max(0, Math.min(1, (o[2]! - body.skull[2]) / 0.8));
-  let fx = side * (0.8 + 0.6 * front), fy = -0.6 + 0.3 * front, fz = -0.45 - 0.3 * front;
-  const along = fx * n[0]! + fy * n[1]! + fz * n[2]!;
-  fx -= n[0]! * along; fy -= n[1]! * along; fz -= n[2]! * along;
-  const fl = Math.hypot(fx, fy, fz) || 1;
-  // Lying on the head, lifted only a little: hair falls from the crown, it does not stand off it.
-  let d = [fx / fl, fy / fl - 0.1, fz / fl];
-  const dl = Math.hypot(d[0]!, d[1]!, d[2]!) || 1;
-  d = [d[0]! / dl, d[1]! / dl, d[2]! / dl];
+  // The parting runs from the brow to the crown; behind the crown hair falls straight down the back, not away from a line.
+  const parted = Math.max(0, Math.min(1, (o[2]! - body.skull[2] + 0.4) / 0.5));
+  const comb = [side * 0.9 * parted, 0, -0.25 - 0.35 * front];
+  let d = [0, -1, 0];
   for (let i = 0; i < points; i++) {
     pts[i * 3] = o[0]!; pts[i * 3 + 1] = o[1]!; pts[i * 3 + 2] = o[2]!;
-    o[0] = o[0]! + d[0]! * seg; o[1] = o[1]! + d[1]! * seg; o[2] = o[2]! + d[2]! * seg;
-    // Bending down: each segment a little more towards gravity.
-    d = [d[0]! * 0.86, d[1]! * 0.86 - 0.18, d[2]! * 0.86];
+    // On the head: along the comb's direction laid on the skin there (the whole lock combed one way, as a brush leaves it);
+    // off it: bending a little more towards gravity each segment.
+    const v = o[1]! > body.hugFloor ? body.nearest(o[0]!, o[1]!, o[2]!) : -1;
+    if (v >= 0) {
+      const m = [N[v * 3]!, N[v * 3 + 1]!, N[v * 3 + 2]!];
+      // On the top and the forehead combed from the parting (in front of the skull's middle a little up: down there is down the forehead);
+      // on the sides and the back of the head falling straight down - in front of the ears, framing the face, not swept behind them.
+      const up = -0.6 + 0.85 * Math.max(0, Math.min(1, (o[2]! - body.skull[2]) / 0.8));
+      const w = Math.max(0, Math.min(1, (m[1]! + Math.max(0, m[2]!) - 0.3) / 0.5));
+      const want = [comb[0]! * w, up * w - (1 - w), comb[2]! * w - 0.15 * (1 - w)];
+      const a = want[0]! * m[0]! + want[1]! * m[1]! + want[2]! * m[2]!;
+      d = [want[0]! - m[0]! * a, want[1]! - m[1]! * a, want[2]! - m[2]! * a];
+    } else d = [d[0]! * 0.86, d[1]! * 0.86 - 0.18, d[2]! * 0.86];
     const l = Math.hypot(d[0]!, d[1]!, d[2]!) || 1;
     d = [d[0]! / l, d[1]! / l, d[2]! / l];
+    o[0] = o[0]! + d[0]! * seg; o[1] = o[1]! + d[1]! * seg; o[2] = o[2]! + d[2]! * seg;
   }
-  const g: Guide = { root, pts, rest: new Float32Array(points * 3), vel: new Float32Array(points * 3), seg, radius, tie: null, row: -1, theta: 0 };
+  const g: Guide = { root, pts, rest: new Float32Array(points * 3), vel: new Float32Array(points * 3), seg, radius, tie: null, row: -1, theta: 0, edge: body.edges.get(root) ?? 0 };
   settle(g, body, groomMargin(radius));
   remember(g);
   return g;
 }
 
+/** A clump's width near its root as a share of its full width, by the distance from the root (dm): at the hairline it grows from a fine edge over 4 cm. */
+export function rootWidth(g: Guide, s: number): number {
+  const e = g.edge ?? 0;
+  return e > 0 ? Math.min(1, 1 - 0.45 * e + 0.45 * e * s / 0.4) : 1;
+}
+
 /** How far a guide's middle lies off the skin: its clump's inner edge (`hairVolume.ts`, about 0.6 of its radius) just on the scalp. */
-export function groomMargin(radius: number): number { return radius * 0.6; }
+export function groomMargin(radius: number): number { return radius * 0.6 * FLAT; }
 
 /** Follow-The-Leader: every point brought to its segment's length from the one before (the root fixed), then out of the body. */
 export function settle(g: Guide, body: GroomBody, margin: number, from = 1): void {
@@ -219,8 +273,25 @@ export function settle(g: Guide, body: GroomBody, margin: number, from = 1): voi
     const dx = p[b]! - p[a]!, dy = p[b + 1]! - p[a + 1]!, dz = p[b + 2]! - p[a + 2]!;
     const l = Math.hypot(dx, dy, dz) || 1;
     p[b] = p[a]! + dx / l * g.seg; p[b + 1] = p[a + 1]! + dy / l * g.seg; p[b + 2] = p[a + 2]! + dz / l * g.seg;
-    body.collide(p, b, margin, true, true, side);
+    body.collide(p, b, margin * rootWidth(g, i * g.seg), true, true, side);
   }
+}
+
+/** A strand cut straight across at height `y` (dm): ended where it first goes below it, its end blunt. False when it does not reach it. */
+export function levelCut(g: Guide, y: number): boolean {
+  const p = g.pts, n = p.length / 3;
+  for (let i = 1; i < n; i++) {
+    if (p[i * 3 + 1]! >= y) continue;
+    const a = (i - 1) * 3, t = (p[a + 1]! - y) / (p[a + 1]! - p[i * 3 + 1]!);
+    const keep = i + 1;
+    g.pts = p.slice(0, keep * 3);
+    for (let k = 0; k < 3; k++) g.pts[i * 3 + k] = p[a + k]! + (p[i * 3 + k]! - p[a + k]!) * t;
+    g.vel = new Float32Array(keep * 3); g.rest = new Float32Array(keep * 3);
+    g.blunt = true;
+    remember(g);
+    return true;
+  }
+  return false;
 }
 
 /** The guide's current shape kept as the style it springs back to. */
@@ -239,9 +310,14 @@ export function step(g: Guide, body: GroomBody, ties: readonly Tie[], dt: number
   // Up to its tie a tied strand lies combed along the head (`gather`) and does not move.
   const fixed = g.tie ? g.tie.k : 0;
   const side = Math.sign(p[0]! - body.face.x) || 1;
+  const back = Math.max(0, Math.min(1, (body.skull[2] - p[2]!) / 0.4));
   for (let i = fixed + 1; i < n; i++) {
     const b = i * 3;
-    v[b + 1] = v[b + 1]! - gravity * dt;
+    // On the head hair lies as combed (friction holds it against the scalp); gravity only drapes what hangs below it, eased in over 4 cm.
+    const hang = Math.max(0, Math.min(1, (body.hugFloor + 0.2 - p[b + 1]!) / 0.4));
+    v[b + 1] = v[b + 1]! - gravity * hang * dt;
+    // Hair growing behind the ears hangs down the back (it slides off the shoulders' tops behind them, not over them).
+    v[b + 2] = v[b + 2]! - gravity * hang * back * 0.35 * dt;
     p[b] = p[b]! + v[b]! * dt; p[b + 1] = p[b + 1]! + v[b + 1]! * dt; p[b + 2] = p[b + 2]! + v[b + 2]! * dt;
     // The style: towards the remembered shape from the root, by `hold`.
     if (hold > 0) {
@@ -256,15 +332,18 @@ export function step(g: Guide, body: GroomBody, ties: readonly Tie[], dt: number
     const dx = p[b]! - p[a]!, dy = p[b + 1]! - p[a + 1]!, dz = p[b + 2]! - p[a + 2]!;
     const l = Math.hypot(dx, dy, dz) || 1;
     p[b] = p[a]! + dx / l * g.seg; p[b + 1] = p[a + 1]! + dy / l * g.seg; p[b + 2] = p[a + 2]! + dz / l * g.seg;
-    body.collide(p, b, margin, true, true, side);
+    body.collide(p, b, margin * rootWidth(g, i * g.seg), true, true, side);
     d[b] = p[b]! - ox; d[b + 1] = p[b + 1]! - oy; d[b + 2] = p[b + 2]! - oz;
   }
   const S = 0.9;
   for (let i = fixed + 1; i < n; i++) {
     const b = i * 3, nb = (i + 1) * 3;
+    // Friction where it lies on the head: most of its motion there lost each step, so it stays as combed (no jitter from the scalp's pushes).
+    const hang = Math.max(0, Math.min(1, (body.hugFloor + 0.2 - p[b + 1]!) / 0.4));
+    const keep = 0.985 * (0.15 + 0.85 * hang);
     for (let k = 0; k < 3; k++) {
       const next = i + 1 < n ? d[nb + k]! : 0;
-      v[b + k] = ((p[b + k]! - x[b + k]!) - S * next) / dt * 0.985;
+      v[b + k] = ((p[b + k]! - x[b + k]!) - S * next) / dt * keep;
     }
   }
 }
@@ -283,14 +362,17 @@ export function gather(g: Guide, body: GroomBody, tie: Tie, id: number, margin: 
   const held = [tie.x + Math.sin(a) * tie.radius * 0.55, tie.y + Math.cos(a) * tie.radius * 0.55, tie.z];
   const r0 = Math.hypot(root[0]! - cx, root[1]! - cy, root[2]! - cz), r1 = Math.hypot(held[0]! - cx, held[1]! - cy, held[2]! - cz);
   const u0 = [(root[0]! - cx) / r0, (root[1]! - cy) / r0, (root[2]! - cz) / r0], u1 = [(held[0]! - cx) / r1, (held[1]! - cy) / r1, (held[2]! - cz) / r1];
+  const c = [u0[0]!, (u0[1]! + u1[1]!) / 2, (u0[2]! + u1[2]!) / 2];
   for (let i = 1; i <= k; i++) {
     const t = i / k;
-    // Spherical interpolation of the direction from the skull's middle, linear in the radius.
-    let ux = u0[0]! * (1 - t) + u1[0]! * t, uy = u0[1]! * (1 - t) + u1[1]! * t, uz = u0[2]! * (1 - t) + u1[2]! * t;
+    // The direction from the skull's middle along a curve that leaves the root parallel to the parting (its side-to-side unchanged at first),
+    // then turns to the tie: strands either side of a parting lie side by side along it instead of opening a crack.
+    const a0 = (1 - t) * (1 - t), a1 = 2 * t * (1 - t), a2 = t * t;
+    let ux = u0[0]! * a0 + c[0]! * a1 + u1[0]! * a2, uy = u0[1]! * a0 + c[1]! * a1 + u1[1]! * a2, uz = u0[2]! * a0 + c[2]! * a1 + u1[2]! * a2;
     const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
     const r = r0 * (1 - t) + r1 * t;
     p[i * 3] = cx + ux * r; p[i * 3 + 1] = cy + uy * r; p[i * 3 + 2] = cz + uz * r;
-    if (i < k) body.collide(p, i * 3, margin, false);
+    if (i < k) body.collide(p, i * 3, margin * rootWidth(g, i * g.seg), false);
   }
   g.tie = { id, k };
   // The tail: straight down from the tie, then settled.
@@ -303,8 +385,8 @@ export function gather(g: Guide, body: GroomBody, tie: Tie, id: number, margin: 
 /** The groom as a game item (`ProxyPack`): every clump vertex pinned to its three nearest head and neck skin vertices, as MakeHuman items are. */
 export function groomPack(guides: readonly Guide[], body: GroomBody, anchors: readonly number[]): ProxyPack {
   // The surface the studio shows (`hairVolume.ts`), at a resolution light enough for the street.
-  const volume = new HairVolume(new MeshStandardMaterial(), 60);
-  volume.build(guides);
+  const volume = new HairVolume(new MeshStandardMaterial(), 84);
+  volume.build(guides, body.skull, body.cap(guides));
   const { positions, index } = volume.geometry();
   volume.mesh.geometry.dispose();
   const P = body.positions;
@@ -340,7 +422,7 @@ export function encodeGroom(guides: readonly Guide[], ties: readonly Tie[]): Gro
   let o = 4;
   for (const g of guides) {
     view.setUint16(o, g.root, true); view.setUint16(o + 2, g.pts.length / 3, true);
-    view.setUint16(o + 4, Math.round(g.radius * 1000), true); view.setInt16(o + 6, g.tie ? g.tie.id * 64 + g.tie.k : -1, true);
+    view.setUint16(o + 4, Math.round(g.radius * 1000) | (g.blunt ? 0x8000 : 0), true); view.setInt16(o + 6, g.tie ? g.tie.id * 64 + g.tie.k : -1, true);
     o += 8;
     for (let i = 0; i < g.pts.length; i++) {
       const rel = g.pts[i]! - g.pts[i % 3]!;
@@ -366,7 +448,9 @@ export function decodeGroom(record: GroomRecord, body: GroomBody): Guide[] {
   let o = 4;
   const P = body.positions, N = body.normals;
   for (let k = 0; k < count && o + 8 <= u8.length; k++) {
-    const root = view.getUint16(o, true), n = view.getUint16(o + 2, true), radius = view.getUint16(o + 4, true) / 1000, tie = view.getInt16(o + 6, true);
+    const root = view.getUint16(o, true), n = view.getUint16(o + 2, true), packed = view.getUint16(o + 4, true), tie = view.getInt16(o + 6, true);
+    // The radius in thousandths of a dm, its top bit a blunt cut.
+    const radius = (packed & 0x7fff) / 1000;
     o += 8;
     const pts = new Float32Array(n * 3);
     const base = [P[root * 3]! + N[root * 3]! * 0.04, P[root * 3 + 1]! + N[root * 3 + 1]! * 0.04, P[root * 3 + 2]! + N[root * 3 + 2]! * 0.04];
@@ -374,7 +458,7 @@ export function decodeGroom(record: GroomRecord, body: GroomBody): Guide[] {
     let seg = 0;
     for (let i = 1; i < n; i++) seg += Math.hypot(pts[i * 3]! - pts[i * 3 - 3]!, pts[i * 3 + 1]! - pts[i * 3 - 2]!, pts[i * 3 + 2]! - pts[i * 3 - 1]!);
     const g: Guide = { root, pts, rest: new Float32Array(n * 3), vel: new Float32Array(n * 3), seg: seg / Math.max(1, n - 1), radius,
-      tie: tie >= 0 ? { id: tie >> 6, k: tie & 63 } : null, row: -1, theta: 0 };
+      tie: tie >= 0 ? { id: tie >> 6, k: tie & 63 } : null, row: -1, theta: 0, edge: body.edges.get(root) ?? 0, blunt: (packed & 0x8000) !== 0 };
     const rt = record.rows?.[k];
     if (rt) { g.row = rt[0]; g.theta = rt[1] / 100; }
     remember(g);

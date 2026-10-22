@@ -3,7 +3,7 @@ import {
   type Camera,
 } from 'three';
 import {
-  GroomBody, decodeGroom, encodeGroom, gather, groomMargin, groomPack, plant, remember, settle, step,
+  GroomBody, decodeGroom, encodeGroom, gather, groomMargin, levelCut, groomPack, plant, remember, settle, step,
   type Guide, type GroomRecord, type Tie,
 } from './groom';
 import type { ProxyPack } from '@people/body/proxy';
@@ -86,7 +86,7 @@ export class HairStudio {
 
     // A soft sheen, little sky: solid painted hair.
     const hairMaterial = new MeshStandardMaterial({ color: hairColour, roughness: 0.55, metalness: 0, envMapIntensity: 0.3 });
-    this.volume = new HairVolume(hairMaterial);
+    this.volume = new HairVolume(hairMaterial, 100);
     this.hairMesh = this.volume.mesh;
     this.group.add(this.hairMesh);
     this.group.add(this.tieMarks);
@@ -116,7 +116,7 @@ export class HairStudio {
     const used = new Set<number>();
     let row = 0;
     const deepest = Math.max(...scalp.map(fall));
-    for (let ring = 0.12; ring <= deepest; ring += spacing * 0.85, row++) {
+    for (let ring = 0.03; ring <= deepest; ring += spacing * 0.85, row++) {
       const band = scalp.filter((v) => Math.abs(fall(v) - ring) < spacing * 0.42 && !used.has(v));
       if (!band.length) continue;
       band.sort((a, b) => angleOf(a) - angleOf(b));
@@ -131,6 +131,17 @@ export class HairStudio {
         guides.push(g);
       }
     }
+    // The hairline itself a little denser: a guide every 1 cm along its edge where none grows, so the edge is a smooth line, not ragged.
+    const roots = guides.map((g) => g.root);
+    const near = (v: number, d: number): boolean => roots.some((r) => Math.hypot(P[r * 3]! - P[v * 3]!, P[r * 3 + 1]! - P[v * 3 + 1]!, P[r * 3 + 2]! - P[v * 3 + 2]!) < d);
+    const rim = scalp.filter((v) => (this.body.edges.get(v) ?? 0) > 0.75).sort((a, b) => angleOf(a) - angleOf(b));
+    for (const v of rim) {
+      if (near(v, Math.max(0.1, spacing * 0.6))) continue;
+      const g = plant(this.body, v, length * (0.96 + 0.08 * hash(v)), this.thickness, Math.max(14, Math.round(length / 0.16) + 1));
+      g.row = row; g.theta = angleOf(v);
+      guides.push(g);
+      roots.push(v);
+    }
     void sy;
     this.guides = guides;
     this.pairUp();
@@ -142,11 +153,21 @@ export class HairStudio {
 
   /** The style presets: lengths and ties on a full head. */
   preset(name: 'short' | 'bob' | 'long' | 'ponytail' | 'bun' | 'pigtails'): void {
-    const lengths = { short: 0.9, bob: 2.0, long: 4.2, ponytail: 4.4, bun: 4.4, pigtails: 4.0 } as const;
+    const lengths = { short: 0.9, bob: 2.4, long: 3.5, ponytail: 4.4, bun: 4.4, pigtails: 4.0 } as const;
     const thick = { short: 0.16, bob: 0.18, long: 0.18, ponytail: 0.17, bun: 0.17, pigtails: 0.17 } as const;
     const keep = this.thickness;
     this.thickness = thick[name];
     this.fill(lengths[name], 0.15);
+    // Short hair cut clear of the ears: the locks growing round them trimmed to a few centimetres.
+    if (name === 'short') {
+      const P = this.body.positions;
+      this.guides = this.guides.map((g) => {
+        if (P[g.root * 3 + 1]! > this.body.hugFloor + 0.45) return g;
+        const t = plant(this.body, g.root, 0.25, g.radius);
+        t.row = g.row; t.theta = g.theta;
+        return t;
+      });
+    }
     this.thickness = keep;
     const [sx, , sz] = this.body.skull;
     const top = this.body.top;
@@ -158,6 +179,8 @@ export class HairStudio {
     }
     this.relax(120);
     this.symmetrize();
+    // A bob cut straight across at the jaw.
+    if (name === 'bob') for (const g of this.guides) levelCut(g, this.body.face.bottom + 0.45);
     if (name === 'bun') {
       // The tail wound round the tie into a bun: a flat spiral out from it, each strand at its own angle.
       const t = this.ties[0]!;
@@ -478,7 +501,7 @@ export class HairStudio {
   // ------------------------------------------------------------ the mesh
 
   private rebuild(): void {
-    this.volume.build(this.guides);
+    this.volume.build(this.guides, this.body.skull, this.body.cap(this.guides));
     this.builtAt = performance.now();
     this.paintScalp();
     this.tieMarks.clear();
@@ -492,7 +515,7 @@ export class HairStudio {
   /** The surface again after the guides moved: at most ten times a second, the stroke's end rebuilds it exactly. */
   private updatePositions(): void {
     if (performance.now() - this.builtAt < 100) return;
-    this.volume.build(this.guides);
+    this.volume.build(this.guides, this.body.skull, this.body.cap(this.guides));
     this.builtAt = performance.now();
   }
 

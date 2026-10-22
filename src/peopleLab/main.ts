@@ -780,11 +780,11 @@ function startLab(): void {
       person = keep; pictures.baking = false; tab = 'pessoa'; render();
       return out;
     }, sideView() { const d = camera.position.distanceTo(controls.target); camera.position.copy(controls.target).add(new Vector3(d, 0, 0)); }, pictures, withLook(patch: Partial<PersonLook>) { return { ...person, spec: { ...person.spec, look: { ...person.spec.look, ...patch } } }; }, spec(patch: Partial<PersonSpec>) { setSpec(patch); }, fitFace, async measure() { return (await builder.proportions()).measure(person.spec); }, async body() { return measureBody((await builder.setup()).assets, await builder.shape(person)); }, async sweep(slider: string) { const f = await builder.proportions(); return [-1, 0, 1].map((v) => f.measure({ ...person.spec, features: { ...person.spec.features, [slider]: v } })); }, look(patch: Record<string, unknown>) { setLook(patch as Partial<PersonLook>); },
-    closeUp(dist = 0.5, x = 0) {
+    closeUp(dist = 0.5, x = 0, y = 0) {
       const head = new Vector3();
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });
       controls.target.copy(head).add(new Vector3(0, 0.02, 0.05));
-      camera.position.copy(controls.target).add(new Vector3(x, 0, dist));
+      camera.position.copy(controls.target).add(new Vector3(x, y, dist));
     }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, openHairStudio, closeHairStudio, get studio() { return studio; }, openAtelier, closeAtelier, get atelier() { return atelier; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
 }
 
