@@ -6,8 +6,8 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 /** RIGGING AND ANIMATION, as Blender's pose mode and Maya's animation tools: the skeleton drawn over the body, a bone clicked to select it,
- *  turned (FK) or moved (the rig reshaped) with a gizmo, hands and feet placed by IK targets (cyclic coordinate descent, Wang & Chen 1991 -
- *  three's CCDIKSolver), and a timeline of keys holding the body's pose and the face's expression, interpolated (slerp, eased) on playback. */
+ *  turned (FK) or moved (the rig reshaped) with a gizmo, hands and feet placed by IK targets (analytic two-bone IK, the law of cosines, with a pole
+ *  for the knee or elbow - Holden's "simple two joint IK", Unity's TwoBoneIKConstraint), and a timeline of keys holding the body's pose and the face's expression, interpolated (slerp, eased) on playback. */
 
 /** The bones shown and their names. */
 export const JOINTS: readonly (readonly [string, string])[] = [
@@ -71,6 +71,10 @@ export class PoseEditor {
   private readonly lines: LineSegments;
   private readonly spheres: Mesh[] = [];
   private readonly targets: Mesh[] = [];
+  /** Each chain's pole: where the elbow or knee points. */
+  private readonly poles: Mesh[] = [];
+  /** The pole selected, by chain index, or -1. */
+  poleTarget = -1;
   private readonly ikOn = new Set<number>();
   private started = 0;
   private root: Object3D | null = null;
@@ -84,7 +88,7 @@ export class PoseEditor {
     this.gizmo.setSize(0.75);
     this.gizmo.addEventListener('dragging-changed', (e) => { orbit.enabled = !(e as unknown as { value: boolean }).value; });
     this.gizmo.addEventListener('objectChange', () => {
-      if (this.ikTarget >= 0) return;
+      if (this.ikTarget >= 0 || this.poleTarget >= 0) return;
       const b = this.bone && this.root?.getObjectByName(this.bone);
       if (!b) return;
       if (this.gizmo.mode === 'translate') {
@@ -92,7 +96,7 @@ export class PoseEditor {
         if (rest) this.offsets.set(this.bone!, b.position.clone().sub(rest));
       } else this.edits.set(this.bone!, b.quaternion.clone());
     });
-    this.gizmo.addEventListener('mouseUp', () => { if (this.ikTarget >= 0) this.bakeIk(); this.onChange(); });
+    this.gizmo.addEventListener('mouseUp', () => { if (this.ikTarget >= 0 || this.poleTarget >= 0) this.bakeIk(); this.onChange(); });
     scene.add(this.gizmo.getHelper());
     this.lines = new LineSegments(new BufferGeometry(), new LineBasicMaterial({ color: 0x8fb6ff, depthTest: false, transparent: true, opacity: 0.85 }));
     this.lines.renderOrder = 20;
@@ -106,10 +110,14 @@ export class PoseEditor {
       this.spheres.push(m); this.helpers.add(m);
     }
     const handle = new SphereGeometry(0.03, 16, 10);
+    const poleHandle = new SphereGeometry(0.02, 12, 8);
     CHAINS.forEach((_, i) => {
       const m = new Mesh(handle, new MeshBasicMaterial({ color: 0xffb547, depthTest: false, transparent: true, opacity: 0.85 }));
       m.renderOrder = 22; m.userData['ik'] = i; m.visible = false;
       this.targets.push(m); scene.add(m);
+      const pole = new Mesh(poleHandle, new MeshBasicMaterial({ color: 0x7ee0b5, depthTest: false, transparent: true, opacity: 0.85 }));
+      pole.renderOrder = 22; pole.userData['pole'] = i; pole.visible = false;
+      this.poles.push(pole); scene.add(pole);
     });
   }
 
@@ -122,7 +130,7 @@ export class PoseEditor {
 
   show(on: boolean): void {
     this.helpers.visible = on;
-    for (const [i, t] of this.targets.entries()) t.visible = on && this.ikOn.has(i);
+    for (const [i, t] of this.targets.entries()) { t.visible = on && this.ikOn.has(i); this.poles[i]!.visible = t.visible; }
     if (!on) this.select(null);
   }
 
@@ -132,25 +140,33 @@ export class PoseEditor {
   select(name: string | null): void {
     this.bone = name;
     this.ikTarget = -1;
+    this.poleTarget = -1;
     const b = name ? this.root?.getObjectByName(name) as Bone | undefined : undefined;
     if (b) { this.gizmo.setMode(this.gizmo.mode === 'translate' ? 'translate' : 'rotate'); this.gizmo.attach(b); } else this.gizmo.detach();
   }
 
   /** An IK chain on or off; on, its target stands at the effector and the gizmo moves it. */
   toggleIk(i: number): void {
-    if (this.ikOn.has(i)) { this.ikOn.delete(i); this.targets[i]!.visible = false; if (this.ikTarget === i) this.select(null); return; }
-    const eff = this.root?.getObjectByName(CHAINS[i]![1]);
-    if (!eff) return;
+    if (this.ikOn.has(i)) { this.ikOn.delete(i); this.targets[i]!.visible = this.poles[i]!.visible = false; if (this.ikTarget === i || this.poleTarget === i) this.select(null); return; }
+    const [, effName, [midName, rootName]] = CHAINS[i]!;
+    const eff = this.root?.getObjectByName(effName), mid = this.root?.getObjectByName(midName!), top = this.root?.getObjectByName(rootName!);
+    if (!eff || !mid || !top) return;
     eff.getWorldPosition(this.targets[i]!.position);
+    // The pole a lower limb's length out from the elbow or knee, the way it bends now (straight: forward for a knee, back for an elbow).
+    const a = top.getWorldPosition(new Vector3()), b = mid.getWorldPosition(new Vector3()), c = eff.getWorldPosition(new Vector3());
+    const ac = c.clone().sub(a).normalize();
+    const out = b.clone().sub(a).sub(ac.clone().multiplyScalar(b.clone().sub(a).dot(ac)));
+    if (out.lengthSq() < 1e-8) out.set(0, 0, /Calf/.test(midName!) ? 1 : -1);
+    this.poles[i]!.position.copy(b).add(out.normalize().multiplyScalar(b.distanceTo(c)));
     this.ikOn.add(i);
-    this.targets[i]!.visible = this.helpers.visible;
+    this.targets[i]!.visible = this.poles[i]!.visible = this.helpers.visible;
     this.selectIk(i);
   }
 
-  private selectIk(i: number): void {
-    this.bone = null; this.ikTarget = i;
+  private selectIk(i: number, pole = false): void {
+    this.bone = null; this.ikTarget = pole ? -1 : i; this.poleTarget = pole ? i : -1;
     this.gizmo.setMode('translate');
-    this.gizmo.attach(this.targets[i]!);
+    this.gizmo.attach(pole ? this.poles[i]! : this.targets[i]!);
   }
 
   get chains(): readonly string[] { return CHAINS.map((c) => c[0]); }
@@ -160,38 +176,59 @@ export class PoseEditor {
   pick(ndc: Vector2, camera: Camera): boolean {
     if (!this.helpers.visible) return false;
     this.raycaster.setFromCamera(ndc, camera);
-    const visibleTargets = this.targets.filter((t) => t.visible);
-    const hit = this.raycaster.intersectObjects([...visibleTargets, ...this.spheres], false)[0];
+    const handles = [...this.targets, ...this.poles].filter((t) => t.visible);
+    const hit = this.raycaster.intersectObjects([...handles, ...this.spheres], false)[0];
     if (!hit) return false;
     if (hit.object.userData['ik'] !== undefined) this.selectIk(hit.object.userData['ik'] as number);
+    else if (hit.object.userData['pole'] !== undefined) this.selectIk(hit.object.userData['pole'] as number, true);
     else this.select(hit.object.userData['bone'] as string);
     return true;
   }
 
-  /** CCD IK: each link from the effector up turned so the effector points at the target, a few rounds. */
+  /** Two-bone IK, solved exactly: the elbow or knee angle from the law of cosines so the hand or foot reaches the target (clamped to the limb's
+   *  reach), the limb turned onto the target, then twisted about the root-to-target line until the middle joint faces the pole. The hand or
+   *  foot keeps its world rotation. */
   private solveIk(): void {
     if (!this.root) return;
-    const e = new Vector3(), t = new Vector3(), j = new Vector3(), q = new Quaternion(), wq = new Quaternion(), pq = new Quaternion();
     for (const i of this.ikOn) {
-      const [, effName, links] = CHAINS[i]!;
-      const eff = this.root.getObjectByName(effName);
-      if (!eff) continue;
-      t.copy(this.targets[i]!.position);
-      for (let round = 0; round < 8; round++) {
-        for (const name of links) {
-          const link = this.root.getObjectByName(name);
-          if (!link) continue;
-          link.updateWorldMatrix(true, true);
-          link.getWorldPosition(j);
-          eff.getWorldPosition(e);
-          const from = e.clone().sub(j).normalize(), to = t.clone().sub(j).normalize();
-          if (from.dot(to) > 0.99999) continue;
-          q.setFromUnitVectors(from, to);
-          link.getWorldQuaternion(wq);
-          if (link.parent) link.parent.getWorldQuaternion(pq); else pq.identity();
-          link.quaternion.copy(pq.invert().multiply(q.multiply(wq)));
-        }
+      const [, effName, [midName, rootName]] = CHAINS[i]!;
+      const eff = this.root.getObjectByName(effName), mid = this.root.getObjectByName(midName!), top = this.root.getObjectByName(rootName!);
+      if (!eff || !mid || !top) continue;
+      top.updateWorldMatrix(true, true);
+      const a = top.getWorldPosition(new Vector3()), b = mid.getWorldPosition(new Vector3()), c = eff.getWorldPosition(new Vector3());
+      const t = this.targets[i]!.position, pole = this.poles[i]!.position;
+      const effWorld = eff.getWorldQuaternion(new Quaternion());
+      const lab = b.distanceTo(a), lcb = b.distanceTo(c);
+      const lat = Math.min(Math.max(t.distanceTo(a), 1e-4), (lab + lcb) * 0.9999);
+      const cosine = (x: number): number => Math.acos(Math.min(1, Math.max(-1, x)));
+      const angle = (u: Vector3, v: Vector3): number => cosine(u.clone().normalize().dot(v.clone().normalize()));
+      const acab0 = angle(c.clone().sub(a), b.clone().sub(a)), babc0 = angle(a.clone().sub(b), c.clone().sub(b));
+      const acab1 = cosine((lcb * lcb - lab * lab - lat * lat) / (-2 * lab * lat)), babc1 = cosine((lat * lat - lab * lab - lcb * lcb) / (-2 * lab * lcb));
+      // The bend plane: the limb's own, or the pole's when the limb is straight.
+      let axis0 = c.clone().sub(a).cross(b.clone().sub(a));
+      if (axis0.lengthSq() < 1e-10) axis0 = c.clone().sub(a).cross(pole.clone().sub(a));
+      axis0.normalize();
+      const r0 = new Quaternion().setFromAxisAngle(axis0, acab1 - acab0), r1 = new Quaternion().setFromAxisAngle(axis0, babc1 - babc0);
+      const r2 = new Quaternion().setFromUnitVectors(c.clone().sub(a).normalize(), t.clone().sub(a).normalize());
+      const turn = r2.clone().multiply(r0);
+      const topWorld = turn.clone().multiply(top.getWorldQuaternion(new Quaternion()));
+      const midWorld = turn.clone().multiply(r1).multiply(mid.getWorldQuaternion(new Quaternion()));
+      // The twist: the middle joint swung about root-to-target into the pole's side.
+      const n = t.clone().sub(a).normalize();
+      const flat = (v: Vector3): Vector3 => v.clone().sub(n.clone().multiplyScalar(v.dot(n)));
+      const from = flat(b.clone().sub(a).applyQuaternion(turn)), to = flat(pole.clone().sub(a));
+      if (from.lengthSq() > 1e-10 && to.lengthSq() > 1e-10) {
+        const twist = new Quaternion().setFromUnitVectors(from.normalize(), to.normalize());
+        topWorld.premultiply(twist); midWorld.premultiply(twist);
       }
+      const local = (bone: Object3D, world: Quaternion): void => {
+        const parent = bone.parent ? bone.parent.getWorldQuaternion(new Quaternion()) : new Quaternion();
+        bone.quaternion.copy(parent.invert().multiply(world));
+        bone.updateWorldMatrix(false, true);
+      };
+      local(top, topWorld);
+      local(mid, midWorld);
+      local(eff, effWorld);
     }
   }
 

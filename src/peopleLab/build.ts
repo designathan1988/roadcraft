@@ -42,6 +42,8 @@ export interface BuiltPerson {
   readonly morphs: number;
   /** A changed body shape (decimetres, `shape`) as relative moves of the mesh's vertices: live dragging (`PersonRig.morph`); absent on the tailored shells. */
   readonly morph?: (positions: Float32Array) => Float32Array;
+  /** The body's shape it was built on (decimetres): what the face's shapes are added to (`faceRig.ts`). */
+  readonly shape: Float32Array;
   /** A changed body shape as the build would make it, without building (`PersonRig.reshape`). */
   readonly reshape?: (positions: Float32Array) => Reshaped;
 }
@@ -204,6 +206,6 @@ export class LabBuilder {
     await Promise.all(waits);
     let triangles = 0;
     for (const m of meshes) triangles += (m.geometry.index?.count ?? m.geometry.getAttribute('position').count) / 3;
-    return { scene: rig.scene, meshes, triangles, morphs: Object.keys(rig.mesh.morphTargetDictionary ?? {}).length, ...(rig.morph ? { morph: rig.morph } : {}), ...(rig.reshape ? { reshape: rig.reshape } : {}) };
+    return { scene: rig.scene, meshes, triangles, shape: body, morphs: Object.keys(rig.mesh.morphTargetDictionary ?? {}).length, ...(rig.morph ? { morph: rig.morph } : {}), ...(rig.reshape ? { reshape: rig.reshape } : {}) };
   }
 }
