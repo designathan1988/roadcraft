@@ -1,4 +1,5 @@
 import { fitProxy, type ProxyPack } from '@people/body/proxy';
+import { nearestThree } from '@people/hair/procedural';
 
 /** HAIR AND CLOTHES SHAPED BY PARAMETERS: a catalogue hairstyle (hand-made, its quality kept) lengthened or shortened, given volume and waves by sliders, the
  *  way the parametric character creators do it - Daz's and Character Creator's per-hairstyle morphs, inZOI's root-to-tip length - computed here
@@ -26,7 +27,7 @@ export function isPlain(s: HairShape | undefined): boolean {
 
 /** The item with the shape applied on this body (`base`: the base mesh as shaped, dm); `outOfBody` pushes a moved point back out of the skin (a
  *  skirt made longer over the knees, hair made longer over the shoulders, a closer fit). */
-export function shapedPack(pack: ProxyPack, base: Float32Array, s: HairShape, outOfBody?: (p: number[]) => void): ProxyPack {
+export function shapedPack(pack: ProxyPack, base: Float32Array, s: HairShape, outOfBody?: (p: number[]) => void, rebindTo?: readonly number[], garment = false): ProxyPack {
   const P = fitProxy(pack, base);
   const n = P.length / 3;
   let lo = Infinity, hi = -Infinity;
@@ -38,9 +39,12 @@ export function shapedPack(pack: ProxyPack, base: Float32Array, s: HairShape, ou
   for (let i = 0; i < base.length; i += 3) if (base[i + 1]! > top - 1.4) { cx += base[i]!; cz += base[i + 2]!; c++; }
   cx /= c || 1; cz /= c || 1;
   const cy = top - 1.0;
-  // Where the hair starts to hang (as the sculptor's lengthen): a little below its middle.
-  const pivot = hi - (hi - lo) * 0.45, span = Math.max(1e-4, hi - lo);
+  // Where the length changes: for hair a little below its middle, where it starts to hang (as the sculptor's lengthen); for a garment only its
+  // hem's band, the lowest quarter (a skirt let down, not the jacket over it), as Mutable extends a section from its edge.
+  const pivot = garment ? lo + (hi - lo) * 0.25 : hi - (hi - lo) * 0.45, span = Math.max(1e-4, hi - lo);
   const offsets = new Float32Array(pack.offsets);
+  const refs = rebindTo ? new Uint32Array(pack.refs) : pack.refs, weights = rebindTo ? new Float32Array(pack.weights) : pack.weights;
+  const nearest = rebindTo ? nearestThree(base, rebindTo) : null;
   const scale = axisScales(pack, base);
   for (let v = 0; v < n; v++) {
     const x = P[v * 3]!, y = P[v * 3 + 1]!, z = P[v * 3 + 2]!;
@@ -63,11 +67,25 @@ export function shapedPack(pack: ProxyPack, base: Float32Array, s: HairShape, ou
       nx += tx / tl * amount; nz += tz / tl * amount;
     }
     if (outOfBody && (nx !== x || ny !== y || nz !== z)) { const q = [nx, ny, nz]; outOfBody(q); nx = q[0]!; ny = q[1]!; nz = q[2]!; }
+    // Moved far (a hem let down past the knee), a garment's vertex is pinned again to the skin nearest where it is now, as MakeHuman binds a
+    // piece: kept on its old thigh vertices it would follow the thigh while the knee bends through it.
+    if (nearest && Math.hypot(nx - x, ny - y, nz - z) > 0.04) {
+      const best = nearest([nx, ny, nz]);
+      const w = best.map(([d]) => 1 / (Math.sqrt(d) + 0.05)), total = w.reduce((a, b) => a + b, 0);
+      let fx = 0, fy = 0, fz = 0;
+      for (let k = 0; k < 3; k++) {
+        const r = best[k]![1];
+        refs[v * 3 + k] = r; weights[v * 3 + k] = w[k]! / total;
+        fx += base[r * 3]! * w[k]! / total; fy += base[r * 3 + 1]! * w[k]! / total; fz += base[r * 3 + 2]! * w[k]! / total;
+      }
+      offsets[v * 3] = (nx - fx) / scale[0]; offsets[v * 3 + 1] = (ny - fy) / scale[1]; offsets[v * 3 + 2] = (nz - fz) / scale[2];
+      continue;
+    }
     offsets[v * 3] = offsets[v * 3]! + (nx - x) / scale[0];
     offsets[v * 3 + 1] = offsets[v * 3 + 1]! + (ny - y) / scale[1];
     offsets[v * 3 + 2] = offsets[v * 3 + 2]! + (nz - z) / scale[2];
   }
-  return { ...pack, offsets };
+  return { ...pack, offsets, refs, weights };
 }
 
 /** `fitProxy`'s axis scales on this body: a position move of d dm is an offset move of d / scale. */

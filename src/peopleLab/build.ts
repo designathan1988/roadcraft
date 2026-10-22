@@ -178,7 +178,8 @@ export class LabBuilder {
       const out = (margin: number) => (q: number[]): void => surface.collide(q, 0, margin, false);
       if (shapeHair) proxies.set(cut!, { ...shaped!, pack: shapedPack(shaped!.pack, body, person.hairShape!, out(0.02)) });
       // The worn outfit's length and looseness, the same way.
-      if (shapeOutfit) proxies.set(outfit!, { ...dressed!, pack: shapedPack(dressed!.pack, body, person.outfitShape!, out(0.025)) });
+      // A garment stands a centimetre off the skin where it was moved: skirts hang clear of the knees, whose skinning differs a little from the cloth's.
+      if (shapeOutfit) proxies.set(outfit!, { ...dressed!, pack: shapedPack(dressed!.pack, body, { ...person.outfitShape!, length: Math.min(1, person.outfitShape!.length) }, out(0.1), skin, true) });
     }
     const sex = spec.body.gender < 0.5 ? 'female' : 'male';
     const input = {

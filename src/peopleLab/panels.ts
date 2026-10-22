@@ -278,10 +278,11 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       }],
     ] : [
       ['ajustar', 'Ajustar', () => {
-        // The outfit worn, made longer or shorter below the waist and looser or closer, on the piece itself.
+        // The outfit worn, shortened below the waist (as Mutable clips a hem: a hand-made garment stretched longer opens holes and shows its
+        // inside) and looser or closer, on the piece itself.
         const os = c.outfitShape();
         return [
-          slider('Comprimento', 0.6, 1.6, 0.01, os.length, (v) => c.setOutfitShape({ ...c.outfitShape(), length: v }), (v) => `${Math.round(v * 100)}%`),
+          slider('Comprimento', 0.6, 1, 0.01, Math.min(1, os.length), (v) => c.setOutfitShape({ ...c.outfitShape(), length: v }), (v) => `${Math.round(v * 100)}%`),
           slider('Folga', -0.3, 1.5, 0.05, os.volume * 10, (v) => c.setOutfitShape({ ...c.outfitShape(), volume: v / 10 }), (v) => `${v.toFixed(1)} cm`),
         ];
       }],
