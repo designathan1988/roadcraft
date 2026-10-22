@@ -103,6 +103,8 @@ export function buildFindings(report) {
     if (n.passes?.length) add({ area: 'Desempenho', severity: 'média', title: `GPU por passe ao navegar: ${n.passes.slice(0, 4).map((p) => `${p.pass} ${p.avg} ms (p95 ${p.p95})`).join(', ')}`, cost: `${n.passes.reduce((a, p) => a + p.avg, 0).toFixed(1)} ms por quadro`, rank: n.passes.reduce((a, p) => a + p.avg, 0), evidence: n.passes.slice(4, 8).map((p) => `${p.pass} ${p.avg} ms`) });
     if (n.frames.gpu.p95 !== null && n.frames.gpu.p95 > 12) add({ area: 'Desempenho', severity: n.frames.gpu.p95 > 16.7 ? 'alta' : 'média',
       title: `Ao navegar a GPU passa do orçamento (p95 ${n.frames.gpu.p95} ms, pior ${n.frames.gpu.max} ms)`, cost: `GPU p95 ${n.frames.gpu.p95} ms`, rank: n.frames.gpu.p95 });
+    if (n.shadows) add({ area: 'Desempenho', severity: 'média', title: `Sombras no voo: ${n.shadows.passes} passes, cascatas redesenhadas inteiras ${n.shadows.whole.join('/')} vezes`, cost: `${n.shadows.whole.reduce((a, b) => a + b, 0)} redesenhos inteiros`, rank: n.shadows.whole.reduce((a, b) => a + b, 0) / 10, evidence: Object.entries(n.shadows.why ?? {}).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${v}`) });
+    if (n.allocations) add({ area: 'Desempenho', severity: n.allocations.mbPerSecond > 20 ? 'alta' : 'média', title: `O voo aloca ${n.allocations.mbPerSecond} MB/s de memória (o que a coleta de lixo recolhe)`, cost: `${n.allocations.mbPerSecond} MB/s`, rank: n.allocations.mbPerSecond, where: n.allocations.top.slice(0, 6).map((x) => `${x.at}: ${x.mb} MB`) });
     if (n.profile?.garbageMs > 50) add({ area: 'Desempenho', severity: n.profile.garbageMs > 200 ? 'alta' : 'média',
       title: `Coleta de lixo durante a navegação: ${n.profile.garbageMs} ms em ${(n.profile.ms / 1000).toFixed(1)} s`, cost: `${n.profile.garbageMs} ms`, rank: n.profile.garbageMs / 2 });
     const grew = n.after.heapMB - n.before.heapMB;
@@ -124,7 +126,9 @@ export function buildFindings(report) {
   for (const [ph, w] of Object.entries(report.gpuWork ?? {})) {
     if (!/^(view:|navigate)/.test(ph) || !w.linked) continue;
     const built = ph === 'navigate' ? report.phases.navigate?.programsBuilt : report.views?.[ph.slice(5)]?.programsBuilt;
-    add({ area: 'Desempenho', severity: w.linked > 5 ? 'alta' : 'média', title: `${w.linked} programas de shader compilados durante o jogo (${PHASE_NAMES[ph] ?? ph}): cada um pode travar um quadro`, cost: `${w.linked} programas`, rank: w.linked * 10, where: built ?? [] });
+    // A program linked off the draw (`compileAsync`, the scene's door) holds no frame: raised only when the phase had long frames.
+    const held = frames(ph).length;
+    add({ area: 'Desempenho', severity: held === 0 ? 'baixa' : w.linked > 5 ? 'alta' : 'média', title: `${w.linked} programas de shader compilados durante o jogo (${PHASE_NAMES[ph] ?? ph})${held === 0 ? ', sem nenhum quadro longo na fase' : `, ${held} quadros longos na fase`}`, cost: `${w.linked} programas`, rank: held === 0 ? 1 : w.linked * 10, where: built ?? [] });
   }
 
   // SAVE AND REOPEN.

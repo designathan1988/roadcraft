@@ -212,6 +212,9 @@ async function diagnose() {
   await settle(15_000);
   const before = await memory();
   await profileStart(500);
+  // What the flight allocates (sampled, collected objects too) and what the sun's cascades drew in it (their stats cleared first).
+  await cdp.send('HeapProfiler.startSampling', { samplingInterval: 32768, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+  await page.evaluate(() => window.__roadcraft.scene().shadowStats?.());
   const R = centre.reach;
   const tour = [
     { x: centre.x, y: centre.y, zoom: 2.5, az: 45, el: 48, ms: 0 },
@@ -223,6 +226,8 @@ async function diagnose() {
   const flightPrograms = await programNames();
   const flight = await frameWindow(0, () => page.evaluate(fly, tour));
   const nav = { frames: flight, profile: await profileStop('navigate') };
+  nav.shadows = await page.evaluate(() => { const s = window.__roadcraft.scene().shadowStats?.(); return s ? { passes: s.passes, whole: s.whole, over: s.over, why: s.why, widest: s.widest?.slice(0, 5) } : null; });
+  nav.allocations = allocationsOf((await cdp.send('HeapProfiler.stopSampling')).profile, flight.frame.seconds);
   // The same flight again, the GPU timed pass by pass (its per-pass queries cost the page: kept out of the flight above).
   await setView({ x: centre.x, y: centre.y, zoom: 2.5, az: 45, el: 48 });
   await page.evaluate(() => window.__labGpu?.passTiming(true));
@@ -284,6 +289,22 @@ async function diagnose() {
     'long sessions (hours): a run of minutes shows leaks only as growth over one flight',
     'shadow and AO quality against a higher-setting reference; flicker in motion: only the supersampled reference of still frames is compared',
   );
+}
+
+/** A sampled allocation profile summed: MB allocated a second, and the game's own functions nearest each allocation (`src/...:line`), MB. */
+function allocationsOf(profile, seconds) {
+  const own = new Map();
+  let bytes = 0;
+  const walk = (node, nearest) => {
+    const f = node.callFrame;
+    const p = f.url ? sources.at(f.url, f.lineNumber, f.columnNumber) : null;
+    const here = p && p.file.startsWith('src/') ? `${f.functionName || p.name || '(anonymous)'} @ ${p.where}` : nearest;
+    bytes += node.selfSize;
+    if (node.selfSize && here) own.set(here, (own.get(here) ?? 0) + node.selfSize);
+    for (const c of node.children ?? []) walk(c, here);
+  };
+  walk(profile.head, null);
+  return { mbPerSecond: Math.round(bytes / 1e5 / Math.max(seconds, 0.1)) / 10, top: [...own].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([at, b]) => ({ at, mb: Math.round(b / 1e5) / 10 })) };
 }
 
 /** The programs three holds now, by name and cache key (`renderer.info.programs`). */

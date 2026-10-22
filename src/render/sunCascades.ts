@@ -282,7 +282,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       const kept = fixedSpheres.get(object);
       if (kept && kept.count === count) return kept.radius;
       const radius = measureSphere(object);
-      fixedSpheres.set(object, { radius, count });
+      // Its record written again in place: DO NOT make one a measure (the movers are measured every few passes).
+      if (kept) { kept.radius = radius; kept.count = count; } else fixedSpheres.set(object, { radius, count });
       return radius;
     }
     let radius = spheres.get(object);
@@ -292,18 +293,23 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     // in number (one more car, a bigger one among them) and every `REMEASURE_PASSES` passes for a scale changed in place.
     const count = instancesUnder(object);
     const kept = moverSpheres.get(object);
-    if (kept && kept.count === count && passNo - kept.pass < REMEASURE_PASSES) radius = kept.radius;
+    // A count changed is measured again at most every `RECOUNT_PASSES`: the town's vehicles and people come and go at nearly every pass, and
+    // every instance's matrix was read again each time (404 MB of a 13 s flight's garbage, `npm run diagnose`, 2026-10-22). The reach only
+    // says which cascades a root casts into; a few passes late, a new bus casts from its next measure.
+    if (kept && (kept.count === count || passNo - kept.pass < RECOUNT_PASSES) && passNo - kept.pass < REMEASURE_PASSES) radius = kept.radius;
     else {
       radius = measureSphere(object);
-      moverSpheres.set(object, { radius, count, pass: passNo });
+      if (kept) { kept.radius = radius; kept.count = count; kept.pass = passNo; } else moverSpheres.set(object, { radius, count, pass: passNo });
     }
     spheres.set(object, radius);
     return radius;
   };
   /** The movers' reach, kept from pass to pass with the instances it was measured at and when. */
-  const moverSpheres = new WeakMap<Object3D, { readonly radius: number; readonly count: number; readonly pass: number }>();
+  const moverSpheres = new WeakMap<Object3D, { radius: number; count: number; pass: number }>();
   /** Passes a mover's reach is trusted for (half a second at 60 Hz): a scale changed in place is seen within it; a count changed at once. */
   const REMEASURE_PASSES = 30;
+  /** Passes a mover's reach is kept for after its instances changed in number (`sphereOf`). */
+  const RECOUNT_PASSES = 10;
   /** The passes run, for `moverSpheres`' age. */
   let passNo = 0;
   /** How many instances a root draws (an instanced mesh by its count, any other mesh as one): its meshes walked, never their matrices. */
@@ -320,7 +326,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     return n;
   };
   /** The reach of the roots that never change size (`Movers.fixedSize`), kept from frame to frame with the instances it was measured at. */
-  const fixedSpheres = new WeakMap<Object3D, { readonly radius: number; readonly count: number }>();
+  const fixedSpheres = new WeakMap<Object3D, { radius: number; count: number }>();
   const texelOf = (i: number): number => (2 * fits[i]!.half) / Math.max(1, lights[i]!.shadow.mapSize.x);
   /** How far the true sun may leave cascade `i`'s held one, rad: until the shadow of the tallest caster in the view (`height` over the lowest ground) would move by one of the cascade's texels, never under `SUN_STEP`. A sun `e` high moves a shadow's tip by h / sin²e per radian of elevation and h · cot e per radian of azimuth. */
   const sunTolerance = (i: number, height: number): number => {
@@ -476,12 +482,14 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       if (rect !== undefined) strips.push(rect);
     }
     while (strips.length > MOST_STRIPS) {
-      // The pair whose union adds the least area.
+      // The pair whose union adds the least area, worked out without making each union (a strip a pair, every pass of a move).
       let a = 0, b = 1, least = Infinity;
       for (let p = 0; p < strips.length; p++) {
+        const sp = strips[p]!;
         for (let q = p + 1; q < strips.length; q++) {
-          const u = unionStrip(strips[p]!, strips[q]!);
-          const added = u.w * u.h - strips[p]!.w * strips[p]!.h - strips[q]!.w * strips[q]!.h;
+          const sq = strips[q]!;
+          const w = Math.max(sp.x + sp.w, sq.x + sq.w) - Math.min(sp.x, sq.x), h = Math.max(sp.y + sp.h, sq.y + sq.h) - Math.min(sp.y, sq.y);
+          const added = w * h - sp.w * sp.h - sq.w * sq.h;
           if (added < least) { least = added; a = p; b = q; }
         }
       }

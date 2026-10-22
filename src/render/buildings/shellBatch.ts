@@ -38,6 +38,8 @@ export class ShellBatch {
   readonly detailGroup = new Group();
   readonly facadeGroup = new Group();
   private batches: Batch[];
+  /** The world positions of the shell being added (`worldGeometry`), grown as needed and kept. */
+  private readonly scratch = { array: new Float32Array(0) };
   private readonly cells = new Map<string, { batch: Batch; id: number; geometryId: number }[]>();
   private readonly visible = new Map<string, boolean>();
   /** Each cell's shells' box in the world (their vertices are world vertices): what the occlusion tests (`hideOccluded`). */
@@ -77,7 +79,7 @@ export class ShellBatch {
       const runs = source.hasAttribute('facadeCell');
       const set: ShellSet = kind === 'cell' ? 'detail' : runs ? 'runs' : 'facade';
       const target = this.batches.find((one) => one.set === set)!;
-      const geometry = worldGeometry(mesh);
+      const geometry = worldGeometry(mesh, this.scratch);
       const vertices = geometry.getAttribute('position').count;
       const indices = geometry.getIndex()?.count ?? vertices;
       if (!geometry.boundingBox) geometry.computeBoundingBox();
@@ -240,26 +242,47 @@ export class ShellBatch {
 }
 
 /** The mesh's shell as world vertices: the far level's positions come quantized on the cell's grid, the mesh's place putting them
- *  in the world (`buildingMesh.ts` `place`). The batch takes identity matrices, so they are written out here. */
-function worldGeometry(mesh: Mesh): BufferGeometry {
+ *  in the world (`buildingMesh.ts` `place`). The batch takes identity matrices, so they are written out here, into `scratch`: the batch
+ *  copies them to the GPU and lets the geometry go (`GpuBatchedMesh.setGeometryAt`). DO NOT make an array a shell: a 13 s flight over the
+ *  city allocated 434 MB here, the first source of its garbage (`npm run diagnose`, 2026-10-22). */
+function worldGeometry(mesh: Mesh, scratch: { array: Float32Array }): BufferGeometry {
   const source = mesh.geometry;
   const position = source.getAttribute('position') as BufferAttribute;
   if (position.itemSize !== 4 || !position.normalized) return source;
   const g = new BufferGeometry();
   const count = position.count;
-  const out = new Float32Array(count * 3);
+  if (scratch.array.length < count * 3) scratch.array = new Float32Array(Math.max(count * 3, scratch.array.length * 2));
+  const out = scratch.array.subarray(0, count * 3);
   const sx = mesh.scale.x, sy = mesh.scale.y, sz = mesh.scale.z;
   const ox = mesh.position.x, oy = mesh.position.y, oz = mesh.position.z;
-  // `getX` denormalises a normalized attribute already (r186 `BufferAttribute.getX`): its value is the 0..1 of the cell's grid.
-  for (let i = 0; i < count; i++) {
-    out[i * 3] = ox + position.getX(i) * sx;
-    out[i * 3 + 1] = oy + position.getY(i) * sy;
-    out[i * 3 + 2] = oz + position.getZ(i) * sz;
-  }
+  if ((position as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute) {
+    // An interleaved attribute (none today) read as three reads it: `getX` denormalises (r186 `BufferAttribute.getX`).
+    for (let i = 0; i < count; i++) {
+      out[i * 3] = ox + position.getX(i) * sx;
+      out[i * 3 + 1] = oy + position.getY(i) * sy;
+      out[i * 3 + 2] = oz + position.getZ(i) * sz;
+    }
+  } else worldPositions(position.array, count, out, ox, oy, oz, sx, sy, sz);
   g.setAttribute('position', new BufferAttribute(out, 3));
   for (const name of Object.keys(source.attributes)) if (name !== 'position') g.setAttribute(name, source.attributes[name]!);
   g.setIndex(source.getIndex());
   g.computeBoundingBox();
   g.computeBoundingSphere();
   return g;
+}
+
+/** A shell's stored positions (four integers a vertex, normalized to the cell's grid) into world positions (three a vertex): the integers
+ *  read straight and brought to 0..1 as three's `denormalize` does (r186 `MathUtils.denormalize`). DO NOT go through `getX` for every vertex
+ *  of every shell: a call and a number a component, the flight's garbage (`npm run diagnose`, 2026-10-22). */
+function worldPositions(raw: ArrayLike<number>, count: number, out: Float32Array, ox: number, oy: number, oz: number, sx: number, sy: number, sz: number): void {
+  const signed = raw instanceof Int16Array || raw instanceof Int8Array;
+  const unit = raw instanceof Uint16Array ? 1 / 65535 : raw instanceof Int16Array ? 1 / 32767 : raw instanceof Uint8Array ? 1 / 255 : raw instanceof Int8Array ? 1 / 127 : 1;
+  for (let i = 0; i < count; i++) {
+    const o = i * 4;
+    let x = raw[o]! * unit, y = raw[o + 1]! * unit, z = raw[o + 2]! * unit;
+    if (signed) { x = Math.max(x, -1); y = Math.max(y, -1); z = Math.max(z, -1); }
+    out[i * 3] = ox + x * sx;
+    out[i * 3 + 1] = oy + y * sy;
+    out[i * 3 + 2] = oz + z * sz;
+  }
 }

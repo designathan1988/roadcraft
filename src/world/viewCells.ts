@@ -208,7 +208,13 @@ export class ViewCells<V> {
 
   /** The cells the view wants given as they are (a layer that chooses its own: a square round the eye, the blocks a frustum sees), in the order they are asked. */
   want(keys: readonly CellKey[]): void {
-    this.wanted = [...keys];
+    // Copied into its own list, kept from look to look (asked every frame of a move): never a new array each time.
+    const wanted = this.wanted;
+    // Its own list handed back (`wantedKeys`): nothing to copy, and emptying it first would empty what it reads.
+    if (keys !== wanted) {
+      wanted.length = 0;
+      for (const key of keys) wanted.push(key);
+    }
     this.wantedSet.clear();
     for (const key of this.wanted) this.wantedSet.add(key);
   }

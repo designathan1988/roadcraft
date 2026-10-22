@@ -17,7 +17,7 @@ import {
 } from 'three';
 import { m } from '@world/units';
 import { addChangeBox } from './changeBoxes';
-import { type Bounds, enclose, planeMask } from './instanceCull';
+import { type Bounds, growInto, planeMask } from './instanceCull';
 import { impostorPick, thinWant } from './plantImpostors';
 import { trianglesOf } from './propGeometry';
 import { castBySize } from './shadowCasters';
@@ -237,6 +237,8 @@ function dressedMesh(spec: KindMesh, geometry: BufferGeometry, format: SlotForma
   mesh.frustumCulled = false;
   // Where its instances came or went since the sun's last shadow pass (`reconcile`, `renderer.ts` casterChanges), a few boxes apart from each other (`changeBoxes.ts`): the cascades' stores are drawn again under those alone, not thrown away for every cull of a moving view.
   mesh.userData['castBoxes'] = [] as Box3[];
+  // The boxes handed back once read (`renderer.ts` casterChanges): made again from here, never anew each frame of a move.
+  mesh.userData['castBoxPool'] = [] as Box3[];
   const depth = spec.depth ? posedMaterial(spec.depth, format) : spec.castShadow ? poseDepthOf(spec.material, format) : undefined;
   if (depth) mesh.customDepthMaterial = depth;
   return mesh;
@@ -320,6 +322,25 @@ export function releaseBatchMesh(mesh: InstancedMesh): void {
 }
 
 /** The instances a kind draws at one level (near or far): ONE buffer of poses and one of tints for all the level's meshes (a plant's body and its cards). */
+/** A list of slots or positions, kept from cull to cull: emptied by its `length`, its array kept. DO NOT use a JS array emptied by
+ *  `length = 0`: V8 lets its store go and every cull grew it again from nothing (the flight's garbage, `npm run diagnose`, 2026-10-22). */
+class IntList {
+  items = new Int32Array(64);
+  length = 0;
+  push(value: number): void {
+    if (this.length === this.items.length) {
+      const grown = new Int32Array(this.items.length * 2);
+      grown.set(this.items);
+      this.items = grown;
+    }
+    this.items[this.length++] = value;
+  }
+  /** Its values in order, ascending (a view of its own array, sorted in place). */
+  sorted(): Int32Array {
+    return this.items.subarray(0, this.length).sort();
+  }
+}
+
 interface Level {
   readonly meshes: MeshState[];
   poses: InstancedInterleavedBuffer | null;
@@ -335,8 +356,8 @@ interface Level {
   /** Positions in use, from 0. */
   drawn: number;
   /** The slots the cull in progress draws here that hold no position yet; the positions it wrote. */
-  readonly entering: number[];
-  readonly changed: number[];
+  readonly entering: IntList;
+  readonly changed: IntList;
   /** Its buffers made and not yet sent: sent whole, no range of them. */
   fresh: boolean;
   /** The widest instance it drew at its last cull (radius, world units): what a cascade's texel is measured against (`shadowCasters.ts`). */
@@ -415,7 +436,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       if (!s) continue;
       if (!centre) { centre = s.center.clone(); reach = s.radius; } else reach = Math.max(reach, centre.distanceTo(s.center) + s.radius);
     }
-    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), at: new Int32Array(0), live: false, drawn: 0, entering: [], changed: [], fresh: false, largest: 0 });
+    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), at: new Int32Array(0), live: false, drawn: 0, entering: new IntList(), changed: new IntList(), fresh: false, largest: 0 });
     const levels = [level(), level()] as const;
     return {
       index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1, levels,
@@ -462,10 +483,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     leaves.set(key, node);
     return node;
   };
-  const growNode = (node: CellNode, x: number, y: number, z: number, r: number): void => {
-    const b = enclose(node.r < 0 ? null : node, { x, y, z, r });
-    node.x = b.x; node.y = b.y; node.z = b.z; node.r = b.r;
-  };
+  const growNode = (node: CellNode, x: number, y: number, z: number, r: number): void => growInto(node, x, y, z, r);
   /** Slot `i` of the kind put in its cell. */
   const file = (k: Kind, i: number): void => {
     const sp = k.spheres;
@@ -495,12 +513,34 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
    * The kind's slots filed again after a repack moved them: the tree made anew from every kind's live slots, so a cell left empty
    * (things taken away as the view moved on) is let go. DO NOT keep the leaves of every cell ever filled: they grew with the ground the view went over.
    */
+  // The nodes emptied in place and filled again, the ones left empty let go: DO NOT make the whole tree anew at every repack (a node a cell,
+  // a slot list a kind each): a 13 s flight over the city allocated 356 MB here (`npm run diagnose`, 2026-10-22).
+  const emptied = (node: CellNode): void => {
+    node.r = -1;
+    if (node.slots) { for (const list of node.slots) list.length = 0; node.big!.fill(0); return; }
+    for (const child of node.children!) if (child) emptied(child);
+  };
+  /** Whether `node` holds nothing now; an empty child let go from it. */
+  const pruned = (node: CellNode): boolean => {
+    if (node.slots) return node.r < 0;
+    let empty = true;
+    const children = node.children!;
+    for (let q = 0; q < children.length; q++) {
+      const child = children[q];
+      if (!child) continue;
+      if (pruned(child)) children[q] = null; else empty = false;
+    }
+    return empty;
+  };
   const refile = (_k: Kind): void => {
-    roots.clear();
-    rootOrder = [];
-    leaves.clear();
+    for (const root of roots.values()) emptied(root);
     grown.clear();
     for (const kind of kinds) for (let i = 0; i < kind.used; i++) if (kind.spheres[i * 4 + 3] !== -Infinity) file(kind, i);
+    // The leaves no slot came back to, and the roots left with none, let go.
+    for (const [key, leaf] of leaves) if (leaf.r < 0) leaves.delete(key);
+    let rootsLeft = false;
+    for (const [key, root] of roots) if (pruned(root)) { roots.delete(key); rootsLeft = true; }
+    if (rootsLeft) rootOrder = [...roots.keys()].sort((a, b) => a - b).map((k) => roots.get(k)!);
   };
 
   /**
@@ -605,7 +645,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     }
     if (pack) {
       k.bounds = null;
-      for (let i = 0; i < k.used; i++) k.bounds = enclose(k.bounds, { x: spheres[i * 4]!, y: spheres[i * 4 + 1]!, z: spheres[i * 4 + 2]!, r: spheres[i * 4 + 3]! });
+      const grown: Bounds = { x: 0, y: 0, z: 0, r: -1 };
+      for (let i = 0; i < k.used; i++) growInto(grown, spheres[i * 4]!, spheres[i * 4 + 1]!, spheres[i * 4 + 2]!, spheres[i * 4 + 3]!);
+      k.bounds = grown.r < 0 ? null : grown;
       // The slots moved: the cells hold them anew.
       refile(k);
     }
@@ -618,7 +660,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       else k.colours.fill(1, start * 3, (start + one.count) * 3);
     }
     const measure = k.spec.levels?.reach ?? 0;
-    let bounds: Bounds | null = null;
+    const bounds: Bounds = { x: 0, y: 0, z: 0, r: -1 };
     for (let i = 0; i < one.count; i++) {
       const slot = start + i;
       format.matrixInto(k.data, slot * stride, scratch, 0);
@@ -626,7 +668,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       point.copy(k.centre).applyMatrix4(matrix);
       const r = k.reach * one.scales[i]!;
       k.spheres[slot * 4] = point.x; k.spheres[slot * 4 + 1] = point.y; k.spheres[slot * 4 + 2] = point.z; k.spheres[slot * 4 + 3] = r;
-      bounds = enclose(bounds, { x: point.x, y: point.y, z: point.z, r });
+      growInto(bounds, point.x, point.y, point.z, r);
       // Where it stands and how big it is, as the far pictures' shader reads its matrix (`plantImpostors.ts`).
       k.feet[slot * 3] = scratch[12]!; k.feet[slot * 3 + 1] = scratch[13]!; k.feet[slot * 3 + 2] = scratch[14]!;
       const largest = Math.max(Math.hypot(scratch[0]!, scratch[1]!, scratch[2]!), Math.hypot(scratch[4]!, scratch[5]!, scratch[6]!), Math.hypot(scratch[8]!, scratch[9]!, scratch[10]!));
@@ -636,7 +678,10 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       k.seen[slot] = 0;
       k.level[slot] = UNKNOWN;
     }
-    if (bounds) k.bounds = enclose(k.bounds, bounds);
+    if (bounds.r >= 0) {
+      if (k.bounds) growInto(k.bounds, bounds.x, bounds.y, bounds.z, bounds.r);
+      else k.bounds = bounds;
+    }
     k.runs.set(key, { start, count: one.count });
     k.used += one.count;
     for (let i = start; i < k.used; i++) file(k, i);
@@ -697,7 +742,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       dirtyBox.max.set(spheres[o]! + r, spheres[o + 1]! + r, spheres[o + 2]! + r);
       for (const s of b.meshes) {
         const boxes = s.mesh?.userData['castBoxes'] as Box3[] | undefined;
-        if (boxes) addChangeBox(boxes, dirtyBox);
+        if (boxes) addChangeBox(boxes, dirtyBox, s.mesh!.userData['castBoxPool'] as Box3[]);
       }
     };
     for (let p = 0; p < n;) {
@@ -715,12 +760,13 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       while (capacity < n + b.entering.length) capacity *= 2;
       sizeLevel(k, b, capacity, n);
     }
-    for (const i of b.entering) if (at[i]! < 0) { put(k, b, i, n++); dirty(i); }
+    const entering = b.entering.items;
+    for (let e = 0, count = b.entering.length; e < count; e++) { const i = entering[e]!; if (at[i]! < 0) { put(k, b, i, n++); dirty(i); } }
     b.drawn = n;
     // A quarter of the buffers in use or less: shrunk to twice what is drawn, so they follow the view, not the most it ever held.
     if (b.capacity > MIN_CAPACITY && n * 4 < b.capacity) sizeLevel(k, b, Math.max(MIN_CAPACITY, n * 2), n);
     if (b.fresh) return;
-    const changed = b.changed.sort((x, y) => x - y);
+    const changed = b.changed.sorted();
     // The last cull's ranges not sent yet (no mesh of the level drawn since): one range round them all, never a list growing while it is not drawn.
     if (b.poses!.updateRanges.length > 0) {
       const from = changed.length ? changed[0]! : Infinity, to = changed.length ? changed[changed.length - 1]! + 1 : -Infinity;

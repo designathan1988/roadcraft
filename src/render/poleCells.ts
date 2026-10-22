@@ -54,6 +54,11 @@ export class PoleCells implements Utilities {
   private readonly scratch: Placement[][] = Array.from({ length: POLE_PART_COUNT }, () => []);
   private from: { net: Network; groundAt: (x: number, y: number) => number } | null = null;
   private readonly box = new Box3();
+  /** The blocks a look wants and their distances, kept from look to look (`look`): DO NOT make a list of objects every frame (75 MB of a
+   *  13 s flight over the city, `npm run diagnose`, 2026-10-22). */
+  private readonly wantedPool: { key: CellKey; d: number }[] = [];
+  private readonly wantedOrder: { key: CellKey; d: number }[] = [];
+  private readonly wantedKeys: CellKey[] = [];
   /** Blocks the view wants not made yet. */
   busy = false;
 
@@ -89,7 +94,8 @@ export class PoleCells implements Utilities {
   /** The blocks a view wants (in its reach, in its frustum or the margin round it), nearest first, made while the frame has time (one at least). */
   look(view: PoleView, deadline: number): void {
     if (!this.from) return;
-    const wanted: { key: CellKey; d: number }[] = [];
+    const wanted = this.wantedOrder;
+    wanted.length = 0;
     const reach = view.reach, margin = POLE_SHADOW_REACH;
     const bx0 = Math.floor((view.x - reach) / BLOCK), bx1 = Math.floor((view.x + reach) / BLOCK);
     const by0 = Math.floor((view.y - reach) / BLOCK), by1 = Math.floor((view.y + reach) / BLOCK);
@@ -102,10 +108,17 @@ export class PoleCells implements Utilities {
         this.box.min.set(x0 - margin, view.ground + POLE_LOW, -(y1 + margin));
         this.box.max.set(x1 + margin, view.ground + POLE_HIGH, -(y0 - margin));
         if (!view.frustum.intersectsBox(this.box)) continue;
-        wanted.push({ key: this.cells.cellAt(x0 + BLOCK / 2, y0 + BLOCK / 2), d });
+        const one = this.wantedPool[wanted.length] ?? (this.wantedPool[wanted.length] = { key: 0 as CellKey, d: 0 });
+        one.key = this.cells.cellAt(x0 + BLOCK / 2, y0 + BLOCK / 2);
+        one.d = d;
+        wanted.push(one);
       }
     }
-    this.cells.want(wanted.sort((a, b) => a.d - b.d || a.key - b.key).map((w) => w.key));
+    wanted.sort((a, b) => a.d - b.d || a.key - b.key);
+    const keys = this.wantedKeys;
+    keys.length = 0;
+    for (const w of wanted) keys.push(w.key);
+    this.cells.want(keys);
     this.busy = false;
     let first = true;
     for (const key of this.cells.wantedKeys) {

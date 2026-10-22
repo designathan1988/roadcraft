@@ -645,6 +645,11 @@ export function createSceneRenderer(
     return true;
   };
   /** A still caster's world bounds into `out`: a layer's batch of instances says where its pieces stand (`userData.wholeBox`, `farParts.ts`); an instanced mesh by its instances' box (a part run's set by `partCells.ts`, else worked out once from its matrices and again when they change); a mesh by its geometry's box in the world. False when no box is to be had (a batch of the town's walls: `shellBatch.ts` says what changed in it, `userData.castBox`). */
+  /** A layer's change boxes read: given back to its pool (`cellInstances.ts` castBoxPool), not dropped for the collector each frame. */
+  const releaseBoxes = (mesh: Object3D, boxes: Box3[]): void => {
+    const pool = mesh.userData['castBoxPool'] as Box3[] | undefined;
+    if (pool) clearChangeBoxes(boxes, pool); else boxes.length = 0;
+  };
   const boundsOf = (mesh: Mesh & { isInstancedMesh?: boolean; isBatchedMesh?: boolean; boundingBox?: Box3 | null; boundingSphere?: Sphere | null; instanceMatrix?: { version?: number; array?: ArrayLike<number> | null }; computeBoundingBox?: () => void }, entry: { readonly box: Box3; computed: boolean }, changed: boolean): boolean => {
     const whole = mesh.userData['wholeBox'] as Box3 | undefined;
     if (whole) { entry.box.copy(whole); return !whole.isEmpty(); }
@@ -753,12 +758,12 @@ export function createSceneRenderer(
         if (mesh.isInstancedMesh && !castBox && !castBoxes && instanceChanges(mesh)) { /* each instance its own box */ }
         else if (boundsOf(mesh, entry, false)) { addChange(entry.box); noteWidest(mesh, entry.box); } else noBox(mesh);
         castBox?.makeEmpty();
-        if (castBoxes) castBoxes.length = 0;
+        if (castBoxes) releaseBoxes(mesh, castBoxes);
       } else if (entry.hash !== h) {
         entry.hash = h;
         if (castBoxes) {
           // A layer's cells (`cellInstances.ts`): the boxes of what came and went in them, nothing else; none, nothing of the picture changed (its buffers written for the same things in other positions).
-          if (castBoxes.length) { any = true; for (const box of castBoxes) { addChange(box); noteWidest(mesh, box); } castBoxes.length = 0; }
+          if (castBoxes.length) { any = true; for (const box of castBoxes) { addChange(box); noteWidest(mesh, box); } releaseBoxes(mesh, castBoxes); }
         } else if (castBox) {
           // A batch: what it says changed in it, nothing else (its pieces stand all over the town).
           if (!castBox.isEmpty()) { any = true; addChange(castBox); noteWidest(mesh, castBox); castBox.makeEmpty(); }

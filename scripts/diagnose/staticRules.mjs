@@ -30,7 +30,8 @@ export function staticFindings(root) {
       }
     });
     // A BatchedMesh made here with three's defaults: every instance tested against the frustum and sorted by depth in every pass (colour and each shadow cascade).
-    if (/new (Gpu)?BatchedMesh\s*\(|extends BatchedMesh/.test(text) && !/sortObjects\s*=\s*false/.test(text)) {
+    // Left at the default only where the file never sets it (a batch may sort for a transparent material alone: `shellBatch.ts`).
+    if (/new (Gpu)?BatchedMesh\s*\(|extends BatchedMesh/.test(text) && !/sortObjects\s*=/.test(text) && !/class \w+ extends BatchedMesh/.test(text)) {
       const i = lines.findIndex((l) => /new (Gpu)?BatchedMesh\s*\(|extends BatchedMesh/.test(l));
       findings.push({ rule: 'batched-sort', where: `${rel(file)}:${i + 1}`, text: lines[i].trim().slice(0, 140), why: 'BatchedMesh keeps sortObjects and perObjectFrustumCulled true: a sort and a frustum test of every instance in every pass' });
     }

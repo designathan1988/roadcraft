@@ -14,6 +14,16 @@ export function enclose(a: Bounds | null, b: Bounds): Bounds {
   return { x: a.x + dx * k, y: a.y + dy * k, z: a.z + dz * k, r };
 }
 
+/** `a` grown in place to hold the sphere (x, y, z, r): `enclose` without a new object (the cull's tree grows thousands of spheres a pass). */
+export function growInto(a: Bounds, x: number, y: number, z: number, r: number): void {
+  if (a.r < 0) { a.x = x; a.y = y; a.z = z; a.r = r; return; }
+  const dx = x - a.x, dy = y - a.y, dz = z - a.z, d = Math.hypot(dx, dy, dz);
+  if (d + r <= a.r) return;
+  if (d + a.r <= r) { a.x = x; a.y = y; a.z = z; a.r = r; return; }
+  const nr = (d + a.r + r) / 2, k = d > 0 ? (nr - a.r) / d : 0;
+  a.x += dx * k; a.y += dy * k; a.z += dz * k; a.r = nr;
+}
+
 /** The planes of `mask` (bit p: plane p not yet known to hold the sphere inside) against the sphere */
 export function planeMask(frustum: Frustum, x: number, y: number, z: number, r: number, mask: number): number {
   let out = 0;
