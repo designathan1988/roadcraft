@@ -180,7 +180,9 @@ export interface BuildingKit {
 // Not the louvres and brises: boxes of slats the simplifier cannot reduce within the error (measured); they have levels of their own.
 const SIMPLIFIED: readonly PartKind[] = ['bike', 'foliage', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'lounger'];
 /** The errors those levels are asked at, metres (meshoptimizer's absolute error); one is kept only if it draws a quarter fewer triangles. */
-const SIMPLIFIED_ERRORS = [0.01, 0.025, 0.06];
+// And 15 cm: at the district's view a metre spans a few pixels, and the coarsest at 6 cm still drew a chair in ~95 triangles, a dish in ~150,
+// the building parts 9.3 M triangles of the frame's 20 (`npm run diagnose`, 2026-10-22); a level is taken only where its error is under a pixel.
+const SIMPLIFIED_ERRORS = [0.01, 0.025, 0.06, 0.15];
 const FEWER = 0.75;
 
 const trianglesOf = (g: BufferGeometry): number => (g.index ? g.index.count : g.getAttribute('position').count) / 3;

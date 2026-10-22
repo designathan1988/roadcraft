@@ -445,15 +445,28 @@ async function picture(name) {
   await page.screenshot({ path: refPath });
   await page.evaluate((r) => window.__roadcraft.scene().resize(r), ratio);
   await drawn(4);
-  await page.evaluate(() => window.__roadcraft.measure('running'));
   const data = (p) => `data:image/png;base64,${readFileSync(p).toString('base64')}`;
+  // Each pass of the post chain left out in turn, the frame against the same reference: which pass makes the frame differ (a pass that
+  // sharpens or works per pixel at the frame's size is not the same at twice it).
+  const without = {};
+  for (const effect of ['sharpen', 'smaa', 'ambientOcclusion', 'bloom', 'canyonLight']) {
+    await page.evaluate((e) => window.__roadcraft.variant({ [e]: false }), effect);
+    await drawn(6);
+    const path = join(out, `${name}-without-${effect}.png`);
+    await page.screenshot({ path });
+    const r = await page.evaluate(comparePictures, { frame: data(path), reference: data(refPath), threshold: 0.05 });
+    if (!r.error) without[effect] = +(r.overShare * 100).toFixed(2);
+  }
+  await page.evaluate(() => window.__roadcraft.variant());
+  await drawn(4);
+  await page.evaluate(() => window.__roadcraft.measure('running'));
   const result = await page.evaluate(comparePictures, { frame: data(framePath), reference: data(refPath), threshold: 0.05 });
   if (result.error) return { error: result.error };
   const heat = join(out, `${name}-aliasing.png`);
   writeFileSync(heat, Buffer.from(result.png.split(',')[1], 'base64'));
   const approved = join(ROOT, 'lab-reports', 'diagnose', 'approved.json');
   const look = existsSync(approved) ? JSON.parse(readFileSync(approved, 'utf8'))[name] ?? null : null;
-  return { overShare: result.overShare, meanError: result.meanError, frame: result.frame, reference: result.reference, approved: look, files: { frame: framePath, reference: refPath, aliasing: heat } };
+  return { overShare: result.overShare, meanError: result.meanError, without, frame: result.frame, reference: result.reference, approved: look, files: { frame: framePath, reference: refPath, aliasing: heat } };
 }
 
 async function profileStart(intervalUs) {
