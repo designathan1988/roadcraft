@@ -47,6 +47,10 @@ export class GroomBody {
 
   /** The scalp's skin quads (as triangles): the hair cap. */
   capTris: number[] = [];
+  /** The skin's triangles across the hairline (some corners on the scalp): the cap reaches into them up to the hairline's own curve. */
+  rimTris: number[] = [];
+  /** How far above the hairline a point is (dm; negative below it): the game's smooth curve, not the scalp's staircase of quads. */
+  aboveHairline: (x: number, y: number, z: number) => number = () => 1;
 
   constructor(readonly positions: Float32Array, readonly skin: readonly number[], faces: Uint16Array, faceGroup: Uint8Array, skinGroup: number) {
     const n = positions.length / 3;
@@ -87,11 +91,30 @@ export class GroomBody {
     }
     const ry = (hi[1]! - lo[1]!) * 0.39;
     const mid = [(lo[0]! + hi[0]!) / 2, hi[1]! - ry, lo[2]! + (hi[1]! - lo[1]!) * 0.36];
+    this.aboveHairline = (x, y, z) => (y - mid[1]!) - hairline(Math.atan2(x - mid[0]!, z - mid[2]!)) * ry;
     this.scalp = skin.filter((v) => {
       const x = P[v * 3]! - mid[0]!, y = (P[v * 3 + 1]! - mid[1]!) / ry, z = P[v * 3 + 2]! - mid[2]!;
       if (P[v * 3 + 1]! < top - 2.45) return false;
       return y > hairline(Math.atan2(x, z));
     });
+    // No hair grows from the ears: the hairline dips over them, so an ear's top counted as scalp and a lock grew out of it, a lump over the ear.
+    // An ear is skin standing out sideways past the skull (its width above the ears), between the brow and the jaw, round the head's middle.
+    const skullHalf = Math.max(...this.scalp.filter((v) => P[v * 3 + 1]! > mid[1]! + ry * 0.35).map((v) => Math.abs(P[v * 3]! - mid[0]!)));
+    const ear = (v: number): boolean => Math.abs(P[v * 3]! - mid[0]!) > skullHalf + 0.02 && P[v * 3 + 1]! < mid[1]! + ry * 0.35 && P[v * 3 + 1]! > mid[1]! - ry * 1.7
+      && Math.abs(P[v * 3 + 2]! - mid[2]!) < 0.6;
+    this.scalp = this.scalp.filter((v) => !ear(v));
+    // Nor do the ears' polygons stop hair (lying over them it showed their relief): each ear is wrapped in a smooth ellipsoid instead, hair over it a soft bulge.
+    for (const sgn of [-1, 1]) {
+      const vs = skin.filter((v) => ear(v) && Math.sign(P[v * 3]! - mid[0]!) === sgn);
+      if (!vs.length) continue;
+      const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (const v of vs) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a]!, P[v * 3 + a]!); hi[a] = Math.max(hi[a]!, P[v * 3 + a]!); }
+      // Centred at the ear's root on the skull, reaching just past its outer edge.
+      const cx = mid[0]! + sgn * skullHalf;
+      const rx = Math.max(Math.abs(hi[0]! - cx), Math.abs(lo[0]! - cx)) + 0.03;
+      this.ears.push({ c: [cx, (lo[1]! + hi[1]!) / 2, (lo[2]! + hi[2]!) / 2], r: [rx, (hi[1]! - lo[1]!) / 2 + 0.08, (hi[2]! - lo[2]!) / 2 + 0.05] });
+    }
+    for (const [key, list] of this.grid) this.grid.set(key, list.filter((v) => !ear(v)));
     // The face: from the brow (the hairline's front, a little lower) to the chin, as wide as the head less the temples, its front the skull's middle.
     const inScalp = new Set(this.scalp);
     const border = new Set<number>();
@@ -99,7 +122,15 @@ export class GroomBody {
       if (faceGroup[f] !== skinGroup) continue;
       const q = [faces[f * 4]!, faces[f * 4 + 1]!, faces[f * 4 + 2]!, faces[f * 4 + 3]!];
       if (!q.every((v) => inScalp.has(v))) {
-        for (const v of q) if (inScalp.has(v)) border.add(v);
+        if (q.some((v) => inScalp.has(v))) {
+          for (const v of q) if (inScalp.has(v)) border.add(v);
+          // Not where the ear meets the head: a corner off the scalp standing out from it is the ear, and the cap climbed onto it as a ledge.
+          const out = (v: number): number => Math.hypot(P[v * 3]! - mid[0]!, P[v * 3 + 2]! - mid[2]!);
+          const onScalp = Math.max(...q.filter((v) => inScalp.has(v)).map(out));
+          if (q.some((v) => !inScalp.has(v) && out(v) > onScalp + 0.05)) continue;
+          this.rimTris.push(q[0]!, q[1]!, q[2]!);
+          if (q[3] !== q[2]) this.rimTris.push(q[0]!, q[2]!, q[3]!);
+        }
         continue;
       }
       this.capTris.push(q[0]!, q[1]!, q[2]!);
@@ -120,20 +151,45 @@ export class GroomBody {
     this.hugFloor = mid[1]! - ry * 0.55;
   }
 
-  /** The hair's cap over the scalp (`hairVolume.ts`): a point just off the skin at every scalp vertex where hair grows (a guide's root within 2.5 cm),
-   *  finer towards the hairline. */
+  /** The hair's cap over the scalp (`hairVolume.ts`): points just off the skin every 6 mm or so over the scalp's triangles (its vertices alone are too
+   *  sparse - their spheres showed as teeth along the nape), where hair grows (a guide's root within 2.5 cm), finer towards the hairline. */
   cap(guides: readonly Guide[]): Cap {
-    const P = this.positions, N = this.normals;
-    const roots = guides.map((g) => g.root);
-    const grown = this.scalp.filter((v) => roots.some((r) => (P[r * 3]! - P[v * 3]!) ** 2 + (P[r * 3 + 1]! - P[v * 3 + 1]!) ** 2 + (P[r * 3 + 2]! - P[v * 3 + 2]!) ** 2 < 0.0625));
-    const points = new Float32Array(grown.length * 3), radius = new Float32Array(grown.length);
-    grown.forEach((v, i) => {
-      const e = this.edges.get(v) ?? 0;
-      for (let a = 0; a < 3; a++) points[i * 3 + a] = P[v * 3 + a]! + N[v * 3 + a]! * 0.02;
-      // Its surface about level with the hair lying over it (`groomMargin` plus a lock's depth), thinner at the hairline.
-      radius[i] = 0.17 * (1 - 0.4 * e);
+    const P = this.positions, N = this.normals, T = [...this.capTris, ...this.rimTris];
+    const roots = guides.map((g) => [P[g.root * 3]!, P[g.root * 3 + 1]!, P[g.root * 3 + 2]!]);
+    const pts: number[] = [], rad: number[] = [];
+    const step = 0.06;
+    for (let t = 0; t < T.length; t += 3) {
+      const a = T[t]!, b = T[t + 1]!, c = T[t + 2]!;
+      const longest = Math.max(dist(P, a, b), dist(P, b, c), dist(P, c, a));
+      const m = Math.max(1, Math.ceil(longest / step));
+      for (let i = 0; i <= m; i++) for (let j = 0; j <= m - i; j++) {
+        // Barycentric samples; points on a shared edge are made twice, harmless under the max-blend.
+        const u = i / m, v = j / m, w = 1 - u - v;
+        const q = [0, 1, 2].map((k) => P[a * 3 + k]! * u + P[b * 3 + k]! * v + P[c * 3 + k]! * w);
+        if (!roots.some((r) => (r[0]! - q[0]!) ** 2 + (r[1]! - q[1]!) ** 2 + (r[2]! - q[2]!) ** 2 < 0.0625)) continue;
+        const n = [0, 1, 2].map((k) => N[a * 3 + k]! * u + N[b * 3 + k]! * v + N[c * 3 + k]! * w);
+        const nl = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
+        // Up to the hairline's curve, finer over its last 3 cm.
+        const above = this.aboveHairline(q[0]!, q[1]!, q[2]!);
+        if (above < 0) continue;
+        const e = Math.max(0, 1 - above / 0.3);
+        pts.push(q[0]! + n[0]! / nl * 0.02, q[1]! + n[1]! / nl * 0.02, q[2]! + n[2]! / nl * 0.02);
+        // Its surface about level with the hair lying over it (`groomMargin` plus a lock's depth), thinner at the hairline.
+        rad.push(0.17 * (1 - 0.4 * e));
+      }
+    }
+    return { points: Float32Array.from(pts), radius: Float32Array.from(rad) };
+  }
+
+  /** The ears as smooth ellipsoids for the hair's collision (centre, radii; dm). */
+  readonly ears: { c: number[]; r: number[] }[] = [];
+
+  /** Whether a point lies over an ear (within its outline seen from the side, on its side of the head). */
+  overEar(x: number, y: number, z: number): boolean {
+    return this.ears.some((e) => {
+      const dy = (y - e.c[1]!) / (e.r[1]! - 0.04), dz = (z - e.c[2]!) / (e.r[2]! - 0.04);
+      return dy * dy + dz * dz < 1 && Math.sign(x - this.skull[0]) === Math.sign(e.c[0]! - this.skull[0]);
     });
-    return { points, radius };
   }
 
   /** Scalp vertices near the hairline: how near (1 on it). */
@@ -198,9 +254,24 @@ export class GroomBody {
         p[i] = x + N[best * 3]! * push; p[i + 1] = y + N[best * 3 + 1]! * push; p[i + 2] = z + N[best * 3 + 2]! * push;
       }
     }
+    // Over the ears' ellipsoids: only sideways, out to their surface plus the margin - hair passes over an ear as a soft bulge, never parts round it.
+    // Not for hair combed to a tie (`face` off): pulled tight above the ears, the dome only lifted it into flaps at the temples.
+    if (face) for (const e of this.ears) {
+      const dy = (p[i + 1]! - e.c[1]!) / (e.r[1]! + margin), dz = (p[i + 2]! - e.c[2]!) / (e.r[2]! + margin);
+      const across = 1 - dy * dy - dz * dz;
+      if (across <= 0) continue;
+      const sgn = Math.sign(e.c[0]! - this.skull[0]) || 1;
+      const out = e.c[0]! + sgn * (e.r[0]! + margin) * Math.sqrt(across);
+      if (sgn * (p[i]! - out) < 0 && sgn * (p[i]! - e.c[0]!) > -0.3) p[i] = out;
+    }
     // Last, so nothing draws hair back over the eyes.
     if (face) this.clearFace(p, i, margin, side);
   }
+}
+
+/** The distance between two vertices (dm). */
+function dist(P: Float32Array, a: number, b: number): number {
+  return Math.hypot(P[a * 3]! - P[b * 3]!, P[a * 3 + 1]! - P[b * 3 + 1]!, P[a * 3 + 2]! - P[b * 3 + 2]!);
 }
 
 /** Where hair grows from, as height on the skull (its middle 0, its top 1) by the angle round it (0 at the brow): the game's hairline, `procedural.ts`. */
@@ -292,6 +363,24 @@ export function levelCut(g: Guide, y: number): boolean {
     return true;
   }
   return false;
+}
+
+/** A strand trimmed along the hairline, as short hair is cut round the ears and at the nape: ended where it first hangs `below` dm under the hairline's curve (negative: that far above it)
+ *  or passes over an ear. False when nothing of it is left (it grows pointing out of the hairline at once). */
+export function hairlineCut(g: Guide, body: GroomBody, below: number): boolean {
+  const p = g.pts, n = p.length / 3;
+  for (let i = 1; i < n; i++) {
+    const x = p[i * 3]!, y = p[i * 3 + 1]!, z = p[i * 3 + 2]!;
+    if (body.aboveHairline(x, y, z) > -below && !body.overEar(x, y, z)) continue;
+    if (i < 3) return false;
+    g.pts = p.slice(0, i * 3); g.vel = new Float32Array(i * 3); g.rest = new Float32Array(i * 3);
+    // Tapering into the cap, not a blunt end (blunt ends made a row of beads along the nape).
+    g.blunt = false;
+    remember(g);
+    return true;
+  }
+  // Never reaches the hairline: left as it is.
+  return true;
 }
 
 /** The guide's current shape kept as the style it springs back to. */

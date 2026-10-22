@@ -76,7 +76,8 @@ export class HairVolume {
       for (let i = 0; i < n - 1; i++) {
         const t0 = i / (n - 1), t1 = (i + 1) / (n - 1);
         // The clump: thin where it grows (the hairline a fine edge, not a rolled brim), full a few centimetres on, narrowing to a point over its last part.
-        const r0 = g.radius * taper(t0, g.blunt) * rootWidth(g, i * along), r1 = g.radius * taper(t1, g.blunt) * rootWidth(g, (i + 1) * along);
+        const length = along * (n - 1);
+        const r0 = g.radius * taper(t0, length, g.blunt) * rootWidth(g, i * along), r1 = g.radius * taper(t1, length, g.blunt) * rootWidth(g, (i + 1) * along);
         const r = Math.max(r0, r1);
         if (r <= 0) continue;
         const ax = p[i * 3]!, ay = p[i * 3 + 1]!, az = p[i * 3 + 2]!, bx = p[i * 3 + 3]!, by = p[i * 3 + 4]!, bz = p[i * 3 + 5]!;
@@ -151,11 +152,14 @@ function blur(f: Float32Array, N: number): void {
   }
 }
 
-/** A clump's width along it: full, then narrowing to a rounded point. */
-function taper(t: number, blunt = false): number {
+/** A clump's width along it (`t` 0 at the root, 1 at the tip; `length` dm): full, then narrowing to a rounded point. */
+function taper(t: number, length: number, blunt = false): number {
   // A blunt cut only rounds its last few per cent.
   if (blunt) return t < 0.85 ? 1 : 1 - ((t - 0.85) / 0.15) * 0.35;
-  return t < 0.55 ? 1 : Math.max(0.12, 1 - ((t - 0.55) / 0.45) ** 1.4 * 0.88);
+  // A point over its last 3.5 cm, within 30-45% of it: short hair a layer of locks, not a crop of teardrops; long hair's tips still fine.
+  const zone = Math.min(0.45, Math.max(0.3, 0.35 / Math.max(0.1, length)));
+  const from = 1 - zone;
+  return t < from ? 1 : Math.max(0.12, 1 - ((t - from) / zone) ** 1.4 * 0.88);
 }
 
 /** Welded geometry as a BufferGeometry with smooth normals. */

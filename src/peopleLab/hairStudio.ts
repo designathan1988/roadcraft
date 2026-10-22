@@ -3,7 +3,7 @@ import {
   type Camera,
 } from 'three';
 import {
-  GroomBody, decodeGroom, encodeGroom, gather, groomMargin, levelCut, groomPack, plant, remember, settle, step,
+  GroomBody, decodeGroom, encodeGroom, gather, groomMargin, hairlineCut, levelCut, groomPack, plant, remember, settle, step,
   type Guide, type GroomRecord, type Tie,
 } from './groom';
 import type { ProxyPack } from '@people/body/proxy';
@@ -153,21 +153,11 @@ export class HairStudio {
 
   /** The style presets: lengths and ties on a full head. */
   preset(name: 'short' | 'bob' | 'long' | 'ponytail' | 'bun' | 'pigtails'): void {
-    const lengths = { short: 0.9, bob: 2.4, long: 3.5, ponytail: 4.4, bun: 4.4, pigtails: 4.0 } as const;
+    const lengths = { short: 0.9, bob: 2.4, long: 3.5, ponytail: 4.4, bun: 4.4, pigtails: 3.4 } as const;
     const thick = { short: 0.16, bob: 0.18, long: 0.18, ponytail: 0.17, bun: 0.17, pigtails: 0.17 } as const;
     const keep = this.thickness;
     this.thickness = thick[name];
     this.fill(lengths[name], 0.15);
-    // Short hair cut clear of the ears: the locks growing round them trimmed to a few centimetres.
-    if (name === 'short') {
-      const P = this.body.positions;
-      this.guides = this.guides.map((g) => {
-        if (P[g.root * 3 + 1]! > this.body.hugFloor + 0.45) return g;
-        const t = plant(this.body, g.root, 0.25, g.radius);
-        t.row = g.row; t.theta = g.theta;
-        return t;
-      });
-    }
     this.thickness = keep;
     const [sx, , sz] = this.body.skull;
     const top = this.body.top;
@@ -179,6 +169,12 @@ export class HairStudio {
     }
     this.relax(120);
     this.symmetrize();
+    // Short hair trimmed along the hairline: clear of the ears, neat at the nape - the locks ending a centimetre inside it, the cap making the edge.
+    if (name === 'short') {
+      // A lock growing straight out of the hairline has nothing left: it goes (the cap covers its root), and the twins are paired again.
+      this.guides = this.guides.filter((g) => hairlineCut(g, this.body, -0.1));
+      this.pairUp();
+    }
     // A bob cut straight across at the jaw.
     if (name === 'bob') for (const g of this.guides) levelCut(g, this.body.face.bottom + 0.45);
     if (name === 'bun') {
@@ -444,7 +440,8 @@ export class HairStudio {
         }
         break;
       case 'cut':
-        for (const { g, i } of hits) if (i >= 2 && i < g.pts.length / 3) this.trim(g, i);
+        // Scissors: each strand cut where it crosses the line the pointer draws (not at the brush's edge), its end blunt.
+        this.cutAlong(ray);
         break;
       case 'erase': {
         const gone = new Set(hits.map((h) => h.g));
@@ -493,6 +490,29 @@ export class HairStudio {
 
 
   /** The strand cut to `points` points. */
+  /** Every strand crossing the pointer's ray (within a lock's width of it) cut on the segment nearest the ray, at the point nearest it. */
+  private cutAlong(ray: Ray): void {
+    const rays = this.mirror ? [ray, mirrorRay(ray, this.body.skull[0])] : [ray];
+    const a = new Vector3(), b = new Vector3(), on = new Vector3();
+    for (const g of this.guides) {
+      const n = g.pts.length / 3;
+      let best = Infinity, at = -1;
+      const end = new Vector3();
+      for (let i = (g.tie ? g.tie.k : 0) + 1; i < n; i++) {
+        a.fromArray(g.pts, (i - 1) * 3); b.fromArray(g.pts, i * 3);
+        for (const r of rays) {
+          const d = r.distanceSqToSegment(a, b, undefined, on);
+          if (d < best) { best = d; at = i; end.copy(on); }
+        }
+      }
+      const band = Math.max(g.radius, 0.12);
+      if (at < 2 || best > band * band) continue;
+      this.trim(g, at + 1);
+      g.pts[at * 3] = end.x; g.pts[at * 3 + 1] = end.y; g.pts[at * 3 + 2] = end.z;
+      g.blunt = true;
+    }
+  }
+
   private trim(g: Guide, points: number): void {
     g.pts = g.pts.slice(0, points * 3); g.rest = g.rest.slice(0, points * 3); g.vel = g.vel.slice(0, points * 3);
     if (g.tie && g.tie.k >= points) g.tie = null;
@@ -528,6 +548,8 @@ export class HairStudio {
     for (let v = 0; v < colour.count; v++) colour.setXYZ(v, skin.r, skin.g, skin.b);
     const reach = 0.42;
     for (const v of this.body.scalp) {
+      // Not near the hairline: a painted vertex there faded across its triangles onto the face and neck, teeth past the hair's edge (the cap covers it).
+      if ((this.body.edges.get(v) ?? 0) > 0.3) continue;
       for (const r of roots) {
         if (Math.abs(P[v * 3 + 1]! - P[r * 3 + 1]!) > reach) continue;
         if (Math.hypot(P[v * 3]! - P[r * 3]!, P[v * 3 + 1]! - P[r * 3 + 1]!, P[v * 3 + 2]! - P[r * 3 + 2]!) < reach) {
