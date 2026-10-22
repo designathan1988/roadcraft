@@ -86,7 +86,7 @@ describe('scene census', () => {
               "objects": 1,
             },
             "building-frame": {
-              "drawn": 7207,
+              "drawn": 5712,
               "objects": 1,
             },
             "building-glass": {
@@ -306,12 +306,12 @@ describe('scene census', () => {
               "objects": 4,
             },
           },
-          "drawn": 473386,
+          "drawn": 471891,
           "draws": 259,
           "lines": 0,
           "objects": 301,
           "points": 4000,
-          "triangles": 5129788,
+          "triangles": 5126798,
         },
         "street": {
           "byName": {
@@ -376,7 +376,7 @@ describe('scene census', () => {
               "objects": 13,
             },
             "building-frame": {
-              "drawn": 116535,
+              "drawn": 11102,
               "objects": 22,
             },
             "building-glass": {
@@ -672,12 +672,12 @@ describe('scene census', () => {
               "objects": 4,
             },
           },
-          "drawn": 597346,
-          "draws": 381,
+          "drawn": 491913,
+          "draws": 380,
           "lines": 0,
           "objects": 547,
           "points": 4000,
-          "triangles": 5278561,
+          "triangles": 5130735,
         },
       }
     `);

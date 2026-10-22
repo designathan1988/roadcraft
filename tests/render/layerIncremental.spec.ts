@@ -264,7 +264,8 @@ describe('the cells the budget of triangles held back', () => {
   it('come back, still view, once a lighter level landed leaves room for them', () => {
     const doc = town(4);
     const layer = createBuildingLayer();
-    layer.frame.budget = 58_000;
+    // Under every cell at its detail: at 58 k the lighter window frames (drawn by the pane's material, 0f26bc5e) let all nine in, none held back.
+    layer.frame.budget = 50_000;
     frames(layer, doc);
     // The heavy middle building: the cells spanning least held back a level (their facade level, reckoned from their own detail's measure, or their masses).
     const held = layer.levels();
@@ -273,14 +274,16 @@ describe('the cells the budget of triangles held back', () => {
     doc.buildings.put({ ...middle, ...body(20, middle.x, middle.y), id: middle.id } as Building);
     frames(layer, doc);
     expect(shown(layer).masses).toBe(0);
-    expect(layer.triangles).toBeLessThanOrEqual(58_000);
+    expect(layer.triangles).toBeLessThanOrEqual(50_000);
     layer.dispose();
   });
 
   it('ask no frame while none of them fits and nothing is measured anew', () => {
     const doc = town(4);
     const layer = createBuildingLayer();
-    layer.frame.budget = 40_000;
+    // Under the facades' level too, so the town is held at its masses: at 40 k the kit's lighter parts (hidden faces dropped, adb9d57c) let
+    // every facade in, and nothing was held back.
+    layer.frame.budget = 30_000;
     const ran = frames(layer, doc);
     expect(ran).toBeLessThan(20);
     const held = shown(layer);

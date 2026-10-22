@@ -173,7 +173,10 @@ async function diagnose() {
     await setView({ x: centre.x, y: centre.y, zoom: v.zoom, az: v.az, el: v.el });
     const settled = await settle(20_000);
     const row = { settled };
+    // The sun's passes over the view's still frames: a still view whose stores are drawn again frame after frame shows here, with why and by what.
+    await page.evaluate(() => window.__roadcraft.scene().shadowStats?.());
     row.frames = await frameWindow(3000);
+    row.shadows = await page.evaluate(() => { const s = window.__roadcraft.scene().shadowStats?.(); return s ? { passes: s.passes, whole: s.whole, over: s.over, why: s.why, widest: s.widest?.slice(0, 6), unknown: s.unknown?.slice(0, 6), changers: s.changers?.slice(0, 10) } : null; });
     row.passes = await page.evaluate(async () => {
       if (!window.__labGpu) return null;
       window.__labGpu.passTiming(true);
@@ -226,7 +229,7 @@ async function diagnose() {
   const flightPrograms = await programNames();
   const flight = await frameWindow(0, () => page.evaluate(fly, tour));
   const nav = { frames: flight, profile: await profileStop('navigate') };
-  nav.shadows = await page.evaluate(() => { const s = window.__roadcraft.scene().shadowStats?.(); return s ? { passes: s.passes, whole: s.whole, over: s.over, why: s.why, widest: s.widest?.slice(0, 5) } : null; });
+  nav.shadows = await page.evaluate(() => { const s = window.__roadcraft.scene().shadowStats?.(); return s ? { passes: s.passes, whole: s.whole, over: s.over, why: s.why, widest: s.widest?.slice(0, 5), changers: s.changers?.slice(0, 10) } : null; });
   nav.allocations = allocationsOf((await cdp.send('HeapProfiler.stopSampling')).profile, flight.frame.seconds);
   // The same flight again, the GPU timed pass by pass (its per-pass queries cost the page: kept out of the flight above).
   await setView({ x: centre.x, y: centre.y, zoom: 2.5, az: 45, el: 48 });

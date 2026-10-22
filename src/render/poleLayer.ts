@@ -36,6 +36,7 @@ import {
   wireEnd,
 } from './poleBake';
 import type { SceneryKit } from './scenery';
+import { castBySize } from './shadowCasters';
 import {
   POLE_PART_COUNT,
   type Placement,
@@ -161,6 +162,8 @@ export class PartStore {
   private readonly shape: PartShape;
   /** The shape drawn now (`PolePartSpec.levels`). */
   private level = 0;
+  /** Takes the mesh off the casters chosen by cascade (`castBySize`). */
+  private uncast: (() => void) | null = null;
   readonly perInstance: number;
 
   constructor(private readonly spec: PolePartSpec, private readonly group: Object3D) {
@@ -178,6 +181,12 @@ export class PartStore {
     mesh.renderOrder = this.spec.renderOrder;
     mesh.onBeforeRender = noteScreen;
     mesh.onBeforeShadow = noteShadow;
+    // Cast into a cascade where the part's pieces cover a texel (`shadowCasters.ts`), its maker's choice between the passes. DO NOT set
+    // it from the last cascade three drew (`view`): with the far cascades drawn every other frame, the last one alternated, the parts' casting
+    // with it, and the casters' signature saw the poles come and go at every frame - a still district's near store thrown away at every pass
+    // (`utility-arms` 2,366 changes, `npm run diagnose`, 2026-10-22).
+    this.uncast?.();
+    this.uncast = castBySize({ mesh, casts: this.spec.castShadow, radius: () => Math.sqrt(this.bounds.cover) });
     return mesh;
   }
 
@@ -189,7 +198,6 @@ export class PartStore {
     if (this.mesh) {
       (mesh.instanceMatrix.array as Float32Array).set((this.mesh.instanceMatrix.array as Float32Array).subarray(0, this.count * 16));
       mesh.boundingSphere = this.mesh.boundingSphere;
-      mesh.castShadow = this.mesh.castShadow;
       this.group.remove(this.mesh);
       // Its buffer let go on the GPU (`WebGLObjects` on the mesh's dispose).
       this.mesh.dispose();
@@ -258,11 +266,11 @@ export class PartStore {
   }
 
   /** As the camera sees the nearest pole: a piece covering under a pixel (times its brightness) not drawn, nor cast where it covers under a shadow texel; the coarsest shape off by under a pixel. */
-  view(scale: ScreenScale, nearest: number): void {
+  view(_scale: ScreenScale, nearest: number): void {
     const mesh = this.mesh, spec = this.spec;
     if (!mesh || this.count === 0 || spec.glows) return;
     mesh.visible = this.bounds.cover * nearest * nearest * spec.brightness() >= 1;
-    mesh.castShadow = spec.castShadow && (scale.texel === 0 || this.bounds.cover >= scale.texel * scale.texel);
+    // Its casting by cascade: `castBySize` (`meshOf`).
     let level = 0;
     for (let i = spec.levels.length - 1; i > 0; i--) {
       if (spec.levels[i]!.error * nearest < 1) { level = i; break; }
@@ -291,6 +299,8 @@ export class PartStore {
   }
 
   dispose(): void {
+    this.uncast?.();
+    this.uncast = null;
     if (!this.mesh) return;
     this.group.remove(this.mesh);
     this.mesh.dispose();
@@ -313,6 +323,8 @@ export class WireStore {
   private levels: (InstancedBufferGeometry | undefined)[] = [];
   private level = 0;
   private readonly sphere = new Sphere();
+  /** Takes the mesh off the casters chosen by cascade (`castBySize`). */
+  private uncast: (() => void) | null = null;
   private static readonly BLOCK = WIRE_BLOCK;
 
   constructor(private readonly group: Object3D) {}
@@ -344,6 +356,8 @@ export class WireStore {
     mesh.name = 'utility-wires';
     mesh.onBeforeRender = noteScreen;
     mesh.onBeforeShadow = noteShadow;
+    // Cast into a cascade whose texel the wire's width spans (`castBySize`), as the parts (`PartStore.meshOf`).
+    this.uncast = castBySize({ mesh, casts: true, radius: () => WIRE_WIDTH });
     this.group.add(mesh);
     this.mesh = mesh;
   }
@@ -417,13 +431,13 @@ export class WireStore {
   }
 
   /** As the camera sees the nearest pole: the template its wires need (`wireLevel`), none once faded; cast while a texel or wider. */
-  view(scale: ScreenScale, nearest: number): void {
+  view(_scale: ScreenScale, nearest: number): void {
     const mesh = this.mesh;
     if (!mesh || this.count === 0) return;
     const level = wireLevel(nearest, this.bounds.sag);
     mesh.visible = level >= 0;
     if (level < 0) return;
-    mesh.castShadow = scale.texel === 0 || WIRE_WIDTH >= scale.texel;
+    // Its casting by cascade: `castBySize` (`makeMesh`).
     if (level !== this.level) {
       this.level = level;
       mesh.geometry = this.geometry(level);
@@ -451,6 +465,8 @@ export class WireStore {
   }
 
   dispose(): void {
+    this.uncast?.();
+    this.uncast = null;
     this.dropLevels();
     if (this.mesh) this.group.remove(this.mesh);
   }

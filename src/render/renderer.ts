@@ -238,7 +238,7 @@ export interface SceneHandle {
   scopeOpening(large: boolean): void;
   /** The sun's cascades' passes since the last call (`SunCascades.takeStats`). */
   /** `unknown`: the still casters whose last change had no box to tell (the stores thrown away for them: what to give bounds to). */
-  shadowStats(): (ReturnType<SunCascades['takeStats']> & { readonly unknown: readonly string[]; readonly widest: readonly string[] }) | null;
+  shadowStats(): (ReturnType<SunCascades['takeStats']> & { readonly unknown: readonly string[]; readonly widest: readonly string[]; readonly changers: readonly string[] }) | null;
   /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
   buildingLevels(): Readonly<Record<string, number>>;
   /** What draws each cell of buildings now, by key (`massCells.ts` census): the census of holes (`tests/perf/massBase.spec.ts`). */
@@ -624,7 +624,9 @@ export function createSceneRenderer(
       let scale = 0, x = 0, y = 0, z = 0;
       if (now) {
         x = array[o + 12]!; y = array[o + 13]!; z = array[o + 14]!;
-        scale = Math.sqrt(Math.max(array[o]! ** 2 + array[o + 1]! ** 2 + array[o + 2]! ** 2, array[o + 4]! ** 2 + array[o + 5]! ** 2 + array[o + 6]! ** 2, array[o + 8]! ** 2 + array[o + 9]! ** 2 + array[o + 10]! ** 2));
+        // As the kept places hold it (32 bits): DO NOT compare the double against the float it was kept as - they differ for nearly every scale,
+        // every instance of a mesh read as moved at every pass, and a still street's near store thrown away at every one (`utility-poles`, 2026-10-22).
+        scale = Math.fround(Math.sqrt(Math.max(array[o]! ** 2 + array[o + 1]! ** 2 + array[o + 2]! ** 2, array[o + 4]! ** 2 + array[o + 5]! ** 2 + array[o + 6]! ** 2, array[o + 8]! ** 2 + array[o + 9]! ** 2 + array[o + 10]! ** 2)));
       }
       const same = now && was && places[p] === x && places[p + 1] === y && places[p + 2] === z && places[p + 3] === scale;
       if (same) continue;
@@ -641,6 +643,7 @@ export function createSceneRenderer(
         instanceBox.max.set(x + r, y + r, z + r);
         instanceBox.applyMatrix4(mesh.matrixWorld);
         addChange(instanceBox);
+        noteWidest(mesh, instanceBox);
         places[p] = x; places[p + 1] = y; places[p + 2] = z; places[p + 3] = scale;
       }
     }
@@ -696,6 +699,12 @@ export function createSceneRenderer(
   const casterUnknown: string[] = [];
   /** The widest change boxes seen since the stats were last taken (`shadowStats`): the caster's name and its box's longest side, m - what throws the stores away for a box over half the map. */
   const casterWidest: { name: string; side: number }[] = [];
+  /** The casters whose signature changed since the stats were last taken, by name, and how many passes each (`shadowStats`: what keeps a still view's stores from standing). */
+  const casterChangers = new Map<string, number>();
+  const noteChanger = (mesh: Object3D): void => {
+    const name = mesh.name || mesh.type;
+    if (casterChangers.has(name) || casterChangers.size < 24) casterChangers.set(name, (casterChangers.get(name) ?? 0) + 1);
+  };
   const noteWidest = (mesh: Object3D, box: Box3): void => {
     const side = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
     const at = casterWidest.findIndex((w) => w.name === (mesh.name || mesh.type));
@@ -757,6 +766,7 @@ export function createSceneRenderer(
       if (!entry) {
         // Came: where it stands.
         any = true;
+        noteChanger(mesh);
         entry = { hash: h, box: new Box3(), computed: false };
         casterLast.set(mesh, entry);
         if (mesh.isInstancedMesh && !castBox && !castBoxes && instanceChanges(mesh)) { /* each instance its own box */ }
@@ -765,6 +775,7 @@ export function createSceneRenderer(
         if (castBoxes) releaseBoxes(mesh, castBoxes);
       } else if (entry.hash !== h) {
         entry.hash = h;
+        noteChanger(mesh);
         if (castBoxes) {
           // A layer's cells (`cellInstances.ts`): the boxes of what came and went in them, nothing else; none, nothing of the picture changed (its buffers written for the same things in other positions).
           if (castBoxes.length) { any = true; for (const box of castBoxes) { addChange(box); noteWidest(mesh, box); } releaseBoxes(mesh, castBoxes); }
@@ -787,6 +798,7 @@ export function createSceneRenderer(
     for (const [mesh, entry] of casterLast) {
       if (casterSeen.has(mesh)) continue;
       any = true;
+      noteChanger(mesh);
       const kept = instancePlaces.get(mesh);
       if (kept) {
         // Each instance where it stood.
@@ -1193,7 +1205,9 @@ export function createSceneRenderer(
     for (;;) {
       const step = job.next();
       if (worldJob !== job) return;
-      if (step.done) { worldJob = null; shadowMoved = true; return; }
+      // Its meshes' changes are the casters' signature's, each by its box (`casterChanges`). DO NOT throw every cascade away at its end: a
+      // flight ends a world job every few seconds, and each threw the three stores away (`changed` 114 of 593 passes, 2026-10-22).
+      if (step.done) { worldJob = null; return; }
       if (step.value === 'wait') { lookAgain(); return; }
       // A step's meshes come, go or change what they hold: the casters' signature sees it at the next shadow pass (`casterSignature`). DO NOT stir the sun's stores for every step: the world's job runs a step a frame for many seconds after each move of a large city's camera, and every cascade was drawn whole at every one (114 calls in 3 s, 2026-10-20). Its end redraws them (`shadowMoved`).
       if (performance.now() >= until) { askDraw(); return; }
@@ -3088,7 +3102,9 @@ export function createSceneRenderer(
       const stats = environment.shadowStats();
       const widest = casterWidest.sort((a, b) => b.side - a.side).map((w) => `${w.name} ${Math.round(w.side)}`);
       casterWidest.length = 0;
-      return stats ? { ...stats, unknown: [...casterUnknown], widest } : null;
+      const changers = [...casterChangers].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${n}`);
+      casterChangers.clear();
+      return stats ? { ...stats, unknown: [...casterUnknown], widest, changers } : null;
     },
     setGeometryBudget(budget) {
       geometryBudget = budget;
@@ -3321,10 +3337,12 @@ export function createSceneRenderer(
       // At the opening the buildings come once the first world (the roads, the ground cut and filled to them) is in
       if (roads !== null && (reveal.opened || (groundIn && networkRevision === net.revision))) {
         buildings.hidden = !reveal.opened;
-        // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
+        // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the casters' signature tells the cascades where, by the
+        // batches' and the parts' boxes (`shellBatch.ts` castChanged, `PartCell.castInto`). DO NOT throw every store away for each cell landed:
+        // a flight lands cells at every few frames, each drew the three cascades whole.
         frameMark('frame:buildings-start');
-        if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
-          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))), levelLand ? levelGroundDigest : landGroundDigest)) shadowMoved = true;
+        buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
+          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))), levelLand ? levelGroundDigest : landGroundDigest);
         // Another frame while they land, nothing more: what lands stirs the stores itself (childadded, the door, `update`'s answer).
         if (buildings.pending) askDraw();
         frameMark('frame:buildings-end');
@@ -3863,8 +3881,8 @@ export function createSceneRenderer(
             for (const e of entries) for (const r of e.rects!) keepCellsOver(r, TERRAIN_CELL, cells);
           }
           if ((cells === null || cells.size > 0) && layer.sync(cells, doc, (x, y) => terrain.renderedHeightAt(x, y))) {
+            // What came and went is told by its boxes (`cellInstances.ts` reconcile, `castBoxes`): no store thrown away for it.
             layer.cull(crowdFrustum, crowdProjection);
-            shadowMoved = true;
           }
           measureHitch('hitch:elements', startedAt);
         }
