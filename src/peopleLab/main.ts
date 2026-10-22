@@ -8,7 +8,6 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ageFromYears, type MacroParams } from '@people/body/macro';
-import type { HairStyle } from '@people/hair/procedural';
 import { randomPerson, type PersonLook, type PersonSpec } from '@people/spec';
 import { communityItem, type WardrobeItem } from '@people/wardrobe';
 import type { CartoonStyle } from '@render/people/cartoon';
@@ -24,6 +23,7 @@ import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
 import { variedFace } from './presets';
 import { HandShaper } from './direct';
 import { HandDrag } from './handDrag';
+import { PersonHistory } from './history';
 import { applyLabFace, attachFace } from './faceRig';
 import { measureBody } from './proportions';
 import { fitBody } from './bodyFit';
@@ -37,7 +37,7 @@ import { BodySculptor, bodyDelta } from './bodySculpt';
 import { bodySculptPanel } from './bodySculptPanel';
 import { atelierPanel } from './atelierPanel';
 import { sculptPanel } from './sculptPanel';
-import { ATELIER, PROC_PREFIX, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
+import { ATELIER, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
 import { CLOTH, HAIR_CATALOGUE, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
 import { el, widgets } from './widgets';
 import { icon } from './icons';
@@ -123,6 +123,7 @@ function startLab(): void {
       if (r !== reshaper) return;
       r.commit(shape);
       committed = target;
+      history.checkpoint(target);
       settle();
     } finally {
       reshaping = false;
@@ -139,10 +140,6 @@ function startLab(): void {
   }
   function setFeature(k: string, v: number): void { setSpec({ features: { ...person.spec.features, [k]: v } }, featureSlider(k)); }
   function setStyle(s: CartoonStyle): void { person = { ...person, style: s }; rebuild(); }
-  function setHair(h: HairStyle): void {
-    person = { ...person, hair: h, spec: { ...person.spec, look: { ...person.spec.look, hairCut: `${PROC_PREFIX}${h.name}`, hairStyle: h.length > 2 ? 'long' : 'short' } } };
-    rebuild();
-  }
 
   // ---------------------------------------------------------------- scene
 
@@ -251,7 +248,22 @@ function startLab(): void {
   let spinning = false;
   spin.onclick = () => { spinning = !spinning; spin.classList.toggle('on', spinning); controls.autoRotate = spinning; };
   views.append(...viewButtons, spin);
-  stage.append(el('div', { cls: 'top' }, el('div', { cls: 'title' }, el('span', { cls: 'gem' }), 'Criar Pessoa'), nameInput), busy, stats, views);
+  // Undo and redo of the whole person (`history.ts`); inside a sculptor, of its strokes.
+  const history = new PersonHistory();
+  const undoButton = el('button', { cls: 'toggle', title: 'Desfazer (Ctrl+Z)' }, icon('undo', 16));
+  const redoButton = el('button', { cls: 'toggle', title: 'Refazer (Ctrl+Y)' }, icon('redo', 16));
+  function step(back: boolean): void {
+    const ed = editor();
+    if (ed) { if (back) ed.undoStep(); else ed.redoStep(); return; }
+    const p = back ? history.undo(person) : history.redo();
+    if (!p) return;
+    person = p;
+    posing.load(person.motion);
+    render();
+    rebuild(0);
+  }
+  undoButton.onclick = () => step(true); redoButton.onclick = () => step(false);
+  stage.append(el('div', { cls: 'top' }, el('div', { cls: 'title' }, el('span', { cls: 'gem' }), 'Criar Pessoa'), nameInput, undoButton, redoButton), busy, stats, views);
 
   // ---------------------------------------------------------------- building
 
@@ -288,6 +300,7 @@ function startLab(): void {
     pictures.paused = true;
     const started = performance.now();
     const target = person;
+    history.checkpoint(target);
     try {
       const next = await builder.build(effective(target));
       if (mine !== generation) { dispose(next.scene); return; }
@@ -371,7 +384,6 @@ function startLab(): void {
   }
   const extraOf = (kinds: readonly WardrobeItem['kind'][]): string => (person.spec.look.extras ?? []).find((x) => kinds.includes(kindOf(x)!)) ?? 'none';
 
-
   // ---------------------------------------------------------------- the panels
 
   const TABS: readonly (readonly [string, string, string])[] = [
@@ -422,8 +434,6 @@ function startLab(): void {
     act: (a, p, clip) => { activity = a; pose = p; clipName = clip; stool.visible = clip === 'sitIdle'; heldAt = null; if (player) player.hold = null; player?.play(clip, (performance.now() - clock0) / 1000); render(); },
     render, openSculptor: (item) => { void openSculptor(item); }, fitFace: () => { void fitFace(); },
     dropPiece: (item) => { person = { ...person, sculpts: (person.sculpts ?? []).filter((x) => x.base !== item) }; rebuild(0); render(); },
-    hairGrown: () => (person.spec.look.hairCut?.startsWith(PROC_PREFIX) && person.hair ? person.hair : null),
-    setHair: (h) => { setHair(h); },
     hairShape: () => person.hairShape ?? PLAIN_SHAPE,
     setHairShape: (hs) => { person = { ...person, hairShape: hs }; rebuild(200); },
     outfitShape: () => person.outfitShape ?? PLAIN_SHAPE,
@@ -442,7 +452,6 @@ function startLab(): void {
     },
   });
 
-
   // ---------------------------------------------------------------- the gallery and saving
 
   const gallery = el('div', { cls: 'gallery' });
@@ -458,7 +467,6 @@ function startLab(): void {
   const exportBtn = el('button', { cls: 'big alt' }, icon('download', 16), 'Exportar');
   const importBtn = el('button', { cls: 'big alt' }, icon('upload', 16), 'Importar');
   side.append(el('h2', { textContent: 'Pessoas' }), save, el('div', { cls: 'pair' }, fresh, dice), gallery, el('div', { cls: 'pair' }, exportBtn, importBtn));
-
 
   /** The face, small, for the gallery. */
   function snapshot(): string {
@@ -574,8 +582,6 @@ function startLab(): void {
     });
   }
 
-
-
   // ---------------------------------------------------------------- the body sculptor
 
   async function openCarver(): Promise<void> {
@@ -632,7 +638,8 @@ function startLab(): void {
   let sculpting = '';
   async function openSculptor(name = person.spec.look.hairCut ?? ''): Promise<void> {
     const cut = name;
-    const item = cut && cut !== 'none' ? await builder.item(person, cut) : null;
+    // The piece as the person wears it (its length, volume and waves), on the body as built.
+    const item = cut && cut !== 'none' ? await builder.wornPiece(person, cut) : null;
     if (!item) { say('Escolha uma peça primeiro'); return; }
     const body = await builder.sculptBody(person);
     const n = item.pack.refs.length / 3;
@@ -640,7 +647,8 @@ function startLab(): void {
     const prior = hair ? (person.sculpt?.base === cut ? person.sculpt : undefined) : person.sculpts?.find((x) => x.base === cut);
     const start = prior ? decodeSculpt(prior, n) : null;
     sculpting = cut;
-    sculptor = new HairSculptor(item.pack, body, start, hair ? person.spec.look.hair : (person.spec.look.outfitTint ?? 0x8a96a3), person.spec.look.skin, item.texture);
+    // Hair solid, as the lab draws it on the person (`dress.ts`); a garment with its own texture.
+    sculptor = new HairSculptor(item.pack, body, start, hair ? person.spec.look.hair : (person.spec.look.outfitTint ?? 0x8a96a3), person.spec.look.skin, hair ? null : item.texture);
     scene.add(sculptor.group);
     if (built) built.scene.visible = false;
     frame(hair ? 'face' : 'body');
@@ -705,10 +713,10 @@ function startLab(): void {
   renderer.domElement.addEventListener('pointerup', stop);
   renderer.domElement.addEventListener('pointercancel', stop);
   window.addEventListener('keydown', (e) => {
-    const ed = editor();
-    if (!ed || !(e.ctrlKey || e.metaKey)) return;
-    if (e.key === 'z') { e.preventDefault(); ed.undoStep(); }
-    if (e.key === 'y') { e.preventDefault(); ed.redoStep(); }
+    if (!(e.ctrlKey || e.metaKey) || (e.target as HTMLElement | null)?.tagName === 'INPUT' && (e.target as HTMLInputElement).type === 'text') return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) { e.preventDefault(); step(true); }
+    if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); step(false); }
   });
 
   // ---------------------------------------------------------------- the loop
@@ -764,7 +772,7 @@ function startLab(): void {
   void fitFace();
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
-  (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, buildNow() { busy.classList.add('on'); buildAt = performance.now(); }, setHair, setStyle, frame, get built() { return built; },
+  (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, buildNow() { busy.classList.add('on'); buildAt = performance.now(); }, setStyle, frame, get built() { return built; },
     pick(tabId: string) { tab = tabId; render(); }, posing, async bakePictures() {
       // Every panel of both sexes asked once, each picture drawn on the mannequin; the bake script writes them as files.
       pictures.baking = true;

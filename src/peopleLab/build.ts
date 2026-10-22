@@ -131,11 +131,33 @@ export class LabBuilder {
     try { return await loadProxyItem(name); } catch (error) { console.warn('[people-lab] no such item to sculpt', name, error); return null; }
   }
 
-  /** The person's body as the sculptor shows it: shaped and styled, in its bind posture. */
+  /** The hairstyle or the outfit with its length, volume and waves (`hairShape.ts`) on this body (dm), moved points kept out of the skin
+   *  (`GroomBody.collide`); any other piece as it is. */
+  private shaped(person: LabPerson, name: string, item: ProxyItem, body: Float32Array, a: PeopleAssets): ProxyItem {
+    const hair = name === person.spec.look.hairCut, outfit = name === person.spec.look.outfit;
+    const shape = hair ? person.hairShape : outfit ? person.outfitShape : undefined;
+    if (!shape || isPlain(shape)) return item;
+    const skin: number[] = [];
+    for (const [lo, hi] of a.bodyRange) for (let v = lo; v <= hi; v++) skin.push(v);
+    const surface = new GroomBody(body, skin, a.mesh.faces, a.mesh.faceGroup, a.mesh.faceGroups.indexOf('body'));
+    const out = (margin: number) => (q: number[]): void => surface.collide(q, 0, margin, false);
+    // A garment stands a centimetre off the skin where it was moved: skirts hang clear of the knees, whose skinning differs a little from the cloth's.
+    return { ...item, pack: hair ? shapedPack(item.pack, body, shape, out(0.02))
+      : shapedPack(item.pack, body, { ...shape, length: Math.min(1, shape.length) }, out(0.1), skin, true) };
+  }
+
+  /** A worn piece as the person wears it, before its sculpt: what the sculptor works on. */
+  async wornPiece(person: LabPerson, name: string): Promise<ProxyItem | null> {
+    const item = await this.item(person, name);
+    if (!item) return null;
+    const { assets: a } = await this.setup();
+    return this.shaped(person, name, item, await this.shape(person), a);
+  }
+
+  /** The person's body as the sculptor shows it: as built (shaped, styled, its own sculpt), in its bind posture. */
   async sculptBody(person: LabPerson): Promise<SculptBody> {
-    const { assets: a, morpher: mo } = await this.setup();
-    return { positions: cartoonBody(mo.shape(person.spec.body, person.spec.features), a.mesh, labStyle(person.style)),
-      faces: a.mesh.faces, faceGroup: a.mesh.faceGroup, skinGroup: a.mesh.faceGroups.indexOf('body') };
+    const { assets: a } = await this.setup();
+    return { positions: await this.shape(person), faces: a.mesh.faces, faceGroup: a.mesh.faceGroup, skinGroup: a.mesh.faceGroups.indexOf('body') };
   }
 
   /** The body's shape for a person (decimetres): what `BuiltPerson.morph` reads. */
@@ -156,34 +178,18 @@ export class LabBuilder {
       console.warn('[people-lab] an item could not be loaded; drawn in the tailored shells', error);
       proxies.clear();
     }
-    // The sculpt worn on its own hairstyle: the same item with its offsets moved.
-    const cut = spec.look.hairCut;
-    const worn = cut ? proxies.get(cut) : undefined;
-    const sculpt = person.sculpt;
-    if (cut && worn && sculpt?.base === cut) {
-      const n = worn.pack.refs.length / 3;
-      proxies.set(cut, { ...worn, pack: sculptedPack(worn.pack, decodeSculpt(sculpt, n)) });
+    const body = sculpted(cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), person.body);
+    // The hairstyle's and outfit's length, volume and waves first (`shaped`), then each piece's sculpt on top: the sculptor works on the
+    // piece as worn (`wornPiece`), so a stroke lands on the person where it was made.
+    const cut = spec.look.hairCut, outfit = spec.look.outfit;
+    for (const name of [cut, outfit]) {
+      const item = name ? proxies.get(name) : undefined;
+      if (name && item) proxies.set(name, this.shaped(person, name, item, body, a));
     }
-    // Every other sculpted piece worn, the same way.
-    for (const piece of person.sculpts ?? []) {
+    const sculpt = person.sculpt;
+    for (const piece of [...(cut && sculpt?.base === cut ? [sculpt] : []), ...(person.sculpts ?? [])]) {
       const item = proxies.get(piece.base);
       if (item) proxies.set(piece.base, { ...item, pack: sculptedPack(item.pack, decodeSculpt(piece, item.pack.refs.length / 3)) });
-    }
-    const body = sculpted(cartoonBody(mo.shape(spec.body, spec.features), a.mesh, labStyle(person.style)), person.body);
-    // The worn hairstyle's length, volume and waves, on this body (`hairShape.ts`).
-    const shaped = cut ? proxies.get(cut) : undefined;
-    const outfit = spec.look.outfit, dressed = outfit ? proxies.get(outfit) : undefined;
-    const shapeHair = !!(cut && shaped && !isPlain(person.hairShape)), shapeOutfit = !!(outfit && dressed && !isPlain(person.outfitShape));
-    if (shapeHair || shapeOutfit) {
-      // Moved points kept out of the skin (`GroomBody.collide`, the body's own surface).
-      const skin: number[] = [];
-      for (const [lo, hi] of a.bodyRange) for (let v = lo; v <= hi; v++) skin.push(v);
-      const surface = new GroomBody(body, skin, a.mesh.faces, a.mesh.faceGroup, a.mesh.faceGroups.indexOf('body'));
-      const out = (margin: number) => (q: number[]): void => surface.collide(q, 0, margin, false);
-      if (shapeHair) proxies.set(cut!, { ...shaped!, pack: shapedPack(shaped!.pack, body, person.hairShape!, out(0.02)) });
-      // The worn outfit's length and looseness, the same way.
-      // A garment stands a centimetre off the skin where it was moved: skirts hang clear of the knees, whose skinning differs a little from the cloth's.
-      if (shapeOutfit) proxies.set(outfit!, { ...dressed!, pack: shapedPack(dressed!.pack, body, { ...person.outfitShape!, length: Math.min(1, person.outfitShape!.length) }, out(0.1), skin, true) });
     }
     const sex = spec.body.gender < 0.5 ? 'female' : 'male';
     const input = {
