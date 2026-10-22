@@ -97,7 +97,7 @@ import { compileAhead, drainCompiles, drainUploads, drainWarm, gateUntilBuilt, s
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather, sways } from './wind';
 import { holdStill, updateMoving } from './stillTree';
-import { castCastersInto } from './shadowCasters';
+import { castCastersInto, castShadowKey } from './shadowCasters';
 import { type KeptFrustum, screenHalf, setShadowSun } from './cellInstances';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
@@ -738,8 +738,13 @@ export function createSceneRenderer(
       const mesh = o as Mesh & { isInstancedMesh?: boolean; isBatchedMesh?: boolean; count?: number; instanceMatrix?: { version: number } };
       if (!mesh.isMesh || !mesh.castShadow || swayMeshes.has(mesh)) continue;
       const g = mesh.geometry;
+      // What it casts, not what the colour pass draws (`shadowCasters.ts` castShadowKey): its instances in the cascades, and none of the
+      // colour's level where its cascades' shape is their texel's alone. DO NOT read the camera's choice of a pole's shape and of what of it is
+      // shown as a change of its shadow: the poles' blocks changed at nearly every pass of a flight, each a box of a block (`utility-poles`
+      // 916 of 640 passes, `npm run diagnose`, 2026-10-22).
+      const cast = castShadowKey(mesh);
       h = 0x811c9dc5;
-      mix(g.id);
+      mix(cast?.byTexel ? -2 : g.id);
       // Its programs: a level drawn with another material casts as it draws (three numbers every material, r186 `Material.id`; its typings leave it out), and the maps they cut their shadow by (an alpha-tested card: its texture landing changes its shadow; r186 `Texture.id`, `version`).
       const material = mesh.material as unknown as MaterialKey | MaterialKey[];
       if (Array.isArray(material)) for (const one of material) mixMaterial(one); else mixMaterial(material);
@@ -750,15 +755,17 @@ export function createSceneRenderer(
       // Where it stands (a caster moved is another shadow), to a hundredth of a unit.
       const at = mesh.matrixWorld.elements;
       mix(Math.round(at[12]! * 100)); mix(Math.round(at[13]! * 100)); mix(Math.round(at[14]! * 100));
-      mix(mesh.count ?? -1);
+      mix(cast?.count ?? mesh.count ?? -1);
       mix(mesh.instanceMatrix?.version ?? -1);
-      mix(g.drawRange.start);
-      mix(g.drawRange.count === Infinity ? -1 : g.drawRange.count);
-      mix(g.index?.version ?? -1);
+      if (!cast?.byTexel) {
+        mix(g.drawRange.start);
+        mix(g.drawRange.count === Infinity ? -1 : g.drawRange.count);
+        mix(g.index?.version ?? -1);
+      }
       // A batch's pieces shown, hidden, added or taken out (`shellBatch.ts` castChanged): none of its attributes says so.
       mix((mesh.userData['castVersion'] as number | undefined) ?? -1);
       const attributes = g.attributes as Record<string, { version?: number; data?: { version: number } }>;
-      for (const name in attributes) { const a = attributes[name]!; mix(a.version ?? a.data?.version ?? -1); }
+      if (!cast?.byTexel) for (const name in attributes) { const a = attributes[name]!; mix(a.version ?? a.data?.version ?? -1); }
       casterSeen.add(mesh);
       const castBox = mesh.userData['castBox'] as Box3 | undefined;
       const castBoxes = mesh.userData['castBoxes'] as Box3[] | undefined;

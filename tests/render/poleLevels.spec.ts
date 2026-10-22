@@ -37,6 +37,9 @@ function named(root: Object3D, name: string): Mesh[] {
   return out.sort((a, b) => y(a) - y(b));
 }
 
+/** Whether the colour pass draws a mesh: shown, and an instanced part with instances to draw (a part under a pixel keeps its instances for the sun's cascades and draws none in colour, `poleLayer.ts` PartStore). */
+const drawn = (mesh: Mesh): boolean => mesh.visible && (!(mesh as InstancedMesh).isInstancedMesh || (mesh as InstancedMesh).count > 0);
+
 describe('the pole layer as the camera sees it', () => {
   it('draws each block by its own nearest pole: every piece near, the small ones gone and the wires faded far away', () => {
     const doc = twoLines();
@@ -50,39 +53,39 @@ describe('the pole layer as the camera sees it', () => {
 
     layer.group.update(camera(m(20)));
     const [nearInsulators, farInsulators] = named(layer.group, 'utility-insulators');
-    expect(nearInsulators!.visible).toBe(true);
+    expect(drawn(nearInsulators!)).toBe(true);
     // The line a kilometre off, by its own nearest pole: its insulators under a pixel, not drawn.
-    expect(farInsulators!.visible).toBe(false);
+    expect(drawn(farInsulators!)).toBe(false);
     const [wires, farWires] = named(layer.group, 'utility-wires');
     // Near, the tube over every span of the near line; the far line's wires by a coarser template, their own.
-    expect(wires!.visible).toBe(true);
+    expect(drawn(wires!)).toBe(true);
     expect((wires!.geometry as InstancedBufferGeometry).index!.count).toBe(8 * 24);
     expect((wires!.geometry as InstancedBufferGeometry).instanceCount).toBe(9 * 4);
     expect((farWires!.geometry as InstancedBufferGeometry).index!.count).toBeLessThan(8 * 24);
     // Near, the finest mast.
     const masts = named(layer.group, 'utility-poles')[0]!;
-    expect(masts.visible).toBe(true);
+    expect(drawn(masts)).toBe(true);
     expect(masts.geometry.index!.count).toBeGreaterThan(0);
 
     // From far up, everything small gone, the wires faded out, the light the lamps throw still there.
     layer.group.update(camera(m(12_000)));
     for (const name of ['utility-insulators', 'utility-caps', 'utility-wires', 'utility-lamp-lenses']) {
-      for (const mesh of named(layer.group, name)) expect(mesh.visible).toBe(false);
+      for (const mesh of named(layer.group, name)) expect(drawn(mesh)).toBe(false);
     }
-    for (const mesh of named(layer.group, 'utility-lamp-pools')) expect(mesh.visible).toBe(true);
+    for (const mesh of named(layer.group, 'utility-lamp-pools')) expect(drawn(mesh)).toBe(true);
     // A lens lit at night is seen smaller than an unlit one: by its coverage times its brightness.
     layer.group.update(camera(m(1400)));
-    const byDay = named(layer.group, 'utility-lamp-lenses').map((mesh) => mesh.visible);
+    const byDay = named(layer.group, 'utility-lamp-lenses').map(drawn);
     kit.setNight(1);
     layer.group.update(camera(m(1400)));
-    const atNight = named(layer.group, 'utility-lamp-lenses').map((mesh) => mesh.visible);
+    const atNight = named(layer.group, 'utility-lamp-lenses').map(drawn);
     // The near line's lenses.
     expect(byDay[0]).toBe(false);
     expect(atNight[0]).toBe(true);
     kit.setNight(0);
     // Back close: drawn again.
     layer.group.update(camera(m(20)));
-    expect(named(layer.group, 'utility-insulators')[0]!.visible).toBe(true);
+    expect(drawn(named(layer.group, 'utility-insulators')[0]!)).toBe(true);
     layer.dispose();
   });
 

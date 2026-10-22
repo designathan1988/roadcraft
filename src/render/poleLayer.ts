@@ -164,6 +164,8 @@ export class PartStore {
   private level = 0;
   /** Takes the mesh off the casters chosen by cascade (`castBySize`). */
   private uncast: (() => void) | null = null;
+  /** Whether the colour pass draws its pieces (`view`: under a pixel, not); the cascades draw them whatever it is. */
+  private shown = true;
   readonly perInstance: number;
 
   constructor(private readonly spec: PolePartSpec, private readonly group: Object3D) {
@@ -186,8 +188,20 @@ export class PartStore {
     // with it, and the casters' signature saw the poles come and go at every frame - a still district's near store thrown away at every pass
     // (`utility-arms` 2,366 changes, `npm run diagnose`, 2026-10-22).
     this.uncast?.();
-    this.uncast = castBySize({ mesh, casts: this.spec.castShadow, radius: () => Math.sqrt(this.bounds.cover) });
+    // Its pieces in the cascades whatever the colour pass shows, at the shape each cascade's texel asks: the camera's choices never the shadow's.
+    this.uncast = castBySize({
+      mesh, casts: this.spec.castShadow, radius: () => Math.sqrt(this.bounds.cover),
+      counts: { colour: () => (this.shown ? this.count : 0), shadow: () => this.count },
+      levels: { shadow: (texel) => this.spec.levels[this.levelFor(texel)]!.geometry, colour: () => this.spec.levels[this.level]!.geometry },
+    });
     return mesh;
+  }
+
+  /** The coarsest shape off by under `error` world units (a texel; the colour pass's pixel, `view`). */
+  private levelFor(error: number): number {
+    const levels = this.spec.levels;
+    for (let i = levels.length - 1; i > 0; i--) if (levels[i]!.error < error) return i;
+    return 0;
   }
 
   /** Room for `needed` instances: a mesh at least twice as large when it is full, the drawn ones copied over. */
@@ -239,7 +253,8 @@ export class PartStore {
   flush(): void {
     const mesh = this.mesh;
     if (!mesh) return;
-    mesh.count = this.count;
+    // Shown in the colour pass as `view` chose, and in the scene while it holds any piece: the cascades draw them all (`castBySize` counts).
+    mesh.count = this.shown ? this.count : 0;
     mesh.visible = this.count > 0;
     const matrices = mesh.instanceMatrix;
     if (this.whole || this.written.length * 2 > this.count) {
@@ -269,7 +284,8 @@ export class PartStore {
   view(_scale: ScreenScale, nearest: number): void {
     const mesh = this.mesh, spec = this.spec;
     if (!mesh || this.count === 0 || spec.glows) return;
-    mesh.visible = this.bounds.cover * nearest * nearest * spec.brightness() >= 1;
+    this.shown = this.bounds.cover * nearest * nearest * spec.brightness() >= 1;
+    mesh.count = this.shown ? this.count : 0;
     // Its casting by cascade: `castBySize` (`meshOf`).
     let level = 0;
     for (let i = spec.levels.length - 1; i > 0; i--) {

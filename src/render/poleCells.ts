@@ -6,6 +6,7 @@ import type { Network } from '@world/network';
 import { m } from '@world/units';
 import type { PoleArms, UtilityPole } from '@world/utilities';
 import { ViewCells, type CellKey } from '@world/viewCells';
+import type { KeptFrustum } from './cellInstances';
 import { gpuOnlyAttributes } from './mesh/gpuOnly';
 import { framePole, wireEnd } from './poleBake';
 import { BLOCK, type Block, POLE_REACH, PartStore, ScreenScale, ViewedRoot, WireStore, docPoles, screen } from './poleLayer';
@@ -107,7 +108,9 @@ export class PoleCells implements Utilities {
         // Three's axes: x east, y up, z south.
         this.box.min.set(x0 - margin, view.ground + POLE_LOW, -(y1 + margin));
         this.box.max.set(x1 + margin, view.ground + POLE_HIGH, -(y0 - margin));
-        if (!view.frustum.intersectsBox(this.box)) continue;
+        // Off the frame but under the near cascade (`KeptFrustum.keep`): held, its poles casting there. DO NOT drop a block for leaving the
+        // frame: its shadow left the near cascade with it, and came back with it, at every frame of a flight (`utility-poles`, 2026-10-22).
+        if (!view.frustum.intersectsBox(this.box) && !(view.frustum as KeptFrustum).keep?.intersectsBox(this.box)) continue;
         const one = this.wantedPool[wanted.length] ?? (this.wantedPool[wanted.length] = { key: 0 as CellKey, d: 0 });
         one.key = this.cells.cellAt(x0 + BLOCK / 2, y0 + BLOCK / 2);
         one.d = d;
