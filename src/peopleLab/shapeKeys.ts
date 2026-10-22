@@ -1,0 +1,34 @@
+import { yearsFromAge, type MacroParams } from '@people/body/macro';
+import type { LabPerson } from './record';
+
+/** WHAT A CHANGE TO A PERSON NEEDS: drawing on the person built (`reshape.ts`) when only the shape moved, a build when what is worn did. */
+
+/** What is built and saved: a child wears the tailored shells (the garments are cut for grown bodies, as the game has it). */
+export function effective(p: LabPerson): LabPerson {
+  if (yearsFromAge(p.spec.body.age) >= 16) {
+    if (p.spec.look.outfit) return p;
+    return { ...p, spec: { ...p.spec, look: { ...p.spec.look, outfit: p.spec.body.gender < 0.5 ? 'female_casualsuit02' : 'male_casualsuit02', footwear: 'shoes01' } } };
+  }
+  const { outfit: _o, footwear: _f, extras: _e, ...look } = p.spec.look;
+  void _o; void _f; void _e;
+  return { ...p, spec: { ...p.spec, look } };
+}
+
+/** What a build depends on beyond the body's shape: what is worn (a child wears the tailored shells), the sex's motion capture. Equal keys reshape, unequal ones build. */
+export function buildKey(p: LabPerson): string {
+  const e = effective(p);
+  const { body: _b, motion: _m, style: _s, ...rest } = e;
+  void _b; void _m; void _s;
+  return JSON.stringify({ ...rest, spec: { ...e.spec, name: '', mood: 0, features: null, body: e.spec.body.gender < 0.5 } });
+}
+
+/** Everything the body's shape is made from. */
+export const shapeOf = (p: LabPerson): string => JSON.stringify([p.spec.body, p.spec.features, p.style, p.body ?? null]);
+
+/** One slider of the shape: its value in a person, and that person with it set. */
+export interface Slider { readonly key: string; readonly range: readonly [number, number]; get(p: LabPerson): number; set(p: LabPerson, v: number): LabPerson }
+
+export const bodySlider = (k: keyof MacroParams): Slider => ({ key: `body:${k}`, range: [0, 1], get: (p) => p.spec.body[k],
+  set: (p, v) => ({ ...p, spec: { ...p.spec, body: { ...p.spec.body, [k]: v } } }) });
+export const featureSlider = (k: string): Slider => ({ key: `feature:${k}`, range: [-1, 1], get: (p) => p.spec.features[k] ?? 0,
+  set: (p, v) => ({ ...p, spec: { ...p.spec, features: { ...p.spec.features, [k]: v } } }) });

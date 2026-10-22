@@ -80,7 +80,7 @@ const HAIR_SLOT = 1;
 const LASH_SLOT = 3;
 
 /** Upper lashes only: the lower lid's cards read as grey spikes under the eye. Their triangles are folded to a point, the mesh kept whole. */
-function upperLashesOnly(mesh: SkinnedMesh): void {
+function upperLashesOnly(mesh: SkinnedMesh, fold = true): void {
   const g = mesh.geometry;
   const hairMask = g.getAttribute('hairMask') as BufferAttribute | undefined;
   const position = g.getAttribute('position') as BufferAttribute;
@@ -104,13 +104,15 @@ function upperLashesOnly(mesh: SkinnedMesh): void {
   }
   const middle = (x: number): number => { const e = x >= 0 ? sum.l : sum.r; return e[1]! ? e[0]! / e[1]! : Infinity; };
   const index = g.index;
-  for (let t = 0; t < index.count; t += 3) {
-    const a = index.getX(t), b = index.getX(t + 1), c = index.getX(t + 2);
-    if (Math.round(hairMask.getX(a)) !== LASH_SLOT) continue;
-    const y = (position.getY(a) + position.getY(b) + position.getY(c)) / 3;
-    if (y < middle(position.getX(a))) { index.setX(t + 1, a); index.setX(t + 2, a); }
+  if (fold) {
+    for (let t = 0; t < index.count; t += 3) {
+      const a = index.getX(t), b = index.getX(t + 1), c = index.getX(t + 2);
+      if (Math.round(hairMask.getX(a)) !== LASH_SLOT) continue;
+      const y = (position.getY(a) + position.getY(b) + position.getY(c)) / 3;
+      if (y < middle(position.getX(a))) { index.setX(t + 1, a); index.setX(t + 2, a); }
+    }
+    index.needsUpdate = true;
   }
-  index.needsUpdate = true;
   // Short lashes hugging the lid: each upper lash drawn halfway back to its root, the lid line (the lowest lash point in its 2 mm slice across the eye).
   const BIN = 0.002, KEEP = 0.22;
   const roots = new Map<number, [number, number]>();
@@ -195,8 +197,16 @@ function evenHem(mesh: SkinnedMesh): void {
   position.needsUpdate = true;
 }
 
+/** The finish that moves vertices, done again on a reshaped body (`reshape.ts`) from the positions as fitted (`rawPositions`). */
+export function polishShape(mesh: SkinnedMesh): void {
+  evenHem(mesh);
+  upperLashesOnly(mesh, false);
+}
+
 export function polishPerson(meshes: readonly SkinnedMesh[], look: PersonLook, sculpted = false): void {
   for (const mesh of meshes) {
+    // The positions as fitted, before the finish moves any: what a reshape starts from.
+    mesh.geometry.userData['rawPositions'] = (mesh.geometry.getAttribute('position').array as Float32Array).slice();
     // Lengthened or not, the fitting's stray hem point is evened out (a sculpt moves the whole hem, the point stays an outlier).
     void sculpted;
     evenHem(mesh);

@@ -1,6 +1,6 @@
 import { Matrix4, Vector3, type Bone, type BufferAttribute, type SkinnedMesh } from 'three';
 import type { Reshaped } from '@render/people/personRig';
-import { smoothSeams } from './polish';
+import { polishShape, smoothSeams } from './polish';
 
 /** RESHAPING THE BUILT PERSON, NOT BUILDING IT AGAIN, as MakeHuman does it (`modifierslider.py`: the target moved while the slider is dragged,
  *  everything refitted on release; `skeleton.py`: each joint the mean of its vertex group). A slider's shape is sampled along its range
@@ -37,9 +37,10 @@ const STEPS = 6;
 
 export class Reshaper {
   private readonly position: BufferAttribute;
-  /** The positions as built (bind posture, metres), and the committed shape's move from them. */
-  private readonly origin: Float32Array;
+  /** The positions as fitted before the finish (`polishPerson`), the committed shape's move from them, and the positions drawn for it (finished). */
+  private readonly raw: Float32Array;
   private current: Float32Array;
+  private shown: Float32Array;
   /** Each bone's bind rotation and scale (world, translation zeroed) and its committed head. */
   private readonly axes: Matrix4[];
   private currentHeads: Float32Array;
@@ -54,8 +55,9 @@ export class Reshaper {
 
   constructor(private readonly mesh: SkinnedMesh, private readonly reshape: (shape: Float32Array) => Reshaped) {
     this.position = mesh.geometry.getAttribute('position') as BufferAttribute;
-    this.origin = new Float32Array(this.position.array as Float32Array);
-    this.current = new Float32Array(this.origin.length);
+    this.shown = new Float32Array(this.position.array as Float32Array);
+    this.raw = (mesh.geometry.userData['rawPositions'] as Float32Array | undefined) ?? this.shown.slice();
+    this.current = new Float32Array(this.shown.length);
     const bones = mesh.skeleton.bones;
     this.axes = bones.map((_, i) => mesh.skeleton.boneInverses[i]!.clone().invert());
     this.currentHeads = new Float32Array(bones.length * 3);
@@ -128,10 +130,10 @@ export class Reshaper {
     this.dirty = false;
     const blends = this.axesNow.map((a) => this.around(a)).filter((b): b is [Sample, Sample, number] => !!b);
     if (!blends.length) return;
-    // origin + current + each slider's (its blend - current): the sliders add, each sampled from the committed person.
-    const out = this.position.array as Float32Array, o = this.origin, c = this.current;
+    // The committed shape + each slider's (its blend - current): the sliders add, each sampled from the committed person.
+    const out = this.position.array as Float32Array, o = this.shown, c = this.current;
     for (let i = 0; i < out.length; i++) {
-      let x = o[i]! + c[i]!;
+      let x = o[i]!;
       for (const [a, b, t] of blends) x += a.delta[i]! + (b.delta[i]! - a.delta[i]!) * t - c[i]!;
       out[i] = x;
     }
@@ -147,7 +149,9 @@ export class Reshaper {
     this.current = moves;
     this.currentHeads = heads;
     const out = this.position.array as Float32Array;
-    for (let i = 0; i < out.length; i++) out[i] = this.origin[i]! + this.current[i]!;
+    for (let i = 0; i < out.length; i++) out[i] = this.raw[i]! + this.current[i]!;
+    polishShape(this.mesh);
+    this.shown = out.slice();
     this.position.needsUpdate = true;
     const g = this.mesh.geometry;
     g.computeVertexNormals();

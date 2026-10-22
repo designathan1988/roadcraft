@@ -1,4 +1,5 @@
 import { Reshaper, type ShapeAxis } from './reshape';
+import { bodySlider, buildKey, effective, featureSlider, shapeOf, type Slider } from './shapeKeys';
 import { PLAIN_SHAPE } from './hairShape';
 import {
   ACESFilmicToneMapping, BufferAttribute, CylinderGeometry, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
@@ -6,7 +7,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ageFromYears, yearsFromAge, type MacroParams } from '@people/body/macro';
+import { ageFromYears, type MacroParams } from '@people/body/macro';
 import type { HairStyle } from '@people/hair/procedural';
 import { randomPerson, type PersonLook, type PersonSpec } from '@people/spec';
 import { communityItem, type WardrobeItem } from '@people/wardrobe';
@@ -91,24 +92,11 @@ function startLab(): void {
   const female = (): boolean => person.spec.body.gender < 0.5;
   const sexName = (): 'female' | 'male' => (female() ? 'female' : 'male');
 
-  /** One slider of the shape: its value in a person, and that person with it set. */
-  interface Slider { readonly key: string; readonly range: readonly [number, number]; get(p: LabPerson): number; set(p: LabPerson, v: number): LabPerson }
-
   function setSpec(patch: Partial<PersonSpec>, slider?: Slider): void {
     person = { ...person, spec: { ...person.spec, ...patch } };
     if (slider && reshapeTo(slider)) return;
     rebuild();
   }
-
-  /** What a build depends on beyond the body's shape: what is worn (a child wears the tailored shells), the sex's motion capture. Equal keys reshape (`reshape.ts`), unequal ones build. */
-  function buildKey(p: LabPerson): string {
-    const e = effective(p);
-    const { body: _b, motion: _m, style: _s, ...rest } = e;
-    void _b; void _m; void _s;
-    return JSON.stringify({ ...rest, spec: { ...e.spec, name: '', mood: 0, features: null, body: e.spec.body.gender < 0.5 } });
-  }
-  /** Everything the body's shape is made from. */
-  const shapeOf = (p: LabPerson): string => JSON.stringify([p.spec.body, p.spec.features, p.style, p.body ?? null]);
 
   /** The person now drawn on the built one: at once from the slider's samples, exactly once it rests. False when it needs a build. */
   function reshapeTo(slider?: Slider): boolean {
@@ -141,10 +129,6 @@ function startLab(): void {
     }
   }
 
-  const bodySlider = (k: keyof MacroParams): Slider => ({ key: `body:${k}`, range: [0, 1], get: (p) => p.spec.body[k],
-    set: (p, v) => ({ ...p, spec: { ...p.spec, body: { ...p.spec.body, [k]: v } } }) });
-  const featureSlider = (k: string): Slider => ({ key: `feature:${k}`, range: [-1, 1], get: (p) => p.spec.features[k] ?? 0,
-    set: (p, v) => ({ ...p, spec: { ...p.spec, features: { ...p.spec.features, [k]: v } } }) });
   function setBody(k: keyof MacroParams, v: number): void { setSpec({ body: { ...person.spec.body, [k]: v } }, bodySlider(k)); }
   /** Partial, where a field set to undefined is taken off. */
   type Loose<T> = { [K in keyof T]?: T[K] | undefined };
@@ -158,17 +142,6 @@ function startLab(): void {
   function setHair(h: HairStyle): void {
     person = { ...person, hair: h, spec: { ...person.spec, look: { ...person.spec.look, hairCut: `${PROC_PREFIX}${h.name}`, hairStyle: h.length > 2 ? 'long' : 'short' } } };
     rebuild();
-  }
-
-  /** What is built and saved: a child wears the tailored shells (the garments are cut for grown bodies, as the game has it). */
-  function effective(p: LabPerson): LabPerson {
-    if (yearsFromAge(p.spec.body.age) >= 16) {
-      if (p.spec.look.outfit) return p;
-      return { ...p, spec: { ...p.spec, look: { ...p.spec.look, outfit: p.spec.body.gender < 0.5 ? 'female_casualsuit02' : 'male_casualsuit02', footwear: 'shoes01' } } };
-    }
-    const { outfit: _o, footwear: _f, extras: _e, ...look } = p.spec.look;
-    void _o; void _f; void _e;
-    return { ...p, spec: { ...p.spec, look } };
   }
 
   // ---------------------------------------------------------------- scene
