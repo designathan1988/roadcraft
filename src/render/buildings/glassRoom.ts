@@ -1,6 +1,7 @@
 import { Color, type MeshStandardMaterial } from 'three';
 import { FURNITURE_KINDS } from '@world/buildings/interior';
 import { ROOM_LAMP_GLSL, TV_SHARE } from './roomLamps';
+import { HEAD_SHADE, REVEAL_SHADE, SILL_SHADE } from './roomBehind';
 
 /** The kit's window frame (\`kit.ts\` frameGeometry, its material): its bars in the unit square (border \`t\`, a mullion and a transom 0.8 t wide,
  *  the transom 0.18 up), and how it is lit. */
@@ -15,7 +16,7 @@ const FRAME_OUT = 0.03;
 const PANE_FRAME_GLSL = /* glsl */ `
 // The overlap of [a, b] with a pixel's footprint k round x, as a share of k.
 float paneSpan(float x, float k, float a, float b) { return clamp((min(x + 0.5 * k, b) - max(x - 0.5 * k, a)) / k, 0.0, 1.0); }
-float paneFrameCover(vec2 p, vec3 ray, vec2 size, float thick, inout vec3 nOut) {
+float paneFrameCover(vec2 p, vec3 ray, vec2 size, float thick, inout vec3 nOut, inout vec4 hitOut) {
   vec2 hs = 0.5 * size;
   vec2 t = ${FRAME_T.toFixed(4)} * size;
   // The bars: x0, x1, y0, y1 each (the borders, the mullion, the transom).
@@ -57,8 +58,89 @@ float paneFrameCover(vec2 p, vec3 ray, vec2 size, float thick, inout vec3 nOut) 
   }
   float exact = best >= 0.0 ? 1.0 : 0.0;
   if (exact > 0.5) nOut = normalize(vPaneXv * face.x + vPaneYv * face.y + vPaneZv * face.z);
+  // The face met (its z towards the eye) and how far in front of the glass along the ray: where a recessed pane lights it.
+  if (exact > 0.5) hitOut = vec4(face, best);
   return mix(filtered, exact, smoothstep(1.0, 2.0, thin));
 }`;
+
+/** How an opening's reveals are drawn (`PANE_RECESS_GLSL`), as the shell's trim finishes are (`bake/finishRecipes.ts`: render, stone and
+ *  concrete): their maps' mean albedo, their roughness, the sky's share they reflect. */
+const REVEAL_LOOK = { albedo: 0.9, roughness: 0.9, env: 0.55 } as const;
+
+/** GLSL, first in the pane's colour: a pane laid on the wall's face (`buildingMesh.ts` glazedRecessed, its glass `vRoomE.x` behind it). The
+ *  eye's ray into the opening's box meets a side, the sill, the head or the glass, each an exact ray-plane hit (no loop, no texture: Quilez,
+ *  box functions, https://iquilezles.org/articles/boxfunctions; van Dongen, interior mapping, 2008). The frame stands in front of the glass,
+ *  so a side met behind the frame's front is the frame's (`paneFrameCover` finds it from the glass, and says where). DO NOT write
+ *  `gl_FragDepth`: the pane stays at the wall's face, early depth kept (Qualcomm, Adreno best practices). */
+const PANE_RECESS_GLSL = /* glsl */ `
+vec3 paneEye = vRoomEye;
+vec2 paneUv = vPane;
+float paneSolid = 0.0;
+vec3 paneSolidColour = vec3(0.0);
+vec3 paneSolidNormal = vPaneZv;
+// The point met in the recess (pane-local: x, y on the face, z into the wall) and its outward normal there.
+vec3 paneHit = vec3(0.0);
+vec3 paneHitNormal = vec3(0.0, 0.0, -1.0);
+vec3 paneRay = vec3(abs(vRoomRay.x) < 1e-5 ? 1e-5 : vRoomRay.x, abs(vRoomRay.y) < 1e-5 ? 1e-5 : vRoomRay.y, max(vRoomRay.z, 1e-5));
+if (vRoomE.x > 0.0) {
+  float deep = vRoomE.x;
+  vec2 hs = 0.5 * vPaneSize;
+  vec3 o = vRoomEye;
+  vec3 d = paneRay;
+  float tGlass = deep / d.z;
+  float tx = ((d.x > 0.0 ? hs.x : -hs.x) - o.x) / d.x;
+  float ty = ((d.y > 0.0 ? hs.y : -hs.y) - o.y) / d.y;
+  float tSide = min(tx, ty);
+  float tFront = vRoomD.w > 0.0 ? max(deep - ${FRAME_OUT.toFixed(3)} - 0.5 * vRoomD.w, 0.0) / d.z : tGlass;
+  vec3 p = o + d * tGlass;
+  if (tSide < tFront) {
+    p = o + d * tSide;
+    paneSolid = 1.0;
+    paneHitNormal = tx < ty ? vec3(-sign(d.x), 0.0, 0.0) : vec3(0.0, d.y < 0.0 ? 1.0 : -1.0, 0.0);
+    paneSolidColour = vRoomD.rgb * ${REVEAL_LOOK.albedo.toFixed(2)} * (tx < ty ? ${REVEAL_SHADE.toFixed(4)} : d.y < 0.0 ? ${SILL_SHADE.toFixed(4)} : ${HEAD_SHADE.toFixed(4)});
+    // The pane's z runs into the wall: in view space its axes, the face's outward one turned.
+    paneSolidNormal = normalize(vPaneXv * paneHitNormal.x + vPaneYv * paneHitNormal.y - vPaneZv * paneHitNormal.z);
+  }
+  paneHit = p;
+  paneEye = vec3(p.xy, 0.0);
+  paneUv = p.xy / max(vPaneSize, vec2(1e-4));
+}
+`;
+
+/** GLSL, after the frame: the light at the point met in a recess (`PANE_RECESS_GLSL`), on a side, the glass or the frame's face.
+ *  The sun reaches it where its ray back to the sun leaves by the opening, not where the wall round it stands: the recess's own shadow,
+ *  exact, where the shadow map's texels are a hand wide. The sky reaches it by the opening alone: the share of its hemisphere the opening
+ *  fills, cosine-weighted, Lambert's form factor of a polygon (exact, four edges; Baum, Rushmeier and Winget 1989, "Improving radiosity
+ *  solutions through the use of analytically determined form-factors"). DO NOT leave the recess to the screen's ambient occlusion: the pane
+ *  lies flat on the wall and GTAO, reading depth, never sees the hole it darkened when the reveals were faces. */
+const PANE_RECESS_LIGHT_GLSL = /* glsl */ `
+float paneSunLit = 1.0;
+float paneOpen = 1.0;
+if (vRoomE.x > 0.0) {
+  vec2 hs = 0.5 * vPaneSize;
+  vec3 q = paneHit;
+  vec3 n = paneHitNormal;
+  if (paneFrameHit.w >= 0.0) {
+    q = vec3(paneEye.xy - paneRay.xy * paneFrameHit.w, vRoomE.x - paneRay.z * paneFrameHit.w);
+    n = vec3(paneFrameHit.x, paneFrameHit.y, -paneFrameHit.z);
+  }
+  // Off the surface a hair, so a point on a side sees the opening's edge in that side's plane on the right side.
+  q += n * 1e-3;
+#if NUM_DIR_LIGHTS > 0
+  vec3 toSun = directionalLights[0].direction;
+  vec3 s = vec3(dot(toSun, vPaneXv), dot(toSun, vPaneYv), -dot(toSun, vPaneZv));
+  vec2 out2 = q.xy + s.xy * (q.z / max(-s.z, 1e-5));
+  paneSunLit = s.z < -1e-4 ? step(abs(out2.x), hs.x) * step(abs(out2.y), hs.y) : 0.0;
+#endif
+  vec3 c0 = normalize(vec3(-hs.x, -hs.y, 0.0) - q), c1 = normalize(vec3(hs.x, -hs.y, 0.0) - q);
+  vec3 c2 = normalize(vec3(hs.x, hs.y, 0.0) - q), c3 = normalize(vec3(-hs.x, hs.y, 0.0) - q);
+  vec3 e = acos(clamp(dot(c0, c1), -1.0, 1.0)) * normalize(cross(c0, c1) + 1e-9)
+    + acos(clamp(dot(c1, c2), -1.0, 1.0)) * normalize(cross(c1, c2) + 1e-9)
+    + acos(clamp(dot(c2, c3), -1.0, 1.0)) * normalize(cross(c2, c3) + 1e-9)
+    + acos(clamp(dot(c3, c0), -1.0, 1.0)) * normalize(cross(c3, c0) + 1e-9);
+  paneOpen = clamp(abs(dot(e, n)) / ${(2 * Math.PI).toFixed(6)}, 0.0, 1.0);
+}
+`;
 
 /** The window panes' material: the room behind each pane drawn by interior mapping */
 export function roomBehindGlass(
@@ -92,7 +174,9 @@ attribute vec4 roomA;
 attribute vec4 roomB;
 attribute vec4 roomC;
 attribute vec4 roomD;
+attribute vec4 roomE;
 varying vec4 vRoomD;
+varying vec4 vRoomE;
 varying vec3 vPaneXv;
 varying vec3 vPaneYv;
 varying vec3 vPaneZv;
@@ -119,11 +203,14 @@ vPaneSize = vec2(paneW, paneH);
 vRoomRay = vec3(dot(sight, paneX), dot(sight, paneY), -dot(sight, paneZ));
 // The pane's frame (\`PANE_FRAME_GLSL\`): its trim and thickness, and the pane's axes in view space for its bars' faces.
 vRoomD = roomD;
+vRoomE = roomE;
 vPaneXv = (viewMatrix * vec4(paneX, 0.0)).xyz;
 vPaneYv = (viewMatrix * vec4(paneY, 0.0)).xyz;
 vPaneZv = (viewMatrix * vec4(paneZ, 0.0)).xyz;
 #ifdef USE_INSTANCING
-vec3 roomAt = instanceMatrix[3].xyz;
+// Where the glass stands: a recessed pane's (laid on the wall's face, \`glazedRecessed\`) its depth back along its normal, so each window draws
+// the same room, blinds and lamp as when the glass was its place.
+vec3 roomAt = instanceMatrix[3].xyz - normalize(instanceMatrix[2].xyz) * roomE.x;
 #else
 vec3 roomAt = vec3(0.0);
 #endif
@@ -144,6 +231,7 @@ varying vec4 vRoomA;
 varying vec4 vRoomB;
 varying vec4 vRoomC;
 varying vec4 vRoomD;
+varying vec4 vRoomE;
 varying vec3 vPaneXv;
 varying vec3 vPaneYv;
 varying vec3 vPaneZv;
@@ -159,13 +247,16 @@ ${ROOM_LAMP_GLSL}`)
 // Faded from ~20 px a pane down to ~3: past that the room's furniture, blinds and frames are under a pixel each and only shimmer (the town's towers read as noise, the player, 2026-10-20), and a pane faded skips the room's trace.
 float paneTiny = smoothstep(0.05, 0.3, max(fwidth(vPane.x), fwidth(vPane.y)));
 vec3 roomSeen = vec3(0.42, 0.45, 0.47);
+${PANE_RECESS_GLSL}
 // The frame over the pane: how much of the pixel it covers, and the face of it seen.
 float paneFrame = 0.0;
 vec3 paneFrameNormal = vPaneZv;
-if (vRoomD.w > 0.0) paneFrame = paneFrameCover(vRoomEye.xy, vRoomRay, vPaneSize, vRoomD.w, paneFrameNormal);
-if (paneTiny < 1.0 && paneFrame < 1.0) {
+vec4 paneFrameHit = vec4(-1.0);
+if (vRoomD.w > 0.0 && paneSolid < 0.5) paneFrame = paneFrameCover(paneEye.xy, vRoomRay, vPaneSize, vRoomD.w, paneFrameNormal, paneFrameHit);
+${PANE_RECESS_LIGHT_GLSL}
+if (paneTiny < 1.0 && paneFrame < 1.0 && paneSolid < 0.5) {
 if (vRoomA.z > 0.05) {
-  vec3 o = vRoomEye;
+  vec3 o = paneEye;
   vec3 d = vRoomRay;
   d = vec3(abs(d.x) < 1e-4 ? 1e-4 : d.x, abs(d.y) < 1e-4 ? 1e-4 : d.y, max(d.z, 1e-4));
   vec3 lo = vec3(-vRoomA.x, -vRoomA.w, 0.0), hi = vec3(vRoomA.y, vRoomB.x, vRoomA.z);
@@ -293,7 +384,7 @@ if (vRoomA.z > 0.05) {
   float lot = vRoomLot;
   vec3 wallC = mix(vec3(0.78, 0.72, 0.62), vec3(0.62, 0.68, 0.72), step(0.5, fract(lot * 5.3)));
   wallC = mix(wallC, vec3(0.85, 0.8, 0.7), step(0.8, fract(lot * 2.9)));
-  float yy = vPane.y + 0.5, xx = vPane.x + 0.5;
+  float yy = paneUv.y + 0.5, xx = paneUv.x + 0.5;
   vec3 room = wallC * (0.55 + 0.25 * yy);
   room = mix(room, vec3(0.32, 0.24, 0.18), smoothstep(0.22, 0.12, yy));
   room = mix(room, wallC * 1.05, smoothstep(0.86, 0.95, yy) * 0.6);
@@ -308,18 +399,34 @@ roomSeen = mix(roomSeen, vec3(0.42, 0.45, 0.47), paneTiny);
 // The glass itself scatters next to nothing: what a pane shows is the
 // room through it (sent out below, \`roomDaylight\`) and its Fresnel
 // reflection. The frame is its trim, lit as the frames' own material is.
-diffuseColor.rgb = mix(diffuseColor.rgb * 0.06, vRoomD.rgb, paneFrame);`)
+diffuseColor.rgb = mix(diffuseColor.rgb * 0.06, vRoomD.rgb, paneFrame);
+// A reveal met: its own tone of the trim, matt (\`PANE_RECESS_GLSL\`).
+diffuseColor.rgb = mix(diffuseColor.rgb, paneSolidColour, paneSolid);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-roughnessFactor = mix(mix(roughnessFactor, 0.55, paneTiny), ${PANE_FRAME_LOOK.roughness.toFixed(2)}, paneFrame);`)
+roughnessFactor = mix(mix(mix(roughnessFactor, 0.55, paneTiny), ${PANE_FRAME_LOOK.roughness.toFixed(2)}, paneFrame), ${REVEAL_LOOK.roughness.toFixed(2)}, paneSolid);`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
-metalnessFactor = mix(metalnessFactor, ${PANE_FRAME_LOOK.metalness.toFixed(2)}, paneFrame);`)
+metalnessFactor = mix(mix(metalnessFactor, ${PANE_FRAME_LOOK.metalness.toFixed(2)}, paneFrame), 0.0, paneSolid);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-normal = normalize(mix(normal, paneFrameNormal, step(0.5, paneFrame)));`)
+normal = normalize(mix(normal, paneFrameNormal, step(0.5, paneFrame)));
+normal = normalize(mix(normal, paneSolidNormal, paneSolid));`)
       .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
 #if defined( RE_IndirectSpecular ) && defined( USE_ENVMAP )
-  // The frame reflects the sky as the frames' material did (its own envMapIntensity, 1), not the glass's.
-  radiance *= mix(1.0, 1.0 / max(envMapIntensity, 1e-3), paneFrame);
+  // The frame and the reveals take the sky's light as their own materials do (the frames' envMapIntensity 1, the trim's finish), not as
+  // the glass: its reflection and its diffuse light alike (three scales both, \`getIBLIrradiance\`, \`getIBLRadiance\`).
+  float paneEnv = mix(mix(1.0, 1.0 / max(envMapIntensity, 1e-3), paneFrame), ${REVEAL_LOOK.env.toFixed(2)} / max(envMapIntensity, 1e-3), paneSolid);
+  radiance *= paneEnv;
+  iblIrradiance *= paneEnv;
+#endif
+// The sky into a recess: the share of it the opening lets in (\`PANE_RECESS_LIGHT_GLSL\`).
+irradiance *= paneOpen;
+iblIrradiance *= paneOpen;
+#if defined( RE_IndirectSpecular ) && defined( USE_ENVMAP )
+  radiance *= paneOpen;
 #endif`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+// The sun into a recess: none where the wall round the opening stands between (\`PANE_RECESS_GLSL\`).
+reflectedLight.directDiffuse *= paneSunLit;
+reflectedLight.directSpecular *= paneSunLit;`)
       .replace('#include <envmap_physical_pars_fragment>', `#include <envmap_physical_pars_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 // Not every occupied room shows its light (blinds, a lamp in the next room); by day the lamp's emissive is 0 (a uniform: one branch for every pixel) and none is worked out.
@@ -336,9 +443,9 @@ roomTint = mix(roomTint, tvLight(tvClock, vRoomLot), (1.0 - office) * step(1.0 -
 totalEmissiveRadiance *= roomLit * roomTint * (0.35 + 1.3 * clamp(roomSeen / 0.55, 0.0, 1.6));
 }
 totalEmissiveRadiance += roomSeen * roomDaylight;
-// The frame shows no room and no lamp.
-totalEmissiveRadiance *= 1.0 - paneFrame;`);
+// The frame and the reveals show no room and no lamp.
+totalEmissiveRadiance *= 1.0 - max(paneFrame, paneSolid);`);
   };
   // One key for the clear and the dark panes: their source is the same (no number of the kind in it), so one program (r186 `WebGLRenderer.getProgram`: each material its own uniforms, the program shared by key).
-  glassy.customProgramCacheKey = () => 'room-lights-awake-interior-v13-frame';
+  glassy.customProgramCacheKey = () => 'room-lights-awake-interior-v15-recess';
 }

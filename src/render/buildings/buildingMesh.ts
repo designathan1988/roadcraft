@@ -9,7 +9,7 @@ import { deriveSpaces } from '@world/buildings/spaces';
 import { spaceSeed } from './lightSlots';
 import { buildingFrame, frameX, frameY, letGoLayout, localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, letGoInterior, levelFlights } from '@world/buildings/interior';
-import { PANE_FRAME_AT, ROOM_FLOATS, ROOM_OWN, floorKind, roomsOfStorey } from './roomBehind';
+import { HEAD_SHADE, PANE_FRAME_AT, PANE_RECESS_AT, REVEAL_SHADE, ROOM_FLOATS, ROOM_OWN, SILL_SHADE, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
   BufferAttribute,
@@ -456,6 +456,12 @@ class PartRows {
     if (!this.rooms) return;
     const o = i * ROOM_FLOATS + PANE_FRAME_AT, a = this.rooms.array;
     a[o] = DataUtils.toHalfFloat(r); a[o + 1] = DataUtils.toHalfFloat(g); a[o + 2] = DataUtils.toHalfFloat(b); a[o + 3] = DataUtils.toHalfFloat(thickness);
+  }
+
+  /** A pane laid on the wall's face over its opening: how deep its glass stands behind it (`glassRoom.ts` PANE_RECESS_GLSL draws the reveals). */
+  paneRecess(i: number, depth: number): void {
+    if (!this.rooms) return;
+    this.rooms.array[i * ROOM_FLOATS + PANE_RECESS_AT] = DataUtils.toHalfFloat(depth);
   }
 
   /** The batch of what was placed, in arrays of its own (the rows are written again for the next building). */
@@ -989,6 +995,18 @@ class Emitter {
     rows.paneFrame(rows.count - 1, trim.r, trim.g, trim.b, thickness);
   }
 
+  /** A pane laid on the wall's face over the whole opening, its glass `depth` behind it: the pane's material draws the reveals, the sill, the
+   *  head and the frame by an exact ray-box test each, and the sun's light into the recess (`glassRoom.ts` PANE_RECESS_GLSL). The wall behind
+   *  it is one face (`emitBay`). DO NOT lay a plain window's reveals as faces: 16 triangles a window where 2 draw it, every window of the
+   *  city out to the detail's 1.4 km (reports/geometry-replacement-research.md, F1; Quilez, box functions, https://iquilezles.org/articles/boxfunctions). */
+  glazedRecessed(kind: 'glass' | 'glassDark', f: BayFace, a: number, h: number, depth: number, w: number, hh: number, thickness: number, trim: Color): void {
+    if (this.flat) return;
+    this.put(kind, f, a, h, 0, w, hh, 1);
+    const rows = this.parts[kind];
+    rows.paneFrame(rows.count - 1, trim.r, trim.g, trim.b, thickness);
+    rows.paneRecess(rows.count - 1, depth);
+  }
+
   /** An element being emitted (`emitElement`): its boxes are the shell's parts where the shell lets them be (`Shell.apart`). */
   inElement = false;
   get apart(): boolean {
@@ -1436,7 +1454,6 @@ function placeFurniture(e: Emitter, f: Furniture, floorZ: number): void {
 
 const PARTITION = paint({ finish: 'plaster', colour: 0xece6da });
 /** How much light a window reveal keeps: it sits in the wall's own shadow. */
-const REVEAL_SHADE = 0.68;
 
 const shaded = (c: Paint, k: number): Paint => ({ rgb: [c.rgb[0] * k, c.rgb[1] * k, c.rgb[2] * k], finish: c.finish });
 
@@ -1637,8 +1654,14 @@ function emitBay(
   }
   // A porch runs down to the floor and back to the door; its floor is the top of the flight, so it has no sill of its own.
   const o = recess > 0 ? { ...found, h0: 0, depth: recess } : found;
+  // No two rows alike: some rooms darker, some with the roller shutter part way down - picked from the bay, so stable.
+  const pick = bay.component === 'sashWindow' ? 13 : bayHash(bay) % 20;
+  const sash = bay.component === 'window' || bay.component === 'sashWindow';
+  // A plain window (no shutter in its recess, nothing else in it): its wall one face and its pane on it, the pane drawing the recess (`glazedRecessed`).
+  const flush = !e.flat && recess <= 0 && o.h0 > 1e-6 && (bay.component === 'wideWindow' || (sash && !(pick >= 9 && pick < 13)));
+  if (flush) e.rect(f, 0, W, 0, H, 0, out, wall);
   // The wall around the hole, then the four reveals into it (a flattened bay's wall is its run's, `emitFacadeRuns`).
-  if (!e.flat) {
+  if (!e.flat && !flush) {
     e.rect(f, 0, o.a0, 0, H, 0, out, wall);
     e.rect(f, o.a1, W, 0, H, 0, out, wall);
     e.rect(f, o.a0, o.a1, 0, o.h0, 0, out, wall);
@@ -1648,8 +1671,8 @@ function emitBay(
     e.jamb(f, o.a0, o.h0, o.h1, 0, o.depth, along, reveal);
     e.jamb(f, o.a1, o.h0, o.h1, 0, o.depth, back, reveal);
     // A sill; at the floor, a threshold as high as the plinth's ledge
-    if (recess <= 0) e.strip(f, o.a0, o.a1, o.h0 > 1e-6 ? o.h0 : PLINTH_RISE, 0, o.depth, UP, shaded(trim, 0.92));
-    e.strip(f, o.a0, o.a1, o.h1, 0, o.depth, DOWN, shaded(reveal, 0.8));
+    if (recess <= 0) e.strip(f, o.a0, o.a1, o.h0 > 1e-6 ? o.h0 : PLINTH_RISE, 0, o.depth, UP, shaded(trim, SILL_SHADE));
+    e.strip(f, o.a0, o.a1, o.h1, 0, o.depth, DOWN, shaded(reveal, HEAD_SHADE / REVEAL_SHADE));
   }
 
   const w = o.a1 - o.a0;
@@ -1659,9 +1682,8 @@ function emitBay(
   switch (bay.component) {
     case 'window':
     case 'sashWindow': {
-      // No two rows alike: some rooms darker, some with the roller shutter part way down - picked from the bay, so stable.
-      const pick = bay.component === 'sashWindow' ? 13 : bayHash(bay) % 20;
-      e.glazed(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
+      if (flush) e.glazedRecessed(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
+      else e.glazed(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
       // The shutter a little inside the frame's edges: as wide as it, its sides lay in the frame's own and fought it for depth.
       if (pick >= 9 && pick < 13) {
         const down = h * (0.25 + (pick - 9) * 0.15) - PART_INSET;
@@ -1673,7 +1695,8 @@ function emitBay(
       break;
     }
     case 'wideWindow':
-      e.glazed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
+      if (flush) e.glazedRecessed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
+      else e.glazed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
       break;
     case 'balcony':
       e.glazed('glass', f, am, hm, o.depth, w, h, m(0.06), tc);
@@ -3991,8 +4014,9 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, 0));
       geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
       geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));
-      // And its frame (`glazed`): trim and thickness, drawn by the pane's material.
+      // And its frame (`glazed`): trim and thickness, drawn by the pane's material; and its recess (`glazedRecessed`).
       geometry.setAttribute('roomD', new InterleavedBufferAttribute(roomBuffer, 4, PANE_FRAME_AT));
+      geometry.setAttribute('roomE', new InterleavedBufferAttribute(roomBuffer, 4, PANE_RECESS_AT));
     }
     const lookBuffer = looked ? new InstancedInterleavedBuffer(part.looks!, LOOK_FLOATS) : null;
     if (lookBuffer) {

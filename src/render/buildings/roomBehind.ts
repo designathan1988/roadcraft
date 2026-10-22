@@ -4,11 +4,19 @@ import type { Building, Volume } from '@world/buildings/types';
 import { m } from '@world/units';
 
 /** THE ROOM BEHIND A WINDOW, as the building's own interior has it (`interiorAt`, the rooms the cut-open view draws) */
-export const ROOM_FLOATS = 16;
+export const ROOM_FLOATS = 20;
 /** The room's own numbers (`roomsOfStorey`): the first twelve of a pane's ROOM_FLOATS. */
 export const ROOM_OWN = 12;
 /** Where a pane's frame is written among its ROOM_FLOATS (`PartRows.paneFrame`): its trim's r, g, b and the frame's thickness (0: no frame). */
 export const PANE_FRAME_AT = 12;
+/** Where a pane's recess is written (`PartRows.paneRecess`): how deep the glass stands behind the wall's face when the pane is laid on the
+ *  face and draws its reveals, sill and head itself (`glassRoom.ts` PANE_RECESS_GLSL); 0, the pane at the glass. Three numbers spare. */
+export const PANE_RECESS_AT = 16;
+/** The tones of an opening's reveals against its trim, as the shell lays them (`buildingMesh.ts` emitBay) and a recessed pane draws them
+ *  (`glassRoom.ts`): the sides in the wall's shadow, the sill a little darker than the trim, the head under it darker still. */
+export const REVEAL_SHADE = 0.68;
+export const SILL_SHADE = 0.92;
+export const HEAD_SHADE = REVEAL_SHADE * 0.8;
 
 /** The farthest a wall is looked for: past it the room is closed at this depth. */
 const MOST_DEEP = m(12);
