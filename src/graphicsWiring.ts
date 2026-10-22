@@ -136,6 +136,9 @@ export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void, 
 
   const save = (): void => writeStorage(OPTIONS_KEY, JSON.stringify(kept));
   const fps = (): number => kept.fpsLimit ?? 0;
+  // ON unless the player switched it off: with the tier held (no `auto` dropping the facades' maps), only the drawn resolution keeps the frame in its
+  // budget - off by default, the held ultra tier missed 16.7 ms and the game stuttered (the player, 2026-10-22: "o jogo está travando").
+  const dynamicOn = (): boolean => kept.dynamicResolution ?? true;
   /** The whole ratio the tier allows on this display; the dynamic resolution draws a share of it. */
   const fullRatio = (): number => Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), settings.pixelRatio);
   const applyScale = (scale: number): void => {
@@ -157,7 +160,7 @@ export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void, 
     shadows: settings.shadows ? settings.shadowMapSize : 0,
     ambientOcclusion: settings.ambientOcclusion,
     smaa: settings.smaa,
-    dynamicResolution: kept.dynamicResolution ?? false,
+    dynamicResolution: dynamicOn(),
     fpsLimit: fps(),
     vsync: desktopState?.vsync ?? true,
     fullscreen: desktopState ? desktopState.fullscreen : document.fullscreenElement !== null,
@@ -220,7 +223,7 @@ export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void, 
           return;
         }
       }
-      if (!kept.dynamicResolution || !scene.gpu.supported) return;
+      if (!dynamicOn() || !scene.gpu.supported) return;
       // The last scale the samples ask for, taken once.
       let scale: number | null = null;
       for (let back = fresh - 1; back >= 0; back--) scale = resolution.sample(ring.newest(back), budget) ?? scale;
