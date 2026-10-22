@@ -3,11 +3,11 @@ import { hypot2 } from '@core/hypot';
 import clipping from 'polygon-clipping';
 import { Color } from 'three';
 import { resolveBlocks } from '@world/buildings/blocks';
-import { floorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
+import { floorHeight, frontFloorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
-  type BuildingFrame, type LocalBay, bayLayout, bayWidth, buildingFrame, closedBlocks, frameX, frameY, coveredSpans, exposedParts, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
-  sawtoothRun, shedFall, sideLength, sideStart, volumeElevation, volumeHeight,
+  type BuildingFrame, type LocalBay, bayLayout, bayWidth, buildingFrame, closedBlocks, frameX, frameY, coveredSpans, exposedParts, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
+  sawtoothRun, shedFall, sideLength, sideStart, volumeHeight,
 } from '@world/buildings/geometry';
 import { type Finish, type MaterialSpec, roofMaterial, trimMaterial, wallMaterial } from '@world/buildings/materials';
 import { type BayComponent, type Building, type FaceId, type LotSurface, type Volume, volumeTop } from '@world/buildings/types';
@@ -55,7 +55,7 @@ const EAVES = m(0.45);
 /** A machine room over a lift core. */
 const MACHINE_ROOM_H = m(3);
 
-const TERRACE_RGB = rgbOf(0xb0a595);
+export const TERRACE_RGB = rgbOf(0xb0a595);
 const SAW_GLASS_RGB = rgbOf(0x3c5360);
 
 export function rgbOf(hex: number, shade = 1): [number, number, number] {
@@ -63,7 +63,7 @@ export function rgbOf(hex: number, shade = 1): [number, number, number] {
   return [c.r * shade, c.g * shade, c.b * shade];
 }
 
-type Rgb = readonly [number, number, number];
+export type Rgb = readonly [number, number, number];
 /** A facade's pattern at a vertex: along, bay, storey height, first storey's height; and the glass share. */
 interface Facade { readonly bay: number; readonly storey: number; readonly z0: number; readonly share: number }
 const NO_FACADE: Facade = { bay: 0, storey: 1, z0: 0, share: 0 };
@@ -194,10 +194,25 @@ class MassWriter {
 /** The building's own shade, as the detailed one has it (`buildingMesh.ts` `emitBuilding`). */
 const shadeOf = (b: Building): number => 0.93 + (((b.id * 2654435761) >>> 0) % 1000) / 1000 * 0.12;
 
+/** A building's colours from afar: a material's tint in its own shade, times its finish's tone (`finishes.ts` `finishAlbedo`) when given. */
+export function massColours(b: Building, tone?: Readonly<Record<Finish, readonly [number, number, number]>>): (spec: MaterialSpec) => Rgb {
+  const shade = shadeOf(b);
+  return (spec) => {
+    const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
+    return t ? [c[0] * t[0], c[1] * t[1], c[2] * t[2]] : c;
+  };
+}
+
 /** A building's floor as the detailed one's (`buildingMesh.ts` `emitChunk`, `floorHeight`); undefined with no closed block. */
 export function massFloor(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
   const resolved = resolveBlocks(b);
   return closedBlocks(resolved.volumes).length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+}
+
+/** A building's floor as its base stands it (`massBase.ts`, the top level, drawn from afar): its lots' front pavement, no bay laid out (`frontFloorHeight`); undefined with no closed block. Never handed to the finer levels: they stand on `massFloor`. */
+export function baseFloor(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
+  const resolved = resolveBlocks(b);
+  return closedBlocks(resolved.volumes).length > 0 ? frontFloorHeight(resolved, naturalAt, pavedAt) : undefined;
 }
 
 /** A building's mass from afar, on the ground it stands on (the floor worked out as the detailed building's, `floorHeight`) */
@@ -239,11 +254,7 @@ function massWriter(
   // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`)
   const floor = known ? known.floor : massFloor(b, naturalAt, pavedAt);
   if (floor !== undefined && !signature) {
-    const shade = shadeOf(b);
-    const rgb = (spec: MaterialSpec): Rgb => {
-      const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
-      return t ? [c[0] * t[0], c[1] * t[1], c[2] * t[2]] : c;
-    };
+    const rgb = massColours(b, tone);
     // The body as the detailed building draws it: its closed blocks alone (`buildingMesh.ts` `emitChunk`).
     const body = { ...resolved, volumes: closed };
     for (const v of closed) emitVolume(w, body, v, floor, rgb);
@@ -251,60 +262,6 @@ function massWriter(
   }
   emitLotPlates(w, resolved, floor, groundAt, pavedAt);
   return w;
-}
-
-/** Numbers per far box (`emitBoxes`): centre x, y; half sides along the building's x and y; its turn; the wall's foot, the top, the floor; the wall's and the roof's colour; bay, storey, glass share, seed; the block's plan area. */
-export const BOX_FLOATS = 19;
-
-/** A BUILDING AS BOXES, for the levels past the plates (`farTiles.ts`): each closed block the box of its plan, its roof's rise halved, coloured and glazed as its mass */
-export function emitBoxes(
-  b: Building, pavedAt: PavedAt | undefined, naturalAt: GroundAt, tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined, out: number[],
-  known?: { readonly floor: number | undefined },
-): void {
-  const resolved = resolveBlocks(b);
-  const closed = closedBlocks(resolved.volumes);
-  if (closed.length === 0) return;
-  // The floor as the mass's (`emitMassing`).
-  const floor = known?.floor ?? floorHeight(resolved, naturalAt, pavedAt);
-  const shade = shadeOf(b);
-  const rgb = (spec: MaterialSpec): Rgb => {
-    const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
-    return t ? [c[0] * t[0], c[1] * t[1], c[2] * t[2]] : c;
-  };
-  const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
-  const seed = ((b.id * 2654435761) >>> 0) / 4294967296 + office;
-  const body = { ...resolved, volumes: closed };
-  // The glass share of each block: its bays' mean (`GLASS_SHARE`), as the mass's walls have it.
-  const glass = new Map<number, { sum: number; n: number }>();
-  for (const bay of bayLayout(body)) {
-    const g = glass.get(bay.volume) ?? { sum: 0, n: 0 };
-    g.sum += GLASS_SHARE[bay.component] ?? 0;
-    g.n++;
-    glass.set(bay.volume, g);
-  }
-  for (const v of closed) {
-    const ring = localFootprint(v);
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, twice = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
-      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
-      twice += p.x * q.y - q.x * p.y;
-    }
-    const centre = localToWorld(body, (x0 + x1) / 2, (y0 + y1) / 2);
-    const base = floor + volumeElevation(body, v, v.base);
-    const eaves = floor + volumeHeight(body, v);
-    const pitched = v.roof !== 'flat' && v.roof !== 'terrace';
-    const wall = rgb(wallMaterial(body, v, 0));
-    const roof = v.roof === 'terrace' ? TERRACE_RGB : rgb(roofMaterial(body, v));
-    const g = glass.get(v.id);
-    const share = wallMaterial(body, v, 0).finish === 'glass' ? 1 : g && g.n > 0 ? g.sum / g.n : 0;
-    out.push(
-      centre.x, centre.y, (x1 - x0) / 2, (y1 - y0) / 2, b.rotation,
-      v.base === 0 ? base - BURY : base, eaves + (pitched ? roofRise(body, v) / 2 : 0), base,
-      wall[0], wall[1], wall[2], roof[0], roof[1], roof[2],
-      bayWidth(body, v, 0), b.storeyHeight, share, seed, Math.abs(twice) / 2,
-    );
-  }
 }
 
 /** The colours of a lot's surface (`buildingMesh.ts` draws them in their finishes) */

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 import type { Plugin } from 'vite';
 
 /** The people cooked ahead (`src/render/people/cookedPerson.ts`, `proceduralCook.ts`): THE CAST IS FIXED */
@@ -20,12 +21,6 @@ const DERIVED = [
   { entry: 'src/world/conflictPoints.ts', also: [] as string[], define: '__CONFLICT_ZONES_HASH__' },
   // The road surfaces' tiles (`render/roadSurfaces.ts`, kept by `renderer.ts`).
   { entry: 'src/render/roadSurfaces.ts', also: [] as string[], define: '__ROAD_TILES_HASH__' },
-  // The buildings' far levels baked per tile (`render/buildings/farTiles.ts`, kept by `farLevels.ts`).
-  { entry: 'src/render/buildings/farTiles.ts', also: [] as string[], define: '__FAR_MASS_HASH__' },
-  // The roads' far levels baked per tile (`render/farRoadTiles.ts`, kept by `farRoads.ts`).
-  { entry: 'src/render/farRoadTiles.ts', also: [] as string[], define: '__FAR_ROADS_HASH__' },
-  // The near products baked per tile (`render/nearBakers.ts`, kept by `nearTiles.ts`): poles, furniture, signs, barriers, trees, structures, gardens.
-  { entry: 'src/render/nearBakers.ts', also: [] as string[], define: '__NEAR_TILES_HASH__' },
   // A plate's ecosystem and a far plate's woods (`world/ecology.ts`, `render/farWoods.ts`, kept by `ecologyKept.ts`).
   { entry: 'src/world/ecology.ts', also: [] as string[], define: '__ECOLOGY_HASH__' },
   { entry: 'src/render/farWoods.ts', also: [] as string[], define: '__FAR_WOODS_HASH__' },
@@ -75,12 +70,22 @@ export function importClosure(root: string, entry: string): string[] {
 const DIR = 'cooked';
 
 /** The fingerprint of a derived kind (`DERIVED`): its maker's import closure and the files it also reads. */
+/** A source's code alone: its tokens, without comments, spaces or line ends (TypeScript's own scanner). DO NOT hash the raw text: a comment
+ *  translated into English changed the generator's fingerprint, the shipped cities were refused, and every opening grew its city again
+ *  in front of the player (2026-10-21). What the code does is what the fingerprint stands for. */
+function codeOf(text: string): string {
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text);
+  const tokens: string[] = [];
+  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) tokens.push(scanner.getTokenText());
+  return tokens.join(' ');
+}
+
 function derivedHash(root: string, entry: string, also: readonly string[] = []): string {
   const hash = createHash('sha256');
   for (const file of importClosure(root, entry)) {
     if (!fs.existsSync(file)) continue;
     hash.update(path.relative(root, file).replace(/\\/g, '/'));
-    hash.update(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'));
+    hash.update(codeOf(fs.readFileSync(file, 'utf8')));
   }
   for (const file of also) {
     const at = path.join(root, file);

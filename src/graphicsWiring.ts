@@ -1,12 +1,16 @@
 import { DynamicResolution } from '@core/dynamicResolution';
 import { tierForGpu } from '@core/gpuTier';
 import { WEAK_MACHINE } from '@core/weakMachine';
-import { QUALITY, isQualityLevel, type QualityLevel, type QualitySettings } from '@render/quality';
+import { QUALITY, QualityGovernor, isQualityLevel, type QualityLevel, type QualitySettings } from '@render/quality';
 import type { SceneHandle } from '@render/renderer';
 import { createGraphicsPanel, type GraphicsChoices } from '@ui/graphicsPanel';
 import type { FrameClock } from './frameLoop';
 
-/** THE GRAPHICS OPTIONS' WIRING, out of `main.ts`: the player's choices kept, the first tier by the GPU, and each applied live. */
+/** THE GRAPHICS OPTIONS' WIRING, out of `main.ts`: the player's choices kept, the first tier by the GPU, and each applied live. `auto` (the first start's) moves between the tiers in play by the frames' cost (`QualityGovernor`), never above the GPU's own tier. */
+
+/** A tier the player picked, or the automatic one. */
+export type QualityPreset = QualityLevel | 'auto';
+export const isQualityPreset = (value: unknown): value is QualityPreset => value === 'auto' || isQualityLevel(value);
 
 /** The desktop shell's calls (`desktop/preload.cjs`); absent in a browser. */
 interface DesktopBridge {
@@ -96,31 +100,31 @@ function settingsFor(level: QualityLevel, kept: KeptOptions): QualitySettings {
 export interface GraphicsWiring {
   /** The tier and settings the renderer starts with. */
   readonly level: QualityLevel;
+  /** What the player chose: a tier, or `auto`. */
+  readonly preset: QualityPreset;
   readonly settings: QualitySettings;
   /** The renderer and the frame loop made: the options apply to them from now on. */
   attach(scene: SceneHandle, clock: FrameClock, redraw: () => void): void;
   /** A tier picked (the menu's row or the panel): its own settings, the player's apart from it cleared. */
-  setPreset(level: QualityLevel): void;
+  setPreset(preset: QualityPreset): void;
   openPanel(): void;
   /** The whole pixel ratio the tier allows on this display (the effects panel draws a share of it). */
   fullRatio(): number;
-  /** After each frame drawn: the dynamic resolution reads the GPU's times. */
+  /** After each frame drawn: the dynamic resolution and the automatic tier read the GPU's times. */
   frame(): void;
 }
 
-export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): GraphicsWiring {
+/** `onLevel`: the tier in use changed, by the automatic governor (`auto`) or the player's pick (`player`); told for the field's session summary (`fieldReport.ts`). */
+export function createGraphicsWiring(onPreset: (preset: QualityPreset) => void, onLevel: (level: QualityLevel, by: 'auto' | 'player') => void = () => {}): GraphicsWiring {
   const saved = readStorage(PRESET_KEY);
-  let level: QualityLevel;
-  // A run playing a weaker machine starts at that machine's tier, whatever this one kept (and keeps nothing of it).
-  if (WEAK_MACHINE.gpu) {
-    level = tierForGpu(WEAK_MACHINE.gpu);
-  } else if (isQualityLevel(saved)) {
-    level = saved;
-  } else {
-    // The first start: the tier this GPU can hold, kept as if the player had picked it.
-    level = tierForGpu(gpuName());
-    writeStorage(PRESET_KEY, level);
-  }
+  /** The tier this GPU can hold: where `auto` starts, and the most it climbs to. A run playing a weaker machine (`core/weakMachine.ts`) plays `auto` from that machine's tier, whatever this one kept. */
+  const hardware = tierForGpu(gpuName());
+  // DO NOT start a player with nothing chosen on `auto`: the governor dropped the tier whenever a frame missed 16.7 ms, and the buildings lost their
+  // facades' maps on the player's own browser (the player, 2026-10-22: "gráficos piores"). Nothing chosen: this GPU's own tier, held; `auto` only when picked.
+  let preset: QualityPreset = WEAK_MACHINE.gpu ? 'auto' : isQualityPreset(saved) ? saved : hardware;
+  let level: QualityLevel = preset === 'auto' ? hardware : preset;
+  const governor = new QualityGovernor(level, hardware);
+  let lastFrame = 0;
   let kept = readKept();
   let settings = settingsFor(level, kept);
   let scene: SceneHandle | null = null;
@@ -132,6 +136,9 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
 
   const save = (): void => writeStorage(OPTIONS_KEY, JSON.stringify(kept));
   const fps = (): number => kept.fpsLimit ?? 0;
+  // ON unless the player switched it off: with the tier held (no `auto` dropping the facades' maps), only the drawn resolution keeps the frame in its
+  // budget - off by default, the held ultra tier missed 16.7 ms and the game stuttered (the player, 2026-10-22: "o jogo está travando").
+  const dynamicOn = (): boolean => kept.dynamicResolution ?? true;
   /** The whole ratio the tier allows on this display; the dynamic resolution draws a share of it. */
   const fullRatio = (): number => Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), settings.pixelRatio);
   const applyScale = (scale: number): void => {
@@ -149,11 +156,11 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
   };
 
   const choices = (): GraphicsChoices => ({
-    preset: level,
+    preset,
     shadows: settings.shadows ? settings.shadowMapSize : 0,
     ambientOcclusion: settings.ambientOcclusion,
     smaa: settings.smaa,
-    dynamicResolution: kept.dynamicResolution ?? false,
+    dynamicResolution: dynamicOn(),
     fpsLimit: fps(),
     vsync: desktopState?.vsync ?? true,
     fullscreen: desktopState ? desktopState.fullscreen : document.fullscreenElement !== null,
@@ -161,6 +168,7 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
 
   const wiring: GraphicsWiring = {
     level,
+    preset,
     settings,
     attach(nextScene, nextClock, nextRedraw) {
       scene = nextScene;
@@ -170,7 +178,10 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
       seenSamples = scene.gpu.samples.pushed;
     },
     setPreset(next) {
-      level = next;
+      preset = next;
+      level = next === 'auto' ? hardware : next;
+      governor.set(level);
+      onLevel(level, 'player');
       const { shadows: _s, ambientOcclusion: _a, smaa: _m, ...lasting } = kept;
       kept = lasting;
       writeStorage(PRESET_KEY, next);
@@ -191,11 +202,28 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
       }, () => panel.open());
     },
     frame() {
-      if (!scene || !kept.dynamicResolution || !scene.gpu.supported) return;
-      const ring = scene.gpu.samples;
-      const fresh = Math.min(ring.pushed - seenSamples, ring.size);
-      seenSamples = ring.pushed;
+      if (!scene) return;
+      const now = performance.now();
+      const delta = lastFrame > 0 ? (now - lastFrame) / 1000 : 0;
+      lastFrame = now;
       const budget = 1000 / (fps() || 60);
+      const ring = scene.gpu.samples;
+      const fresh = scene.gpu.supported ? Math.min(ring.pushed - seenSamples, ring.size) : 0;
+      seenSamples = ring.pushed;
+      if (preset === 'auto' && delta > 0) {
+        // The GPU's time of each frame measured since; where no timer answers, the frame's own time (held to the display's refresh: it can drop a tier, never raise one past what the refresh shows).
+        let next: QualityLevel | null = null;
+        if (scene.gpu.supported) for (let back = fresh - 1; back >= 0; back--) next = governor.sample(delta / Math.max(1, fresh), ring.newest(back), budget) ?? next;
+        else next = governor.sample(delta, delta * 1000, budget * 1.1);
+        if (next !== null && next !== level) {
+          level = next;
+          governor.set(level);
+          onLevel(level, 'auto');
+          apply();
+          return;
+        }
+      }
+      if (!dynamicOn() || !scene.gpu.supported) return;
       // The last scale the samples ask for, taken once.
       let scale: number | null = null;
       for (let back = fresh - 1; back >= 0; back--) scale = resolution.sample(ring.newest(back), budget) ?? scale;
@@ -208,7 +236,7 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
     desktop: () => desktopState !== null,
     gpu: () => scene?.gpu.label ?? gpuName(),
     change(patch) {
-      if (patch.preset !== undefined && patch.preset !== level) {
+      if (patch.preset !== undefined && patch.preset !== preset) {
         wiring.setPreset(patch.preset);
         return;
       }

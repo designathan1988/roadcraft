@@ -1,12 +1,15 @@
-import { Group, type BufferGeometry, type Color, type InstancedMesh, type Material, type MeshDepthMaterial } from 'three';
+import { Group, type BufferGeometry, type Color, type Frustum, type InstancedMesh, type Material, type Matrix4, type MeshDepthMaterial } from 'three';
 import { Rng } from '@core/rng';
 import { followPieces } from '@world/buildings/elements';
 import { localToWorld } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
+import type { BuildingStore } from '@world/buildings/store';
+import type { ChangeJournal } from '@world/changes';
 import { m } from '@world/units';
 import { createCellInstances, type KindSpec, type Pack } from './cellInstances';
-import { YAW_POSE } from './instanceRuns';
-import { PICTURE_PX, sceneryPictures } from './plantImpostors';
+import { NEVER_NEAR, YAW_POSE } from './instanceRuns';
+import { PICTURE_PX, sceneryPictures, type SceneryPictures } from './plantImpostors';
+import { createPropLayer, type PropLayer } from './propCells';
 import { BUSH_KINDS, TREE_SPECIES, type TreeSpecies } from './propGeometry';
 import { SHADOW_REACH, foliageTint, type Scenery, type SceneryKit } from './scenery';
 
@@ -136,6 +139,7 @@ export function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<number, Pa
       const at = index * POSE;
       poses[at] = placement.x; poses[at + 1] = placement.z; poses[at + 2] = -placement.y; poses[at + 3] = placement.yaw;
       poses[at + 4] = placement.sx; poses[at + 5] = placement.sy; poses[at + 6] = placement.sz;
+      poses[at + 7] = NEVER_NEAR;
       scales[index] = Math.max(placement.sx, placement.sy, placement.sz);
       if (placement.tint) {
         colours ??= new Float32Array(placed.length * 3).fill(1);
@@ -158,13 +162,10 @@ export interface GardenChange {
 export interface Gardens extends Scenery {
   /** DO NOT hand it the town's lists to find what changed: that was a pass over the town per building grown. */
   update(change: GardenChange): { readonly removed: readonly InstancedMesh[]; readonly added: readonly InstancedMesh[] };
-  /** Plants packed elsewhere (a tile's, baked in a worker: `gardenTiles.ts`) placed with the others; taken away by `take` with the same packs. The meshes made for kinds that had none. */
-  put(packs: ReadonlyMap<number, Pack>): readonly InstancedMesh[];
-  take(packs: ReadonlyMap<number, Pack>): void;
 }
 
-export function createGardens(kit: SceneryKit): Gardens {
-  const pictures = sceneryPictures(kit);
+/** The gardens' kinds (`KIND_KEYS`): each plant's body and leaf cards near, its picture far, chosen by its size on the screen. */
+function gardenKinds(kit: SceneryKit, pictures: SceneryPictures): KindSpec[] {
   const far = pictures.set;
   /** A plant kind: its body and its leaf cards near, its picture far (`plantImpostors.ts`), chosen by its size on the screen. */
   const kind = (name: string, body: BufferGeometry, material: Material, depth: MeshDepthMaterial, cards: BufferGeometry | undefined,
@@ -178,10 +179,19 @@ export function createGardens(kit: SceneryKit): Gardens {
       { name: `${name}-far`, geometry: far.quads[picture]!, material: far.material, depth: far.depth, castShadow: true, receiveShadow: true, cards: false, far: true, made: far.attach },
     ],
   });
-  const kinds: KindSpec[] = [
+  return [
     ...TREE_SPECIES.map((s) => kind(`garden-trees-${s}`, kit.trees[s], kit.foliage, kit.foliageDepth, kit.cards[s], kit.treeCards, kit.treeCardsDepth, pictures.treeAt(s))),
     ...BUSH_KINDS.map((k) => kind(`garden-bushes-${k}`, kit.bushes[k], kit.shrubs, kit.shrubsDepth, kit.cards[k], kit.shrubCards, kit.shrubCardsDepth, pictures.bushAt(k))),
   ];
+}
+
+/** Each garden kind's picture among the scenery's (`KIND_KEYS` order). */
+const gardenPictures = (pictures: SceneryPictures): number[] => [...TREE_SPECIES.map((s) => pictures.treeAt(s)), ...BUSH_KINDS.map((k) => pictures.bushAt(k))];
+
+/** Every building's garden in one layer, given its lists (`gardenLists.ts`): what a test of the whole map places to compare. */
+export function createGardens(kit: SceneryKit): Gardens {
+  const pictures = sceneryPictures(kit);
+  const kinds = gardenKinds(kit, pictures);
   // A plant's pose (`YAW_POSE`) goes to the GPU as it is, for a plant drawn at a new position; the vertex shader makes its matrix.
   const cells = createCellInstances(kinds, YAW_POSE, SHADOW_REACH);
   return {
@@ -193,12 +203,6 @@ export function createGardens(kit: SceneryKit): Gardens {
       const added = cells.update({ removed: change.removed, added: change.added.map((list) => ({ key: list, packs: gardenPack(list) })) });
       return { removed: [], added };
     },
-    put(packs) {
-      return cells.update({ removed: [], added: [{ key: packs, packs }] });
-    },
-    take(packs) {
-      cells.update({ removed: [packs], added: [] });
-    },
     // A plant's level follows its size on the screen (`cellInstances.ts`).
     setNear() {},
     /** DO NOT drop the cull here unconditionally */
@@ -207,6 +211,63 @@ export function createGardens(kit: SceneryKit): Gardens {
     exclude() { /* a garden's plants are the building's own */ },
     dispose() {
       cells.dispose();
+      pictures.release();
+    },
+  };
+}
+
+/** The plants of the gardens standing about a rectangle (at least every one in it): the buildings whose bounds (their elements' too) meet it, each one's garden placed. */
+export function gardenPacksAbout(buildings: BuildingStore, groundAt: (x: number, y: number) => number, rect: readonly [number, number, number, number]): ReadonlyMap<number, Pack> {
+  const list: GardenPlant[] = [];
+  // A building's bounds hold its garden's elements (`buildingBounds`): a plant stands within them.
+  for (const b of buildings.near(rect[0] - GARDEN_SLACK, rect[1] - GARDEN_SLACK, rect[2] + GARDEN_SLACK, rect[3] + GARDEN_SLACK)) {
+    for (const plant of gardenPlants([b], groundAt)) list.push(plant);
+  }
+  return gardenPack(list);
+}
+
+/** How far past a building's bounds its garden's placings may stand: a hedge's clipped piece, a flower bed's clump (both within its element, rounded). */
+const GARDEN_SLACK = m(2);
+
+/** THE GARDENS HELD ROUND THE VIEW (`propCells.ts`): placed cell by cell from the buildings of the document, near whole, far as their pictures. */
+export interface GardenCells {
+  readonly layer: PropLayer;
+  readonly meshes: readonly InstancedMesh[];
+  readonly triangles: number;
+  /** The buildings and the ground the gardens are placed from: the cells placed from another store all dropped. */
+  source(buildings: BuildingStore, groundAt: (x: number, y: number) => number): void;
+  /** The diary's changes of the buildings and the ground since the last look (when the ground is settled: a stroke over). */
+  follow(journal: ChangeJournal): void;
+  setMap(map: boolean): void;
+  cull(frustum: Frustum, view: Matrix4): void;
+  dispose(): void;
+}
+
+export function createGardenCells(kit: SceneryKit): GardenCells {
+  const pictures = sceneryPictures(kit);
+  let from: { buildings: BuildingStore; groundAt: (x: number, y: number) => number } | null = null;
+  const layer = createPropLayer({
+    name: 'gardens', version: 1, kinds: gardenKinds(kit, pictures), margin: SHADOW_REACH,
+    // What a garden's place reads: its building, and the ground under each plant (`gardenLists.ts` read the same).
+    changes: ['buildings', 'elevation', 'ground'], pad: GARDEN_SLACK,
+    pictures: pictures.set, pictureOf: gardenPictures(pictures),
+    place: (rect) => ({ packs: from ? gardenPacksAbout(from.buildings, from.groundAt, rect) : new Map(), growing: false }),
+  });
+  return {
+    layer,
+    get meshes() { return layer.meshes; },
+    get triangles() { return layer.triangles; },
+    source(buildings, groundAt) {
+      if (from?.buildings === buildings && from.groundAt === groundAt) return;
+      const again = from !== null;
+      from = { buildings, groundAt };
+      if (again) { layer.near.clear(); for (const f of layer.far) f.clear(); }
+    },
+    follow(journal) { layer.follow(journal); },
+    setMap(map) { layer.setMap(map); },
+    cull(frustum, view) { layer.cull(frustum, view); },
+    dispose() {
+      layer.dispose();
       pictures.release();
     },
   };

@@ -58,8 +58,8 @@ export function createResourceTabs(ctx: LabContext): LabTab[] {
   };
 
   return [
-    lazy((c) => createOverviewTab(ctx, c), 'overview', 'Visão geral'),
-    lazy((c) => createConsumersTab(ctx, c, view), 'consumers', 'Consumo'),
-    lazy((c) => createDiagnosticsTab(ctx, c), 'diagnostics', 'Verificações'),
+    lazy((c) => createOverviewTab(ctx, c), 'overview', 'Overview'),
+    lazy((c) => createConsumersTab(ctx, c, view), 'consumers', 'Consumers'),
+    lazy((c) => createDiagnosticsTab(ctx, c), 'diagnostics', 'Checks'),
   ];
 }

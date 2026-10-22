@@ -3,7 +3,7 @@ import type { LabContext, LabTab } from '../labTypes';
 import type { Collector, FramePoint } from './collector';
 import { percentileOf, slope } from './meter';
 
-/** THE LAB'S OVERVIEW ("Visão geral"): the frame's numbers live with their last 60 s drawn, the percentiles, the hitches, the settings, and what the numbers say (GPU- or CPU-bound, long tasks, a heap that grows) */
+/** THE LAB'S OVERVIEW ("Overview"): the frame's numbers live with their last 60 s drawn, the percentiles, the hitches, the settings, and what the numbers say (GPU- or CPU-bound, long tasks, a heap that grows) */
 
 /** One graph of the overview: what it reads of a frame, its unit, its colour. */
 interface Kpi {
@@ -34,19 +34,19 @@ export interface OverviewSummary {
   readonly hitches: number;
   readonly longFrames: number;
   readonly longTasks: number;
-  readonly bound: 'GPU' | 'CPU' | 'vsync' | 'ocioso' | 'misto' | 'indefinido';
+  readonly bound: 'GPU' | 'CPU' | 'vsync' | 'idle' | 'mixed' | 'undetermined';
   readonly boundWhy: string;
-  readonly warnings: readonly { readonly level: 'aviso' | 'problema'; readonly text: string }[];
+  readonly warnings: readonly { readonly level: 'warning' | 'problem'; readonly text: string }[];
 }
 
 const KPIS: readonly Kpi[] = [
-  { id: 'interval', label: 'Intervalo do quadro', unit: 'ms', color: '#2fb3a0', value: (f) => (f.interval > 0 ? f.interval : null), line: 1000 / 60 },
-  { id: 'fps', label: 'FPS', unit: 'qps', color: '#7fd1ff', value: (f) => (f.interval > 0 ? 1000 / f.interval : null), line: 60 },
-  { id: 'cpu', label: 'CPU do quadro', unit: 'ms', color: '#ffc35a', value: (f) => f.cpu, line: LONG_FRAME_MS },
-  { id: 'gpu', label: 'GPU do quadro', unit: 'ms', color: '#ff7a6b', value: (f) => f.gpu, line: 1000 / 60 },
-  { id: 'draws', label: 'Chamadas de desenho', unit: '', color: '#b48cff', value: (f) => f.draws },
-  { id: 'triangles', label: 'Triângulos', unit: '', color: '#9fdc6a', value: (f) => f.triangles },
-  { id: 'heap', label: 'Heap JS', unit: 'MB', color: '#e88fd0', value: (f) => f.heap },
+  { id: 'interval', label: 'Frame interval', unit: 'ms', color: '#2fb3a0', value: (f) => (f.interval > 0 ? f.interval : null), line: 1000 / 60 },
+  { id: 'fps', label: 'FPS', unit: 'fps', color: '#7fd1ff', value: (f) => (f.interval > 0 ? 1000 / f.interval : null), line: 60 },
+  { id: 'cpu', label: 'Frame CPU', unit: 'ms', color: '#ffc35a', value: (f) => f.cpu, line: LONG_FRAME_MS },
+  { id: 'gpu', label: 'Frame GPU', unit: 'ms', color: '#ff7a6b', value: (f) => f.gpu, line: 1000 / 60 },
+  { id: 'draws', label: 'Draw calls', unit: '', color: '#b48cff', value: (f) => f.draws },
+  { id: 'triangles', label: 'Triangles', unit: '', color: '#9fdc6a', value: (f) => f.triangles },
+  { id: 'heap', label: 'JS heap', unit: 'MB', color: '#e88fd0', value: (f) => f.heap },
 ];
 
 /** The heap growing faster than this, MB a minute, over the window: a leak suspected (a game standing still holds its heap level between collections). */
@@ -72,36 +72,36 @@ export function summarize(ctx: LabContext, collector: Collector, windowMs = 60_0
   const longTasks = collector.longTasks.filter((t) => t >= now - windowMs).length;
 
   // Who sets the pace: the GPU's time against the CPU's work and against the interval (Chrome/MDN: a frame waits on the slower of the two).
-  let bound: OverviewSummary['bound'] = 'indefinido';
-  let boundWhy = 'quadros insuficientes na janela';
+  let bound: OverviewSummary['bound'] = 'undetermined';
+  let boundWhy = 'not enough frames in the window';
   const onDemand = ctx.effects.onDemand;
   if (intervals.length >= 10 && iv.p50 !== null && c.p50 !== null) {
     const frameMs = iv.p50;
     if (onDemand && frameMs > 40 && c.p50 < frameMs / 3 && (g.p50 ?? 0) < frameMs / 3) {
-      bound = 'ocioso';
-      boundWhy = `quadros sob demanda: o jogo desenha só quando algo muda (intervalo mediano ${frameMs.toFixed(1)} ms, CPU ${c.p50.toFixed(1)} ms) - desligue "sob demanda" nos Interruptores para medir carga contínua`;
+      bound = 'idle';
+      boundWhy = `on-demand frames: the game draws only when something changes (median interval ${frameMs.toFixed(1)} ms, CPU ${c.p50.toFixed(1)} ms) - turn "on demand" off in Switches to measure a continuous load`;
     } else if (g.p50 !== null && g.p50 > c.p50 * 1.2 && g.p50 > frameMs * 0.7) {
       bound = 'GPU';
-      boundWhy = `GPU mediana ${g.p50.toFixed(1)} ms contra CPU ${c.p50.toFixed(1)} ms com intervalo ${frameMs.toFixed(1)} ms: a GPU dita o ritmo (reduza resolução, sombras, pós-processamento)`;
+      boundWhy = `median GPU ${g.p50.toFixed(1)} ms against CPU ${c.p50.toFixed(1)} ms at an interval of ${frameMs.toFixed(1)} ms: the GPU sets the pace (lower the resolution, shadows, post-processing)`;
     } else if (c.p50 > frameMs * 0.7 && (g.p50 === null || c.p50 > g.p50 * 1.2)) {
       bound = 'CPU';
-      boundWhy = `CPU mediana ${c.p50.toFixed(1)} ms ocupa ${((c.p50 / frameMs) * 100).toFixed(0)}% do intervalo ${frameMs.toFixed(1)} ms${g.p50 !== null ? ` (GPU ${g.p50.toFixed(1)} ms)` : ''}: o thread principal dita o ritmo (veja Consumo › CPU-main)`;
+      boundWhy = `median CPU ${c.p50.toFixed(1)} ms takes ${((c.p50 / frameMs) * 100).toFixed(0)}% of the ${frameMs.toFixed(1)} ms interval${g.p50 !== null ? ` (GPU ${g.p50.toFixed(1)} ms)` : ''}: the main thread sets the pace (see Consumers › CPU-main)`;
     } else if (c.p50 < frameMs * 0.5 && (g.p50 ?? 0) < frameMs * 0.5) {
       bound = 'vsync';
-      boundWhy = `CPU ${c.p50.toFixed(1)} ms e GPU ${g.p50 === null ? '?' : g.p50.toFixed(1)} ms bem abaixo do intervalo ${frameMs.toFixed(1)} ms (~${(1000 / frameMs).toFixed(0)} Hz): limitado pelo vsync/limite de quadros`;
+      boundWhy = `CPU ${c.p50.toFixed(1)} ms and GPU ${g.p50 === null ? '?' : g.p50.toFixed(1)} ms well below the ${frameMs.toFixed(1)} ms interval (~${(1000 / frameMs).toFixed(0)} Hz): bound by vsync/the frame cap`;
     } else {
-      bound = 'misto';
-      boundWhy = `CPU ${c.p50.toFixed(1)} ms e GPU ${g.p50 === null ? '?' : g.p50.toFixed(1)} ms próximos, intervalo ${frameMs.toFixed(1)} ms: ambos pesam`;
+      bound = 'mixed';
+      boundWhy = `CPU ${c.p50.toFixed(1)} ms and GPU ${g.p50 === null ? '?' : g.p50.toFixed(1)} ms close, interval ${frameMs.toFixed(1)} ms: both weigh`;
     }
   }
 
-  const warnings: { level: 'aviso' | 'problema'; text: string }[] = [];
-  if (!ctx.scene.gpu.supported) warnings.push({ level: 'aviso', text: 'sem medidor de tempo da GPU (EXT_disjoint_timer_query_webgl2): o veredito GPU/CPU usa só a CPU' });
-  if (hitches > 0) warnings.push({ level: hitches > 5 ? 'problema' : 'aviso', text: `${hitches} quadros com trabalho > ${LONG_FRAME_MS} ms na janela (engasgos)` });
-  if (longTasks > 0 || longFrames > 0) warnings.push({ level: longFrames > 10 ? 'problema' : 'aviso', text: `${longFrames} quadros de animação longos (LoAF) e ${longTasks} tarefas longas na janela: veja Consumo › scripts de LoAF` });
-  if (heapPoints.length > 30 && heapSlope > HEAP_GROWS_MB_MIN) warnings.push({ level: heapSlope > HEAP_GROWS_MB_MIN * 4 ? 'problema' : 'aviso', text: `heap crescendo ${heapSlope.toFixed(0)} MB/min na janela` });
-  if (document.hidden) warnings.push({ level: 'aviso', text: 'página oculta: o navegador suspende requestAnimationFrame e estrangula temporizadores' });
-  if (iv.p99 !== null && iv.p50 !== null && iv.p99 > iv.p50 * 3 && iv.p99 > 50 && !onDemand) warnings.push({ level: 'aviso', text: `intervalo irregular: p99 ${iv.p99.toFixed(0)} ms contra mediana ${iv.p50.toFixed(1)} ms` });
+  const warnings: { level: 'warning' | 'problem'; text: string }[] = [];
+  if (!ctx.scene.gpu.supported) warnings.push({ level: 'warning', text: 'no GPU timer (EXT_disjoint_timer_query_webgl2): the GPU/CPU verdict uses the CPU only' });
+  if (hitches > 0) warnings.push({ level: hitches > 5 ? 'problem' : 'warning', text: `${hitches} frames with work > ${LONG_FRAME_MS} ms in the window (hitches)` });
+  if (longTasks > 0 || longFrames > 0) warnings.push({ level: longFrames > 10 ? 'problem' : 'warning', text: `${longFrames} long animation frames (LoAF) and ${longTasks} long tasks in the window: see Consumers › LoAF script` });
+  if (heapPoints.length > 30 && heapSlope > HEAP_GROWS_MB_MIN) warnings.push({ level: heapSlope > HEAP_GROWS_MB_MIN * 4 ? 'problem' : 'warning', text: `heap growing ${heapSlope.toFixed(0)} MB/min in the window` });
+  if (document.hidden) warnings.push({ level: 'warning', text: 'page hidden: the browser suspends requestAnimationFrame and throttles timers' });
+  if (iv.p99 !== null && iv.p50 !== null && iv.p99 > iv.p50 * 3 && iv.p99 > 50 && !onDemand) warnings.push({ level: 'warning', text: `irregular interval: p99 ${iv.p99.toFixed(0)} ms against a median of ${iv.p50.toFixed(1)} ms` });
 
   return {
     windowS: windowMs / 1000, frames: frames.length, fps, interval: iv, cpu: c, gpu: g,
@@ -110,8 +110,8 @@ export function summarize(ctx: LabContext, collector: Collector, windowMs = 60_0
   };
 }
 
-const n1 = (v: number | null, digits = 1): string => (v === null ? '—' : v.toLocaleString('pt-BR', { maximumFractionDigits: digits, minimumFractionDigits: digits }));
-const big = (v: number | null): string => (v === null ? '—' : v >= 1e6 ? `${(v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} M` : v >= 1e4 ? `${(v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : Math.round(v).toLocaleString('pt-BR'));
+const n1 = (v: number | null, digits = 1): string => (v === null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits }));
+const big = (v: number | null): string => (v === null ? '—' : v >= 1e6 ? `${(v / 1e6).toLocaleString('en-US', { maximumFractionDigits: 2 })} M` : v >= 1e4 ? `${(v / 1e3).toLocaleString('en-US', { maximumFractionDigits: 1 })} k` : Math.round(v).toLocaleString('en-US'));
 
 /** A graph of `values` over the last `spanMs` into `canvas`, its budget line dashed. */
 function drawSpark(canvas: HTMLCanvasElement, points: readonly (readonly [number, number])[], now: number, spanMs: number, kpi: Kpi): void {
@@ -163,7 +163,7 @@ export function createOverviewTab(ctx: LabContext, collector: Collector): LabTab
     bar.className = 'lab-row';
     const label = document.createElement('span');
     label.className = 'lab-muted';
-    label.textContent = 'Janela dos gráficos:';
+    label.textContent = 'Graph window:';
     bar.appendChild(label);
     for (const ms of SPAN_OPTIONS) {
       const b = document.createElement('button');
@@ -196,15 +196,15 @@ export function createOverviewTab(ctx: LabContext, collector: Collector): LabTab
       tiles.set(kpi.id, { value, sub, canvas });
     }
     const h1 = document.createElement('h3');
-    h1.textContent = 'Percentis e engasgos';
+    h1.textContent = 'Percentiles and hitches';
     pctEl = document.createElement('div');
     pctEl.className = 'lab-card';
     const h2 = document.createElement('h3');
-    h2.textContent = 'Avisos';
+    h2.textContent = 'Warnings';
     warnEl = document.createElement('ul');
     warnEl.className = 'lab-card labres-warnings';
     const h3 = document.createElement('h3');
-    h3.textContent = 'Configuração atual';
+    h3.textContent = 'Current settings';
     settingsEl = document.createElement('div');
     settingsEl.className = 'lab-card labres-settings';
     into.append(bar, verdictEl, grid, h1, pctEl, h2, warnEl, h3, settingsEl);
@@ -232,29 +232,29 @@ export function createOverviewTab(ctx: LabContext, collector: Collector): LabTab
       tile.value.textContent = kpi.id === 'draws' || kpi.id === 'triangles' ? big(lastV) : `${n1(lastV)}${unit}`;
       const p50 = percentileOf(values, 50), p95 = percentileOf(values, 95), max = percentileOf(values, 100);
       tile.sub.textContent = kpi.id === 'draws' || kpi.id === 'triangles'
-        ? `p50 ${big(p50)} · p95 ${big(p95)} · máx ${big(max)}`
-        : `p50 ${n1(p50)} · p95 ${n1(p95)} · máx ${n1(max)}${unit}`;
+        ? `p50 ${big(p50)} · p95 ${big(p95)} · max ${big(max)}`
+        : `p50 ${n1(p50)} · p95 ${n1(p95)} · max ${n1(max)}${unit}`;
       drawSpark(tile.canvas, points, now, spanMs, kpi);
     }
     const s = summarize(ctx, collector, spanMs);
     verdictEl.className = `labres-verdict labres-bound-${s.bound}`;
-    verdictEl.textContent = `Veredito: ${s.bound === 'GPU' ? 'limitado pela GPU' : s.bound === 'CPU' ? 'limitado pela CPU' : s.bound === 'vsync' ? 'limitado pelo vsync' : s.bound === 'ocioso' ? 'ocioso (sob demanda)' : s.bound === 'misto' ? 'CPU e GPU equilibradas' : 'indefinido'} — ${s.boundWhy}`;
+    verdictEl.textContent = `Verdict: ${s.bound === 'GPU' ? 'GPU-bound' : s.bound === 'CPU' ? 'CPU-bound' : s.bound === 'vsync' ? 'vsync-bound' : s.bound === 'idle' ? 'idle (on demand)' : s.bound === 'mixed' ? 'CPU and GPU balanced' : 'undetermined'} — ${s.boundWhy}`;
     pctEl.replaceChildren(table([
       ['', 'p50', 'p95', 'p99'],
-      ['Intervalo (ms)', n1(s.interval.p50), n1(s.interval.p95), n1(s.interval.p99)],
+      ['Interval (ms)', n1(s.interval.p50), n1(s.interval.p95), n1(s.interval.p99)],
       ['CPU (ms)', n1(s.cpu.p50), n1(s.cpu.p95), n1(s.cpu.p99)],
       ['GPU (ms)', n1(s.gpu.p50), n1(s.gpu.p95), n1(s.gpu.p99)],
-    ]), line(`${s.frames} quadros em ${s.windowS} s · ${s.fps === null ? '—' : n1(s.fps)} quadros/s · engasgos (CPU > ${LONG_FRAME_MS} ms): ${s.hitches} · LoAF: ${s.longFrames} · tarefas longas: ${s.longTasks} · tendência do heap ${s.heapSlope >= 0 ? '+' : ''}${n1(s.heapSlope)} MB/min (coletas a puxam para baixo)`));
-    warnEl.replaceChildren(...(s.warnings.length ? s.warnings : [{ level: 'ok', text: 'nada a apontar na janela' }]).map((w) => {
+    ]), line(`${s.frames} frames in ${s.windowS} s · ${s.fps === null ? '—' : n1(s.fps)} frames/s · hitches (CPU > ${LONG_FRAME_MS} ms): ${s.hitches} · LoAF: ${s.longFrames} · long tasks: ${s.longTasks} · heap trend ${s.heapSlope >= 0 ? '+' : ''}${n1(s.heapSlope)} MB/min (collections pull it down)`));
+    warnEl.replaceChildren(...(s.warnings.length ? s.warnings : [{ level: 'ok', text: 'nothing to point out in the window' }]).map((w) => {
       const li = document.createElement('li');
-      li.className = w.level === 'problema' ? 'lab-bad' : w.level === 'aviso' ? 'lab-warn' : 'lab-good';
+      li.className = w.level === 'problem' ? 'lab-bad' : w.level === 'warning' ? 'lab-warn' : 'lab-good';
       li.textContent = `${w.level}: ${w.text}`;
       return li;
     }));
     settingsEl.textContent = settingsSummary(ctx);
   }
 
-  return { id: 'overview', title: 'Visão geral', mount, refresh, unmount: () => { host = null; } };
+  return { id: 'overview', title: 'Overview', mount, refresh, unmount: () => { host = null; } };
 }
 
 /** The settings that change the numbers, in one paragraph. */
@@ -264,13 +264,13 @@ export function settingsSummary(ctx: LabContext): string {
   const gl = ctx.scene.gl;
   const canvas = gl.domElement;
   return [
-    `qualidade ${ctx.scene.stats.quality}`,
-    `pixel ratio desenhado ${gl.getPixelRatio().toFixed(2)} (tela ${window.devicePixelRatio.toFixed(2)})`,
+    `quality ${ctx.scene.stats.quality}`,
+    `pixel ratio drawn ${gl.getPixelRatio().toFixed(2)} (screen ${window.devicePixelRatio.toFixed(2)})`,
     `buffer ${canvas.width}×${canvas.height}`,
-    `resolução ${String(snap['resolution'] ?? '?')}`,
-    `quadros ${ctx.effects.onDemand ? 'sob demanda' : 'contínuos'}`,
-    `simulação ${ctx.effects.simulation ? 'ligada' : 'desligada'} (tráfego ${ctx.effects.traffic ? 'sim' : 'não'}, pedestres ${ctx.effects.pedestrians ? 'sim' : 'não'}, crescimento ${ctx.effects.growth ? 'sim' : 'não'})`,
-    `desligados: ${off.length ? off.join(', ') : 'nenhum'}`,
+    `resolution ${String(snap['resolution'] ?? '?')}`,
+    `frames ${ctx.effects.onDemand ? 'on demand' : 'continuous'}`,
+    `simulation ${ctx.effects.simulation ? 'on' : 'off'} (traffic ${ctx.effects.traffic ? 'yes' : 'no'}, pedestrians ${ctx.effects.pedestrians ? 'yes' : 'no'}, growth ${ctx.effects.growth ? 'yes' : 'no'})`,
+    `off: ${off.length ? off.join(', ') : 'none'}`,
   ].join(' · ');
 }
 

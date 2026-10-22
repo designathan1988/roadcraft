@@ -1,0 +1,38 @@
+{
+  "storage": { "roadcraft.quality": "ultra" },
+  "viewport": [1920, 1080],
+  "dpr": 2,
+  "steps": [
+    { "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large' }); 'started'" },
+    { "until": "performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0", "name": "city shown", "timeout": 600000, "polling": 250 },
+    { "until": "(() => { const c = document.getElementById('loading-curtain'); return !!c && getComputedStyle(c).display === 'none'; })()", "name": "curtain gone", "timeout": 300000, "polling": 250 },
+    { "wait": 1500 },
+    { "press": "Começar a construir" },
+    { "until": "(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === 'Começar a construir'); return !b || b.getBoundingClientRect().width === 0 || getComputedStyle(b).visibility === 'hidden'; })()", "name": "menu closed", "timeout": 30000, "polling": 250 },
+    { "wait": 3000 },
+
+    { "eval": "window.__roadcraft.sim.setClock(720); window.__roadcraft.scene().setSkyMode('day'); 1" },
+    { "wait": 3000 },
+    { "eval": "window.__roadcraft.measure(true)" },
+    { "wait": 2500 },
+
+    { "setView": [0, 0, 0.3, 45, 48] }, { "wait": 4000 },
+    { "shot": "map-day" },
+    { "setView": [0, 0, 2.5, 45, 48] }, { "wait": 5000 },
+    { "shot": "district-day" },
+    { "setView": [150, 0, 5, 20, 35] }, { "wait": 5000 },
+    { "shot": "street-day" },
+
+    { "eval": "window.__roadcraft.measure(false); window.__roadcraft.sim.setClock(1320); window.__roadcraft.scene().setSkyMode('night'); 1" },
+    { "wait": 3500 },
+    { "eval": "window.__roadcraft.measure(true)" },
+    { "wait": 2500 },
+
+    { "setView": [0, 0, 0.3, 45, 48] }, { "wait": 4000 },
+    { "shot": "map-night" },
+    { "setView": [0, 0, 2.5, 45, 48] }, { "wait": 5000 },
+    { "shot": "district-night" },
+    { "setView": [150, 0, 5, 20, 35] }, { "wait": 5000 },
+    { "shot": "street-night" }
+  ]
+}

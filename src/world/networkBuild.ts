@@ -1,6 +1,5 @@
 import { Digest } from '@core/digest';
 import { Polyline } from '@core/polyline';
-import { Ring, type RingEdge } from '@core/ring';
 import { ForkMap, ForkSet } from '@core/forkMap';
 import { samePlain } from '@core/plain';
 import { MIN_RIBBON } from '@core/scalar';
@@ -9,6 +8,8 @@ import type { NodeId, SegmentId } from './ids';
 import { Level, SURFACE_LEVELS, type SurfaceLevel, flushOn } from './roadTypes';
 import { type Junction, buildJunction, surfaceMode } from './junction/build';
 import { deriveJunctionLevel } from './junction/derive';
+import { JunctionLevels, type JunctionLevelsData } from './junction/levels';
+import { SUMMARY, SUMMARY_FLOOR, trimSummary } from './junction/trimSummary';
 import { clampSegmentTrims } from './junction/trim';
 import { MIN_LEG_ANGLE, legAngles, smallestGap } from './legAngles';
 import { CellFiling } from './cells';
@@ -16,14 +17,14 @@ import type { ChangeRect } from './changes';
 import { m } from './units';
 import type { PolylineCache } from './geometry';
 import type { NetworkDelta } from './networkDelta';
-import { type SegmentRibbon, type SegmentTrims, bendAt, junctionBounds, makeRibbon, ribbonBounds } from './ribbons';
+import { type SegmentRibbon, type SegmentTrims, bendAt, junctionBounds, leanRibbon, makeRibbon, ribbonBounds } from './ribbons';
 import { networkWork } from './rebuildWork';
 
 /** What the build writes: the network's own derived maps */
 interface Network {
   readonly doc: RoadDoc;
   readonly polylines: PolylineCache;
-  readonly junctions: Map<NodeId, Map<SurfaceLevel, Junction>>;
+  readonly junctions: Map<NodeId, JunctionLevels>;
   readonly ribbons: Map<SegmentId, SegmentRibbon>;
   readonly trims: Map<SegmentId, SegmentTrims>;
   readonly plateReach: Map<string, number>;
@@ -31,18 +32,29 @@ interface Network {
   readonly impossible: Map<NodeId, number>;
   readonly squeezed: Map<NodeId, number>;
   readonly segmentCells: CellFiling<SegmentId, SegmentRibbon>;
-  readonly junctionCells: CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>;
+  readonly junctionCells: CellFiling<NodeId, JunctionLevels>;
   readonly flushCells: CellFiling<SegmentId, SegmentRibbon>;
 }
 
 /** A mouth cut this little short of where its carriageway separates from the neighbouring leg's is the solver's own */
 const SQUEEZE_NOISE = m(0.4);
 
-/** A junction solved for one pass, with what the pass handed it (`junctionKey`) and the plate it reaches. */
+/**
+ * A junction solved for one pass, with what the pass handed it (`junctionKey`), the plate it reaches, how many levels it has and what
+ * the reconciling of its roads reads of it (`trimSummary`). A pass's junction a later pass solved again is let go once the rebuild
+ * is over (`byLevel` null: DO NOT keep two or three whole junctions a pressured node, ~two thirds of the junctions' memory,
+ * 2026-10-22): its summary and plate are all the next rebuilds read of it, and it is solved again should a node fall back to it (`levels3`).
+ */
 interface MemoEntry {
   readonly key: number;
-  readonly byLevel: Map<SurfaceLevel, Junction>;
+  readonly byLevel: JunctionLevels | null;
+  readonly size: number;
   readonly plate: readonly (readonly [SegmentId, number])[];
+  readonly summary: readonly number[];
+}
+
+function memoEntry(key: number, byLevel: JunctionLevels, plate: MemoEntry['plate']): MemoEntry {
+  return { key, byLevel, size: byLevel.size, plate, summary: trimSummary(byLevel) };
 }
 
 interface RibbonMemo {
@@ -65,29 +77,20 @@ export interface BakedNode {
   readonly j2: BakedMemo | null;
   readonly j3: BakedMemo | null;
 }
-/** A ring as its data (`Ring` is a class: the message's clone keeps its fields, not its methods, `structuredClone`). */
-interface BakedRing { readonly start: { readonly x: number; readonly y: number }; readonly edges: readonly RingEdge[] }
-type BakedJunction = Omit<Junction, 'ring' | 'tongues' | 'rings'> & { readonly ring: BakedRing; readonly tongues: readonly BakedRing[]; readonly rings: readonly BakedRing[] };
-interface BakedMemo { readonly key: number; readonly byLevel: ReadonlyMap<SurfaceLevel, BakedJunction>; readonly plate: MemoEntry['plate'] }
-/** A ribbon with its polylines as their flat arrays (`Polyline.xy`) and its rings as data, made whole again on the page (`ribbonFromBake`). */
-export type BakedRibbon = Omit<SegmentRibbon, 'centre' | 'full' | 'rings'> & {
-  readonly centre: Record<number, Float64Array>; readonly full: Float64Array; readonly rings: Record<number, BakedRing>;
+/** A pass's junctions as their data (`JunctionLevels.data`: the carriageway, the frames its outer levels are made from, what is kept whole; null: let go, `MemoEntry`). */
+interface BakedMemo { readonly key: number; readonly levels: JunctionLevelsData | null; readonly size: number; readonly plate: MemoEntry['plate']; readonly summary: readonly number[] }
+/** A ribbon as what it is made from (`ribbons.ts` LeanRibbon): its road, its whole centreline as its flat array (`Polyline.xy`) and its box; its levels made on the thread that reads them (`ribbonFromBake`). */
+export type BakedRibbon = Pick<SegmentRibbon, 'id' | 'typeIndex' | 'direction' | 'road' | 'dashOrigin'> & {
+  readonly full: Float64Array; readonly bounds: ChangeRect;
 };
-
-const ringData = (r: Ring): BakedRing => ({ start: r.start, edges: r.edges });
-const ringOf = (r: BakedRing): Ring => new Ring(r.start, r.edges);
 
 function memoData(entry: MemoEntry | undefined): BakedMemo | null {
   if (!entry) return null;
-  const byLevel = new Map<SurfaceLevel, BakedJunction>();
-  for (const [level, j] of entry.byLevel) byLevel.set(level, { ...j, ring: ringData(j.ring), tongues: j.tongues.map(ringData), rings: j.rings.map(ringData) });
-  return { key: entry.key, byLevel, plate: entry.plate };
+  return { key: entry.key, levels: entry.byLevel ? entry.byLevel.data() : null, size: entry.size, plate: entry.plate, summary: entry.summary };
 }
 
 function memoOf(baked: BakedMemo): MemoEntry {
-  const byLevel = new Map<SurfaceLevel, Junction>();
-  for (const [level, j] of baked.byLevel) byLevel.set(level, { ...j, ring: ringOf(j.ring), tongues: j.tongues.map(ringOf), rings: j.rings.map(ringOf) });
-  return { key: baked.key, byLevel, plate: baked.plate };
+  return { key: baked.key, byLevel: baked.levels ? JunctionLevels.fromData(baked.levels) : null, size: baked.size, plate: baked.plate, summary: baked.summary };
 }
 export interface BakedSegment {
   readonly id: SegmentId;
@@ -99,12 +102,9 @@ export interface BakedSegment {
   readonly ribbon: BakedRibbon;
 }
 
-function ribbonFromBake(r: BakedRibbon): SegmentRibbon {
-  const centre: Record<number, Polyline> = {};
-  for (const [level, xy] of Object.entries(r.centre)) centre[Number(level)] = Polyline.fromFlat(xy);
-  const rings: Record<number, Ring> = {};
-  for (const [level, ring] of Object.entries(r.rings)) rings[Number(level)] = ringOf(ring);
-  return { ...r, centre, rings, full: Polyline.fromFlat(r.full) };
+function ribbonFromBake(s: BakedSegment): SegmentRibbon {
+  const r = s.ribbon;
+  return leanRibbon(r.id, r.typeIndex, r.direction, r.road, r.dashOrigin, Polyline.fromFlat(r.full), s.trims, s.bendA, s.bendB, r.bounds);
 }
 
 /** What a node's junctions are solved from, whichever thread solves them: its record and its roads' (where their ends stand too), the roads in id order (a road of a tile not on that thread changes it: the page then solves the node itself). */
@@ -190,11 +190,9 @@ export class NetworkBuild {
     for (const id of segments) {
       const memo = this.ribbonMemo.get(id), source = this.segmentSource.get(id);
       if (!memo || source === undefined) continue;
-      const centre: Record<number, Float64Array> = {};
-      for (const [level, line] of Object.entries(memo.ribbon.centre)) centre[Number(level)] = line.xy;
-      const rings: Record<number, BakedRing> = {};
-      for (const [level, ring] of Object.entries(memo.ribbon.rings)) rings[Number(level)] = ringData(ring);
-      out.segments.push({ id, source, trims: memo.trims, bendA: memo.bendA, bendB: memo.bendB, ribbon: { ...memo.ribbon, centre, rings, full: memo.ribbon.full.xy } });
+      const r = memo.ribbon;
+      out.segments.push({ id, source, trims: memo.trims, bendA: memo.bendA, bendB: memo.bendB,
+        ribbon: { id: r.id, typeIndex: r.typeIndex, direction: r.direction, road: r.road, dashOrigin: r.dashOrigin, full: r.full.xy, bounds: ribbonBounds(r) } });
     }
     return out;
   }
@@ -215,7 +213,7 @@ export class NetworkBuild {
       for (const s of bake.segments) {
         const seg = doc.segment(s.id);
         if (!seg || !segments.has(s.id) || segmentSourceKey(doc, seg) !== s.source) continue;
-        this.ribbonMemo.set(s.id, { ribbon: ribbonFromBake(s.ribbon), trims: s.trims, bendA: s.bendA, bendB: s.bendB });
+        this.ribbonMemo.set(s.id, { ribbon: ribbonFromBake(s), trims: s.trims, bendA: s.bendA, bendB: s.bendB });
       }
     }
   }
@@ -295,7 +293,7 @@ export class NetworkBuild {
     const oldRects: ChangeRect[] = [];
     // DO NOT lay the ribbons and junctions out in id order again when a lower id comes (a tile of lower key loaded after): every tile load re-sorted the region; a reader in id order sorts what it takes.
     const ribbonBefore = new Map<SegmentId, SegmentRibbon | undefined>();
-    const junctionBefore = new Map<NodeId, ReadonlyMap<SurfaceLevel, Junction> | undefined>();
+    const junctionBefore = new Map<NodeId, JunctionLevels | undefined>();
 
     // ---- sources: the polylines and memos of what changed go ---------------
     for (const id of changedSegs) {
@@ -318,7 +316,8 @@ export class NetworkBuild {
       const isActive = !!record && surfaceMode(doc, net.polylines, node) === 'junction';
       if (isActive) {
         this.active.add(node);
-        this.j1.set(node, this.solveNode(node, new Map(), false, this.j1.get(node)));
+        // A pass let go (a bake's) stands while its key does: its summary is what this pass reads.
+        this.j1.set(node, this.solveNode(node, new Map(), false, this.j1.get(node), true));
       } else {
         this.active.delete(node);
       }
@@ -334,7 +333,7 @@ export class NetworkBuild {
     const scaled1 = new Set<SegmentId>();
     for (const id of s1) {
       networkWork.segments++;
-      const { scale } = this.reconcileSegment(id, (n) => this.junction1(n));
+      const { scale } = this.reconcileSegment(id, (n) => this.entry1(n));
       if (scale !== (this.scale1.get(id) ?? 1)) scaled1.add(id);
       if (scale < 1) this.scale1.set(id, scale); else this.scale1.delete(id);
     }
@@ -346,13 +345,13 @@ export class NetworkBuild {
     const moved2 = new Set<NodeId>();
     for (const node of n2) {
       networkWork.junctions++;
-      const before = this.junction2(node);
+      const before = this.entry2(node);
       if (this.active.has(node) && this.pressured(node, this.scale1)) {
-        this.j2.set(node, this.solveNode(node, this.scale1, false, this.j2.get(node)));
+        this.j2.set(node, this.solveNode(node, this.scale1, false, this.j2.get(node), true));
       } else {
         this.j2.delete(node);
       }
-      if (this.junction2(node) !== before) moved2.add(node);
+      if (this.entry2(node) !== before) moved2.add(node);
     }
 
     // ---- reconcile 2: the trims --------------------------------------------
@@ -361,7 +360,7 @@ export class NetworkBuild {
     const retrimmed = new Set<SegmentId>();
     for (const id of s2) {
       networkWork.segments++;
-      const { trims, scale } = this.reconcileSegment(id, (n) => this.junction2(n));
+      const { trims, scale } = this.reconcileSegment(id, (n) => this.entry2(n));
       const oldTrims = this.trims2.get(id);
       if (!oldTrims || !samePlain(oldTrims, trims) || scale !== (this.scale2.get(id) ?? 1)) retrimmed.add(id);
       this.trims2.set(id, trims);
@@ -382,7 +381,7 @@ export class NetworkBuild {
       } else {
         this.j3.delete(node);
       }
-      const after = this.junction3(node);
+      const after = this.levels3(node);
       if (after) net.junctions.set(node, after); else net.junctions.delete(node);
       if (after !== before) moved3.add(node);
     }
@@ -461,6 +460,8 @@ export class NetworkBuild {
       const worst = this.squeeze(node);
       if (worst > SQUEEZE_NOISE) net.squeezed.set(node, worst); else net.squeezed.delete(node);
     }
+
+    for (const node of n3) this.letGoEarlierPasses(node);
 
     // ---- what changed, for whatever is derived from the network ------------
     if (fromNothing) return null;
@@ -575,31 +576,54 @@ export class NetworkBuild {
   }
 
   /** The junction a node has after each pass (null: none): the last pass that built one. */
-  private junction1(node: NodeId): Map<SurfaceLevel, Junction> | null {
+  private entry1(node: NodeId): MemoEntry | null {
     const entry = this.j1.get(node);
-    return entry && entry.byLevel.size ? entry.byLevel : null;
+    return entry && entry.size ? entry : null;
   }
 
-  private junction2(node: NodeId): Map<SurfaceLevel, Junction> | null {
+  private entry2(node: NodeId): MemoEntry | null {
     const entry = this.j2.get(node);
-    return entry && entry.byLevel.size ? entry.byLevel : this.junction1(node);
+    return entry && entry.size ? entry : this.entry1(node);
   }
 
-  private junction3(node: NodeId): Map<SurfaceLevel, Junction> | null {
+  private entry3(node: NodeId): MemoEntry | null {
     const entry = this.j3.get(node);
-    return entry && entry.byLevel.size ? entry.byLevel : this.junction2(node);
+    return entry && entry.size ? entry : this.entry2(node);
+  }
+
+  /** The junction a node has after the last pass, whole: a pass let go and fallen back to solved again, the same (its inputs are the ones it was solved from: a change of them re-marks the node). */
+  private levels3(node: NodeId): JunctionLevels | null {
+    const entry = this.entry3(node);
+    if (!entry) return null;
+    if (entry.byLevel) return entry.byLevel;
+    if (this.j2.get(node) === entry) {
+      const whole = this.solveNode(node, this.scale1, false, undefined);
+      this.j2.set(node, whole);
+      return whole.byLevel;
+    }
+    const whole = this.solveNode(node, new Map(), false, undefined);
+    this.j1.set(node, whole);
+    return whole.byLevel;
+  }
+
+  /** The passes' junctions a later pass of the node solved again, let go (their summaries and plates kept, `MemoEntry`). */
+  private letGoEarlierPasses(node: NodeId): void {
+    const first = this.j1.get(node), second = this.j2.get(node), third = this.j3.get(node);
+    if (third?.size && second?.byLevel) this.j2.set(node, { ...second, byLevel: null });
+    if ((third?.size || second?.size) && first?.byLevel) this.j1.set(node, { ...first, byLevel: null });
   }
 
   /** One node's junction for one pass: the entry made for the same key before when there is one */
-  private solveNode(node: NodeId, scales: ReadonlyMap<SegmentId, number>, capped: boolean, known: MemoEntry | undefined): MemoEntry {
+  private solveNode(node: NodeId, scales: ReadonlyMap<SegmentId, number>, capped: boolean, known: MemoEntry | undefined, letGo = false): MemoEntry {
     networkWork.junctions++;
     const net = this.net, doc = net.doc;
     const key = this.junctionKey(node, scales, capped);
-    if (known && known.key === key) return known;
-    for (const entry of [this.j1.get(node), this.j2.get(node), this.j3.get(node)]) if (entry?.key === key) return entry;
+    if (known && known.key === key && (known.byLevel || letGo)) return known;
+    for (const entry of [this.j1.get(node), this.j2.get(node), this.j3.get(node)]) if (entry?.key === key && entry.byLevel) return entry;
     networkWork.built++;
     const plate: [SegmentId, number][] = [];
     const byLevel = new Map<SurfaceLevel, Junction>();
+    const derived = new Set<SurfaceLevel>();
     const build = (level: SurfaceLevel): Junction | null => {
       const maxTrimBySegment = capped ? this.trimCapsAt(node, level) : undefined;
       return buildJunction(doc, net.polylines, node, level, {
@@ -612,12 +636,12 @@ export class NetworkBuild {
     const footprint = build(Level.Casing);
     footprint?.legs.forEach((leg, i) => plate.push([leg.seg, footprint.trims[i] as number]));
     for (const level of SURFACE_LEVELS) {
-      const j = level === Level.Asphalt
-        ? carriageway
-        : (carriageway ? deriveJunctionLevel(doc, net.polylines, carriageway, level) : null) ?? build(level);
+      const carried = level === Level.Asphalt || !carriageway ? null : deriveJunctionLevel(doc, net.polylines, carriageway, level);
+      if (carried) derived.add(level);
+      const j = level === Level.Asphalt ? carriageway : carried ?? build(level);
       if (j) byLevel.set(level, j);
     }
-    return { key, byLevel, plate };
+    return memoEntry(key, JunctionLevels.of(byLevel, derived), plate);
   }
 
   /** What a pass hands a node's junction beyond the node and its roads */
@@ -656,32 +680,24 @@ export class NetworkBuild {
   }
 
   /** One segment's two ends reconciled against its length, per level, from the junctions at its ends */
-  private reconcileSegment(id: SegmentId, junctionAt: (node: NodeId) => ReadonlyMap<SurfaceLevel, Junction> | null): { trims: SegmentTrims; scale: number } {
+  private reconcileSegment(id: SegmentId, entryAt: (node: NodeId) => MemoEntry | null): { trims: SegmentTrims; scale: number } {
     const doc = this.net.doc;
     const seg = doc.requireSegment(id);
     const t: { a: Record<number, number>; b: Record<number, number> } = { a: {}, b: {} };
     let floor: { a: number; b: number } | undefined;
     for (const node of seg.a === seg.b ? [seg.a] : [seg.a, seg.b]) {
-      const byLevel = junctionAt(node);
-      if (!byLevel) continue;
-      for (const [level, junction] of byLevel) {
-        junction.legs.forEach((leg, i) => {
-          if (leg.seg !== id) return;
-          const side = seg.a === node ? t.a : t.b;
-          side[level] = Math.max(side[level] ?? 0, junction.trims[i] as number);
-        });
-      }
-      // The part of a mouth no length budget may take
-      const junction = byLevel.get(Level.Asphalt);
-      if (!junction || junction.transition) continue;
-      for (const corner of junction.corners) {
-        const x = corner.x;
-        if (!x || corner.psi >= Math.PI / 2) continue;
-        for (const index of [corner.i, corner.j]) {
-          const leg = junction.legs[index];
-          if (!leg || leg.seg !== id) continue;
-          const along = (x.x - leg.origin.x) * leg.dir.x + (x.y - leg.origin.y) * leg.dir.y;
-          if (!(along > 0)) continue;
+      const summary = entryAt(node)?.summary;
+      if (!summary) continue;
+      for (let k = 0; k < summary.length; k += SUMMARY) {
+        if (summary[k] !== id) continue;
+        const side = seg.a === node ? t.a : t.b;
+        for (const level of SURFACE_LEVELS) {
+          const trim = summary[k + level]!;
+          if (!Number.isNaN(trim)) side[level] = Math.max(side[level] ?? 0, trim);
+        }
+        // The part of a mouth no length budget may take
+        const along = summary[k + SUMMARY_FLOOR]!;
+        if (along > 0) {
           const h = floor ?? { a: 0, b: 0 };
           if (seg.a === node) h.a = Math.max(h.a, along); else h.b = Math.max(h.b, along);
           floor = h;
@@ -714,13 +730,11 @@ export class NetworkBuild {
     for (const node of seg.a === seg.b ? [seg.a] : [seg.a, seg.b]) {
       const byLevel = this.net.junctions.get(node);
       if (!byLevel) continue;
-      for (const [level, junction] of byLevel) {
-        junction.legs.forEach((leg, i) => {
-          if (leg.seg !== id) return;
-          const side = seg.a === node ? t.a : t.b;
-          side[level] = Math.min(side[level] ?? Infinity, junction.trims[i] as number);
-        });
-      }
+      byLevel.forEachTrim((level, legSeg, trim) => {
+        if (legSeg !== id) return;
+        const side = seg.a === node ? t.a : t.b;
+        side[level] = Math.min(side[level] ?? Infinity, trim);
+      });
     }
     return t;
   }

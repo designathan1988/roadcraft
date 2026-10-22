@@ -29,8 +29,8 @@ try {
 const report = JSON.parse(readFileSync(join(out, 'report.json'), 'utf8'));
 const last = [...report.steps].reverse().find((s) => typeof s.value === 'string' && s.value.startsWith('[{'));
 const results = last ? JSON.parse(last.value) : [];
-for (const r of results) console.log(`${r.ok ? 'OK   ' : 'FALHA'} ${r.name} — ${r.evidence}`);
+for (const r of results) console.log(`${r.ok ? 'OK  ' : 'FAIL'} ${r.name} — ${r.evidence}`);
 const failed = results.filter((r) => !r.ok).length;
-console.log(`\n${results.length - failed} de ${results.length} funcionam; ${failed} falham. Console do jogo: ${(report.console || []).length} avisos/erros.`);
+console.log(`\n${results.length - failed} of ${results.length} work; ${failed} fail. Game console: ${(report.console || []).length} warnings/errors.`);
 for (const c of (report.console || []).slice(0, 10)) console.log(`  console: ${String(c).slice(0, 200)}`);
 process.exitCode = failed ? 1 : 0;

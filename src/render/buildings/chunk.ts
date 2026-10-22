@@ -45,6 +45,26 @@ export interface CellEntry {
 export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
   a === b || a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
+/** A cell's buildings as its masses are asked (`layer.ts` `askMass`, `massLevels.ts`), in typed arrays: each one's id and its record's digest without its wear, the cell's ground digest for them all. DO NOT keep a `CellEntry` object a building of the map for the masses: entries are made of these when a job is asked. */
+export interface PackedEntries {
+  readonly ids: Float64Array;
+  readonly sigs: Float64Array;
+  readonly digest: number;
+}
+
+export const samePacked = (a: PackedEntries, b: PackedEntries): boolean => {
+  if (a === b) return true;
+  if (a.digest !== b.digest || a.ids.length !== b.ids.length) return false;
+  for (let i = 0; i < a.ids.length; i++) if (a.ids[i] !== b.ids[i] || a.sigs[i] !== b.sigs[i]) return false;
+  return true;
+};
+
+/** The entries of packed ones, appended to `out` (made when a job is asked, let go with it). */
+export function unpack(p: PackedEntries, out: CellEntry[] = []): CellEntry[] {
+  for (let i = 0; i < p.ids.length; i++) out.push({ key: String(p.ids[i]!), sig: p.sigs[i]!, digest: p.digest });
+  return out;
+}
+
 /** An entry as a job is sent it: where its worker reads the record (its tile's shared table and row, `recordTable.ts`), never the record. */
 export interface CellJobEntry extends CellEntry {
   readonly record: RecordRef;

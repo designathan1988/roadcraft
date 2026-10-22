@@ -6,7 +6,7 @@ import type { SampleView } from './sampler';
 import { createCodeState } from './state';
 import './code.css';
 
-/** THE LAB'S CODE TABS: "Código" (the page's JavaScript sampled live, mapped to its TypeScript) and "Cobertura" (the functions declared against the ones seen). Their numbers go into every report (`code`) and to the probes (`window.__labCode`). */
+/** THE LAB'S CODE TABS: "Code" (the page's JavaScript sampled live, mapped to its TypeScript) and "Coverage" (the functions declared against the ones seen). Their numbers go into every report (`code`) and to the probes (`window.__labCode`). */
 export function createCodeTabs(ctx: LabContext): LabTab[] {
   const state = createCodeState(ctx);
   const code = createCodeTab(state);

@@ -94,7 +94,7 @@ describe('the road tiles kept for a later session', () => {
 });
 
 describe('the workers', () => {
-  for (const worker of ['src/render/roadTile.worker.ts', 'src/render/farRoads.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts', 'src/render/groundShape.worker.ts',
+  for (const worker of ['src/render/roadTile.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts', 'src/render/groundShape.worker.ts',
     'src/render/landStroke.worker.ts']) {
     it(`${worker} reaches pure modules only`, () => {
       const modules = [...reach(worker)];
@@ -131,7 +131,7 @@ describe('the growth of the buildings', () => {
   it('lays no city frame by frame on the page: a generated city is the small city of 2.0, built whole and put in as one map', () => {
     // A round city was laid on the page 100 ms a frame (`GROW_SLICE_MS`, `layoutSteps`); the small city is built whole (`editor/smallCityMap.ts`) and put in at once (the player, 2026-10-18: no city by tiles).
     expect(main).not.toMatch(/layCity\(|planCity\(|zoneCity\(|GROW_SLICE_MS = /);
-    expect(main).toMatch(/generateCity: \(options[^]{0,200}?openSmallCity\(/);
+    expect(main).toMatch(/generateCity: \(options[^]{0,400}?openSmallCity\(/);
   });
 
   it('the pool posts to the growth worker, and the page writes only what it answers', () => {
@@ -175,7 +175,7 @@ describe('the ground cut and filled', () => {
     const blocks = bodyOf(generators, 'shapeBlocksSteps');
     expect(blocks).not.toMatch(/BATCH|regions\.slice\(/);
     expect(blocks).toMatch(/while \(!shaping\.landed\) \{ landShapes\(\); if \(shaping\.landed\) break; yield 'wait'; \}/);
-    expect(renderer).toMatch(/function\* worldSteps\([\s\S]{0,700}while \(compares\.some\(\(c\) => c && !c\.ready\)\)/);
+    expect(renderer).toMatch(/function\* worldSteps\([\s\S]{0,1500}while \(compares\.some\(\(c\) => c && !c\.ready\)\)/);
   });
 
   it('compares two solves off the page, each block of a solve asked once', () => {

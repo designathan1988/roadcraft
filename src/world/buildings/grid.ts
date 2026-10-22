@@ -7,10 +7,19 @@ import type { BuildingId } from './types';
 /** Side of a cell, world units: as wide as the largest of the common buildings. */
 const CELL = m(64);
 const keyOf = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
+/** A rank and an id packed in one number (`BuildingGrid.inOrder`): ids below 2^32, ranks below 2^20, the two within a double's 53 exact bits. */
+const PACKED_IDS = 2 ** 32;
+const PACKED_RANKS = 2 ** 20;
 
-interface Placed {
-  readonly keys: readonly number[];
-  readonly rank: number;
+/** Where a building is filed: its rank in the store's order, then the columns and rows of the cells its box reaches (`PLACED_*`). DO NOT keep its cells' keys as a list and an object round them (~260 B a building, 2026-10-21): five small integers in one list. */
+type Placed = readonly number[];
+const PLACED_RANK = 0, PLACED_I0 = 1, PLACED_I1 = 2, PLACED_J0 = 3, PLACED_J1 = 4;
+
+/** Calls `visit` with the key of every cell a building's place reaches, columns outer, rows inner. */
+function forKeys(placed: Placed, visit: (key: number) => void): void {
+  for (let i = placed[PLACED_I0]!; i <= placed[PLACED_I1]!; i++) {
+    for (let j = placed[PLACED_J0]!; j <= placed[PLACED_J1]!; j++) visit(keyOf(i, j));
+  }
 }
 
 /** What the grid files: a building, or what its neighbours read of one (`neighbours.ts`), with its anchor. */
@@ -63,60 +72,58 @@ export class BuildingGrid<T extends Filed> {
     return this.placed.get(id) ?? (this.base && !this.gone.has(id) ? this.base.placedOf(id) : undefined);
   }
 
-  private keysOf(b: T): number[] {
+  /** Where `b` is filed at `rank`: the cells its box (and its anchor) reach. */
+  private placeOf(b: T, rank: number): Placed {
     const box = this.boxOf(b);
     const x0 = Math.min(box.minX, b.x), y0 = Math.min(box.minY, b.y), x1 = Math.max(box.maxX, b.x), y1 = Math.max(box.maxY, b.y);
-    const keys: number[] = [];
-    for (let i = Math.floor(x0 / CELL); i <= Math.floor(x1 / CELL); i++) {
-      for (let j = Math.floor(y0 / CELL); j <= Math.floor(y1 / CELL); j++) keys.push(keyOf(i, j));
-    }
-    return keys;
+    return [rank, Math.floor(x0 / CELL), Math.floor(x1 / CELL), Math.floor(y0 / CELL), Math.floor(y1 / CELL)];
   }
 
-  private file(id: BuildingId, rank: number, keys: readonly number[]): void {
-    for (const k of keys) {
+  private file(id: BuildingId, placed: Placed): void {
+    const rank = placed[PLACED_RANK]!;
+    forKeys(placed, (k) => {
       const cell = this.ownCell(k);
-      if (!cell) { this.cells.set(k, [id]); continue; }
+      if (!cell) { this.cells.set(k, [id]); return; }
       // In rank order: a new building is last; one replaced goes back where it stood.
       let at = cell.length;
-      while (at > 0 && this.placedOf(cell[at - 1]!)!.rank > rank) at--;
+      while (at > 0 && this.placedOf(cell[at - 1]!)![PLACED_RANK]! > rank) at--;
       cell.splice(at, 0, id);
-    }
+    });
   }
 
-  private unfile(id: BuildingId, keys: readonly number[]): void {
-    for (const k of keys) {
+  private unfile(id: BuildingId, placed: Placed): void {
+    forKeys(placed, (k) => {
       const cell = this.ownCell(k);
-      if (!cell) continue;
+      if (!cell) return;
       const at = cell.indexOf(id);
       if (at >= 0) cell.splice(at, 1);
       // Over a base, an empty cell stays: it hides the base's.
       if (cell.length === 0 && !this.base) this.cells.delete(k);
-    }
+    });
   }
 
   /** A building new to the store: last in its order. */
   insert(b: T): void {
-    const keys = this.keysOf(b), rank = this.nextRank++;
+    const placed = this.placeOf(b, this.nextRank++);
     this.gone.delete(b.id);
-    this.placed.set(b.id, { keys, rank });
-    this.file(b.id, rank, keys);
+    this.placed.set(b.id, placed);
+    this.file(b.id, placed);
   }
 
   /** A building's record replaced: it keeps its place in the order. */
   update(b: T): void {
     const was = this.placedOf(b.id);
     if (!was) { this.insert(b); return; }
-    const keys = this.keysOf(b);
-    this.unfile(b.id, was.keys);
-    this.placed.set(b.id, { keys, rank: was.rank });
-    this.file(b.id, was.rank, keys);
+    const placed = this.placeOf(b, was[PLACED_RANK]!);
+    this.unfile(b.id, was);
+    this.placed.set(b.id, placed);
+    this.file(b.id, placed);
   }
 
   delete(id: BuildingId): void {
     const was = this.placedOf(id);
     if (!was) return;
-    this.unfile(id, was.keys);
+    this.unfile(id, was);
     this.placed.delete(id);
     if (this.base) this.gone.add(id);
   }
@@ -132,7 +139,25 @@ export class BuildingGrid<T extends Filed> {
         for (const id of this.cellAt(keyOf(i, j)) ?? []) found.add(id);
       }
     }
-    return [...found].sort((a, b) => this.placedOf(a)!.rank - this.placedOf(b)!.rank);
+    return this.inOrder(found);
+  }
+
+  /** Ids in the store's order (by rank, each rank one building's) */
+  private inOrder(ids: Set<BuildingId>): BuildingId[] {
+    // DO NOT sort by a comparator reading two ranks from the map at each comparison: the growth asks 200 m round every lot (`LIKE_REACH`), a hundred buildings and more sorted each time. Each rank and its id packed in one number (rank above, id below) sorted as numbers: the same order, ranks being distinct.
+    const keys = new Float64Array(ids.size);
+    let k = 0;
+    for (const id of ids) {
+      const rank = this.placedOf(id)![PLACED_RANK]!;
+      if (rank >= PACKED_RANKS || id < 0 || id >= PACKED_IDS || !Number.isInteger(id)) {
+        return [...ids].sort((a, b) => this.placedOf(a)![PLACED_RANK]! - this.placedOf(b)![PLACED_RANK]!);
+      }
+      keys[k++] = rank * PACKED_IDS + id;
+    }
+    keys.sort();
+    const out = new Array<BuildingId>(keys.length);
+    for (let i = 0; i < keys.length; i++) out[i] = (keys[i]! % PACKED_IDS) as BuildingId;
+    return out;
   }
 
   /** DO NOT ask `near` rectangle by rectangle for many */
@@ -158,6 +183,6 @@ export class BuildingGrid<T extends Filed> {
         for (const r of list) if (meets(id, r)) { kept.add(id); break; }
       }
     }
-    return [...kept].sort((a, b) => this.placedOf(a)!.rank - this.placedOf(b)!.rank);
+    return this.inOrder(kept);
   }
 }

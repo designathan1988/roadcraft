@@ -68,29 +68,37 @@ export function lotBuildFrame(l: Pick<Lot, 'corners'>): { anchor: Vec2; rotation
   const N = Math.max(1, Math.min(160, Math.ceil(stepsIn(tMax - tMin, 0.5))));
   const h = (tMax - tMin) / N;
   const L: number[] = [], R: number[] = [];
+  const xs: number[] = [];
   for (let k = 0; k < N; k++) {
     const t = tMin + (k + 0.5) * h;
-    const xs: number[] = [];
+    xs.length = 0;
     for (let i = 0; i < local.length; i++) {
       const p = local[i]!, r = local[(i + 1) % local.length]!;
       if ((p.t > t) === (r.t > t)) continue;
       xs.push(p.s + ((t - p.t) / (r.t - p.t)) * (r.s - p.s));
     }
-    xs.sort((x, y) => x - y);
+    // Two crossings (a convex lot, most of them): put in order without a sort.
+    if (xs.length === 2) { if (xs[0]! > xs[1]!) { const x = xs[0]!; xs[0] = xs[1]!; xs[1] = x; } } else xs.sort((x, y) => x - y);
     // The widest chord at this depth (a lot of any shape: the main body of it).
     let lo = 0, hi = -1;
     for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1]! - xs[i]! > hi - lo) { lo = xs[i]!; hi = xs[i + 1]!; }
     L.push(lo); R.push(hi);
   }
   let best = { score: -Infinity, s0: 0, s1: len, t0: 0, t1: 0 };
+  // The deepest a rectangle may reach, for the bound below.
+  const tEnd = tMin + N * h;
   for (let i = 0; i < N; i++) {
     let lo = -Infinity, hi = Infinity;
+    const t0 = tMin + i * h, front = Math.max(0, t0);
     for (let j = i; j < N; j++) {
       lo = Math.max(lo, L[j]!); hi = Math.min(hi, R[j]!);
       if (hi - lo <= 0) break;
-      const t0 = tMin + i * h, t1 = tMin + (j + 1) * h;
-      const score = (hi - lo) * (t1 - t0) - (hi - lo) * Math.max(0, t0);
+      const t1 = tMin + (j + 1) * h;
+      const score = (hi - lo) * (t1 - t0) - (hi - lo) * front;
       if (score > best.score) best = { score, s0: lo, s1: hi, t0, t1 };
+      // DO NOT walk on past what cannot win: deeper, the chord only narrows, so no later score passes this bound (padded well past rounding: an exact tie or better is still walked to).
+      const bound = (hi - lo) * Math.max(0, tEnd - t0 - front);
+      if (bound + Math.abs(bound) * 1e-9 + 1e-9 < best.score) break;
     }
   }
   const sm = (best.s0 + best.s1) / 2;
@@ -144,6 +152,11 @@ export function planLots(doc: RoadDoc, net: Network): LotPlan {
   let planner = planners.get(net);
   if (!planner || planner.doc !== doc) planners.set(net, planner = new LotPlanner(doc, net));
   return planner.update();
+}
+
+/** A network's planner let go (`planLots` makes it again when asked): a city generated once (`editor/smallCityMap.ts`), whose land is planned once while its network lives on for the growth - its rasters and blocks held for nothing (17 MB of the city of 25,000 buildings, 2026-10-22). */
+export function forgetLotPlans(net: Network): void {
+  planners.delete(net);
 }
 
 /** The work of the lots' plans: raster tiles made, land cells flooded, blocks and streets planned. A count for the scale specs. */

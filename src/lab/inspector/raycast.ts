@@ -142,7 +142,7 @@ export function solidExact(hits: readonly Hit[]): Hit | null {
   return hits.find((h) => h.exact && seeThrough(h) === false) ?? null;
 }
 
-/** A glow, a light's cone or a pool of light (transparent, writing no depth): seen through, the solid behind it is what was pointed at (it stays in "Sob o cursor"). */
+/** A glow, a light's cone or a pool of light (transparent, writing no depth): seen through, the solid behind it is what was pointed at (it stays in "Under the cursor"). */
 function seeThrough(h: Hit): boolean {
   const material = (h.object as { material?: { transparent?: boolean; depthWrite?: boolean } | { transparent?: boolean; depthWrite?: boolean }[] }).material;
   const first = Array.isArray(material) ? material[0] : material;

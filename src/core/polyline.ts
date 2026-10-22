@@ -40,6 +40,8 @@ export class Polyline {
   readonly n: number;
 
   private _cum: Float64Array | null = null;
+  /** The length worked out without the arc-length table (`length`); NaN until then. */
+  private _length = NaN;
   private _tan: Float64Array | null = null;
   private _bbox: Aabb | null = null;
   private _chunks: Float64Array | null = null;
@@ -117,8 +119,20 @@ export class Polyline {
     return this._bbox;
   }
 
+  /** DO NOT make the arc-length table for the length alone (a road's four trimmed centrelines are asked their length when made, and kept: a typed array each, ~200 B before its numbers, 2026-10-21): the same sum, kept as one number. */
   get length(): number {
-    return this.n < 2 ? 0 : (this.cum[this.n - 1] as number);
+    if (this.n < 2) return 0;
+    if (this._cum) return this._cum[this.n - 1] as number;
+    if (Number.isNaN(this._length)) {
+      let acc = 0;
+      for (let i = 1; i < this.n; i++) {
+        const dx = (this.xy[i * 2] as number) - (this.xy[i * 2 - 2] as number);
+        const dy = (this.xy[i * 2 + 1] as number) - (this.xy[i * 2 - 1] as number);
+        acc += hypot2(dx, dy);
+      }
+      this._length = acc;
+    }
+    return this._length;
   }
 
   /** Segment index containing arc length `s`, via binary search on `cum`. */

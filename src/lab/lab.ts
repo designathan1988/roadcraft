@@ -64,7 +64,7 @@ export function createLab(deps: LabDeps): Lab {
       level: () => String(deps.scene.quality),
       levels: ['low', 'medium', 'high', 'ultra'],
       setPreset(level) {
-        context.emit('quality.preset', `predefinição = ${level}`, { level });
+        context.emit('quality.preset', `preset = ${level}`, { level });
         deps.setPreset(level);
       },
     },

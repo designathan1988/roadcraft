@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 // Depot layout (one depot per OS, each the packer's folder as it is, `release/Roadcraft-<platform>-x64/`):
 //   Roadcraft.exe | Roadcraft          the launch executable (Steamworks > Installation > General: one launch option per OS)
-//   resources/app.asar                 `desktop/` (main.cjs, preload.cjs, saves.cjs, isolation.cjs, package.json, node_modules)
+//   resources/app.asar                 `desktop/` (main.cjs, preload.cjs, saves.cjs, problems.cjs, isolation.cjs, package.json, node_modules)
 //   resources/app.asar.unpacked/       steamworks.js's native module and Steam's library, which cannot load from the archive
 //   resources/game/                    the production build (`dist/` without source maps), served as app://roadcraft/
 //   steam_appid.txt                    for runs outside Steam only; excluded from the depots (Steamworks API overview: never shipped)

@@ -16,20 +16,20 @@ const HISTORY_KEPT = 100;
 
 /** Ready-made snippets: the questions asked most of a scene. */
 const SNIPPETS: readonly (readonly [string, string])[] = [
-  ['Materiais por tipo', `const by = {}; const seen = new Set();
+  ['Materials by type', `const by = {}; const seen = new Set();
 $scene.traverse((o) => { for (const m of [].concat(o.material ?? [])) { if (seen.has(m)) continue; seen.add(m); by[m.type] = (by[m.type] ?? 0) + 1; } });
 return by;`],
-  ['Programas compilados', `return $gl.info.programs.map((p) => ({ id: p.id, nome: p.name, usos: p.usedTimes })).sort((a, b) => b.usos - a.usos);`],
-  ['Malhas com um nome', `return $find('asphalt').map((o) => ({ tipo: o.type, nome: o.name, visível: o.visible, uuid: o.uuid }));`],
-  ['Maiores geometrias', `const rows = []; const seen = new Set();
+  ['Compiled programs', `return $gl.info.programs.map((p) => ({ id: p.id, name: p.name, uses: p.usedTimes })).sort((a, b) => b.uses - a.uses);`],
+  ['Meshes by name', `return $find('asphalt').map((o) => ({ type: o.type, name: o.name, visible: o.visible, uuid: o.uuid }));`],
+  ['Largest geometries', `const rows = []; const seen = new Set();
 $scene.traverse((o) => { const g = o.geometry; if (!g || seen.has(g)) return; seen.add(g); let b = 0;
   for (const a of Object.values(g.attributes)) b += (a.array ?? a.data?.array)?.byteLength ?? a.keptBytes ?? 0; b += g.index?.array?.byteLength ?? 0;
-  rows.push({ nome: o.name, tipo: o.type, mb: +(b / 1048576).toFixed(2) }); });
+  rows.push({ name: o.name, type: o.type, mb: +(b / 1048576).toFixed(2) }); });
 return rows.sort((a, b) => b.mb - a.mb).slice(0, 25);`],
-  ['Objetos por tipo', `const by = {}; $scene.traverse((o) => { by[o.type] = (by[o.type] ?? 0) + 1; }); return by;`],
-  ['Renderizador: info', `return { render: { ...$gl.info.render }, memory: { ...$gl.info.memory }, programs: $gl.info.programs?.length, pixelRatio: $gl.getPixelRatio() };`],
-  ['Texturas da seleção', `return ($obj ? [].concat($obj.material ?? []) : []).flatMap((m) => Object.entries(m).filter(([, v]) => v?.isTexture).map(([k, t]) => ({ slot: k, nome: t.name, w: t.image?.width, h: t.image?.height, aniso: t.anisotropy })));`],
-  ['Selecionar pelo nome', `return $inspect($find('benches')[0]);`],
+  ['Objects by type', `const by = {}; $scene.traverse((o) => { by[o.type] = (by[o.type] ?? 0) + 1; }); return by;`],
+  ['Renderer: info', `return { render: { ...$gl.info.render }, memory: { ...$gl.info.memory }, programs: $gl.info.programs?.length, pixelRatio: $gl.getPixelRatio() };`],
+  ['Selection textures', `return ($obj ? [].concat($obj.material ?? []) : []).flatMap((m) => Object.entries(m).filter(([, v]) => v?.isTexture).map(([k, t]) => ({ slot: k, name: t.name, w: t.image?.width, h: t.image?.height, aniso: t.anisotropy })));`],
+  ['Select by name', `return $inspect($find('benches')[0]);`],
 ];
 
 interface Entry { readonly code: string; readonly ok: boolean; readonly value: unknown; readonly ms: number }
@@ -58,9 +58,9 @@ export function createConsoleTab(state: InspectorState): LabTab {
     return out;
   };
   const inspect = (o: Object3D | null | undefined): string => {
-    if (!o?.isObject3D) return 'não é um Object3D';
+    if (!o?.isObject3D) return 'not an Object3D';
     state.select({ object: o, instanceId: null, batchId: null, point: null, exact: false, entity: null, entities: [], hits: [], via: 'console' });
-    return `selecionado: ${o.type} "${o.name}" (veja o Inspetor)`;
+    return `selected: ${o.type} "${o.name}" (see the Inspector)`;
   };
 
   const scope = (): Record<string, unknown> => {
@@ -79,7 +79,7 @@ export function createConsoleTab(state: InspectorState): LabTab {
     if (entry.ok) block.appendChild(valueTree(entry.value));
     else {
       const e = entry.value as Error;
-      block.appendChild(el('pre', 'lab-bad insp-out-err', `${e?.name ?? 'Erro'}: ${e?.message ?? String(e)}\n${e?.stack?.split('\n').slice(1, 6).join('\n') ?? ''}`));
+      block.appendChild(el('pre', 'lab-bad insp-out-err', `${e?.name ?? 'Error'}: ${e?.message ?? String(e)}\n${e?.stack?.split('\n').slice(1, 6).join('\n') ?? ''}`));
     }
     block.appendChild(el('span', 'lab-muted insp-out-ms', `${entry.ms.toFixed(1)} ms`));
     output.appendChild(block);
@@ -156,11 +156,11 @@ export function createConsoleTab(state: InspectorState): LabTab {
     id: 'console',
     title: 'Console',
     mount(host) {
-      const help = el('p', 'lab-muted', 'Variáveis: $sel (seleção), $obj (objeto 3D), $mat (1º material), $scene, $gl, lab (contexto do laboratório), $inspect(obj), $find(texto), $_ (último resultado); e as sondas da página (__roadcraft, __labOpt, __labGpu, __labInspector…). Enter executa, Shift+Enter quebra a linha, ↑/↓ histórico; use await à vontade.');
+      const help = el('p', 'lab-muted', 'Variables: $sel (selection), $obj (3D object), $mat (1st material), $scene, $gl, lab (lab context), $inspect(obj), $find(text), $_ (last result); plus the page probes (__roadcraft, __labOpt, __labGpu, __labInspector…). Enter runs, Shift+Enter breaks the line, ↑/↓ history; await freely.');
       const snippets = el('div', 'lab-row');
-      snippets.appendChild(el('span', 'lab-muted', 'Trechos:'));
+      snippets.appendChild(el('span', 'lab-muted', 'Snippets:'));
       for (const [name, code] of SNIPPETS) {
-        snippets.appendChild(button('', name, 'Executar este trecho (fica no campo para editar)', () => { if (input) input.value = code; void run(code); }));
+        snippets.appendChild(button('', name, 'Run this snippet (it stays in the field for editing)', () => { if (input) input.value = code; void run(code); }));
       }
       output = el('div', 'insp-console-out');
       for (const entry of entries) show(entry);
@@ -171,8 +171,8 @@ export function createConsoleTab(state: InspectorState): LabTab {
       input.addEventListener('keydown', onKey);
       const bar = el('div', 'lab-row');
       bar.append(
-        button('play', 'Executar', 'Executa (Enter)', () => { if (!input) return; const code = input.value; input.value = ''; void run(code); }),
-        button('close', 'Limpar saída', 'Apaga a saída', () => { entries.length = 0; output?.replaceChildren(); }),
+        button('play', 'Run', 'Runs (Enter)', () => { if (!input) return; const code = input.value; input.value = ''; void run(code); }),
+        button('close', 'Clear output', 'Clears the output', () => { entries.length = 0; output?.replaceChildren(); }),
       );
       host.append(help, snippets, output, input, bar);
       input.focus();

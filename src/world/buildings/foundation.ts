@@ -292,6 +292,18 @@ export function floorHeight(b: Building, groundAt: GroundAt, pavedAt: PavedAt = 
   return floorOver(highest, groundBays(b), paved, lotFront(b, paved));
 }
 
+/**
+ * A ground floor's height as seen from afar: the pavement along its lots' open edges, else its plinth over the highest ground - the
+ * door's pavement and each bay's front left out (`floorHeight` lays the bays out for them: two thirds of a floor's time, profile of
+ * step-70k 2026-10-22). Within a threshold of the exact floor wherever the lot opens onto the street the door does.
+ */
+export function frontFloorHeight(b: Building, groundAt: GroundAt, pavedAt: PavedAt = NO_PAVING): number {
+  const { lowest, highest } = sampleFootprint(b, groundAt);
+  if (pavedAt === NO_PAVING) return highest + PLINTH_MIN;
+  const lot = lotFront(b, atLevel(pavedAt, highest, lowest));
+  return Number.isFinite(lot) ? lot + THRESHOLD : highest + PLINTH_MIN;
+}
+
 /** The highest pavement along the open edges of a building's lots */
 function lotFront(b: Building, pavedAt: PavedAt): number {
   if (pavedAt === NO_PAVING) return -Infinity;

@@ -1,12 +1,13 @@
 import { refOf } from '@world/buildings/recordTable';
 import { describe, expect, it } from 'vitest';
-import type { Mesh, Object3D } from 'three';
+import { Frustum, Plane, Vector3, type Mesh, type Object3D } from 'three';
 
 import { type CellMass, cellMass } from '@render/buildings/cellArrays';
 import type { CellEnv, CellPool } from '@render/buildings/cellPool';
 import { type CellEntry, type CellJob, type CellResult, type JobKind, runCellJob } from '@render/buildings/cellWork';
 import { createBuildingKit } from '@render/buildings/kit';
 import { createMassCells } from '@render/buildings/massCells';
+import type { PackedEntries } from '@render/buildings/chunk';
 import { MassLevels } from '@render/buildings/massLevels';
 import { plateOf, tileOf } from '@render/buildings/levelKeys';
 import { CELL_DETAIL, PLATE_DETAIL, TILE_DETAIL, emitMassing, emitMassingLevels } from '@render/buildings/massing';
@@ -182,6 +183,66 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     kit.dispose();
   });
 
+  it('refining, the plate drawn over the view gives way once the tiles the view meets have come: one out of it never holds it (the opening on low)', () => {
+    const kit = createBuildingKit();
+    const far = createMassCells(kit, CELL);
+    // Plate p:0,0 holds the tiles t:0,0 (cells 0..3) and t:-1,0 (cells -4..-1).
+    for (const [i, key] of [[0, '0,0'], [-4, '-4,0']] as const) { far.planLevel(tileOf(i, 0)); far.plan(key, 0, m(30)); }
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    far.choose(m(128), m(128), m(500), 1000, 0.1, false);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // The view over x and y 300-1000 m: tile t:0,0 in it, t:-1,0 (x under 0) out of it - not asked while the curtain is up (`layer.ts` deferred).
+    const view = new Frustum(
+      new Plane(new Vector3(1, 0, 0), -m(300)), new Plane(new Vector3(-1, 0, 0), m(1000)),
+      new Plane(new Vector3(0, 0, 1), m(1000)), new Plane(new Vector3(0, 0, -1), -m(300)),
+      new Plane(new Vector3(0, 1, 0), m(1000)), new Plane(new Vector3(0, -1, 0), m(10_000)));
+    const look = (): void => far.choose(m(650), m(650), m(500), 1000, 0.3, false, Infinity, view);
+    look();
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    expect(far.waitingInView).toBeGreaterThan(0);
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
+    look();
+    // The tile in the view drawn, the plate gone from it, nothing left for the view to wait for; the cells out of the view drawn by their base.
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    expect(far.coarse(plateOf(0, 0))).toBe(false);
+    expect(far.waitingInView).toBe(0);
+    far.dispose();
+    kit.dispose();
+  });
+
+  it('over the budget, lets go a plate in the view its tiles draw, and asks it back only once the view wants it whole (low)', () => {
+    const kit = createBuildingKit();
+    const far = createMassCells(kit, CELL);
+    far.planLevel(tileOf(0, 0));
+    far.plan('0,0', 0, m(30));
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    const view = new Frustum(
+      new Plane(new Vector3(1, 0, 0), m(2000)), new Plane(new Vector3(-1, 0, 0), m(2000)),
+      new Plane(new Vector3(0, 0, 1), m(2000)), new Plane(new Vector3(0, 0, -1), m(2000)),
+      new Plane(new Vector3(0, 1, 0), m(1000)), new Plane(new Vector3(0, -1, 0), m(10_000)));
+    const look = (orthoPx: number): void => far.choose(m(128), m(128), m(500), 1000, orthoPx, false, Infinity, view);
+    look(0.1);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // Drawn whole: never let go, whatever the budget.
+    expect(far.evictLevels(0)).toBe(0);
+    // Nearer: its tile drawn in its place, the plate idle in the view - let go, and not asked again while its tile draws it.
+    look(0.3);
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
+    look(0.3);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    expect(far.evictLevels(0)).toBeGreaterThan(0);
+    expect(far.levelDrawn(plateOf(0, 0))).toBe(false);
+    look(0.3);
+    expect(far.askable(plateOf(0, 0))).toBe(false);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    // Back out: the view wants it whole, it is asked; its tile stands meanwhile (no hole).
+    look(0.1);
+    expect(far.askable(plateOf(0, 0))).toBe(true);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    far.dispose();
+    kit.dispose();
+  });
+
   it('leaves out more the higher its level, and says how much', () => {
     let cell = 0, tile = 0, plate = 0, tileError = 0, plateError = 0;
     for (let i = 0; i < BLUEPRINTS.length; i++) {
@@ -263,7 +324,9 @@ describe('the tiles and plates asked of the workers', () => {
     return { pool, asked, answer };
   }
   const env = { groundAt: flat, naturalAt: flat } as CellEnv;
-  const entries = (...keys: string[]): CellEntry[] => keys.map((key, i) => ({ key, sig: i + 1, digest: 7 }));
+  /** A cell's buildings packed (`PackedEntries`), each named by a letter: its id the letter's code. */
+  const entries = (...keys: string[]): PackedEntries => ({ ids: Float64Array.from(keys, (key) => key.charCodeAt(0)), sigs: Float64Array.from(keys, (_key, i) => i + 1), digest: 7 });
+  const named = (list: readonly CellEntry[]): string[] => list.map((e) => String.fromCharCode(Number(e.key))).sort();
 
   it('a change in one cell asks again its tile and its plate only, once for every cell touched', () => {
     const { pool, asked, answer } = fakePool();
@@ -275,13 +338,16 @@ describe('the tiles and plates asked of the workers', () => {
     levels.touch('-1,0', entries('e'));
     levels.flush(env);
     const keys = asked.map((a) => `${a.kind} ${a.key}`).sort();
-    expect(keys).toEqual(['massPlate p:0,0', 'massPlate p:1,0', 'massTile t:-1,0', 'massTile t:0,0', 'massTile t:1,0'].sort());
+    // And the base over each plate's square, asked at once (`massBase.ts`).
+    expect(keys).toEqual(['massBase b:0,0', 'massBase b:1,0', 'massPlate p:0,0', 'massPlate p:1,0', 'massTile t:-1,0', 'massTile t:0,0', 'massTile t:1,0'].sort());
     // A tile is made of its cells' buildings; a plate of its tiles'.
-    expect(asked.find((a) => a.key === 't:0,0')!.entries.map((e) => e.key).sort()).toEqual(['a', 'b', 'c']);
-    expect(asked.find((a) => a.key === 'p:0,0')!.entries.map((e) => e.key).sort()).toEqual(['a', 'b', 'c', 'e']);
-    expect(levels.asking).toBe(5);
+    expect(named(asked.find((a) => a.key === 't:0,0')!.entries)).toEqual(['a', 'b', 'c']);
+    expect(named(asked.find((a) => a.key === 'p:0,0')!.entries)).toEqual(['a', 'b', 'c', 'e']);
+    expect(named(asked.find((a) => a.key === 'b:0,0')!.entries)).toEqual(['a', 'b', 'c', 'e']);
+    expect(levels.asking).toBe(7);
     answer();
     expect(levels.asking).toBe(0);
+    // The bases land by their own way (`landBase`).
     expect(landed.length).toBe(5);
 
     asked.length = 0;
@@ -290,18 +356,18 @@ describe('the tiles and plates asked of the workers', () => {
     // The same buildings on the same ground (the town filed again): nothing.
     levels.touch('0,0', entries('a', 'b'));
     levels.flush(env);
-    expect(asked.map((a) => a.key).sort()).toEqual(['p:1,0', 't:1,0']);
+    expect(asked.map((a) => a.key).sort()).toEqual(['b:1,0', 'p:1,0', 't:1,0']);
     // Changed again before it came: the older job cancelled, the newer one asked.
     levels.touch('5,0', entries('d'));
     levels.flush(env);
-    expect(levels.asking).toBe(2);
+    expect(levels.asking).toBe(3);
 
     // Its last building gone: the tile and plate are removed, not asked.
     asked.length = 0;
     levels.touch('5,0', null);
     levels.flush(env);
     expect(asked).toEqual([]);
-    expect(removed.sort()).toEqual(['p:1,0', 't:1,0']);
+    expect(removed.sort()).toEqual(['b:1,0', 'p:1,0', 't:1,0']);
     expect(levels.asking).toBe(0);
   });
 
@@ -313,9 +379,9 @@ describe('the tiles and plates asked of the workers', () => {
     levels.touch('0,0', entries('a'));
     levels.touch('5,0', entries('b'));
     levels.flush(env);
-    // The plates asked, the tiles only planned: a plate stands for them from afar.
-    expect(asked.map((a) => a.key).sort()).toEqual(['p:0,0', 'p:1,0']);
-    expect(planned.sort()).toEqual(['p:0,0', 'p:1,0', 't:0,0', 't:1,0']);
+    // The plates and the bases asked, the tiles only planned: a plate stands for them from afar.
+    expect(asked.map((a) => a.key).sort()).toEqual(['b:0,0', 'b:1,0', 'p:0,0', 'p:1,0']);
+    expect(planned.sort()).toEqual(['b:0,0', 'b:1,0', 'p:0,0', 'p:1,0', 't:0,0', 't:1,0']);
     answer();
     asked.length = 0;
     levels.pump(env);
@@ -395,11 +461,12 @@ describe('a tile or a plate drawn before some of its buildings came in', () => {
     } as unknown as CellPool;
     const levels = new MassLevels(pool, () => {}, () => {}, () => {}, () => false);
     expect(levels.outdated(plateOf(0, 0))).toBe(false);
-    levels.touch('0,0', [{ key: '1', sig: 1, digest: 0 }]);
+    levels.touch('0,0', { ids: Float64Array.of(1), sigs: Float64Array.of(1), digest: 0 });
     expect(levels.outdated(plateOf(0, 0))).toBe(true);
     levels.flush({ groundAt: flat, naturalAt: flat });
     expect(levels.outdated(plateOf(0, 0))).toBe(true);
-    answers.shift()!({ mass: null } as CellResult);
+    // Its base and its plate answered (the base is asked first, `massBase.ts`).
+    for (const done of answers.splice(0)) done({ mass: null } as CellResult);
     expect(levels.outdated(plateOf(0, 0))).toBe(false);
   });
 });

@@ -1,0 +1,51 @@
+{
+  "storage": {
+    "roadcraft.quality": "ultra"
+  },
+  "viewport": [
+    1920,
+    1080
+  ],
+  "steps": [
+    {
+      "allocations": "city-70k",
+      "live": true
+    },
+    {
+      "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large', radiusMetres: 4700 }); 'started'"
+    },
+    {
+      "until": "(() => { const e = performance.getEntriesByName('city:applied')[0]; if (e && window.__cityAt === undefined) window.__cityAt = e.startTime; return window.__cityAt !== undefined; })()",
+      "name": "city applied",
+      "timeout": 1800000,
+      "polling": 250
+    },
+    {
+      "until": "(() => { const at = window.__cityAt ?? 0; return performance.getEntriesByName('opening:shown').some((e) => e.startTime > at) || !window.__roadcraft.scene().opening; })()",
+      "name": "city shown",
+      "timeout": 600000,
+      "polling": 250
+    },
+    {
+      "until": "(() => { const c = document.getElementById('loading-curtain'); return !!c && getComputedStyle(c).display === 'none'; })()",
+      "name": "curtain gone",
+      "timeout": 600000,
+      "polling": 250
+    },
+    {
+      "press": "Começar a construir"
+    },
+    {
+      "eval": "window.__roadcraft.sim.setClock(720); window.__roadcraft.scene().setSkyMode('day'); window.__roadcraft.measure(true); 1"
+    },
+    {
+      "wait": 15000
+    },
+    {
+      "allocationsEnd": true
+    },
+    {
+      "memory": "exact"
+    }
+  ]
+}

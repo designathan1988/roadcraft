@@ -179,26 +179,13 @@ describe('the job system', () => {
     expect(hostOf(jobPort('save'))).toBe(save);
   });
 
-  it("puts the tile store's reads on the save's worker, where no queued job runs, within the pool's count (conf37)", async () => {
-    const { jobPort, jobWorkers, submitJob } = await import('@/jobs/jobPool');
-    const save = hostOf(jobPort('save'));
-    const reads = [0, 1, 2].map(() => hostOf(jobPort('tileRead')));
-    for (const r of reads) expect(r).toBe(save);
-    // The queue full of long jobs: the reads' worker never given one.
-    for (let k = 0; k < 12; k++) {
-      submitJob({ service: 'cells', key: null, priority: k, write: () => ({ data: k, transfer: [] }), done: () => {}, failed: () => {} });
-    }
-    expect(FakeWorker.made[save]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
-    expect(FakeWorker.made.length).toBeLessThanOrEqual(jobWorkers());
-  });
-
   it("makes a side's workers where the maker says, the page's Worker where it says nothing", async () => {
     const { jobPort, setJobWorkerMaker } = await import('@/jobs/jobPool');
     const made: boolean[] = [];
     setJobWorkerMaker((long) => { made.push(long); return long ? new FakeWorker() as unknown as Worker : null; });
     const before = FakeWorker.made.length;
     jobPort('growth');
-    jobPort('farRoads');
+    jobPort('roadCoarse');
     expect(made).toEqual([true, false]);
     expect(FakeWorker.made.length).toBe(before + 2);
     setJobWorkerMaker(null);

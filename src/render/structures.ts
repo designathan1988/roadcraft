@@ -432,7 +432,7 @@ export interface StructureSheet {
   readonly index: Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>;
 }
 
-/** THE STRUCTURES OF SOME ROADS MADE, WITH NO MATERIAL (a bake's, in a worker: `structureTiles.ts`; the page's, `buildStructureDetails`): each kind's instances' matrices, the sheets of quads, where they stand */
+/** THE STRUCTURES OF SOME ROADS MADE, WITH NO MATERIAL (`buildStructureDetails`): each kind's instances' matrices, the sheets of quads, where they stand */
 export interface StructureParts {
   readonly piers: Float32Array<ArrayBuffer>;
   readonly caps: Float32Array<ArrayBuffer>;
@@ -444,13 +444,6 @@ export interface StructureParts {
   readonly walls: StructureSheet | null;
   readonly backfill: StructureSheet | null;
   readonly spans: readonly (readonly [number, number, number, number])[];
-}
-
-/** Every buffer of structure parts: handed over, not copied. */
-export function structureBuffers(parts: StructureParts): ArrayBuffer[] {
-  const out: ArrayBuffer[] = [parts.piers.buffer, parts.caps.buffer, parts.abutments.buffer, parts.jambs.buffer, parts.lintels.buffer, parts.headwalls.buffer];
-  for (const sheet of [parts.parapets, parts.walls, parts.backfill]) if (sheet) out.push(sheet.positions.buffer, sheet.normals.buffer, sheet.uvs.buffer, sheet.index.buffer);
-  return out;
 }
 
 export function buildStructureDetails(
@@ -675,7 +668,7 @@ export function structureParts(net: Network, elevation: RoadElevation, terrainAt
   };
 }
 
-/** THE STRUCTURES' MESHES from their parts (`structureParts`, made here or baked in a worker): the instances and sheets taken as they came; `groundMaterial`, the backfill's (none: no backfill drawn) */
+/** THE STRUCTURES' MESHES from their parts (`structureParts`): the instances and sheets taken as they came; `groundMaterial`, the backfill's (none: no backfill drawn) */
 export function structureMeshes(parts: StructureParts, materials: SceneMaterials, groundMaterial?: Material,
   shapes?: { readonly pier: BufferGeometry; readonly box: BufferGeometry }): StructureDetails {
   const group = new Group();

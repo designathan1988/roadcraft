@@ -155,7 +155,7 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
       if (moved) {
         const view: ViewSample = { t: round(t), kind: v.kind, x: round(v.centre.x), y: round(v.centre.y), zoom: round(v.zoom, 10000), azimuth: round(v.azimuth, 1000), elevation: round(v.elevation, 1000) };
         if (prev && t - viewMovedAt > VIEW_STILL_MS) {
-          events.push({ t: round(t), kind: 'view.move', detail: `câmera mexeu: zoom ${prev.zoom} → ${view.zoom}, centro (${Math.round(view.x)}, ${Math.round(view.y)})`, split: false });
+          events.push({ t: round(t), kind: 'view.move', detail: `camera moved: zoom ${prev.zoom} → ${view.zoom}, centre (${Math.round(view.x)}, ${Math.round(view.y)})`, split: false });
         }
         viewMovedAt = t;
         views.push(view);
@@ -166,8 +166,8 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
       const stats = ctx.sim.stats;
       sim.push({ t: round(t), vehicles: stats?.vehicles ?? null, people: stats?.people ?? null, stepMs: stats ? round(stats.stepMs) : null, programs: ctx.scene.gl.info.programs?.length ?? null });
     }
-    if (frames.t.length >= MAX_FRAMES) handle.stop(`limite de ${MAX_FRAMES} quadros`);
-    else if (limitMs !== null && t - pausedTotal >= limitMs) handle.stop('duração atingida');
+    if (frames.t.length >= MAX_FRAMES) handle.stop(`${MAX_FRAMES} frame limit`);
+    else if (limitMs !== null && t - pausedTotal >= limitMs) handle.stop('duration reached');
   };
 
   const onEvent = (event: LabEvent): void => {
@@ -180,14 +180,14 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
   const longTasks = typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes.includes('longtask')
     ? new PerformanceObserver((list) => {
       if (state === 'stopped') return;
-      for (const entry of list.getEntries()) events.push({ t: round(entry.startTime - t0), kind: 'longtask', detail: `tarefa longa de ${Math.round(entry.duration)} ms`, data: { duration: round(entry.duration) }, split: false });
+      for (const entry of list.getEntries()) events.push({ t: round(entry.startTime - t0), kind: 'longtask', detail: `long task of ${Math.round(entry.duration)} ms`, data: { duration: round(entry.duration) }, split: false });
     })
     : null;
   longTasks?.observe({ type: 'longtask', buffered: false });
 
   const stopFrames = ctx.onFrame(onFrame);
   const stopEvents = ctx.onEvent(onEvent);
-  snapshot('início');
+  snapshot('start');
 
   const recording: Recording = {
     startedAt: new Date().toISOString(),
@@ -208,7 +208,7 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
     recording,
     pause() {
       if (state !== 'recording') return;
-      ctx.emit('rec.pause', 'gravação pausada');
+      ctx.emit('rec.pause', 'recording paused');
       state = 'paused';
       pausedSince = now();
     },
@@ -217,12 +217,12 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
       pausedTotal += now() - pausedSince;
       state = 'recording';
       nextGap = true;
-      ctx.emit('rec.resume', 'gravação retomada');
+      ctx.emit('rec.resume', 'recording resumed');
     },
     stop(reason) {
       if (state === 'stopped') return;
       if (state === 'paused') pausedTotal += now() - pausedSince;
-      ctx.emit('rec.stop', `gravação parada (${reason})`);
+      ctx.emit('rec.stop', `recording stopped (${reason})`);
       endMs = round(now());
       stopReason = reason;
       state = 'stopped';
@@ -234,7 +234,7 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
       if (code) window.setTimeout(() => onStop(recording), 600); else onStop(recording);
     },
     mark(name) {
-      ctx.emit('rec.marker', name.trim() || 'marcador');
+      ctx.emit('rec.marker', name.trim() || 'marker');
     },
   };
   return handle;

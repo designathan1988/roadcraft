@@ -1,5 +1,6 @@
 import {
   Group,
+  Vector3,
   type BufferGeometry,
   type Frustum,
   type InstancedMesh,
@@ -25,10 +26,32 @@ export function yawMatrixInto(out: Float32Array | number[], at: number, px: numb
   out[at + 12] = px; out[at + 13] = py; out[at + 14] = pz; out[at + 15] = 1;
 }
 
-/** A thing turned about the up axis: its place in the scene's frame (x, y, z), its yaw and its scale on three axes (7 floats, not 12). */
+/**
+ * THE NEAR SQUARE: the world cells round the eye whose things are drawn by the layers' near cells (`propCells.ts`), x and y the eye's
+ * cell, z how many cells it reaches each way (-1: none). A thing of a far batch standing in it is not drawn (its pose's eighth float).
+ */
+export const NEAR_SQUARE = { value: new Vector3(0, 0, -1) };
+
+/** A far batch's cell (`propCells.ts`) as a pose's eighth float: exact in float32 for |column|, |row| < 2048 (524 km of 256 m cells). */
+export const NEAR_CODE_SPAN = 4096;
+export const nearCode = (cx: number, cy: number): number => (cx + NEAR_CODE_SPAN / 2) * NEAR_CODE_SPAN + (cy + NEAR_CODE_SPAN / 2);
+/** The eighth float of a thing drawn wherever it stands (never by a far batch). */
+export const NEVER_NEAR = -1;
+
+/** A thing turned about the up axis: its place in the scene's frame (x, y, z), its yaw, its scale on three axes, and the cell whose near drawing hides it (8 floats, not 12). */
 export const YAW_POSE: PoseFormat = {
-  stride: 7,
+  stride: 8,
   key: 'yaw',
+  pars: /* glsl */ 'uniform vec3 uNearSquare;',
+  uniforms: { uNearSquare: NEAR_SQUARE },
+  // A far batch's thing in the near square (`nearCode`, -1 none) is drawn by the near cells, not here: every vertex at one point.
+  guard: /* glsl */ `
+  if (b.w >= 0.0) {
+    float column = floor(b.w / ${NEAR_CODE_SPAN.toFixed(1)});
+    vec2 cell = vec2(column, b.w - column * ${NEAR_CODE_SPAN.toFixed(1)}) - ${(NEAR_CODE_SPAN / 2).toFixed(1)};
+    vec2 off = abs(cell - uNearSquare.xy);
+    if (max(off.x, off.y) <= uNearSquare.z) poseHidden = true;
+  }`,
   // `yawMatrixInto`: a = x, y, z, yaw; b = the scale on three axes.
   glsl: /* glsl */ `
   float y = sin(a.w / 2.0);
@@ -105,10 +128,10 @@ export class RunBuilder {
     for (let i = 0; i < this.format.stride; i++) poses.push(pose[i]!);
   }
 
-  /** One instance turned about the up axis (`YAW_POSE`): its place in the scene's frame, its yaw, its scale on three axes, its largest scale and tint. */
+  /** One instance turned about the up axis (`YAW_POSE`): its place in the scene's frame, its yaw, its scale on three axes, its largest scale and tint; drawn wherever it stands. */
   turned(store: number, x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number, scale: number, tint?: Tint): void {
     if (this.format !== YAW_POSE) throw new Error('RunBuilder.turned: the layer keeps another pose');
-    this.listOf(store, scale, tint).push(x, y, z, yaw, sx, sy, sz);
+    this.listOf(store, scale, tint).push(x, y, z, yaw, sx, sy, sz, NEVER_NEAR);
   }
 
   build(): Run {
@@ -159,7 +182,7 @@ export interface InstanceRuns {
 }
 
 /** A store as its kind of the cells: its own mesh first, then the ones drawn with it. */
-const kindOf = (spec: RunStore): KindSpec => ({
+export const kindOf = (spec: RunStore): KindSpec => ({
   tinted: spec.tinted,
   ...(spec.levels ? { levels: spec.levels } : {}),
   meshes: [{

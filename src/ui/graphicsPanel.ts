@@ -2,7 +2,7 @@ import { onLanguageChange, t } from './i18n';
 
 /** THE GRAPHICS OPTIONS: a dialog of choices, each applied to the running game as it is picked (`graphicsWiring.ts`). */
 
-export type PresetName = 'low' | 'medium' | 'high' | 'ultra';
+export type PresetName = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
 
 export interface GraphicsChoices {
   readonly preset: PresetName;
@@ -28,7 +28,7 @@ export interface GraphicsPanelDeps {
   gpu(): string;
 }
 
-const PRESETS: readonly PresetName[] = ['low', 'medium', 'high', 'ultra'];
+const PRESETS: readonly PresetName[] = ['auto', 'low', 'medium', 'high', 'ultra'];
 const SHADOWS = [0, 1024, 2048, 4096] as const;
 const FPS = [0, 30, 60, 120, 144] as const;
 

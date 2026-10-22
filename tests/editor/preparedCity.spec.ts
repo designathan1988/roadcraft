@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prepareCity, preparedCity } from '@editor/preparedCity';
+import { openedBuildings, prepareCity, preparedCity } from '@editor/preparedCity';
 import { generateBody } from '@world/buildings/blueprints';
 import { refOf } from '@world/buildings/recordTable';
 import type { Building } from '@world/buildings/types';
@@ -16,24 +16,27 @@ function city(): SerializedDoc {
 }
 
 describe('a city prepared off the page', () => {
-  it('opens the very buildings the plain map opens, each a row of one shared table, adopted by the page\'s document as they are', () => {
+  it('opens the very buildings the plain map opens, read from one shared table when asked, the table the document\'s own', () => {
     const plain = new RoadDoc();
     plain.replaceFromJSON(city());
     const { data, buildings } = prepareCity(city());
     // Posted with no building objects: the table alone carries them.
     expect(data.buildings).toEqual([]);
     const opened = preparedCity(data, buildings);
-    expect(opened.prepared).toBe(true);
+    expect(opened.table).toBe(buildings);
+    expect(openedBuildings(opened)).toBe(3);
     const doc = new RoadDoc();
-    doc.replaceFromJSON(opened.data, { preparedBuildings: opened.prepared });
+    doc.replaceFromJSON(opened.data, { buildingTable: opened.table!, whole: true });
     const read = [...doc.buildings.all()];
     expect(JSON.stringify(read)).toBe(JSON.stringify([...plain.buildings.all()]));
     expect(read.map((b) => b.id)).toEqual([1, 2, 3]);
-    // The records read from the table are the document's own (not walked and copied again), each knowing its row: no table of its own made for a job.
-    expect(read.every((b, k) => b === (opened.data.buildings as unknown as Building[])[k])).toBe(true);
+    // The same object while it is held (read again by id or by a walk), each knowing its row: no table of its own made for a job.
+    expect(read.every((b) => doc.buildings.get(b.id) === b)).toBe(true);
     expect(new Set(read.map((b) => refOf(b).buffer))).toEqual(new Set([buildings]));
     // Their members alike shared, as the page's interning shares them.
     expect(read[0]!.volumes.length).toBeGreaterThan(0);
     expect(read[0]!.volumes).toBe(read[1]!.volumes);
+    // The simulation is sent the table itself, nothing decoded for it.
+    expect(doc.buildings.sections().base).toBe(buildings);
   });
 });

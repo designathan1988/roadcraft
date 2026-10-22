@@ -96,6 +96,8 @@ async function runOnce(report) {
     await session.send('Emulation.setCPUThrottlingRate', { rate: plan.cpu });
     console.log(`CPU ${plan.cpu}x slower (emulated)`);
   }
+  // The page's stored values before the game reads any (`plan.storage`, key -> text): a graphics tier pinned ("roadcraft.quality": "ultra"), so the automatic tier does not move under a run's pictures.
+  if (plan.storage && !page.desktop) await page.addInitScript((pairs) => { for (const [k, v] of Object.entries(pairs)) window.localStorage.setItem(k, v); }, plan.storage);
   try {
     await steps(page, report);
   } catch (err) {
@@ -206,10 +208,11 @@ async function steps(page, report) {
   }), n);
 
   // A STEP THAT NEVER ENDS (the page stuck or gone): after LOOK_STALL_MS (60 s by default) with no step ended, 5 s of the page's CPU profile taken on a session of its own, its heap, and the run ended - the stall is the defect, never waited out.
-  const stall = { at: Date.now(), i: -1, step: '' };
+  // DO NOT judge a step by 60 s when it says how long it may take ("until" with a `timeout`): a 70 000-building city is grown for ~50 s in a worker, the page rightly waiting, and the watchdog closed the run as a stall (2026-10-22).
+  const stall = { at: Date.now(), i: -1, step: '', ms: 0 };
   const stallMs = Number(process.env.LOOK_STALL_MS ?? 60_000);
   const watchdog = setInterval(async () => {
-    if (Date.now() - stall.at < stallMs) return;
+    if (Date.now() - stall.at < Math.max(stallMs, stall.ms)) return;
     clearInterval(watchdog);
     console.log(`STALLED at step ${stall.i} (${stall.step}) for ${Math.round((Date.now() - stall.at) / 1000)} s`);
     // Which of Chrome's processes is working (the page's renderer, the GPU's): CPU seconds of each, twice 5 s apart (Windows), every call bounded.
@@ -237,12 +240,17 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
     } catch (error) { console.log(`  no profile: ${String(error)}`); }
     // DO NOT leave the headless Chrome behind (CLAUDE.md): closed, or its processes killed.
     try { await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 15_000))]); } catch { /* closed by the kill below */ }
-    execFile('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | Where-Object { $_.CommandLine -match 'headless' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"], () => process.exit(3));
+    // DO NOT kill every headless Chrome on the machine: other sessions' runs died with this one. This run's browser only, its process tree.
+    const own = browser.process?.()?.pid;
+    if (own) execFile('taskkill', ['/PID', String(own), '/T', '/F'], () => process.exit(3));
+    else process.exit(3);
   }, 5000);
   watchdog.unref?.();
   for (const [i, step] of plan.steps.entries()) {
     const line = { i, step: Object.keys(step)[0] };
     stall.at = Date.now(); stall.i = i; stall.step = JSON.stringify(step).slice(0, 80);
+    // A step's own limit and half a minute more: its own timeout says it is stuck before the watchdog does.
+    stall.ms = typeof step.timeout === 'number' ? step.timeout + 30_000 : 0;
     if (process.env.LOOK_STEPS) console.log(`step ${i}: ${JSON.stringify(step).slice(0, 120)}`);
     if (step.lookAt) await page.evaluate(([x, y, zoom]) => window.__roadcraft.lookAt(x, y, zoom), step.lookAt);
     // An exact view: centre, zoom, bearing and tilt in degrees.
@@ -419,8 +427,10 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
         const r = b.getBoundingClientRect();
         return [r.x + r.width / 2, r.y + r.height / 2];
       }, step.press);
-      if (!at) throw new Error(`no control says "${step.press}"`);
-      await page.mouse.click(at[0], at[1], { button: step.button ?? 'left' });
+      // `optional`: a control one build shows and another does not (the start menu's button, absent once the desktop opened a city itself).
+      if (!at && step.optional) console.log(`no control says "${step.press}": skipped (optional)`);
+      else if (!at) throw new Error(`no control says "${step.press}"`);
+      else await page.mouse.click(at[0], at[1], { button: step.button ?? 'left' });
     }
     else if (step.key) await page.keyboard.press(step.key);
     // A key held down for `ms` (WASD panning, a held modifier), as a hand holds it.
@@ -477,7 +487,7 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
       line.value = await page.evaluate(() => {
         const r = window.__roadcraft.memory();
         const d = window.__roadcraft.doc;
-        return { buildings: d.buildings.size, segments: d.segments.size, lots: d.lots.length, heapMB: r.heapMB, geometryMB: r.geometryMB, geometryCpuMB: r.geometryCpuMB, textureMB: r.textureMB, targetMB: r.targetMB, buildingDetailMB: r.buildingDetailMB, drawCalls: r.drawCalls, builtTriangles: r.builtTriangles, drawnTriangles: r.drawnTriangles, programs: r.programs, cpuByName: r.cpuByName.slice(0, 8) };
+        return { buildings: d.buildings.size, segments: d.segments.size, lots: d.lots.length, heapMB: r.heapMB, geometryMB: r.geometryMB, geometryCpuMB: r.geometryCpuMB, textureMB: r.textureMB, targetMB: r.targetMB, buildingDetailMB: r.buildingDetailMB, drawCalls: r.drawCalls, builtTriangles: r.builtTriangles, drawnTriangles: r.drawnTriangles, programs: r.programs, cpuByName: r.cpuByName.slice(0, 8), gpuByName: r.gpuByName };
       });
       // The heap exact after a collection (CDP Runtime.getHeapUsage), not `performance.memory`'s rounded figure.
       if (step.memory === 'exact') {

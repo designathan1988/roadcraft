@@ -118,62 +118,62 @@ export function entityInfo(ctx: LabContext, ref: EntityRef): EntityInfo {
   switch (ref.kind) {
     case 'building': {
       const b = doc?.buildings.get(ref.id) as (Record<string, unknown> & { x: number; y: number; volumes?: unknown[]; elements?: unknown[] }) | undefined;
-      if (!b) return { title: `Prédio #${ref.id} (não encontrado no documento)`, rows: [], record: null, at: null };
+      if (!b) return { title: `Building #${ref.id} (not found in the document)`, rows: [], record: null, at: null };
       const lots = doc?.lotsIn([b.x - m(60), b.y - m(60), b.x + m(60), b.y + m(60)]) ?? [];
       const lot = lots.find((l) => l.building === ref.id) ?? null;
       return {
-        title: `Prédio #${ref.id}`,
+        title: `Building #${ref.id}`,
         rows: [
-          ['uso', String(b['use'])], ['função', b['function'] ? JSON.stringify(b['function']) : null], ['posição (x, y)', `${fixed(b.x)}, ${fixed(b.y)}`],
-          ['rotação (rad)', fixed(b['rotation'] as number, 3)], ['volumes', b.volumes?.length ?? 0], ['elementos', b.elements?.length ?? 0],
-          ['térreo / andar (m)', `${fixed(b['groundHeight'] as number)} / ${fixed(b['storeyHeight'] as number)}`], ['paleta', b['palette'] as number],
-          ['desgaste', fixed(b['decay'] as number | undefined)], ['construído em (min)', b['builtAt'] as number | undefined],
-          ['lote', lot ? `#${lot.id} ${lot.use ?? ''} ${lot.density ?? ''} (${lot.corners.length} cantos)` : 'nenhum'],
+          ['use', String(b['use'])], ['function', b['function'] ? JSON.stringify(b['function']) : null], ['position (x, y)', `${fixed(b.x)}, ${fixed(b.y)}`],
+          ['rotation (rad)', fixed(b['rotation'] as number, 3)], ['volumes', b.volumes?.length ?? 0], ['elements', b.elements?.length ?? 0],
+          ['ground floor / storey (m)', `${fixed(b['groundHeight'] as number)} / ${fixed(b['storeyHeight'] as number)}`], ['palette', b['palette'] as number],
+          ['decay', fixed(b['decay'] as number | undefined)], ['built at (min)', b['builtAt'] as number | undefined],
+          ['lot', lot ? `#${lot.id} ${lot.use ?? ''} ${lot.density ?? ''} (${lot.corners.length} corners)` : 'none'],
         ],
         record: b,
-        extra: { acabamentos: b['materials'] ?? null, lote: lot },
+        extra: { finishes: b['materials'] ?? null, lot },
         at: { x: b.x, y: b.y },
       };
     }
     case 'segment': {
       const s = doc?.segment(ref.id) as (Record<string, unknown> & { a: number; b: number }) | undefined;
-      if (!s) return { title: `Rua #${ref.id} (não encontrada)`, rows: [], record: null, at: null };
+      if (!s) return { title: `Street #${ref.id} (not found)`, rows: [], record: null, at: null };
       const a = doc?.node(s.a) as { x: number; y: number } | undefined;
       const b = doc?.node(s.b) as { x: number; y: number } | undefined;
       let traffic: unknown = null;
       try { traffic = ctx.sim.segmentTraffic(ref.id as never); } catch (error) { console.warn('lab inspector: no traffic', error); }
       return {
-        title: `Rua (segmento) #${ref.id}`,
+        title: `Street (segment) #${ref.id}`,
         rows: [
-          ['tipo', s['type'] as number], ['nós a → b', `#${s.a} → #${s.b}`], ['sentido', String(s['direction'])], ['faixas', s['lanes'] as number | null],
-          ['estrutura', String(s['structure'])], ['curva', s['curve'] ? 'sim' : 'reta'], ['comprimento reto', a && b ? fixed(Math.hypot(b.x - a.x, b.y - a.y)) : null],
-          ['seção própria', s['section'] ? 'sim' : 'não'], ['estacionamento', s['parking'] ? JSON.stringify(s['parking']) : 'nenhum'], ['posição clicada (s)', fixed(ref.s)],
+          ['type', s['type'] as number], ['nodes a → b', `#${s.a} → #${s.b}`], ['direction', String(s['direction'])], ['lanes', s['lanes'] as number | null],
+          ['structure', String(s['structure'])], ['curve', s['curve'] ? 'yes' : 'straight'], ['straight length', a && b ? fixed(Math.hypot(b.x - a.x, b.y - a.y)) : null],
+          ['own section', s['section'] ? 'yes' : 'no'], ['parking', s['parking'] ? JSON.stringify(s['parking']) : 'none'], ['clicked position (s)', fixed(ref.s)],
         ],
         record: s,
-        extra: { nóA: a ?? null, nóB: b ?? null, tráfego: traffic },
+        extra: { nodeA: a ?? null, nodeB: b ?? null, traffic },
         at: a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null,
       };
     }
     case 'node': {
       const n = doc?.node(ref.id) as (Record<string, unknown> & { x: number; y: number; incident: number[] }) | undefined;
-      if (!n) return { title: `Nó #${ref.id} (não encontrado)`, rows: [], record: null, at: null };
+      if (!n) return { title: `Node #${ref.id} (not found)`, rows: [], record: null, at: null };
       return {
-        title: `Nó #${ref.id}`,
-        rows: [['posição', `${fixed(n.x)}, ${fixed(n.y)}`], ['altura própria', fixed(n['heightOffset'] as number)], ['ruas', n.incident.join(', ')], ['controle', JSON.stringify(n['control'])], ['travessia', n['crossing'] ? JSON.stringify(n['crossing']) : 'não']],
+        title: `Node #${ref.id}`,
+        rows: [['position', `${fixed(n.x)}, ${fixed(n.y)}`], ['own height', fixed(n['heightOffset'] as number)], ['streets', n.incident.join(', ')], ['control', JSON.stringify(n['control'])], ['crossing', n['crossing'] ? JSON.stringify(n['crossing']) : 'no']],
         record: n,
         at: { x: n.x, y: n.y },
       };
     }
     case 'vehicle': {
       const v = ctx.sim.vehicles.get(ref.id);
-      if (!v) return { title: `Veículo #${ref.id} (saiu da simulação)`, rows: [], record: null, at: null };
+      if (!v) return { title: `Vehicle #${ref.id} (left the simulation)`, rows: [], record: null, at: null };
       const f = v.free ?? v.frames;
       return {
-        title: `Veículo #${ref.id} (${v.archetype.id})`,
+        title: `Vehicle #${ref.id} (${v.archetype.id})`,
         rows: [
-          ['tipo', `${v.archetype.shape}${v.archetype.style ? ` / ${v.archetype.style}` : ''}`], ['cor', v.color], ['velocidade', `${(v.v * 3.6).toFixed(1)} km/h`],
-          ['posição', `${fixed(f.x)}, ${fixed(f.y)}`], ['rua', v.segment ?? '— (conector)'], ['estacionado', ctx.sim.isParked(v)], ['fora da via', v.free ? `lote ${v.free.lot ?? '—'}` : 'não'],
-          ['pessoas', `${v.people.length} de ${v.seats}`], ['seta', v.indicator], ['hodômetro', fixed(v.odometer, 0)], ['abatido', v.slain],
+          ['type', `${v.archetype.shape}${v.archetype.style ? ` / ${v.archetype.style}` : ''}`], ['colour', v.color], ['speed', `${(v.v * 3.6).toFixed(1)} km/h`],
+          ['position', `${fixed(f.x)}, ${fixed(f.y)}`], ['street', v.segment ?? '— (connector)'], ['parked', ctx.sim.isParked(v)], ['off the road', v.free ? `lot ${v.free.lot ?? '—'}` : 'no'],
+          ['people', `${v.people.length} of ${v.seats}`], ['indicator', v.indicator], ['odometer', fixed(v.odometer, 0)], ['slain', v.slain],
         ],
         record: { ...v, archetype: v.archetype },
         at: { x: f.x, y: f.y },
@@ -181,10 +181,10 @@ export function entityInfo(ctx: LabContext, ref: EntityRef): EntityInfo {
     }
     case 'person': {
       const p = ctx.sim.pedViews.find((q) => q.id === ref.id);
-      if (!p) return { title: `Pessoa #${ref.id} (saiu da vista)`, rows: [], record: null, at: null };
+      if (!p) return { title: `Person #${ref.id} (left the view)`, rows: [], record: null, at: null };
       return {
-        title: `Pessoa #${ref.id}`,
-        rows: [['posição', `${fixed(p.x)}, ${fixed(p.y)}`], ['direção (rad)', fixed(p.heading, 3)], ['velocidade', `${(p.v * 3.6).toFixed(1)} km/h`], ['pânico', !!p.panic], ['ferida', p.wound ? `${p.wound.part}${p.wound.grave ? ' (grave)' : ''}` : 'não']],
+        title: `Person #${ref.id}`,
+        rows: [['position', `${fixed(p.x)}, ${fixed(p.y)}`], ['heading (rad)', fixed(p.heading, 3)], ['speed', `${(p.v * 3.6).toFixed(1)} km/h`], ['panic', !!p.panic], ['wound', p.wound ? `${p.wound.part}${p.wound.grave ? ' (severe)' : ''}` : 'no']],
         record: p,
         at: { x: p.x, y: p.y },
       };
@@ -193,11 +193,11 @@ export function entityInfo(ctx: LabContext, ref: EntityRef): EntityInfo {
       const read = (f: () => number): string | null => { try { return fixed(f()); } catch (error) { console.warn('lab inspector: height failed', error); return null; } };
       const s = ctx.scene;
       return {
-        title: `Terreno em (${ref.x.toFixed(1)}, ${ref.y.toFixed(1)})`,
+        title: `Terrain at (${ref.x.toFixed(1)}, ${ref.y.toFixed(1)})`,
         rows: [
-          ['altura do terreno desenhado', read(() => s.terrainHeightAt(ref.x, ref.y))], ['topo do que está desenhado', read(() => s.surfaceHeightAt(ref.x, ref.y))],
-          ['chão do que é construído', read(() => s.builtGroundAt(ref.x, ref.y))], ['pavimento (NaN fora das ruas)', read(() => s.pavedHeightAt(ref.x, ref.y))],
-          ['altura da estrada resolvida', read(() => s.elevationAt(ref.x, ref.y))],
+          ['drawn terrain height', read(() => s.terrainHeightAt(ref.x, ref.y))], ['top of what is drawn', read(() => s.surfaceHeightAt(ref.x, ref.y))],
+          ['ground of what is built', read(() => s.builtGroundAt(ref.x, ref.y))], ['pavement (NaN off the streets)', read(() => s.pavedHeightAt(ref.x, ref.y))],
+          ['resolved road height', read(() => s.elevationAt(ref.x, ref.y))],
         ],
         record: { x: ref.x, y: ref.y },
         at: { x: ref.x, y: ref.y },
@@ -209,11 +209,11 @@ export function entityInfo(ctx: LabContext, ref: EntityRef): EntityInfo {
 /** An entity in one line (lists, the report). */
 export function entityLabel(ref: EntityRef): string {
   switch (ref.kind) {
-    case 'building': return `prédio #${ref.id}`;
-    case 'segment': return `rua #${ref.id}`;
-    case 'node': return `nó #${ref.id}`;
-    case 'vehicle': return `veículo #${ref.id}`;
-    case 'person': return `pessoa #${ref.id}`;
-    case 'terrain': return `terreno (${ref.x.toFixed(1)}, ${ref.y.toFixed(1)})`;
+    case 'building': return `building #${ref.id}`;
+    case 'segment': return `street #${ref.id}`;
+    case 'node': return `node #${ref.id}`;
+    case 'vehicle': return `vehicle #${ref.id}`;
+    case 'person': return `person #${ref.id}`;
+    case 'terrain': return `terrain (${ref.x.toFixed(1)}, ${ref.y.toFixed(1)})`;
   }
 }

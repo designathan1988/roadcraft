@@ -3,7 +3,7 @@ import { LineSegments, Scene } from 'three';
 
 import { createTracers, TRACER_SLOTS } from '../../src/render/playEffects';
 
-/** THE TRACERS ARE ONE DRAW AND NOTHING MADE A SHOT (`render/playEffects.ts`, F5 "efeitos ... otimizados") */
+/** THE TRACERS ARE ONE DRAW AND NOTHING MADE A SHOT (`render/playEffects.ts`, F5 "optimised effects") */
 describe('the tracers', () => {
   it('draw every shot from one set of line segments, made once', () => {
     const scene = new Scene();

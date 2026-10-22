@@ -4,7 +4,7 @@ import { icon } from '../icons';
 import type { LabContext, LabTab } from '../labTypes';
 import './optimizations.css';
 
-/** THE LAB'S OPTIMISATIONS (`render/optimizations.ts`): every optimisation the game does not make and every field of the tier's settings, grouped by system, each set alone and live to measure what it gains; "Restaurar padrão" puts the game back as it draws. Each change is an event (`opt.<id>`) the recorder marks, the ones set go into every report (`optimizations`), and the tests and the object inspector reach them through `window.__labOpt`. */
+/** THE LAB'S OPTIMISATIONS (`render/optimizations.ts`): every optimisation the game does not make and every field of the tier's settings, grouped by system, each set alone and live to measure what it gains; "Reset to default" puts the game back as it draws. Each change is an event (`opt.<id>`) the recorder marks, the ones set go into every report (`optimizations`), and the tests and the object inspector reach them through `window.__labOpt`. */
 
 /** An optimisation as the tests, the inspector and the reports read it: plain JSON. */
 interface OptRow {
@@ -64,7 +64,7 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
     drawnKey = keyOf();
     const states = control.list();
     const active = states.filter((s) => !s.isDefault);
-    summary.textContent = active.length ? `${active.length} ativa(s): ${active.map((s) => s.spec.title).join(', ')}` : 'Nenhuma ativa: o jogo como desenha hoje.';
+    summary.textContent = active.length ? `${active.length} active: ${active.map((s) => s.spec.title).join(', ')}` : 'None active: the game as it draws today.';
     const text = filter.text.trim().toLowerCase();
     const shown = states.filter((s) => (!filter.system || s.spec.system === filter.system) && (!filter.changedOnly || !s.isDefault)
       && (!filter.tag || s.spec.affects.includes(filter.tag))
@@ -81,7 +81,7 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
     if (!sections.length) {
       const none = document.createElement('p');
       none.className = 'lab-muted';
-      none.textContent = 'Nenhuma otimização com este filtro.';
+      none.textContent = 'No optimisation matches this filter.';
       sections.push(none);
     }
     list.replaceChildren(...sections);
@@ -106,7 +106,7 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
     title.title = spec.id;
     const badge = document.createElement('span');
     badge.className = `opt-badge ${state.isDefault ? 'lab-muted' : 'lab-warn'}`;
-    badge.textContent = state.isDefault ? 'padrão' : 'alterada';
+    badge.textContent = state.isDefault ? 'default' : 'changed';
     const choices = document.createElement('div');
     choices.className = 'opt-choices';
     for (const choice of spec.choices) {
@@ -132,7 +132,7 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
       field.type = 'number';
       field.min = String(min); field.max = String(max); field.step = 'any';
       field.value = shown === null ? '' : String(shown);
-      field.placeholder = 'valor';
+      field.placeholder = 'value';
       field.className = 'opt-number';
       slider.oninput = () => { field.value = slider.value; };
       slider.onchange = () => set(spec.id, Number(slider.value));
@@ -145,7 +145,7 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
     what.textContent = spec.what;
     const tradeoff = document.createElement('p');
     tradeoff.className = 'opt-tradeoff lab-muted';
-    tradeoff.textContent = `Ganho e custo esperados: ${spec.tradeoff}`;
+    tradeoff.textContent = `Expected gain and cost: ${spec.tradeoff}`;
     const affects = document.createElement('div');
     affects.className = 'opt-affects';
     for (const tag of spec.affects) {
@@ -153,7 +153,7 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
       chip.type = 'button';
       chip.className = `opt-tag${filter.tag === tag ? ' on' : ''}`;
       chip.textContent = tag;
-      chip.title = 'Mostrar só as opções que afetam isto';
+      chip.title = 'Show only the options that affect this';
       chip.onclick = () => { filter.tag = filter.tag === tag ? '' : tag; drawList(); };
       affects.appendChild(chip);
     }
@@ -163,19 +163,19 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
 
   const tab: LabTab = {
     id: 'optimizations',
-    title: 'Otimizações',
+    title: 'Optimisations',
     mount(next) {
       host = next;
       const bar = document.createElement('div');
       bar.className = 'lab-table-bar';
       search = document.createElement('input');
       search.type = 'search';
-      search.placeholder = 'Filtrar…';
+      search.placeholder = 'Filter…';
       search.value = filter.text;
       const input = search;
       input.oninput = () => { filter.text = input.value; focused = ''; drawList(); };
       const system = document.createElement('select');
-      system.append(new Option('Todos os sistemas', ''), ...(Object.keys(OPT_SYSTEM_TITLES) as OptSystem[]).map((s) => new Option(OPT_SYSTEM_TITLES[s], s)));
+      system.append(new Option('All systems', ''), ...(Object.keys(OPT_SYSTEM_TITLES) as OptSystem[]).map((s) => new Option(OPT_SYSTEM_TITLES[s], s)));
       system.value = filter.system;
       system.onchange = () => { filter.system = system.value as OptSystem | ''; drawList(); };
       const changed = document.createElement('label');
@@ -183,16 +183,16 @@ export function createOptimizationTabs(ctx: LabContext): LabTab[] {
       changedBox.type = 'checkbox';
       changedBox.checked = filter.changedOnly;
       changedBox.onchange = () => { filter.changedOnly = changedBox.checked; drawList(); };
-      changed.append(changedBox, ' só alteradas');
+      changed.append(changedBox, ' changed only');
       const reset = document.createElement('button');
       reset.type = 'button';
-      reset.append(icon('refresh'), 'Restaurar padrão');
-      reset.title = 'Todas as otimizações de volta ao jogo como desenha hoje';
+      reset.append(icon('refresh'), 'Reset to default');
+      reset.title = 'Every optimisation back to the game as it draws today';
       reset.onclick = () => { control.reset(); drawList(); };
       bar.append(search, system, changed, reset);
       const note = document.createElement('p');
       note.className = 'lab-muted';
-      note.textContent = 'O que o jogo não faz hoje e cada campo do nível gráfico, um a um: mude, meça (Gravador, GPU), volte. O primeiro valor de cada um é o jogo como está. Cada mudança é marcada nas gravações (opt.<id>). As etiquetas dizem o que cada um afeta: clique para filtrar.';
+      note.textContent = 'What the game does not do today and every field of the graphics tier, one at a time: change it, measure (Recorder, GPU), go back. The first value of each is the game as it is. Every change is marked in the recordings (opt.<id>). The tags say what each one affects: click to filter.';
       summary = document.createElement('p');
       summary.className = 'opt-summary';
       list = document.createElement('div');

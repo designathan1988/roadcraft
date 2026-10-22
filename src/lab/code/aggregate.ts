@@ -95,7 +95,7 @@ export function addTrace(agg: Aggregate, trace: ProfilerTrace, intervalMs: numbe
   const ids: FunctionId[] = trace.frames.map((f) => {
     const url = f.resourceId !== undefined ? (trace.resources[f.resourceId] ?? '') : '';
     const line = f.line ?? 0, column = f.column ?? 0;
-    const name = f.name || '(anônima)';
+    const name = f.name || '(anonymous)';
     return { key: `${name}@${url}:${line}:${column}`, url, line, column, name };
   });
   // Each stack's frames, leaf first, memoised through the parents.

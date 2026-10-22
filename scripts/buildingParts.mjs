@@ -45,8 +45,8 @@ const rows = await page.evaluate(async ({ shadows, TURNS }) => {
   return { base: med(bases), out, windows };
 }, { shadows: SHADOWS, TURNS });
 console.log(sameScene(rows.windows).line);
-console.log(`GPU p50 com tudo: ${rows.base} ms (sombras ${SHADOWS ? 'ligadas' : 'desligadas'}, pós desligado)`);
-console.log('peça'.padEnd(34), 'devolve ms', ' tri(k)', 'malhas', 'instâncias', 'vért/peça', 'projeta sombra(k)');
+console.log(`GPU p50 with everything: ${rows.base} ms (shadows ${SHADOWS ? 'on' : 'off'}, post off)`);
+console.log('part'.padEnd(34), 'saves ms', ' tri(k)', 'meshes', 'instances', 'verts/part', 'casts shadow(k)');
 for (const r of rows.out.sort((a, b) => b.saveMs - a.saveMs)) console.log(r.name.padEnd(34), String(r.saveMs).padStart(9), String(r.trisK).padStart(7), String(r.meshes).padStart(6), String(r.instances).padStart(10), String(r.vertsMax).padStart(9), String(r.castsK).padStart(10));
 writeFileSync(`test-results/buildingParts${SHADOWS ? '-shadows' : ''}.json`, JSON.stringify(rows, null, 2));
 await browser.close();

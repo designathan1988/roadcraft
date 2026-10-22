@@ -9,7 +9,7 @@ import './doctor.css';
 const PASS_COLOUR: Readonly<Record<string, string>> = {
   shadows: '#9b87f5', scene: '#2fc2ab', gtao: '#f5a524', canyon: '#ef6b5b', bloom: '#ffd166', clouds: '#6aa9ff', smaa: '#8bd17c', output: '#b9c3c8',
 };
-const fmt = (n: number): string => n.toLocaleString('pt-BR', { maximumFractionDigits: n >= 100 ? 0 : 1 });
+const fmt = (n: number): string => n.toLocaleString('en-US', { maximumFractionDigits: n >= 100 ? 0 : 1 });
 
 export function createDoctorTabs(ctx: LabContext): LabTab[] {
   const root = document.createElement('div');
@@ -18,7 +18,7 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
   let findings: Finding[] = [];
   let busy = false;
   let status = '';
-  const results = new Map<string, AbResult | 'medindo' | string>();
+  const results = new Map<string, AbResult | 'measuring' | string>();
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] => {
     const e = document.createElement(tag);
@@ -44,11 +44,11 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
     try {
       snap = await snapshot(ctx, (text) => { status = text; draw(); });
       findings = findingsOf(snap);
-      status = `medido às ${new Date().toLocaleTimeString('pt-BR')} em ${snap.frames} quadros`;
-      ctx.emit('doctor.measure', `diagnóstico: ${verdictOf(snap).bound}, ${findings.length} causas`, { verdict: verdictOf(snap), findings: findings.map((f) => f.title) });
+      status = `measured at ${new Date().toLocaleTimeString('en-US')} over ${snap.frames} frames`;
+      ctx.emit('doctor.measure', `diagnosis: ${verdictOf(snap).bound}, ${findings.length} causes`, { verdict: verdictOf(snap), findings: findings.map((f) => f.title) });
     } catch (error) {
       console.error('lab doctor: measure failed', error);
-      status = `a medida falhou: ${String(error)}`;
+      status = `the measure failed: ${String(error)}`;
     } finally {
       busy = false;
       draw();
@@ -58,18 +58,18 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
   async function test(f: Finding): Promise<void> {
     if (!f.test || busy) return;
     busy = true;
-    results.set(f.id, 'medindo');
+    results.set(f.id, 'measuring');
     draw();
     const test = f.test;
     try {
-      ctx.emit('doctor.test', `testar: ${test.label}`, { finding: f.id, values: test.values });
+      ctx.emit('doctor.test', `test: ${test.label}`, { finding: f.id, values: test.values });
       const r = await quickAb(ctx, () => ctx.effects.setMany(test.values), () => ctx.effects.setMany(test.back), (text) => { status = `${test.label}: ${text}`; draw(); });
       results.set(f.id, r);
       ctx.emit('doctor.result', `${test.label}: GPU ${r.gpuA === null || r.gpuB === null ? '—' : `${fmt(r.gpuA)} → ${fmt(r.gpuB)} ms`}, CPU ${fmt(r.cpuA)} → ${fmt(r.cpuB)} ms`, { finding: f.id, ...r });
-      status = `${test.label}: medido`;
+      status = `${test.label}: measured`;
     } catch (error) {
       console.error('lab doctor: test failed', error);
-      results.set(f.id, `falhou: ${String(error)}`);
+      results.set(f.id, `failed: ${String(error)}`);
     } finally {
       busy = false;
       draw();
@@ -80,51 +80,51 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
   function abView(r: AbResult): HTMLElement {
     const box = el('div', 'lab-doc-ab');
     const line = (label: string, a: number | null, b: number | null, noise: number, unit: string): void => {
-      if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b)) { box.appendChild(el('div', 'lab-muted', `${label}: sem medida`)); return; }
+      if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b)) { box.appendChild(el('div', 'lab-muted', `${label}: no measure`)); return; }
       const d = b - a;
       const row = el('div', 'lab-doc-ab-row');
       const margin = Math.max(noise, Math.abs(a) * 0.03);
       const noisy = Math.abs(d) <= margin;
-      const change = d < 0 ? `ganho de ${fmt(-d)} ${unit} (${fmt((-d / Math.max(a, 1e-6)) * 100)}%)` : `perda de ${fmt(d)} ${unit} (+${fmt((d / Math.max(a, 1e-6)) * 100)}%)`;
-      const verdict = noisy ? `${change} — dentro do ruído (±${fmt(margin)})` : `${change}${noise > 0 ? ` (ruído ±${fmt(noise)})` : ''}`;
+      const change = d < 0 ? `gain of ${fmt(-d)} ${unit} (${fmt((-d / Math.max(a, 1e-6)) * 100)}%)` : `loss of ${fmt(d)} ${unit} (+${fmt((d / Math.max(a, 1e-6)) * 100)}%)`;
+      const verdict = noisy ? `${change} — within noise (±${fmt(margin)})` : `${change}${noise > 0 ? ` (noise ±${fmt(noise)})` : ''}`;
       row.append(el('span', 'lab-muted', label), el('span', '', `${fmt(a)} → ${fmt(b)} ${unit}`), el('strong', noisy ? 'lab-muted' : d < 0 ? 'lab-good' : 'lab-bad', verdict));
       box.appendChild(row);
     };
     line('GPU', r.gpuA, r.gpuB, r.noiseGpu, 'ms');
     line('CPU', r.cpuA, r.cpuB, r.noiseCpu, 'ms');
-    line('Desenhos', r.drawsA, r.drawsB, 0, '');
-    line('Triângulos', r.trisA, r.trisB, 0, '');
+    line('Draws', r.drawsA, r.drawsB, 0, '');
+    line('Triangles', r.trisA, r.trisB, 0, '');
     return box;
   }
 
   function card(f: Finding): HTMLElement {
-    const c = el('article', `lab-doc-card sev-${f.severity === 'média' ? 'media' : f.severity}`);
+    const c = el('article', `lab-doc-card sev-${f.severity}`);
     const head = el('header');
     head.append(el('span', 'lab-doc-sev', f.severity), el('span', 'lab-doc-area', f.area), el('strong', '', f.title));
     const list = el('ul');
     for (const e of f.evidence) list.appendChild(el('li', '', e));
     const actions = el('div', 'lab-row');
     if (f.test) {
-      actions.appendChild(button('flask', `Testar: ${f.test.label}`, 'Mede antes, aplica, mede, desfaz e mede de novo (≈ 8 s): mostra o ganho real aqui', () => { void test(f); }, 'lab-doc-primary'));
+      actions.appendChild(button('flask', `Test: ${f.test.label}`, 'Measures before, applies, measures, undoes and measures again (≈ 8 s): shows the real gain here', () => { void test(f); }, 'lab-doc-primary'));
       const key = Object.keys(f.test.values)[0]!;
       const on = ctx.effects.snapshot()[key];
-      actions.appendChild(button('toggle', on === false ? 'Religar' : 'Desligar', 'Aplicar a mudança e deixar (marcado na gravação)', () => { ctx.effects.setMany(on === false ? f.test!.back : f.test!.values); draw(); }));
+      actions.appendChild(button('toggle', on === false ? 'Turn back on' : 'Turn off', 'Apply the change and keep it (marked in the recording)', () => { ctx.effects.setMany(on === false ? f.test!.back : f.test!.values); draw(); }));
     }
     if (f.layer) {
-      actions.appendChild(button('camera', 'Ver desenhos', 'Cada chamada de desenho desta camada no quadro capturado', () => ctx.navigate('gpu-frame', { filter: f.layer! })));
+      actions.appendChild(button('camera', 'View draws', 'Every draw call of this layer in the captured frame', () => ctx.navigate('gpu-frame', { filter: f.layer! })));
       if (f.object) {
-        actions.appendChild(button('crosshair', 'No Inspetor', 'O objeto mais pesado desta camada: geometria, material, shader, código que o cria, edição ao vivo', () => {
+        actions.appendChild(button('crosshair', 'In Inspector', 'The heaviest object of this layer: geometry, material, shader, the code that creates it, live editing', () => {
           (window as unknown as { __labInspector?: { select(o: unknown): void } }).__labInspector?.select(f.object);
           ctx.navigate('inspector', {});
         }));
       }
     }
-    if (f.pass) actions.appendChild(button('chip', 'Passes da GPU', 'O tempo de cada passe ao vivo', () => ctx.navigate('gpu', { timing: 'on' })));
-    if (f.where) actions.appendChild(button('code', 'Ver código', 'A função no perfil de CPU, com o código-fonte', () => ctx.navigate('code', { filter: f.where! })));
-    actions.appendChild(button('search', 'Investigar', 'O que é, onde está no código, o que está ligado', () => ctx.investigate({ name: f.title, category: f.area, origin: f.layer ?? f.pass ?? f.where ?? 'diagnóstico', from: 'Diagnóstico', fields: f.evidence.map((e, i) => [`evidência ${i + 1}`, e] as const) })));
+    if (f.pass) actions.appendChild(button('chip', 'GPU passes', 'Each pass\'s time, live', () => ctx.navigate('gpu', { timing: 'on' })));
+    if (f.where) actions.appendChild(button('code', 'View code', 'The function in the CPU profile, with its source code', () => ctx.navigate('code', { filter: f.where! })));
+    actions.appendChild(button('search', 'Investigate', 'What it is, where it is in the code, what is connected to it', () => ctx.investigate({ name: f.title, category: f.area, origin: f.layer ?? f.pass ?? f.where ?? 'diagnosis', from: 'Diagnosis', fields: f.evidence.map((e, i) => [`evidence ${i + 1}`, e] as const) })));
     c.append(head, list, el('p', 'lab-doc-why', f.why), actions);
     const r = results.get(f.id);
-    if (r === 'medindo') c.appendChild(el('div', 'lab-muted', 'medindo…'));
+    if (r === 'measuring') c.appendChild(el('div', 'lab-muted', 'measuring…'));
     else if (typeof r === 'string') c.appendChild(el('div', 'lab-bad', r));
     else if (r) c.appendChild(abView(r));
     return c;
@@ -157,22 +157,22 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
 
   function draw(): void {
     const top = el('div', 'lab-row lab-doc-top');
-    top.append(button('refresh', busy ? 'Medindo…' : 'Medir agora', 'Mede o quadro, cada passe da GPU, captura um quadro e amostra a CPU (≈ 5 s)', () => { void measure(); }, 'lab-doc-primary'), el('span', 'lab-muted', status));
+    top.append(button('refresh', busy ? 'Measuring…' : 'Measure now', 'Measures the frame and every GPU pass, captures a frame and samples the CPU (≈ 5 s)', () => { void measure(); }, 'lab-doc-primary'), el('span', 'lab-muted', status));
     const parts: HTMLElement[] = [top];
     if (!snap) {
-      parts.push(el('p', 'lab-muted', busy ? 'Medindo…' : 'Clique em "Medir agora": o laboratório mede sozinho e lista o que mais pesa, com o teste de cada causa.'));
+      parts.push(el('p', 'lab-muted', busy ? 'Measuring…' : 'Click "Measure now": the lab measures by itself and lists what weighs most, with a test for each cause.'));
       root.replaceChildren(...parts);
       return;
     }
     const v = verdictOf(snap);
-    const banner = el('section', `lab-doc-verdict bound-${v.bound === 'folga' ? 'ok' : v.bound === 'sem medida' ? 'none' : v.bound.toLowerCase()}`);
-    banner.append(el('h2', '', v.bound === 'GPU' ? 'Gargalo: GPU' : v.bound === 'CPU' ? 'Gargalo: CPU' : v.bound === 'folga' ? 'Sem gargalo' : 'Sem medida'), el('p', '', v.text));
+    const banner = el('section', `lab-doc-verdict bound-${v.bound === 'headroom' ? 'ok' : v.bound === 'no measure' ? 'none' : v.bound.toLowerCase()}`);
+    banner.append(el('h2', '', v.bound === 'GPU' ? 'Bottleneck: GPU' : v.bound === 'CPU' ? 'Bottleneck: CPU' : v.bound === 'headroom' ? 'No bottleneck' : 'No measure'), el('p', '', v.text));
     parts.push(banner);
 
     // Where the GPU goes: by pass, then by layer.
     if (snap.passes.length) {
       const sec = el('section', 'lab-doc-section');
-      sec.append(el('h3', '', `Onde a GPU gasta, por passe (${fmt(snap.passes.reduce((a, p) => a + p.avg, 0))} ms)`),
+      sec.append(el('h3', '', `Where the GPU spends, by pass (${fmt(snap.passes.reduce((a, p) => a + p.avg, 0))} ms)`),
         stack(snap.passes.map((p) => ({ label: p.label, value: p.avg, colour: PASS_COLOUR[p.pass] ?? '#999', onClick: () => ctx.navigate('gpu', { filter: p.label }) })), 'ms'));
       parts.push(sec);
     }
@@ -180,17 +180,17 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
     if (layers.length) {
       const sec = el('section', 'lab-doc-section');
       const total = layers.reduce((a, l) => a + l.triangles, 0) || 1;
-      sec.appendChild(el('h3', '', `Onde a GPU gasta, por camada (um quadro: ${fmt(snap.draws.length)} desenhos)`));
+      sec.appendChild(el('h3', '', `Where the GPU spends, by layer (one frame: ${fmt(snap.draws.length)} draws)`));
       const table = el('div', 'lab-doc-layers');
       for (const l of layers) {
         const row = el('button', 'lab-doc-layer');
         row.type = 'button';
-        row.title = 'Ver os desenhos desta camada';
+        row.title = 'View this layer\'s draws';
         const share = l.triangles / total;
         const bar = el('span', 'lab-doc-layer-bar');
         bar.style.width = `${Math.max(1, share * 100)}%`;
         const sw = layerSwitch(l.layer);
-        row.append(el('span', 'lab-doc-layer-name', sw ? `${sw.label} · ${l.layer}` : l.layer), el('span', 'lab-doc-layer-tris', `${(share * 100).toFixed(0)}% · ${fmt(l.triangles / 1000)} mil tri · ${l.calls} desenhos`), bar);
+        row.append(el('span', 'lab-doc-layer-name', sw ? `${sw.label} · ${l.layer}` : l.layer), el('span', 'lab-doc-layer-tris', `${(share * 100).toFixed(0)}% · ${fmt(l.triangles / 1000)} k tri · ${l.calls} draws`), bar);
         row.onclick = () => ctx.navigate('gpu-frame', { filter: l.layer });
         table.appendChild(row);
       }
@@ -200,13 +200,13 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
     if (snap.systems.length) {
       const sec = el('section', 'lab-doc-section');
       const colours = ['#2fc2ab', '#6aa9ff', '#f5a524', '#9b87f5', '#ef6b5b', '#8bd17c', '#ffd166', '#b9c3c8', '#d18bd1'];
-      sec.append(el('h3', '', `Onde a CPU gasta, por sistema do quadro (${fmt(snap.cpuMs)} ms)`),
+      sec.append(el('h3', '', `Where the CPU spends, by frame system (${fmt(snap.cpuMs)} ms)`),
         stack(snap.systems.filter(([, ms]) => ms >= 0.05).map(([k, ms], i) => ({ label: k, value: ms, colour: colours[i % colours.length]!, onClick: () => ctx.navigate('consumers', { filter: k, category: 'CPU-main' }) })), 'ms'));
       parts.push(sec);
     }
     const causes = el('section', 'lab-doc-section');
-    causes.appendChild(el('h3', '', `Causas, em ordem de peso (${findings.length})`));
-    if (!findings.length) causes.appendChild(el('p', 'lab-muted', 'Nada acima dos limiares nesta medida.'));
+    causes.appendChild(el('h3', '', `Causes, by weight (${findings.length})`));
+    if (!findings.length) causes.appendChild(el('p', 'lab-muted', 'Nothing above the thresholds in this measure.'));
     for (const f of findings) causes.appendChild(card(f));
     parts.push(causes);
     root.replaceChildren(...parts);
@@ -224,7 +224,7 @@ export function createDoctorTabs(ctx: LabContext): LabTab[] {
 
   return [{
     id: 'doctor',
-    title: 'Diagnóstico',
+    title: 'Diagnosis',
     mount(host) {
       host.appendChild(root);
       draw();

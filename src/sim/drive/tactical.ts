@@ -3,7 +3,7 @@ import type { BodyClass } from '@world/conflictPoints';
 import { m } from '@world/units';
 import type { SimWorld } from '../world';
 import { goalEnd, laneLowerBound } from '../routing/lowerBound';
-import { type SearchScratch, searchScratch } from '../routing/searchScratch';
+import { type SearchScratch, noteCapped, noteSearch, searchScratch } from '../routing/searchScratch';
 
 /** Drive v2, tactical layer: which LANE a trip is driven in. */
 
@@ -56,6 +56,7 @@ export function planTrip(
 
   const scratch = searchScratch(w);
   scratch.begin(w.graph.lanelets.size + w.graph.connectors.size);
+  const cap = noteSearch(w);
   const end = goalEnd(w, goal)!;
   const toGo = (slot: number): number => {
     let h = scratch.boundOf(slot);
@@ -68,11 +69,13 @@ export function planTrip(
   scratch.setBest(startState, 0, -1, -1);
   scratch.push(startState, 0, toGo(startSlot));
 
-  let reached = -1, reachedCost = 0;
+  let reached = -1, reachedCost = 0, expanded = 0;
   while (scratch.size) {
     const state = scratch.pop();
     const nodeCost = scratch.poppedCost;
     if (nodeCost > scratch.best(state) + 1e-9) continue;
+    // DO NOT walk the whole map for one car: past the cap there is no plan (`SEARCH_EXPANSIONS`).
+    if (++expanded > cap) { noteCapped(w); return null; }
     const nodeLane = scratch.ids[state >> 1]!;
     if (nodeLane === goal) {
       reached = state;

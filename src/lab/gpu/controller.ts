@@ -9,14 +9,14 @@ import { scanGpuObjects, type GpuObjects } from './memory';
 /** THE LAB'S GPU AREA, ITS STATE: the per-pass timing mode, the frame capture, the live counters by layer, the debug views, the programs and the GPU's objects. The tabs (`passesTab.ts`, `frameTab.ts`, `objectsTab.ts`) draw it; the report and `window.__labGpu` read it. */
 
 export const PASS_LABELS: Record<string, string> = {
-  shadows: 'Mapas de sombra',
-  scene: 'Cena (sem sombras)',
+  shadows: 'Shadow maps',
+  scene: 'Scene (no shadows)',
   gtao: 'GTAO',
-  canyon: 'Luz de cânion',
+  canyon: 'Canyon light',
   bloom: 'Bloom',
-  clouds: 'Nuvens',
+  clouds: 'Clouds',
   smaa: 'SMAA',
-  output: 'Saída',
+  output: 'Output',
 };
 export const PASS_ORDER = ['shadows', 'scene', 'gtao', 'canyon', 'bloom', 'clouds', 'smaa', 'output'];
 
@@ -115,7 +115,7 @@ export function createGpuLab(ctx: LabContext): GpuLab {
       depthPasses = null;
     }
     probe.update();
-    ctx.emit('gpu.view', `vista de depuração: ${view}`, { view });
+    ctx.emit('gpu.view', `debug view: ${view}`, { view });
     ctx.requestDraw();
   });
   probe.views = views;
@@ -131,12 +131,12 @@ export function createGpuLab(ctx: LabContext): GpuLab {
 
   const canvas = renderer.domElement;
   const onLost = (e: Event): void => {
-    contextEvents.push({ t: performance.now(), kind: 'perdido' });
-    ctx.emit('gpu.context', 'contexto WebGL perdido', { type: e.type });
+    contextEvents.push({ t: performance.now(), kind: 'lost' });
+    ctx.emit('gpu.context', 'WebGL context lost', { type: e.type });
   };
   const onRestored = (e: Event): void => {
-    contextEvents.push({ t: performance.now(), kind: 'restaurado' });
-    ctx.emit('gpu.context', 'contexto WebGL restaurado', { type: e.type });
+    contextEvents.push({ t: performance.now(), kind: 'restored' });
+    ctx.emit('gpu.context', 'WebGL context restored', { type: e.type });
   };
   canvas.addEventListener('webglcontextlost', onLost);
   canvas.addEventListener('webglcontextrestored', onRestored);
@@ -151,7 +151,7 @@ export function createGpuLab(ctx: LabContext): GpuLab {
     pending = null;
     listen();
     const tris = records.reduce((a, r) => a + r.triangles, 0);
-    ctx.emit('gpu.capture', `quadro capturado: ${records.length} desenhos, ${Math.round(tris).toLocaleString('pt-BR')} triângulos`, { draws: records.length, triangles: tris });
+    ctx.emit('gpu.capture', `frame captured: ${records.length} draws, ${Math.round(tris).toLocaleString('en-US')} triangles`, { draws: records.length, triangles: tris });
     done.resolve(lastCapture);
   };
 
@@ -206,14 +206,14 @@ export function createGpuLab(ctx: LabContext): GpuLab {
         ctx.scene.gpu.pause(true);
         timer = createPassTimer(renderer);
         probe.timer = timer;
-        ctx.emit('gpu.passTiming', 'tempo por passe ligado (cronômetro do quadro pausado)');
+        ctx.emit('gpu.passTiming', 'per-pass timing on (frame timer paused)');
         ctx.requestDraw();
       } else {
         timer?.dispose();
         timer = null;
         probe.timer = null;
         ctx.scene.gpu.pause(false);
-        ctx.emit('gpu.passTiming', 'tempo por passe desligado');
+        ctx.emit('gpu.passTiming', 'per-pass timing off');
       }
       listen();
     },

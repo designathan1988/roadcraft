@@ -1,7 +1,8 @@
+import { IdSlots, grown } from '@core/idSlots';
 import type { RoadDoc } from '@world/doc';
 import type { ChangeKind, ChangeRect, JournalReader } from '@world/changes';
 import type { BuildingId } from '@world/buildings/types';
-import { BATCH_DETAIL, BATCH_GONE, BATCH_KEPT, type BuildingSource, type TrafficBuilding } from './trafficBuildings';
+import { BATCH_DETAIL, BATCH_GONE, BATCH_KEPT, type BuildingSource, type TrafficFacts } from './trafficBuildings';
 
 /** THE BUILDINGS A READER KEEPS, IN THE STORE'S ORDER, FROM THE DIARY. */
 
@@ -10,13 +11,30 @@ class StoreOrder {
   private serial = -1;
   /** The document followed: another one is read whole. */
   private doc: RoadDoc | null = null;
-  private readonly ranks = new Map<BuildingId, number>();
+  /** Each building's rank in a column at its id's slot (`core/idSlots.ts`): DO NOT keep a `Map` entry a building of the city. */
+  private readonly slots = new IdSlots(1024);
+  private ranks = new Float64Array(16);
   private next = 0;
   /** Moves each time the order is read whole: ranks of before and after are not comparable. */
   epoch = 0;
 
+  constructor() {
+    this.slots.onGrow = (n) => { this.ranks = grown(this.ranks, n); };
+  }
+
   rank(id: BuildingId): number | undefined {
-    return this.ranks.get(id);
+    const slot = this.slots.get(id);
+    return slot < 0 ? undefined : this.ranks[slot];
+  }
+
+  private has(id: BuildingId): boolean {
+    return this.slots.get(id) >= 0;
+  }
+
+  private place(id: BuildingId): void {
+    // The slot taken first: taking it may grow the column (`onGrow`).
+    const slot = this.slots.take(id);
+    this.ranks[slot] = this.next++;
   }
 
   /** Brought up to the diary's latest entry. */
@@ -39,43 +57,43 @@ class StoreOrder {
       if (ops.length !== ids.length) return false;
       for (let k = 0; k < ids.length; k++) {
         const id = ids[k]!, op = ops[k];
-        if (op === BATCH_KEPT) { if (!this.ranks.has(id)) return false; }
-        else if (op === BATCH_GONE) this.ranks.delete(id);
-        else this.ranks.set(id, this.next++);
+        if (op === BATCH_KEPT) { if (!this.has(id)) return false; }
+        else if (op === BATCH_GONE) this.slots.delete(id);
+        else this.place(id);
       }
       return true;
     }
     switch (detail) {
       case 'added':
         for (const id of ids) {
-          if (this.ranks.has(id)) return false;
-          this.ranks.set(id, this.next++);
+          if (this.has(id)) return false;
+          this.place(id);
         }
         return true;
       case 'replaced':
         // `put`: where it stood and where it stands, the same id twice; it keeps its place.
-        return ids.every((id) => this.ranks.has(id));
+        return ids.every((id) => this.has(id));
       case 'removed':
-        for (const id of ids) this.ranks.delete(id);
+        for (const id of ids) this.slots.delete(id);
         return true;
       case 'restored':
         // `restore` over a record that stood: the same id twice, it keeps its place.
-        if (ids.length === 2 && ids[0] === ids[1]) return this.ranks.has(ids[0]!);
+        if (ids.length === 2 && ids[0] === ids[1]) return this.has(ids[0]!);
         if (ids.length !== 1) return false;
         // One id: taken away if it stood, else put back, last.
-        if (this.ranks.has(ids[0]!)) this.ranks.delete(ids[0]!);
-        else this.ranks.set(ids[0]!, this.next++);
+        if (this.has(ids[0]!)) this.slots.delete(ids[0]!);
+        else this.place(ids[0]!);
         return true;
       default:
         return false;
     }
   }
 
-  /** @rebuild The order read whole: at the first look, or when the diary cannot say. */
+  /** @rebuild The order read whole: at the first look, or when the diary cannot say. DO NOT decode every record for its id: the ids alone (`TrafficBuildings.ids`). */
   private reread(w: BuildingSource): void {
-    this.ranks.clear();
+    this.slots.clear();
     this.next = 0;
-    for (const b of w.buildings.all()) this.ranks.set(b.id, this.next++);
+    for (const id of w.buildings.ids()) this.place(id);
     this.epoch++;
   }
 }
@@ -108,7 +126,8 @@ export class BuildingsInOrder implements JournalReader {
   private list: BuildingId[] = [];
   private epoch = -1;
 
-  constructor(private readonly keep: (b: TrafficBuilding) => boolean) {}
+  /** `keep`: asked of a building's facts, never its traffic record (`TrafficBuildings.facts`: the worker works no record out for it). */
+  constructor(private readonly keep: (b: TrafficFacts) => boolean) {}
 
   /** The kept buildings' ids, in the store's order. */
   get ids(): readonly BuildingId[] {
@@ -156,7 +175,7 @@ export class BuildingsInOrder implements JournalReader {
       for (const id of ids) this.unfile(id);
       if (order.epoch !== this.epoch) this.resort();
       for (const id of ids) {
-        const b = w.buildings.get(id);
+        const b = w.buildings.facts(id);
         if (b && this.keep(b)) this.file(id, order.rank(id)!);
       }
     }
@@ -175,7 +194,7 @@ export class BuildingsInOrder implements JournalReader {
     }
     const come: BuildingId[] = [];
     for (const id of ids) {
-      const b = w.buildings.get(id);
+      const b = w.buildings.facts(id);
       if (b && this.keep(b)) { come.push(id); this.filedAt.set(id, order.rank(id)!); }
     }
     if (come.length) {
@@ -224,10 +243,10 @@ export class BuildingsInOrder implements JournalReader {
   private reread(w: BuildingSource): void {
     this.filedAt.clear();
     this.list = [];
-    for (const b of w.buildings.all()) {
-      if (!this.keep(b)) continue;
+    w.buildings.eachFacts((b) => {
+      if (!this.keep(b)) return;
       this.filedAt.set(b.id, this.order.rank(b.id)!);
       this.list.push(b.id);
-    }
+    });
   }
 }

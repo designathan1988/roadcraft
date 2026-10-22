@@ -1,5 +1,7 @@
 import type { ChangeLog } from '@core/changeLog';
 import { Digest } from '@core/digest';
+import { IdSlots } from '@core/idSlots';
+import { RunPool } from '@core/runPool';
 import type { Vec2 } from '@core/vec2';
 import type { BuildingId } from '@world/buildings/types';
 import type { RoadDoc } from '@world/doc';
@@ -52,6 +54,20 @@ const FRONTAGE_REACH = m(8);
 const KERB_CELL = m(64);
 const kerbCell = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
 
+/** The streets of the book whose reach meets the rectangle, found by their cells (not every street of the map), in id order. */
+export function kerbStreetsIn(book: KerbBook, x0: number, y0: number, x1: number, y1: number): SegmentId[] {
+  const out = new Set<SegmentId>();
+  for (let i = Math.floor(x0 / KERB_CELL); i <= Math.floor(x1 / KERB_CELL); i++) {
+    for (let j = Math.floor(y0 / KERB_CELL); j <= Math.floor(y1 / KERB_CELL); j++) {
+      for (const id of book.streets.get(kerbCell(i, j)) ?? []) {
+        const r = book.reach.get(id);
+        if (r && r.x0 <= x1 && r.x1 >= x0 && r.y0 <= y1 && r.y1 >= y0) out.add(id);
+      }
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
 /** The bays along the kerbs of the streets that park (`RoadSegment.parking`), kept by street. */
 export interface KerbBook {
   /** The network, its state and the lane graph's the streets were read at (`Network.changesSince`, `SimWorld.topologyLog`). */
@@ -67,54 +83,107 @@ export interface KerbBook {
   /** Streets waiting for their tile's baked bays (`KerbReads.waits`); streets to look at again at the next follow (their tile's bays landed). */
   readonly held: Set<SegmentId>;
   readonly redo: Set<SegmentId>;
-  /** The entrances of each building that has any, and the entrances by cell. */
-  readonly entrances: Map<BuildingId, readonly Entrance[]>;
-  readonly entranceCells: Map<number, Set<BuildingId>>;
+  /** The entrances of each building that has any, and the buildings by cell (`EntranceBook`). */
+  readonly entrances: EntranceBook;
 }
 
 export function newKerbBook(): KerbBook {
   return {
     net: null, netSeen: null, lanesSeen: null, reach: new Map(), streets: new Map(), bays: new Map(), keys: new Map(), held: new Set(), redo: new Set(),
-    entrances: new Map(), entranceCells: new Map(),
+    entrances: new EntranceBook(),
   };
 }
 
-function entranceBox(list: readonly Entrance[]): { x0: number; y0: number; x1: number; y1: number } {
+interface Box { x0: number; y0: number; x1: number; y1: number }
+
+/** THE BUILDINGS' ENTRANCES AS NUMBERS IN COLUMNS (`core/idSlots.ts`), NOT THEIR RECORDS' ARRAYS: each building's run of entrances (ends x, y, x, y) in one typed array, and the ids by cell. DO NOT hold each building's `entrances` list in a `Map` with a `Set` entry a cell: ~1.2 KB of the simulation's heap a building of the city (2026-10-21). */
+export class EntranceBook {
+  private readonly slots = new IdSlots(256);
+  /** Each building's run of entrances at its slot, four numbers each (`RunPool`: a run let go stays until the dead outweigh the live). */
+  private readonly runs = new RunPool();
+  /** The buildings whose entrances' box reaches each cell (`KERB_CELL`). */
+  readonly cells = new Map<number, number[]>();
+
+  clear(): void {
+    this.slots.clear();
+    this.cells.clear();
+    this.runs.clear();
+  }
+
+  /** Whether a building's entrances kept are these (none kept: `list` is empty). */
+  same(id: BuildingId, list: readonly Entrance[]): boolean {
+    const slot = this.slots.get(id);
+    const n = slot < 0 ? 0 : this.runs.length(slot) / 4;
+    if (n !== list.length) return false;
+    const ends = this.runs.data;
+    for (let i = 0, at = slot < 0 ? 0 : this.runs.start(slot); i < n; i++, at += 4) {
+      const [p, q] = list[i]!;
+      if (ends[at] !== p.x || ends[at + 1] !== p.y || ends[at + 2] !== q.x || ends[at + 3] !== q.y) return false;
+    }
+    return true;
+  }
+
+  /** The box of a building's entrances kept; null for none. */
+  box(id: BuildingId): Box | null {
+    const slot = this.slots.get(id);
+    if (slot < 0) return null;
+    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    const ends = this.runs.data;
+    for (let at = this.runs.start(slot), end = at + this.runs.length(slot); at < end; at += 4) {
+      box.x0 = Math.min(box.x0, ends[at]!, ends[at + 2]!); box.y0 = Math.min(box.y0, ends[at + 1]!, ends[at + 3]!);
+      box.x1 = Math.max(box.x1, ends[at]!, ends[at + 2]!); box.y1 = Math.max(box.y1, ends[at + 1]!, ends[at + 3]!);
+    }
+    return box;
+  }
+
+  /** A building's entrances now (none: let go), filed by the cells their box reaches. */
+  put(id: BuildingId, list: readonly Entrance[]): void {
+    const was = this.box(id);
+    if (was) this.file(id, was, false);
+    const slot = this.slots.get(id);
+    if (slot >= 0) { this.runs.drop(slot); this.slots.delete(id); }
+    if (!list.length) return;
+    const to = this.slots.take(id);
+    let at = this.runs.put(to, list.length * 4);
+    const ends = this.runs.data;
+    for (const [p, q] of list) { ends[at++] = p.x; ends[at++] = p.y; ends[at++] = q.x; ends[at++] = q.y; }
+    this.file(id, entranceBox(list), true);
+  }
+
+  /** Each of a building's entrances kept, ends (x, y) to (x, y). */
+  each(id: BuildingId, visit: (px: number, py: number, qx: number, qy: number) => void): void {
+    const slot = this.slots.get(id);
+    if (slot < 0) return;
+    const ends = this.runs.data;
+    for (let at = this.runs.start(slot), end = at + this.runs.length(slot); at < end; at += 4) visit(ends[at]!, ends[at + 1]!, ends[at + 2]!, ends[at + 3]!);
+  }
+
+  /** Files (or unfiles) a building by the cells a box reaches. */
+  private file(id: BuildingId, box: Box, add: boolean): void {
+    for (let i = Math.floor(box.x0 / KERB_CELL); i <= Math.floor(box.x1 / KERB_CELL); i++) {
+      for (let j = Math.floor(box.y0 / KERB_CELL); j <= Math.floor(box.y1 / KERB_CELL); j++) {
+        const k = kerbCell(i, j);
+        let cell = this.cells.get(k);
+        if (add) {
+          if (!cell) this.cells.set(k, cell = []);
+          if (!cell.includes(id)) cell.push(id);
+        } else if (cell) {
+          const at = cell.indexOf(id);
+          if (at >= 0) { cell[at] = cell[cell.length - 1]!; cell.pop(); }
+          if (!cell.length) this.cells.delete(k);
+        }
+      }
+    }
+  }
+}
+
+function entranceBox(list: readonly Entrance[]): Box {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [p, q] of list) {
     x0 = Math.min(x0, p.x, q.x); y0 = Math.min(y0, p.y, q.y);
     x1 = Math.max(x1, p.x, q.x); y1 = Math.max(y1, p.y, q.y);
   }
   return { x0, y0, x1, y1 };
-}
-
-function sameEntrances(a: readonly Entrance[], b: readonly Entrance[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const [p, q] = a[i]!, [r, s] = b[i]!;
-    if (p.x !== r.x || p.y !== r.y || q.x !== s.x || q.y !== s.y) return false;
-  }
-  return true;
-}
-
-/** Files (or unfiles) a building's entrances by the cells their box reaches. */
-function fileEntrances(book: KerbBook, id: BuildingId, list: readonly Entrance[], add: boolean): void {
-  if (!list.length) return;
-  const box = entranceBox(list);
-  for (let i = Math.floor(box.x0 / KERB_CELL); i <= Math.floor(box.x1 / KERB_CELL); i++) {
-    for (let j = Math.floor(box.y0 / KERB_CELL); j <= Math.floor(box.y1 / KERB_CELL); j++) {
-      const k = kerbCell(i, j);
-      let cell = book.entranceCells.get(k);
-      if (add) {
-        if (!cell) book.entranceCells.set(k, cell = new Set());
-        cell.add(id);
-      } else if (cell) {
-        cell.delete(id);
-        if (!cell.size) book.entranceCells.delete(k);
-      }
-    }
-  }
 }
 
 /** DO NOT lay out every street of the town when the roads move: every road drawn laid out the town's kerbs again. */
@@ -135,14 +204,11 @@ export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta |
   if (delta === null) readEntrances(w, book);
   const touched: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (const id of delta?.ids ?? []) {
-    const b = w.buildings.get(id);
-    const now = b ? b.entrances : [];
-    const was = book.entrances.get(id) ?? [];
-    if (sameEntrances(was, now)) continue;
-    fileEntrances(book, id, was, false);
-    fileEntrances(book, id, now, true);
-    if (now.length) book.entrances.set(id, now); else book.entrances.delete(id);
-    if (was.length) touched.push(entranceBox(was));
+    const now = w.buildings.entrances(id);
+    if (book.entrances.same(id, now)) continue;
+    const was = book.entrances.box(id);
+    book.entrances.put(id, now);
+    if (was) touched.push(was);
     if (now.length) touched.push(entranceBox(now));
   }
   const whole = net === null || lanes === null;
@@ -221,13 +287,8 @@ function sameBays(a: readonly Bay[], b: readonly Bay[]): boolean {
 /** @rebuild Every building's entrances, read whole: the first look, or when the diary cannot say what changed. */
 function readEntrances(w: KerbWorld, book: KerbBook): void {
   book.entrances.clear();
-  book.entranceCells.clear();
-  for (const b of w.buildings.all()) {
-    const list = b.entrances;
-    if (!list.length) continue;
-    book.entrances.set(b.id, list);
-    fileEntrances(book, b.id, list, true);
-  }
+  // By id and entrances alone (`TrafficBuildings.eachEntrances`): DO NOT work out every building's traffic record for them.
+  w.buildings.eachEntrances((id, list) => { if (list.length) book.entrances.put(id, list); });
 }
 
 /** @rebuild The streets that park, read whole: the first look, a map opened, or roads further behind than the logs remember. */
@@ -280,17 +341,16 @@ function entrancesFacing(book: KerbBook, r: { x0: number; y0: number; x1: number
   const ids = new Set<BuildingId>();
   for (let i = Math.floor(r.x0 / KERB_CELL); i <= Math.floor(r.x1 / KERB_CELL); i++) {
     for (let j = Math.floor(r.y0 / KERB_CELL); j <= Math.floor(r.y1 / KERB_CELL); j++) {
-      for (const id of book.entranceCells.get(kerbCell(i, j)) ?? []) ids.add(id);
+      for (const id of book.entrances.cells.get(kerbCell(i, j)) ?? []) ids.add(id as BuildingId);
     }
   }
   const out: Entrance[] = [];
   for (const id of [...ids].sort((a, b) => rank(a) - rank(b))) {
     // Those `frontagesOn` passes over (the same test on the same box) left out: a lot of the next tile in the cell is no part of the street's key.
-    for (const e of book.entrances.get(id)!) {
-      const [p, q] = e;
-      if (Math.max(p.x, q.x) < r.x0 || Math.min(p.x, q.x) > r.x1 || Math.max(p.y, q.y) < r.y0 || Math.min(p.y, q.y) > r.y1) continue;
-      out.push(e);
-    }
+    book.entrances.each(id, (px, py, qx, qy) => {
+      if (Math.max(px, qx) < r.x0 || Math.min(px, qx) > r.x1 || Math.max(py, qy) < r.y0 || Math.min(py, qy) > r.y1) return;
+      out.push([{ x: px, y: py }, { x: qx, y: qy }]);
+    });
   }
   return out;
 }

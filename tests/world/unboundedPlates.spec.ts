@@ -128,7 +128,9 @@ describe('the ground of the map', () => {
     // At the map's north-east corner: the plates round it on the map, none past its edge.
     const x = MAP_HALF - m(300), y = MAP_HALF - m(200);
     for (let frame = 0; frame < 12; frame++) atlas.focus!(x, y, m(300));
-    const under = `${PLATE_SIZE * 2},${PLATE_SIZE * 2}`;
+    // The plate under the corner: the last plate centre inside the map (2 on the 10-tile map, 3 on the 14-tile one).
+    const last = Math.round((MAP_HALF - PLATE_SIZE / 2) / PLATE_SIZE) * PLATE_SIZE;
+    const under = `${last},${last}`;
     expect(seen.live.has(under)).toBe(true);
     const far = [...seen.live].filter((k) => k !== '0,0');
     expect(far.length).toBeGreaterThan(0);
@@ -138,9 +140,10 @@ describe('the ground of the map', () => {
       const [cx, cy] = k.split(',').map(Number) as [number, number];
       expect(onMap(cx, cy), `plate ${k} past the map's edge`).toBe(true);
     }
-    // The far ground is the map's 5 x 5 plates, wherever the camera.
+    // The far ground is the map's plates round the camera, and coarser nodes of 2 x 2 plates far from it (`farGround.ts` farNodesFor): on the 10-tile map all 25 plates, on the 14-tile map the far corner's four in one node.
     const ring = [...seen.book!.plates.values()];
-    expect(ring).toHaveLength(25);
+    expect(ring.length).toBeGreaterThanOrEqual(25);
+    expect(ring.length).toBeLessThanOrEqual((Math.round((2 * MAP_HALF) / PLATE_SIZE)) ** 2);
     for (const p of ring) expect(onMap(p.cx, p.cy)).toBe(true);
     // A read far away makes no plate.
     const made = seen.made;
@@ -159,7 +162,7 @@ describe('the ground of the map', () => {
     for (let frame = 0; frame < 12; frame++) atlas.focus!(m(100), m(-50), m(300));
     gpuLedger.cap = cap;
     for (const k of seen.live) expect(near(k, 0, 0, PLATE_SIZE), `plate ${k} kept with no room`).toBe(true);
-    expect(seen.book!.plates.size).toBe(25);
+    expect(seen.book!.plates.size).toBe((Math.round((2 * MAP_HALF) / PLATE_SIZE)) ** 2);
     atlas.dispose();
   });
 
@@ -259,10 +262,10 @@ describe('the ground of the map', () => {
     seen.made = 0;
     const atlas = createFlatAtlas(1);
     for (let frame = 0; frame < 30; frame++) atlas.focus!(0, 0, m(5_000));
-    // Nothing in full but the first plate; the far ground the map's 25 plates.
+    // Nothing in full but the first plate; the far ground the map's plates (25 on the 10-tile map, 49 on the 14-tile one).
     expect([...seen.live]).toEqual(['0,0']);
     expect(seen.made).toBe(1);
-    expect(seen.book!.plates.size).toBe(25);
+    expect(seen.book!.plates.size).toBe((Math.round((2 * MAP_HALF) / PLATE_SIZE)) ** 2);
     atlas.dispose();
   });
 });

@@ -34,6 +34,18 @@ export interface BlockLevels {
   bring?: (() => Promise<GeometryArrays | null>) | null;
   /** Whether `bring` is under way: the block shows the full level when it lands. */
   bringing?: boolean;
+  /** The last look it met the view at (`roadResidency.ts` updateRoadLevels): the least recently seen go first past the budget. */
+  seenAt?: number;
+  /** Its full level's bytes on the GPU as last measured: what bringing it near costs. */
+  nearBytes?: number;
+  /** The road block's cell it lies in (`roadSurfaces.ts` CHUNK, the network's far level's cell, `networkFarRoads.ts`): its levels go and come back with the cell's (`roadResidency.ts`). */
+  cell?: string;
+  /** Whether its far level is being made (`roadSurfaces.ts`): its cell keeps its levels till it lands. */
+  pending?: boolean;
+  /** Whether its far level was let go with its cell's, the network's far level drawing the cell (`roadResidency.ts` dropCell). */
+  dropped?: boolean;
+  /** Its far level made again off the page (the full level's arrays from the kept tiles, simplified by the workers): what a dropped cell is brought back with. */
+  remake?: (() => Promise<BlockArrays | null>) | null;
 }
 
 export const LOD_KEY = 'lod';

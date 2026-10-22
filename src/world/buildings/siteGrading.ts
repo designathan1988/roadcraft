@@ -1,5 +1,6 @@
 import type { GroundAt, PavedAt } from './foundation';
 import { Digest } from '@core/digest';
+import { IdSlots, grown } from '@core/idSlots';
 import { type Pad, type TownPads, buildingPads, padLevelAt, padOf } from './pads';
 import type { BuildingFloors } from './floors';
 import type { GroundSince } from './cameraSolids';
@@ -42,8 +43,20 @@ export function siteGrading(
   let padsCache: TownPads | null = null;
   /** Each building's platform by record, while the roads and the land stand (`buildingPads`). */
   let padsKnown = new WeakMap<Building, Pad | null>();
-  /** The buildings the ground was last graded for, by id: their record then, its site as text, and the box their bank reaches. */
-  const graded = new Map<number, { ref: Building; site: number; box: SiteBox }>();
+  /** The buildings the ground was last graded for, by id: its site digested, and the box their bank reaches, in columns at its slot (`core/idSlots.ts`). DO NOT keep the record here: every building of the map was held decoded (the table decodes a record while it is read, `tableRows.ts`); nor an object a building in a `Map`. */
+  const graded = new IdSlots(1024);
+  let gradedSite = new Float64Array(16), gradedBox = new Float64Array(64), gradedMark = new Uint8Array(16);
+  graded.onGrow = (n) => { gradedSite = grown(gradedSite, n); gradedBox = grown(gradedBox, n * 4); gradedMark = grown(gradedMark, n); };
+  const boxAt = (slot: number): SiteBox => [gradedBox[slot * 4]!, gradedBox[slot * 4 + 1]!, gradedBox[slot * 4 + 2]!, gradedBox[slot * 4 + 3]!];
+  /** The store the platforms are worked out again from (`buildingPads` resolve): the last one graded. */
+  let store: BuildingStore | null = null;
+  /** A building's platform worked out again by its id (the town keeps a bounded number of them, `pads.ts` townPads). */
+  const resolvePad = (id: number): Pad | null => {
+    const b = store?.get(id as BuildingId);
+    if (!b) return null;
+    if (!padsKnown.has(b)) padsKnown.set(b, padOf(b, groundAt, pavedAt, apron, floorOf));
+    return padsKnown.get(b) ?? null;
+  };
   /** What a building's site is graded from, as a digest (`core/digest.ts`), once per record */
   const siteKey = new WeakMap<Building, number>();
   const siteKeyOf = (b: Building): number => {
@@ -78,32 +91,36 @@ export function siteGrading(
   const changedSites = (buildings: BuildingStore): SiteBox[] | null => {
     const boxes: SiteBox[] = [];
     const take = (q: SiteBox): void => { boxes.push(q); };
-    const grade = (b: Building): void => {
+    store = buildings;
+    const grade = (b: Building): number => {
       const was = graded.get(b.id);
-      if (was?.ref === b) return;
       const site = siteKeyOf(b);
       // A new record of the same site (aged, renamed): nothing to grade.
-      if (was && was.site === site) { graded.set(b.id, { ref: b, site, box: was.box }); return; }
-      if (was) take(was.box);
+      if (was >= 0 && gradedSite[was] === site) return was;
+      if (was >= 0) take(boxAt(was));
       const now = bankBox(b);
       take(now);
-      graded.set(b.id, { ref: b, site, box: now });
+      const slot = graded.take(b.id);
+      gradedSite[slot] = site;
+      for (let k = 0; k < 4; k++) gradedBox[slot * 4 + k] = now[k]!;
+      return slot;
     };
     const ids = buildings.changedFor(sitesRead);
     if (ids) {
       for (const id of ids) {
         const b = buildings.get(id);
         if (b) grade(b);
-        else { const was = graded.get(id); if (was) { take(was.box); graded.delete(id); } }
+        else { const was = graded.get(id); if (was >= 0) { take(boxAt(was)); graded.delete(id); } }
       }
       return boxes.length ? boxes : null;
     }
-    const seen = new Set<number>();
-    for (const b of buildings.all()) {
-      seen.add(b.id);
-      grade(b);
-    }
-    for (const [id, was] of graded) if (!seen.has(id)) { take(was.box); graded.delete(id); }
+    // Each building graded marked; those left unmarked are gone.
+    gradedMark.fill(0);
+    // The slot taken first: grading may grow the column (`onGrow`).
+    for (const b of buildings.all()) { const slot = grade(b); gradedMark[slot] = 1; }
+    const gone: number[] = [];
+    graded.forEach((id, slot) => { if (!gradedMark[slot]) { take(boxAt(slot)); gone.push(id); } });
+    for (const id of gone) graded.delete(id);
     return boxes.length ? boxes : null;
   };
   return {
@@ -136,6 +153,7 @@ export function siteGrading(
     },
     /** @rebuild The whole town's platforms filed only the first time, after `forget`, or when the diary cannot say which buildings changed. */
     rebuild(buildings) {
+      store = buildings;
       const town = padsCache;
       const ids = buildings.changedFor(padsBuilt);
       if (town && ids) {
@@ -148,7 +166,7 @@ export function siteGrading(
           }
           town.put(id, pad);
         }
-      } else padsCache = buildings.size > 0 ? buildingPads(buildings.all(), groundAt, pavedAt, apron, padsKnown, floorOf) : null;
+      } else padsCache = buildings.size > 0 ? buildingPads(buildings.all(), groundAt, pavedAt, apron, padsKnown, floorOf, resolvePad) : null;
       refreshed.clear();
     },
     forget(buildings) {

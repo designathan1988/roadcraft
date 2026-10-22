@@ -66,7 +66,7 @@ describe('a part\'s pose', () => {
 });
 
 describe('the parts warmed at the opening', () => {
-  it('compile the shadow each part is drawn into: its posed depth, and the box levels\' own', async () => {
+  it('compile the shadow each part is drawn into: its posed depth', async () => {
     const { partWarmMeshes } = await import('@render/buildings/partWarm');
     const kit = createBuildingKit();
     const meshes = partWarmMeshes(kit);
@@ -74,10 +74,8 @@ describe('the parts warmed at the opening', () => {
       if (!mesh.castShadow) continue;
       const material = mesh.material as MeshStandardMaterial;
       const depth = mesh.customDepthMaterial;
-      if (material === kit.massingBoxes) expect(depth).toBe(kit.massBoxDepth);
-      else expect(depth, mesh.name || material.name).toBe(partPoseDepth(material));
+      expect(depth, mesh.name || material.name).toBe(partPoseDepth(material));
     }
-    expect(meshes.some((m) => m.material === kit.massingBoxes)).toBe(true);
     kit.dispose();
   });
 });

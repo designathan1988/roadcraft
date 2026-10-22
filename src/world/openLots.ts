@@ -31,11 +31,11 @@ export class OpenLots {
   /** Each slot's place in the store's order (`LotStore.orderOf`) when it was taken. */
   private slotOrder: number[] = [];
   private readonly slotOf = new Map<number, number>();
-  /** Each zoned lot's slot, by the cell of its centre; and the cell each slot is filed in (-1: none). */
-  private readonly cells = new Map<number, Set<number>>();
+  /** Each zoned lot's slot, by the cell of its centre; and the cell each slot is filed in (-1: none). A cell's slots in a list (a few a cell: no set's table). */
+  private readonly cells = new Map<number, number[]>();
   private cellOfSlot: number[] = [];
-  /** The slots of the lots naming a building, by its id. */
-  private readonly byBuilding = new Map<number, Set<number>>();
+  /** The slot of the lot naming a building, by its id; a list for the rare building named by more than one (DO NOT keep a set a building: 270 B a building, 2026-10-21). */
+  private readonly byBuilding = new Map<number, number | number[]>();
   private open = new Uint8Array(0);
   /** Fenwick tree of `open` over the whole room, 1-based (the slots past the last are zeros). */
   private tree = new Int32Array(1);
@@ -144,7 +144,13 @@ export class OpenLots {
     if (host.buildingsRevision() === this.seenBuildings) return;
     const entries = host.buildingsSince(this.seenBuildings);
     if (!entries || entries.some((e) => !e.ids)) { this.rebuild(refused); return; }
-    for (const e of entries) for (const id of e.ids!) for (const slot of this.byBuilding.get(id) ?? []) this.flag(slot);
+    for (const e of entries) {
+      for (const id of e.ids!) {
+        const named = this.byBuilding.get(id);
+        if (typeof named === 'number') this.flag(named);
+        else if (named) for (const slot of named.slice()) this.flag(slot);
+      }
+    }
     this.seenBuildings = host.buildingsRevision();
   }
 
@@ -153,10 +159,7 @@ export class OpenLots {
     const was = this.records[slot];
     if (was?.building !== lot.building) {
       if (was?.building !== undefined) this.unname(was.building, slot);
-      if (lot.building !== undefined) {
-        const named = this.byBuilding.get(lot.building);
-        if (named) named.add(slot); else this.byBuilding.set(lot.building, new Set([slot]));
-      }
+      if (lot.building !== undefined) this.name(lot.building, slot);
     }
     this.records[slot] = lot;
     this.file(slot, lot.use ? cellOf(lot) : -1);
@@ -174,10 +177,22 @@ export class OpenLots {
     this.holes++;
   }
 
+  /** The building `building` named by the lot of `slot` too (each slot once, in the order named: a set's). */
+  private name(building: number, slot: number): void {
+    const named = this.byBuilding.get(building);
+    if (named === undefined) this.byBuilding.set(building, slot);
+    else if (typeof named === 'number') { if (named !== slot) this.byBuilding.set(building, [named, slot]); }
+    else if (!named.includes(slot)) named.push(slot);
+  }
+
   private unname(building: number, slot: number): void {
     const named = this.byBuilding.get(building);
-    named?.delete(slot);
-    if (named?.size === 0) this.byBuilding.delete(building);
+    if (named === slot) this.byBuilding.delete(building);
+    else if (typeof named === 'object') {
+      const at = named.indexOf(slot);
+      if (at >= 0) named.splice(at, 1);
+      if (named.length === 1) this.byBuilding.set(building, named[0]!);
+    }
     if (building === this.lastId) this.lastStale = true;
   }
 
@@ -186,12 +201,14 @@ export class OpenLots {
     if (was === key) return;
     if (was >= 0) {
       const cell = this.cells.get(was)!;
-      cell.delete(slot);
-      if (cell.size === 0) this.cells.delete(was);
+      const at = cell.indexOf(slot);
+      if (at >= 0) cell.splice(at, 1);
+      if (cell.length === 0) this.cells.delete(was);
     }
     if (key >= 0) {
       const cell = this.cells.get(key);
-      if (cell) cell.add(slot); else this.cells.set(key, new Set([slot]));
+      if (!cell) this.cells.set(key, [slot]);
+      else if (!cell.includes(slot)) cell.push(slot);
     }
     this.cellOfSlot[slot] = key;
   }
@@ -242,8 +259,7 @@ export class OpenLots {
       const b = lot.building;
       const standing = b !== undefined && host.standing(b);
       if (b !== undefined) {
-        const named = this.byBuilding.get(b);
-        if (named) named.add(slot); else this.byBuilding.set(b, new Set([slot]));
+        this.name(b, slot);
         if (standing && b > this.lastId) this.lastId = b;
       }
       if (!lot.use) continue;

@@ -2,50 +2,50 @@
 (async () => {
   const { check, assert, wait } = window.__v;
   const lab = window.__lab;
-  await check('laboratório abre (F7)', () => {
+  await check('lab opens (F7)', () => {
     const p = document.querySelector('.lab-panel');
-    assert(lab && p && !p.hidden, 'janela fechada');
-    return 'aberto';
+    assert(lab && p && !p.hidden, 'window closed');
+    return 'open';
   });
-  await check('medidores de uso têm números (CPU, GPU, RAM, FPS)', async () => {
+  await check('usage meters have numbers (CPU, GPU, RAM, FPS)', async () => {
     await window.__v.frames(2500);
     const vals = [...document.querySelectorAll('.lab-meter')].map((m) => `${m.querySelector('.lab-meter-name').textContent}=${m.querySelector('.lab-meter-value').textContent}`);
-    for (const k of ['CPU', 'GPU', 'RAM', 'FPS']) assert(vals.some((v) => v.startsWith(`${k}=`) && /\d/.test(v)), `${k} sem valor: ${vals.join(' ')}`);
+    for (const k of ['CPU', 'GPU', 'RAM', 'FPS']) assert(vals.some((v) => v.startsWith(`${k}=`) && /\d/.test(v)), `${k} has no value: ${vals.join(' ')}`);
     return vals.join(' ');
   });
   for (const b of [...document.querySelectorAll('.lab-tabs .lab-tab')]) {
     const name = b.textContent;
-    await check(`aba "${name}" abre e mostra conteúdo`, async () => {
+    await check(`tab "${name}" opens and shows content`, async () => {
       b.click();
       await wait(1200);
       const body = document.querySelector('.lab-body');
       const text = body.innerText.trim();
-      assert(!/falhou ao abrir/.test(text), 'falhou ao abrir');
-      assert(text.length > 40, `conteúdo vazio (${text.length} caracteres)`);
-      return `${text.length} caracteres: ${text.slice(0, 90).replace(/\s+/g, ' ')}`;
+      assert(!/failed to open/.test(text), 'failed to open');
+      assert(text.length > 40, `empty content (${text.length} characters)`);
+      return `${text.length} characters: ${text.slice(0, 90).replace(/\s+/g, ' ')}`;
     });
   }
-  await check('clique no medidor CPU abre Consumo filtrado por CPU-main', async () => {
+  await check('clicking the CPU meter opens Consumers filtered by CPU-main', async () => {
     [...document.querySelectorAll('.lab-meter')].find((m) => m.textContent.startsWith('CPU')).click();
     await wait(1800);
     const sel = document.querySelector('.lab-body .lab-table-bar select');
-    assert(sel && sel.value === 'CPU-main', `filtro = ${sel && sel.value}`);
+    assert(sel && sel.value === 'CPU-main', `filter = ${sel && sel.value}`);
     const rows = document.querySelectorAll('.lab-body .lab-table tbody tr').length;
-    assert(rows > 0, 'sem linhas');
-    return `${rows} linhas, filtro ${sel.value}`;
+    assert(rows > 0, 'no rows');
+    return `${rows} rows, filter ${sel.value}`;
   });
-  await check('linha "sistema: drawing" abre Investigar com o código em src/main.ts', async () => {
-    lab.navigate('consumers', { category: '', filter: 'sistema: drawing' });
+  await check('row "system: drawing" opens Investigate with the code in src/main.ts', async () => {
+    lab.navigate('consumers', { category: '', filter: 'system: drawing' });
     await wait(1800);
-    const row = [...document.querySelectorAll('.lab-body .lab-table tbody tr')].find((r) => r.textContent.includes('sistema: drawing'));
-    assert(row, 'linha não encontrada');
+    const row = [...document.querySelectorAll('.lab-body .lab-table tbody tr')].find((r) => r.textContent.includes('system: drawing'));
+    assert(row, 'row not found');
     row.click();
     await wait(4000);
     const drawer = document.querySelector('.lab-investigate');
-    assert(drawer && !drawer.hidden, 'painel não abriu');
+    assert(drawer && !drawer.hidden, 'panel did not open');
     const hits = [...drawer.querySelectorAll('.lab-inv-hit strong')].map((s) => s.textContent);
-    assert(hits.some((h) => h.startsWith('src/main.ts')), `código achado: ${hits.join(', ') || 'nada'}`);
-    drawer.querySelector('button[title="Fechar"]')?.click();
+    assert(hits.some((h) => h.startsWith('src/main.ts')), `code found: ${hits.join(', ') || 'none'}`);
+    drawer.querySelector('button[title="Close"]')?.click();
     return hits.join(', ');
   });
   return JSON.stringify(window.__v.results.filter((r) => !r.ok).map((r) => r.name));

@@ -4,7 +4,7 @@ import type { BufferAttribute, BufferGeometry } from 'three';
 /** THE GPU'S BYTES IN ONE BOOK: every owner of video memory registers what it holds (bytes and triangles by class), and selection asks it before it requests (Cesium `cacheBytes`, 3DTilesRendererJS `lruCache.maxBytes`) */
 
 /** What holds video memory, by class. */
-export type GpuClass = 'building detail' | 'building facade' | 'cell masses' | 'tile masses' | 'plate masses' | 'render targets' | 'shadow maps' | `far ${string}`;
+export type GpuClass = 'building detail' | 'building facade' | 'cell masses' | 'tile masses' | 'plate masses' | 'base masses' | 'render targets' | 'shadow maps' | `far ${string}`;
 
 interface Entry { readonly cls: GpuClass; readonly bytes: number; readonly triangles: number }
 interface Sum { bytes: number; triangles: number }

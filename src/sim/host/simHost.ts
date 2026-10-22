@@ -7,7 +7,7 @@ import { SimWorld, issuesSince } from '../world';
 import { TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficChangesOf } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { Meso } from '../meso/meso';
-import { MesoMemory } from '../meso/memory';
+import { deltaTransfer } from '../meso/memory';
 import { laneGrid } from '../agents/laneGrid';
 import { useBayWorkers } from '../agents/parking';
 import { BayPool } from '../../bayPool';
@@ -87,12 +87,11 @@ export class SimHost {
   async handle(message: ToSim): Promise<void> {
     switch (message.type) {
       case 'init':
-        this.meso.setLive(message.live);
         await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient, message.bake ?? null);
         return;
-      case 'load': this.meso.setLive(message.live); this.load(message.map, message.bake ?? null); return;
+      case 'load': this.load(message.map, message.bake ?? null); return;
       // The replica made the map again by its differences (`RoadDoc.replaceWith`): the frame rebuilds what moved, the vehicles drive on (rebound where their lanes went).
-      case 'resync': this.meso.setLive(message.live); takeTrafficMap(this.doc, this.buildings, message.map); return;
+      case 'resync': takeTrafficMap(this.doc, this.buildings, message.map); return;
       case 'lanes': this.lanes = { bays: message.bays, conflicts: message.conflicts }; return;
       case 'laneLost': (message.service === 'bays' ? this.bayPool : this.conflictPool)?.lanesLost(message.why); return;
       case 'delta':
@@ -101,7 +100,7 @@ export class SimHost {
         return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
       case 'window':
-        this.meso.attach(new MesoMemory(message.meso));
+        if (message.whole) this.meso.requestWhole();
         this.meso.want(message.x, message.y, message.r);
         return;
       case 'frame': this.frame(message.wall, message.hold, message.controls); return;
@@ -174,6 +173,12 @@ export class SimHost {
     this.governor.setMax(controls.maxShare);
     if (controls.startShare !== undefined) this.governor.start(controls.startShare);
     if (!this.net.isBuilt()) this.net.rebuild();
+    // A MAP OPENING BEHIND ITS CURTAIN: nothing of its traffic is prepared or stepped until it is shown. DO NOT build its junctions, conflict pairs and bays meanwhile: they run on the page's job workers (`jobPool.ts` jobChannel), and a city of 70,000 buildings kept two of its three for ~17 s each (junctions 12.7 s, bays 4.3 s) and this worker 22 s (its parking's bays, its walkways), while the road tiles and the masses the curtain waits for queued behind them (trace of step-70k, 2026-10-22).
+    if (controls.opening) {
+      impactCasualties(sim, wall);
+      this.publish(1);
+      return;
+    }
     const held = hold;
     // DO NOT stop the clock while a tile's topology is prepared (its lanes, turns and conflict pairs, on the workers): the city runs on the graph it has meanwhile, and takes the new one when it is ready.
     const catching = this.topology.step(sim, this.net.trafficToken(), false);
@@ -265,11 +270,14 @@ export class SimHost {
     data[h + H.alpha] = alpha; data[h + H.steps] = sim.clock.lastSteps; data[h + H.stepMs] = sim.clock.lastStepMs; data[h + H.minutes] = sim.city.minutes(sim);
     Atomics.store(control, C.latest, slot);
     const parked = this.parked();
+    const meso = this.meso.takeDelta();
+    const transfer: Transferable[] = parked ? [parked.cars.buffer] : [];
+    if (meso) transfer.push(...deltaTransfer(meso));
     this.post({
       type: 'tick', slot, vehicles, peds, ...this.signals(), trains: sim.city.transit.trains().map((t) => ({ colour: t.colour, metro: t.metro, cars: t.cars })),
-      parked, stats: this.stats(), wounds: takeWounds(sim),
+      parked, meso, stats: this.stats(), wounds: takeWounds(sim),
       casualties: impactCasualties(sim, 0).filter((c) => !this.casualtiesSent.has(c) && (this.casualtiesSent.add(c), true)),
-    }, parked ? [parked.cars.buffer] : undefined);
+    }, transfer.length ? transfer : undefined);
   }
 
   /** The junctions whose heads moved (the signals' log) and those whose lights changed since the last frame. */

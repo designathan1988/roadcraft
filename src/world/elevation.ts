@@ -153,6 +153,55 @@ export interface RoadElevation extends RoadReads {
   shapeCut?(rects: readonly (readonly [number, number, number, number])[]): RoadShapeCut;
   /** How many road solves this build ran (a road solved again in a later round counts again): what an edit cost. */
   readonly solved?: number;
+  /** How many roads a scoped solve left unsolved (`SolveScope`): 0 or absent, every road is solved. */
+  readonly pending?: number;
+  /** The roads a scoped solve left unsolved, in id order: each answered as if absent until a later solve takes it. */
+  pendingRoads?(): SegmentId[];
+}
+
+/**
+ * THE ROADS A SOLVE TAKES NOW, THE OTHERS LEFT FOR LATER (`buildRoadElevation` `scope`): an opening solves the roads round its view and
+ * shows the town, the rest is solved after, a share a frame, each share from the solve before (the incremental path an edit takes).
+ * The roads not solved yet are absent from the solve: its answer is that of the network without them, and once every one is taken it
+ * is the whole solve's, bit for bit (`tests/world/elevationScope.spec.ts`). A road's heights read only its two nodes', and a node's only
+ * its roads' grade lines, so the roads well inside a region grown by a margin of a junction or two are already the whole solve's.
+ */
+export interface SolveScope {
+  /** The roads whose bounds meet this rectangle (`Network.segmentCells`). */
+  readonly region?: ChangeRect;
+  /** And these roads. */
+  readonly roads?: Iterable<SegmentId>;
+}
+
+/** The roads a scope names, those of the network only. */
+function scopeIds(net: Network, scope: SolveScope): Set<SegmentId> {
+  const out = new Set<SegmentId>(scope.region ? net.segmentCells.idsMeeting(scope.region) : []);
+  for (const id of scope.roads ?? []) if (net.ribbons.has(id)) out.add(id);
+  return out;
+}
+
+/** @rebuild Every road of the network, by id: what a scoped solve from nothing leaves but those it takes (once, at an opening). */
+function everyRoad(net: Network): SegmentId[] {
+  return [...net.ribbons.keys()];
+}
+
+/** The side of the squares the roads left are taken in (`pendingOrder`). */
+const ORDER_CELL = m(1024);
+
+/**
+ * The roads a scoped solve left, in the order to take them: a square of `ORDER_CELL` at a time, the squares nearest (`x`, `y`) first, each
+ * square's roads in id order. DO NOT take them nearest first one by one: a share was a thin ring round the last, every node on both its
+ * edges solved again with its roads (2.6 roads solved a road taken, the large city's outskirts, 2026-10-21); a square's edge is short.
+ */
+export function pendingOrder(net: Network, roads: Iterable<SegmentId>, x: number, y: number): SegmentId[] {
+  const keyed: { id: SegmentId; d: number; cell: number }[] = [];
+  for (const id of roads) {
+    const r = net.segmentCells.rectOf(id);
+    const cx = r ? Math.floor((r[0] + r[2]) / 2 / ORDER_CELL) : 0, cy = r ? Math.floor((r[1] + r[3]) / 2 / ORDER_CELL) : 0;
+    keyed.push({ id, d: r ? Math.hypot((cx + 0.5) * ORDER_CELL - x, (cy + 0.5) * ORDER_CELL - y) : Infinity, cell: (cx + 32768) * 65536 + (cy + 32768) });
+  }
+  keyed.sort((p, q) => p.d - q.d || p.cell - q.cell || p.id - q.id);
+  return keyed.map((k) => k.id);
 }
 
 
@@ -197,16 +246,21 @@ export function roadStations(xy: Float64Array, half: number, terrainAt: (x: numb
 
 /** The roads the next solve of `net` from `previous` reads the ground under (new, moved or widened, or on ground that moved: those `buildRoadElevation` cannot keep), with their lines and casings; null `previous`: every road. */
 export function roadsToRead(net: Network, terrainAt: (x: number, y: number) => number, previous: RoadElevation | null,
-  groundMoved: readonly ChangeRect[] | null = null): { readonly id: SegmentId; readonly xy: Float64Array; readonly half: number }[] {
+  groundMoved: readonly ChangeRect[] | null = null, scope: SolveScope | null = null): { readonly id: SegmentId; readonly xy: Float64Array; readonly half: number }[] {
   const flat = terrainAt === FLAT_GROUND;
+  // Level ground: the solve reads nothing under a road (`readStations`). DO NOT list a large city's every road for a job that reads nothing.
+  if (flat) return [];
   const memo = previous ? memos.get(previous) : undefined;
   const from = memo && (memo.terrainAt === FLAT_GROUND) === flat ? memo : null;
   const delta = from && net.isBuilt() ? net.changesSince(from.state) : null;
   const touched = new Set<SegmentId>();
+  const named = scope ? scopeIds(net, scope) : null;
   if (delta) {
     for (const id of delta.segments) touched.add(id);
     for (const node of delta.nodes) for (const id of net.doc.node(node)?.incident ?? []) touched.add(id);
-  } else for (const id of net.ribbons.keys()) touched.add(id);
+    // The roads the solve before left for later: those the scope names, or every one.
+    for (const id of from!.pending ?? []) if (!named || named.has(id)) touched.add(id);
+  } else for (const id of named ?? net.ribbons.keys()) touched.add(id);
   const regrounded = from && groundMoved ? new Set(net.segmentCells.idsMeetingAny(groundMoved)) : null;
   for (const id of regrounded ?? []) touched.add(id);
   const out: { id: SegmentId; xy: Float64Array; half: number }[] = [];
@@ -231,6 +285,8 @@ export function buildRoadElevation(
   hints?: ReadonlyMap<SegmentId, StationHint>,
   /** Where the ground moved since `previous` (a stroke of the terrain): the roads there solved again on the ground as it is, the others kept (DO NOT solve every road of the region again after a stroke). Null: `previous` is on the same ground. */
   groundMoved: readonly ChangeRect[] | null = null,
+  /** The roads to solve now of those not solved yet (`SolveScope`), the others left for a later solve; null: every road. */
+  scope: SolveScope | null = null,
 ): RoadElevation {
   const started = performance.now();
   const flat = terrainAt === FLAT_GROUND;
@@ -268,14 +324,26 @@ export function buildRoadElevation(
   /** The roads the change reached, and the nodes whose inputs are read again. */
   const touched = new Set<SegmentId>();
   const keyed = new Set<NodeId>();
+  /** The roads a scope names (null: every road). */
+  const named = scope ? scopeIds(net, scope) : null;
   if (delta) {
     for (const id of delta.segments) touched.add(id);
     for (const node of delta.nodes) {
       keyed.add(node);
       for (const id of net.doc.node(node)?.incident ?? []) touched.add(id);
     }
+    // The roads the solve reused left for later: taken now where the scope names them, all of them with no scope.
+    for (const id of reuse!.pending ?? []) if (!named || named.has(id)) touched.add(id);
   } else {
-    for (const id of net.ribbons.keys()) touched.add(id);
+    for (const id of named ?? net.ribbons.keys()) touched.add(id);
+  }
+  /** The roads still left for later: of those the solve reused left (or, from nothing, of every road), the ones not taken now. */
+  let pending: Set<SegmentId> | null = null;
+  if (named) {
+    for (const id of (reuse ? reuse.pending : everyRoad(net)) ?? []) {
+      if (touched.has(id) || !net.ribbons.has(id) || !net.doc.segment(id)) continue;
+      (pending ??= new Set()).add(id);
+    }
   }
   // The roads the ground moved under: solved again, their ground read again (never kept from the solve before).
   const regrounded = reuse && groundMoved ? new Set(net.segmentCells.idsMeetingAny(groundMoved)) : null;
@@ -318,12 +386,13 @@ export function buildRoadElevation(
       if (net.transitions.has(node)) return PLATE_MARGIN;
       // The plate is flat over the junction's whole footprint, its footways and verges included (`Network.plateReach`).
       let reach = trim ?? 0;
-      const outer = net.junctions.get(node)?.get(Level.Casing);
-      const inner = net.junctions.get(node)?.get(Level.Asphalt);
-      if (outer && inner) {
+      // The casing's legs alone (`JunctionLevels.legsAt`): DO NOT make the casing's level at every junction for its widths.
+      const levels = net.junctions.get(node);
+      if (levels?.has(Level.Casing) && levels.has(Level.Asphalt)) {
+        const inner = levels.legsAt(Level.Asphalt);
         let extra = 0;
-        for (const leg of outer.legs) {
-          const carriage = inner.legs.find((l) => l.seg === leg.seg);
+        for (const leg of levels.legsAt(Level.Casing)) {
+          const carriage = inner.find((l) => l.seg === leg.seg);
           if (carriage) extra = Math.max(extra, leg.hw - carriage.hw);
         }
         reach += extra;
@@ -671,6 +740,8 @@ export function buildRoadElevation(
   let boxes: readonly Aabb[] | null = null;
   const result: RoadElevation = {
     solved: solvedCount,
+    pending: pending?.size ?? 0,
+    pendingRoads: () => [...pending ?? []].sort((p, q) => p - q),
     at: field.at,
     remembering: field.remembering,
     onSegment: field.onSegment,
@@ -743,7 +814,7 @@ export function buildRoadElevation(
       return false;
     },
   };
-  const memo: SolveMemo = { terrainAt, state: net.state, profiles, nodes: settledNodes, summaries, index, present, total };
+  const memo: SolveMemo = { terrainAt, state: net.state, profiles, nodes: settledNodes, summaries, index, present, total, pending };
   memos.set(result, memo);
   if (flat) flatSolves.set(net, memo);
   if (typeof performance.measure === 'function') {
@@ -851,6 +922,8 @@ interface SolveMemo {
   /** The roads by structure, counted, and in all. */
   readonly present: ReadonlyMap<RoadStructure, number>;
   readonly total: number;
+  /** The roads a scoped solve left for later (`SolveScope`); null: none. */
+  readonly pending: ReadonlySet<SegmentId> | null;
 }
 
 
@@ -904,9 +977,12 @@ const NO_PROFILES: readonly never[] = Object.freeze([]);
 function withProfile(list: readonly Profile[], profile: Profile): Profile[] {
   let at = 0;
   while (at < list.length && list[at]!.id < profile.id) at++;
-  const out = list.slice();
-  if (at < list.length && list[at]!.id === profile.id) out[at] = profile;
-  else out.splice(at, 0, profile);
+  const replaced = at < list.length && list[at]!.id === profile.id;
+  // Laid at its size (DO NOT splice into a copy: its room grew ~16 past the list, a list a cell of the index, 2026-10-21).
+  const out = new Array<Profile>(replaced ? list.length : list.length + 1);
+  for (let k = 0; k < at; k++) out[k] = list[k]!;
+  out[at] = profile;
+  for (let k = replaced ? at + 1 : at; k < list.length; k++) out[replaced ? k : k + 1] = list[k]!;
   return out;
 }
 

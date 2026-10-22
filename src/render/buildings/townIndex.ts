@@ -3,64 +3,69 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingMeshes } from './buildingMesh';
 import type { LandedCell } from './cellRequests';
 import { buildSignature, disposeSignature } from './signature';
-import { type CellCache, dropCell } from './layerCells';
+import { BATCH_CELL, type CellCache, dropCell } from './layerCells';
+import { FILED, type TownColumns } from './townColumns';
 import { type PartCell, dropParts } from './partCells';
 
-/** The buildings the layer shows, by id and by coarse cell, kept from one change to the next */
+/** The buildings the layer shows, by id and by coarse cell, kept from one change to the next: ids, never records (`townColumns.ts`). */
 export class TownIndex {
-  /** The shown buildings by coarse cell: what a cell is made of (`layer.ts` `townCells`). */
-  readonly byCell = new Map<string, Building[]>();
-  private readonly cellOfId = new Map<BuildingId, string>();
+  /** The shown buildings' ids by coarse cell: what a cell is made of (`layer.ts` `townCells`). */
+  readonly byCell = new Map<string, number[]>();
 
-  constructor(private readonly cellOf: (b: Building) => string) {}
+  constructor(private readonly columns: TownColumns) {}
 
-  /** Every shown building filed again (the whole town: the opening, a map opened). */
-  reset(shown: readonly Building[]): void {
+  /** Every shown building filed again (the whole town: the opening, a map opened); `shown`, their slots (their columns filed). */
+  reset(shown: Iterable<number>): void {
+    const c = this.columns;
+    for (const cell of this.byCell.values()) for (const id of cell) c.set(c.slotOf(id), FILED, false);
     this.byCell.clear();
-    this.cellOfId.clear();
-    for (const b of shown) this.file(b);
+    for (const slot of shown) this.file(slot);
   }
 
-  /** A building's record as it is now (`undefined`: gone, or not shown) taken in */
-  take(id: BuildingId, now: Building | undefined, dirty: Set<string>): void {
-    const was = this.cellOfId.get(id);
-    const cell = now ? this.cellOf(now) : undefined;
+  /** A building as it is now taken in (`slot`: its columns filed; -1: gone, or not shown); the cells it left and entered marked in `dirty`. */
+  take(id: number, slot: number, dirty: Set<string>): void {
+    const c = this.columns;
+    const at = c.slotOf(id);
+    const was = c.has(at, FILED) ? `${c.filedI[at]!},${c.filedJ[at]!}` : undefined;
+    const cell = slot >= 0 ? c.cellOf(slot) : undefined;
     if (was !== undefined) {
       dirty.add(was);
+      if (was === cell) return;
       const list = this.byCell.get(was)!;
-      const at = list.findIndex((b) => b.id === id);
-      if (was === cell && now) {
-        list[at] = now;
-        return;
-      }
-      list.splice(at, 1);
+      list.splice(list.indexOf(id), 1);
       if (list.length === 0) this.byCell.delete(was);
-      this.cellOfId.delete(id);
+      c.set(at, FILED, false);
     }
-    if (now && cell !== undefined) {
+    if (slot >= 0 && cell !== undefined) {
       dirty.add(cell);
-      this.file(now);
+      this.file(slot);
     }
   }
 
-  has(id: BuildingId): boolean {
-    return this.cellOfId.has(id);
+  has(id: number): boolean {
+    return this.columns.has(this.columns.slotOf(id), FILED);
   }
 
-  private file(b: Building): void {
-    const cell = this.cellOf(b);
-    this.cellOfId.set(b.id, cell);
+  private file(slot: number): void {
+    const c = this.columns;
+    const i = Math.floor(c.x[slot]! / BATCH_CELL), j = Math.floor(c.y[slot]! / BATCH_CELL);
+    c.filedI[slot] = i; c.filedJ[slot] = j;
+    c.set(slot, FILED, true);
+    const cell = `${i},${j}`;
     const list = this.byCell.get(cell);
-    if (list) list.push(b);
-    else this.byCell.set(cell, [b]);
+    const id = this.columns.idOf(slot);
+    if (list) list.push(id);
+    else this.byCell.set(cell, [id]);
   }
 }
 
 /** The signature buildings' bodies */
-export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
-  set(b: Building, floor: number | undefined): void;
+export function signatureBodies(root: Group): {
+  /** `sig`: its record's digest (`townColumns.ts`): the body made again only when it or its floor changed. */
+  set(b: Building, sig: number, floor: number | undefined): void;
   remove(id: BuildingId): void;
-  keepOnly(ids: ReadonlySet<BuildingId>): void;
+  /** Every body let go but those of the ids `keep` keeps. */
+  keepOnly(keep: (id: BuildingId) => boolean): void;
   /** The highest point of any body (`massCells.ts` `top` for the rest); -Infinity with none. */
   top(): number;
 } {
@@ -76,9 +81,9 @@ export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
     if (k.top >= highest) stale = true;
   };
   return {
-    set(b, floor) {
+    set(b, sig, floor) {
       if (floor === undefined) { remove(b.id); return; }
-      const key = `${sigOf(b)}|${floor}`;
+      const key = `${sig}|${floor}`;
       if (known.get(b.id)?.key === key) return;
       remove(b.id);
       const built = buildSignature(b, floor);
@@ -90,8 +95,8 @@ export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
       if (top >= highest) { highest = top; stale = false; }
     },
     remove,
-    keepOnly(ids) {
-      for (const id of [...known.keys()]) if (!ids.has(id)) remove(id);
+    keepOnly(keep) {
+      for (const id of [...known.keys()]) if (!keep(id)) remove(id);
     },
     top() {
       if (stale) {

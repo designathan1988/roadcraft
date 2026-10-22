@@ -22,7 +22,7 @@ export const sleep = (ms: number): Promise<void> => new Promise((done) => setTim
 export interface Cancel { stopped: boolean }
 
 export class Cancelled extends Error {
-  constructor() { super('teste interrompido'); }
+  constructor() { super('test cancelled'); }
 }
 export const check = (cancel: Cancel): void => { if (cancel.stopped) throw new Cancelled(); };
 
@@ -131,7 +131,7 @@ export function holdScene(ctx: LabContext, clock: 'held' | 'running'): Hold {
 // ---- the views
 
 export type ViewId = 'current' | 'map' | 'district' | 'street';
-export const VIEW_LABELS: Readonly<Record<ViewId, string>> = { current: 'atual', map: 'mapa', district: 'bairro', street: 'rua' };
+export const VIEW_LABELS: Readonly<Record<ViewId, string>> = { current: 'current', map: 'map', district: 'district', street: 'street' };
 /** The zooms of the standard views (`scripts/look/views.json`: map 0.17, district 2.5, street 28). */
 const VIEW_ZOOM: Readonly<Record<Exclude<ViewId, 'current'>, number>> = { map: 0.17, district: 2.5, street: 28 };
 

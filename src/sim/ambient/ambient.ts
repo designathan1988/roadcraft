@@ -12,8 +12,8 @@ import { spawnVehicleAt, trafficTarget } from '../vehicles/spawn';
 import { vehiclePose } from '../pose';
 import { joinsFootway, onLastStretch, removeWalker, walkerAlive, walkerOf, walkOn, walkThrough } from '../agents/walk';
 import type { Walkway } from '@world/walkways';
-import { bayChangesSince, baySources, baysOfSource, lanesInBox, stallFits, type Bay } from '../agents/parking';
-import { type DoorWay, doorWay, personGates } from '../agents/lotDoors';
+import { bayChangesSince, baySources, baySourcesIn, baysOfSource, lanesInBox, stallFits, type Bay } from '../agents/parking';
+import { type DoorWay, doorWay } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, outShare, PEOPLE, type Mix } from './demand';
 import { BuildingMix, SightWalls, StreetLength, atRoll, spotKey } from './ambientIndex';
@@ -134,6 +134,8 @@ export class AmbientWorld {
     this.carsBySource.clear();
     this.sourceOf.clear();
     this.baysSerial = -1;
+    this.parkedWindow = null;
+    this.stoodIn.clear();
     this.vacated.clear();
     // The lots' cars of the old map with it (`agents/lotTraffic.ts`).
     w.city.lots.reset();
@@ -820,19 +822,54 @@ export class AmbientWorld {
     return this.sceneryAt.get(spot);
   }
 
+  /** The micro window the parked cars were last stood in (`parking`), and the sources of bays stood in it. */
+  private parkedWindow: { readonly x: number; readonly y: number; readonly r: number } | null = null;
+  private readonly stoodIn = new Set<string>();
+
   /** DO NOT stand every bay of the town again at each change: every bay of the map */
   private parking(w: SimWorld): void {
     const { serial, changed } = bayChangesSince(w, this.baysSerial, this);
-    if (serial === this.baysSerial && changed !== null) return;
+    // With the meso traffic the parked cars stand only in the micro window (its square): DO NOT stand the map's bays.
+    const win = w.meso ? w.meso.microWindow() : null;
+    const moved = !!w.meso && win !== this.parkedWindow;
+    if (serial === this.baysSerial && changed !== null && !moved) return;
     this.baysSerial = serial;
     // The cars of the lots by where they stand, once for this look: DO NOT walk them all for each bay (`stand`).
     const movers = this.moverCells();
+    if (w.meso) {
+      this.parkInWindow(w, win, changed, movers);
+      return;
+    }
     if (changed === null) {
       for (const source of [...this.carsBySource.keys()]) this.standSource(w, source, false, movers);
       for (const source of baySources(w)) this.standSource(w, source, true, movers);
       return;
     }
     for (const source of new Set(changed)) this.standSource(w, source, true, movers);
+  }
+
+  /** The parked cars of the micro window: sources come into it stood, those gone out of it taken away, those changed in it stood again. */
+  private parkInWindow(w: SimWorld, win: { readonly x: number; readonly y: number; readonly r: number } | null, changed: readonly string[] | null,
+    movers: ReadonlyMap<number, readonly Vehicle[]>): void {
+    this.parkedWindow = win;
+    const inside = new Set(win ? baySourcesIn(w, win.x - win.r, win.y - win.r, win.x + win.r, win.y + win.r) : []);
+    const stood = this.stoodIn;
+    if (changed === null) {
+      // @rebuild Every bay read whole: what stands is taken away, the window's stood again.
+      for (const source of [...this.carsBySource.keys()]) this.standSource(w, source, false, movers);
+      stood.clear();
+    }
+    for (const source of [...stood]) {
+      if (inside.has(source)) continue;
+      this.standSource(w, source, false, movers);
+      stood.delete(source);
+    }
+    if (changed !== null) for (const source of new Set(changed)) if (stood.has(source)) this.standSource(w, source, true, movers);
+    for (const source of inside) {
+      if (stood.has(source)) continue;
+      this.standSource(w, source, true, movers);
+      stood.add(source);
+    }
   }
 
   /** The cars of the lots (`movers`) filed by `MOVER_CELL` cells of where they stand. */
@@ -947,7 +984,7 @@ export class AmbientWorld {
 /** Distance decay of a walk from one lot to another, u: the gravity model's negative exponential, e^(-d/L) */
 const WALK_DECAY = m(470);
 /** The buildings people walk into, by the lot's way (`lotDoors.ts`). */
-const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });
+const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay });
 const NO_WAY: readonly { x: number; y: number }[] = [];
 const REVERSED = new WeakMap<DoorWay, readonly { x: number; y: number }[]>();
 /** A lot's way the other way round: from the gate's foot on the footway in to the door. */

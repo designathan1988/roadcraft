@@ -12,7 +12,7 @@ import { createTestTabs } from './tests';
 export function createLabTabs(ctx: LabContext): LabTab[] {
   const switches: LabTab = {
     id: 'switches',
-    title: 'Interruptores',
+    title: 'Switches',
     mount: (host) => ctx.effects.panel.embed(host),
     unmount: () => ctx.effects.panel.release(),
   };

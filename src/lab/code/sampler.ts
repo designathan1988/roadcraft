@@ -35,7 +35,7 @@ export interface CodeSampler {
 
 export function createCodeSampler(ctx: LabContext): CodeSampler {
   const Ctor = (globalThis as { Profiler?: ProfilerCtor }).Profiler;
-  let problem: string | null = Ctor ? null : 'API Profiler ausente: só no Chrome/Edge, com o cabeçalho Document-Policy: js-profiling (vite.config.ts).';
+  let problem: string | null = Ctor ? null : 'Profiler API missing: Chrome/Edge only, with the Document-Policy: js-profiling header (vite.config.ts).';
   let live = false;
   let recording = false;
   let current: JsProfiler | null = null;
@@ -57,7 +57,7 @@ export function createCodeSampler(ctx: LabContext): CodeSampler {
       current = new Ctor({ sampleInterval: sampler.intervalMs, maxBufferSize });
     } catch (error) {
       console.warn('lab code: Profiler not started', error);
-      problem = `Profiler recusado: ${String(error)}`;
+      problem = `Profiler refused: ${String(error)}`;
       live = recording = false;
       return;
     }
@@ -87,7 +87,7 @@ export function createCodeSampler(ctx: LabContext): CodeSampler {
       for (const listener of listeners) listener();
     } catch (error) {
       console.warn('lab code: profile window lost', error);
-      problem = `Janela perdida: ${String(error)}`;
+      problem = `Window lost: ${String(error)}`;
     }
     if (wanted()) begin();
     else { stopFrames?.(); stopFrames = null; }
@@ -108,7 +108,7 @@ export function createCodeSampler(ctx: LabContext): CodeSampler {
     setRecording(on) {
       if (on && !recording) recordingAgg = createAggregate();
       recording = on;
-      ctx.emit(on ? 'code.record' : 'code.recordEnd', on ? 'gravação do perfil de código iniciada' : 'gravação do perfil de código terminada');
+      ctx.emit(on ? 'code.record' : 'code.recordEnd', on ? 'code profile recording started' : 'code profile recording ended');
       if (wanted()) begin();
       // Ended: the running window folded in now, so the recording holds every sample up to the click.
       else if (!on && current) void end();

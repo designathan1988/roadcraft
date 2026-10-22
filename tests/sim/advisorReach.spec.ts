@@ -109,7 +109,7 @@ describe('the control advisor', () => {
     w.useMicroWindow();
     const node = [...w.graph.junctions.keys()].find((n) => doc.node(n)!.control === 'auto' && doc.node(n)!.incident.length >= 4)!;
     let inside = true;
-    w.meso = { step() {}, reset() {}, insideWindow: () => inside };
+    w.meso = { step() {}, reset() {}, insideWindow: () => inside, microWindow: () => null };
     // The conflicts' window holds nothing: the meso's says where the flows are counted.
     w.conflicts.setWindow(w.graph, new Set());
     const legs = doc.node(node)!.incident as SegmentId[];

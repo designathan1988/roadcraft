@@ -1,5 +1,4 @@
 import { onMap } from '@world/cityGen/wholeMap';
-import type { FarTiles } from './buildings/farLevels';
 import { jobPort } from '../jobs/jobPool';
 import { onEcologyRead } from './ecologyPool';
 import { GRID_CELL } from '@world/grid';
@@ -21,7 +20,6 @@ import {
   PointLight,
   Group,
   Frustum,
-  Box3,
   Matrix4,
   type Material,
   Mesh,
@@ -36,14 +34,17 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  type WebGLRendererParameters,
+  type Camera,
 } from 'three';
 
 import { Digest } from '@core/digest';
 import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
+import { isStreaming } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
-import { FLAT_GROUND, GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
+import { FLAT_GROUND, GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, pendingOrder, roadsToRead, type RoadElevation, type SolveScope } from '@world/elevation';
 import { RoadsRead } from './roadsRead';
 import { RoadStations } from './roadStations';
 import { FOOTWAY_RISE, LANE_LINE, sidewalkHalf } from '@world/roadTypes';
@@ -71,9 +72,11 @@ import { createBuildingSwitcher } from './buildingSwitches';
 import { DEFAULT_OPTIMIZATIONS, qualityOptionsDiffer, withOptimizations, type Optimizations } from './optimizations';
 import { createOptimizer } from './optimizationsApply';
 import { createInspector, type Inspector } from './inspector';
-import { buildRoadSurfaces, disposeSurfaceReuse, dropSurfaceBlocks, noRoadSurfaces, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
-import { SurfaceInputs } from './roadSurfaceInputs';
-import { forgetDerivedKeys, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
+import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
+import { ROAD_INPUT_RESIDENCY, SurfaceInputs, TILE, TILE_ORIGIN } from './roadSurfaceInputs';
+import { NetworkFarRoads } from './networkFarRoads';
+import { roadProgramStandIns } from './roadProgramStandIns';
+import { forgetDerivedKeys, forgetDerivedKinds, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { DerivedWriterLane } from './derivedWriterLane';
 import { disposeMesh } from './mesh/surfaceMesh';
 import { RoadTilePool } from './roadTilePool';
@@ -82,10 +85,10 @@ import { type BlockDigestAsk, type GroundShapeAsk, type PadsAsk, type PlateShape
 import type { Pad } from '@world/buildings/pads';
 import { refOf } from '@world/buildings/recordTable';
 import { shapeBoth } from './terrainShaping';
-import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
+import { PLANT_MAP_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
-import { createGardens, gardenPlants, type Gardens } from './gardens';
-import { gardenLists } from './gardenLists';
+import { createGardenCells, type GardenCells } from './gardens';
+import { lookProps, propView } from './propCells';
 import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, gateUntilBuilt, shadowStandIn, warmPending } from './uploads';
@@ -93,7 +96,7 @@ import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather, sways } from './wind';
 import { holdStill, updateMoving } from './stillTree';
 import { castCastersInto } from './shadowCasters';
-import { setShadowSun } from './cellInstances';
+import { screenHalf, setShadowSun } from './cellInstances';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -106,7 +109,7 @@ import { PLATE_SIZE, platesOver, plateRegion } from '@world/bounds';
 import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
 import { paintCatalogue } from './markings';
-import { isNear, updateRoadLevels } from './mesh/roadResidency';
+import { type RoadResidency, forgetRoadCells, isNear, updateRoadLevels } from './mesh/roadResidency';
 import { JournalCursor } from '@world/derived';
 import { RoadStandIn } from './roadStandIn';
 import { Engine } from '@core/engine';
@@ -116,26 +119,18 @@ import { createShaderCatalogue } from './shaderCatalogue';
 import { personProgramStandIns } from './people/proceduralCrowd';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
-import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
+import { buildPolePreview, buildUtilities, type PolePreviewInput } from './poleLayer';
+import { PoleCells } from './poleCells';
 import { createBarriers } from './barriers';
 import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview } from './transit';
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
-import { FarRoads } from './farRoads';
-import { NearTiles } from './nearTiles';
-import { poleProduct } from './poleTiles';
-import { furnitureProduct } from './furnitureTiles';
-import { signProduct } from './signTiles';
-import { barrierProduct } from './barrierTiles';
-import { plantedProduct } from './plantedTiles';
-import { structureProduct } from './structureTiles';
-import { gardenProduct } from './gardenTiles';
-import { coverExtraFor, coverProduct } from './coverTiles';
-import { elementProduct } from './elementTiles';
-import type { SharedGroundAt, SharedGroundData } from './sharedGround';
+import type { SharedGroundAt } from './sharedGround';
 import { WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
+import { OcclusionBuffer, type OcclusionStats } from './occlusion';
+import { BATCH_CELL } from './buildings/layerCells';
 import { buildingFloors } from '@world/buildings/floors';
 import { FLOOR_READ_REACH } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
@@ -153,14 +148,16 @@ const STREET_ZOOM = perM(8);
 const DISTRICT_ZOOM = perM(0.8);
 const viewOf = (zoom: number): CityView => (zoom >= STREET_ZOOM ? 'street' : zoom >= DISTRICT_ZOOM ? 'district' : 'map');
 
-import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer, GAME_DETAIL_MEMORY_MB } from './buildings/layer';
+import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
 import { gpuBatchContext } from './buildings/gpuBatchedMesh';
 import { wantAllTexels } from './surfaceTextures';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
-import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } from './quality';
+import { GEOMETRY_BUDGETS, type GeometryBudget, QUALITY, type QualityLevel, type QualitySettings } from './quality';
+import { countMemory } from './memoryCounters';
+import { ViewCells } from '@world/viewCells';
 import { type GroundRecord, type Rect, unionRect } from './groundChanges';
 import { FOREST_SPECIES, createGroundCoverKit } from './groundCover';
 import type { PlantedTree } from '@world/trees';
@@ -170,9 +167,7 @@ import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
 import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
-import { ActiveTiles } from './activeTiles';
 import { measureHitch } from '@core/hitch';
-import { TILE, tileKeyAt, tileOfKey } from '@world/tiles';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
@@ -223,6 +218,9 @@ interface DrawOptions {
   readonly holdRoads?: boolean;
 }
 
+/** How many frames the buildings' occlusion rests after a frame it hid nothing in (`occlusionIdle`). */
+const OCCLUSION_RETRY_FRAMES = 15;
+
 export interface SceneHandle {
   /** Loads what shots and blows leave behind */
   effects(): Promise<void>;
@@ -236,27 +234,20 @@ export interface SceneHandle {
   beginLoad(): void;
   /** The next map opened is large: its first world covers the view alone, the rest filled after the curtain. */
   scopeOpening(large: boolean): void;
-  /** What else the opening waits for besides the town drawn: the tiles round the camera come in (`worldStreamer.ts` settled); null: nothing. */
-  holdOpening(until: (() => boolean) | null): void;
-  /** The streamed world's active tiles (`worldStreamer.ts` isActive): the buildings and the roads of the kept ring beyond are not put together here, the far levels draw them (`BuildingLayer.setActive`, `SurfaceReuse.within`). */
-  setActiveTiles(at: ((x: number, y: number) => boolean) | null, rects: readonly ChangeRect[]): void;
-  /** A tile put in the document or come into the active region: its near products not drawn yet (`nearDrawn` false) until its roads are built and its buildings' cells have something drawn; then `onNearDrawn` (DO NOT let its far level go before: holes with shadows). */
-  tileLoaded(key: number, rect: ChangeRect, revision: number): void;
-  tileLetGo(key: number): void;
-  nearDrawn(key: number): boolean;
-  /** How far round the eye the far levels are drawn now (`FarTree.reachNow`; 0 before the first choice): the tiles the opening waits for. */
-  readonly farReach: number;
-  /** Whether the view the far levels were last chosen in sees a square of the plan (x0, y0)-(x1, y1), from under the ground to 500 m (`farTree.ts` inView before a node lands): the tiles the opening waits for. */
-  readonly farSees: (x0: number, y0: number, x1: number, y1: number) => boolean;
-  onNearDrawn: ((key: number) => void) | null;
-  /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
-  readonly farBuildings: FarTiles;
   /** The sun's cascades' passes since the last call (`SunCascades.takeStats`). */
   shadowStats(): ReturnType<SunCascades['takeStats']> | null;
   /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
   buildingLevels(): Readonly<Record<string, number>>;
-  /** The roads of the tiles not in the page's document, baked per tile from the tile store (`farRoads.ts`). */
-  readonly farRoads: FarTiles;
+  /** What draws each cell of buildings now, by key (`massCells.ts` census): the census of holes (`tests/perf/massBase.spec.ts`). */
+  buildingCensus(): Map<string, string | null>;
+  /** The geometry budgets kept (`quality.ts` GEOMETRY_BUDGETS): the tier's (null), or these (the probes' unbounded run: Infinity everywhere). */
+  setGeometryBudget(budget: GeometryBudget | null): void;
+  /** The scene's geometry read against the budget now (`governGeometry`, as every `GOVERN_FRAMES`): the bytes counted. */
+  governGeometry(): number;
+  /** The camera the frame is drawn from (the probes' census of what is in its view). */
+  viewCamera(): Camera;
+  /** What the opening still waits for (`draw`'s reveal): asked by the probes, never each frame. */
+  openingState(): { readonly roadsIn: boolean; readonly coarsePending: boolean; readonly viewPending: boolean; readonly treesStarted: boolean; readonly treesPending: boolean; readonly programs: string; readonly worked: number; readonly worldBusy: boolean; readonly fillPending: boolean; readonly fillCellsLeft: number };
   /** Which renderer draws the frame (`gpu/backendChoice.ts`): WebGL, or three's WebGPU renderer with `?gpu=webgpu` (`MIGRACAO-WEBGPU.md`). */
   readonly backend: 'three-webgl' | 'three-webgpu';
   /** The same view drawn by the WebGL and the WebGPU renderer and the pictures compared (`gpu/webgpuView.ts`, `scripts/look.mjs` "compare"). */
@@ -270,6 +261,9 @@ export interface SceneHandle {
   readonly stats: RenderStats;
   /** The GPU time of each frame drawn (`gpuTimer.ts`): the F9 monitor and the performance gate read it. */
   readonly gpu: GpuTimer;
+  /** The buildings' occlusion culling on the page (`occlusion.ts`): on or off, and the last frame's numbers (walls laid, boxes tested and
+   *  hidden, ms to lay them, the buildings' objects left out of the colour pass). */
+  readonly occlusion: { enabled: boolean; readonly stats: Readonly<OcclusionStats & { objectsHidden: number; active: boolean }> };
   /** The solved road height field, for the editor's own previews. */
   elevationAt(x: number, y: number, structure?: RoadStructure): number;
   /** The editor's building ghost; null removes it. */
@@ -400,6 +394,19 @@ export interface SceneHandle {
 /** Roads at grade, and the decks above them, as `surfaceHeightAt` asks them. */
 const SURFACE_SETS: readonly ReadonlySet<RoadStructure>[] = [GROUND_ONLY, new Set<RoadStructure>(['elevated', 'bridge'])];
 
+/** How far past a scoped opening's view its roads are solved (`buildWorld`, `SolveScope`): a tile meeting the view (76.8 m), what a tile reads round it (`SURFACE_READ_REACH`) and a junction or two whose heights reach in. `tests/world/elevationScope.spec.ts` proves every tile of the view reads the whole solve's heights with it, and that half of it does not (the small city, 2026-10-21). */
+const OPENING_SOLVE_MARGIN = m(320);
+/** The far roads' cells made from the network at a scoped opening (`networkFarRoads.ts`): a road block's side (`roadSurfaces.ts` CHUNK tiles). */
+const FAR_ROAD_CELL = 8 * TILE;
+/** Frames between two reads of the scene's geometry against the tier's budget (`governGeometry`): a walk of the scene's objects, ~1-3 ms. */
+const GOVERN_FRAMES = 60;
+/** The far level's cells the opening's fill takes at a step past those under the view (`fillStep`): a step's build has a fixed cost (every pass walked), a few cells share it. */
+const FILL_CELLS = 2;
+/** The roads the opening's solve left, solved a share a frame once the town is shown (`completeSolve`): ~15-20 ms of a frame on level ground (the 16,708 roads of a city of the largest radius: 1.5 roads solved a road taken, ~0.04 ms each, Node, 2026-10-21). */
+const SOLVE_SHARE = 300;
+/** Level ground (a new map's `RELIEF_FLAT`, no stamp): every station's ground is the same, nothing is read under a road (`FLAT_GROUND`). A stroke or a height stamp makes it real ground again. */
+const isLevelLand = (net: Network): boolean => net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
+
 /** A plant's leaf cards (`scenery.ts` `plantMeshes`, `gardens.ts`): `...-trees-<species>-cards`, `...-bushes-<kind>-cards`. */
 const isLeafCards = (mesh: Object3D): boolean => mesh.name.endsWith('-cards');
 
@@ -428,6 +435,8 @@ export function createSceneRenderer(
   engine: Engine = new Engine(),
   /** The player's own settings on the tier (the options panel); the tier's own when absent. */
   initialSettings?: QualitySettings,
+  /** Where the WebGL renderer comes from: three's own, always, in the game; a renderer on a GPU that draws nothing in the specs that open a city in Node (`tests/support/nullGpu.ts`). */
+  makeRenderer: (parameters: WebGLRendererParameters) => WebGLRenderer = (parameters) => new WebGLRenderer(parameters),
 ): SceneHandle {
   /** Something landed since the last shadow pass that the casters' signature cannot see (a texture, a program): the sun's stores are not used for that frame (`ShadowPassInput.still`). What comes into the scene or leaves it, the signature sees (`casterSignature`). */
   let castersStirred = true;
@@ -467,7 +476,7 @@ export function createSceneRenderer(
       location.replace(url.href);
     });
   }
-  const renderer = new WebGLRenderer({
+  const renderer = makeRenderer({
     canvas: glCanvas,
     // A quality without the chain chosen later draws through a multisampled target of its own (`postprocess.ts` plainChain).
     antialias: !canvasForChain,
@@ -627,8 +636,9 @@ export function createSceneRenderer(
   };
 
   let requested: QualityLevel | 'auto' = initialQuality;
-  const governor = new QualityGovernor(requested === 'auto' ? 'high' : requested);
-  let quality: QualitySettings = initialSettings ?? QUALITY[governor.current];
+  /** The tier drawn now: the one asked for; `auto` here (no wiring choosing for it, the tests) is high. The automatic tier is moved by `graphicsWiring.ts`, which asks for each tier it picks. */
+  let tier: QualityLevel = requested === 'auto' ? 'high' : requested;
+  let quality: QualitySettings = initialSettings ?? QUALITY[tier];
 
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
   const anisotropy = Math.min(quality.anisotropy, maxAnisotropy);
@@ -728,50 +738,28 @@ export function createSceneRenderer(
   // Roads, plants, poles, furniture, forests: placed once, never moved (`stillTree.ts`).
   holdStill(world);
   scene.add(world);
-  /** The roads of the tiles not in the page's document (`farRoads.ts`), on the ground shared with the workers. */
-  const farRoadGround = (): SharedGroundData | null => (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null;
-  // Each tile's near level where the view wants its detail and the region does not draw it (`nearRoadTiles.ts`): the region's look of the roads, the same materials.
-  // DO NOT read it off `surfaceReuse`: the near level's programs are made with the far roads (`farRoads.ts` stand-ins), before it is declared (the page did not open, 2026-10-17).
+  /** The roads' paint catalogue, shared by every block of the roads (`SurfaceReuse.paint`). */
   const roadPaint = paintCatalogue();
-  const nearPaintFor = (color: string): Material => roadPaint.get(color) ?? roadPaint.get(LANE_LINE) ?? materials.asphalt;
-  /** The buildings put on the ground once (`buildings.update`): the near roads are baked on the ground they read, known from then. */
-  let buildingsGrounded = false;
-  const farRoads = new FarRoads(farRoadGround, undefined, undefined, {
-    look: () => passLook(materials, terrain.vergeMaterial),
-    markingStyle: () => worldNet?.doc.markingStyle ?? 'classic',
-    naturalIsGround: () => buildings.farEnv().naturalIsGround,
-    dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
-    // DO NOT put the view's near roads behind the curtain's masses: the curtain waits for them (`whole`).
-    coarseFirst: () => false,
-    ready: () => buildingsGrounded,
-  });
-  world.add(farRoads.group);
-  /** A road just built drawn at once (`roadStandIn.ts`) until its tile's near roads come back from their worker: the diary's road edits read for it, the tiles' loads left out. */
+  // Every program a block of the roads can be drawn with, built by the opening's catalogue before the curtain lifts (`roadProgramStandIns`): the blocks' own look (`roadSurfaces.ts` dress), the same materials.
+  const roadPrograms = roadProgramStandIns(materials, terrain.vergeMaterial, (color) => roadPaint.get(color) ?? roadPaint.get(LANE_LINE) ?? materials.asphalt);
+  world.add(roadPrograms.group);
+  /** A road just built drawn at once (`roadStandIn.ts`) until the world's build of its commit lands. */
   const roadStandIn = new RoadStandIn();
   world.add(roadStandIn.group);
+  /** Every road of a large city at its far level from the opening's first frame, made from the network (`networkFarRoads.ts`): the fill's detailed blocks replace it when they land. */
+  const networkFar = new NetworkFarRoads();
+  world.add(networkFar.group);
   /** The roads the tool just laid (`flashRoads`: the player's road alone, never the street it meets split at the new junction), stood in once their heights are solved. */
   const pendingStandIn: SegmentId[] = [];
-  /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */
-  const nearTiles = new NearTiles();
-  nearTiles.add(poleProduct(sceneryKit, world));
-  /** The roads' tree and the near products' tiles, told the stored tiles as one (`main.ts` far levels). */
-  const roadsAndNear: FarTiles = {
-    setSource: (source, isLoaded) => { farRoads.setSource(source, isLoaded); nearTiles.setSource(source, isLoaded); },
-    stored: (key, version) => { farRoads.stored(key, version); nearTiles.stored(key, version); },
-    loadedChanged: (key) => { farRoads.loadedChanged(key); nearTiles.loadedChanged(key); },
-    setErrorScale: (scale) => { farRoads.setErrorScale(scale); nearTiles.setErrorScale(scale); },
-    get bakePrefix() { return farRoads.bakePrefix; },
-  };
-  /** The streamed world's active tiles as the near products read them (`activeTiles.ts`, `setActiveTiles`): the kept ring's items are the far levels'. */
-  const activeTiles = new ActiveTiles();
 
   let roads: RoadSurfaces | null = null;
   /** The roads' structures, cell by cell (`structureCells.ts`), made with the first world. */
   let details: StructureCells | null = null;
   /** What the player placed on the footways and the long grass, kept item by item from the diary (`streetFurnitureLayer.ts`) */
-  const furniture = createStreetFurniture(sceneryKit, activeTiles);
+  const furniture = createStreetFurniture(sceneryKit);
   world.add(furniture.group, furniture.grass);
-  let utilities: PoleLayer | null = null;
+  /** The poles and wires held round the view, block by block (`poleLayer.ts` PoleCells). */
+  let utilities: PoleCells | null = null;
   /** The pole tool's planned run, and the plan it was built for (rebuilt only when that changes). */
   /** Vehicle exhaust and dust (`exhaust.ts`): one particle cloud for the map. */
   const exhaust = createExhaust();
@@ -809,17 +797,12 @@ export function createSceneRenderer(
   });
   let polePreview: Utilities | null = null;
   /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
-  const signs = createSignLayer(activeTiles);
+  const signs = createSignLayer();
   // A new plate onto a sheet already on the GPU: its cell alone (three r186 `copyTextureToTexture` makes the sheet's mipmaps again), not the whole sheet painted and sent (VIA-04).
   signs.useCopier((picture, sheet, x, y) => renderer.copyTextureToTexture(picture, sheet, null, new Vector2(x, y)));
-  // The streamed world's furniture and signs per tile (`furnitureTiles.ts`, `signTiles.ts`), in the layers' own cells and sheets: the region makes none of them.
-  nearTiles.add(furnitureProduct(furniture, sceneryKit.lens, () => cityMinutes));
-  nearTiles.add(signProduct(signs, () => worldNet?.doc.markingStyle ?? 'classic'));
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
-  const barriers = createBarriers(activeTiles);
-  // The streamed world's barriers per tile (`barrierTiles.ts`), in the layer's own cells: the region makes none.
-  nearTiles.add(barrierProduct(barriers));
+  const barriers = createBarriers();
   /** Public transport (`transit.ts`), kept track by track and stop by stop from the diary. */
   const transit = createTransit();
   let elevation: RoadElevation | null = null;
@@ -863,11 +846,12 @@ export function createSceneRenderer(
     paint: roadPaint,
     // A block of road is made at full detail only near the camera (`mesh/roadLod.ts`).
     near: (x, y) => isNear(x, y, roadFocus.x, roadFocus.y, roadFocus.reach),
-    // The near roads stop at the streamed world's active tiles (by the tile's centre: a tile astride the edge is built; the far roads of the ring cover the strip twice, never a gap), and at the opening's view (`openingBuild`): the rest of a large city's roads is filled after the curtain.
-    within: (rect) => (activeAt === null || activeAt((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2))
-      && (openingWithin === null || openingWithin === undefined || openingWithin(rect)),
+    // The near roads stop at the opening's view (`openingBuild`): the rest of a large city's roads is filled after the curtain.
+    within: (rect) => openingWithin === null || openingWithin === undefined || openingWithin(rect),
     chunks: new Map(),
-    inputs: new SurfaceInputs(),
+    // The inputs held round the view (`InputResidency`): derived where a build visits, let go far from the eye; DO NOT derive the whole map's rings (82 MB of the large city's heap, 2026-10-21).
+    inputs: new SurfaceInputs(null, ROAD_INPUT_RESIDENCY),
+    inputsEye: () => roadFocus,
     retired: [],
     // DO NOT read the whole store at the opening: it grows with every place the camera went (CLAUDE.md, "Streaming world").
     stored: {
@@ -892,6 +876,8 @@ export function createSceneRenderer(
       noteStored(key);
     },
   };
+  // The bakes of the tile-streamed world, no longer made (its far buildings, far roads and near products per tile): let go from an old player's store, once a start.
+  forgetDerivedKinds(['farMass', 'farRoads', 'nearTiles']);
   if (tilesPrefix && ROAD_TILES_HASH) {
     forgetOtherDerived('roadtiles', ROAD_TILES_HASH);
     void readDerivedKeys(tilesPrefix).then((kept) => {
@@ -941,16 +927,43 @@ export function createSceneRenderer(
   let scopeNextOpening = false;
   /** Whether the town now shown had a scoped opening, its fill still to come. */
   let openingFillPending = false;
+  /** THE OPENING'S FILL, A FEW ROAD BLOCKS AT A TIME, THE NEAREST TO THE VIEW FIRST (`fillStep`): the cells of the network's far level
+   *  (`networkFar`, `FAR_ROAD_CELL` squares on the road blocks' grid) still to be built in detail; null, no fill under way. DO NOT build
+   *  the whole map's blocks in one build and put them in at its end: the view the camera went to kept the far level for a minute or more
+   *  (step-25k 89-ne-district, 2026-10-21). */
+  let fillLeft: Set<string> | null = null;
+  /** The cells taken by the fill so far: built in detail (`surfaceReuse.within`). */
+  const fillTaken = new Set<string>();
+  /** The cells taken whose blocks have not landed yet: let go of the far level by the first build that lands after they were taken. */
+  const fillAwaiting = new Set<string>();
+  /** The player's road edits read by the fill (`takeEditedCells`), from the fill's start on. */
+  const fillEditRead = new JournalCursor(['roads']);
+  /** The player's road edits read since the network's far level was last asked (`requestNetworkFar`): one landing outdates it. */
+  const networkFarRead = new JournalCursor(['roads']);
+  /** The network's far level for the whole map asked (`networkFarRoads.ts`), the edits read so far in it. */
+  const requestNetworkFar = (net: Network, heights: RoadElevation): void => {
+    networkFarRead.read(net.doc.changes);
+    networkFar.request(net, heights, terrain.renderedHeightAt, FAR_ROAD_CELL, TILE_ORIGIN, null);
+  };
+  /** The squares the fill's running step builds (`buildWorld` full); null, the whole network's extent. */
+  let fillRects: Rect[] | null = null;
   /** A map was opened since the last world build (`beginLoad`): the solve standing is another map's, nothing of the new one follows from it. */
   let mapOpened = false;
   /** The roads of the map being opened have landed (`worldSteps`): until then `roads` are the last map's, or none. */
   let mapRoadsIn = true;
-  /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
-  let openingHeld: (() => boolean) | null = null;
   /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
   /** DO NOT ask the next frame at once while the world's job waits on a worker: the unseen opening's frames come without the display's pace (`frameLoop.ts`), and it spun the page at 2,000 frames a second, starving the workers it waited on (2026-10-16); looked at again a display frame later. */
   const WAIT_LOOK_MS = 16;
   /** How long the unseen opening runs the world's job before letting the page take the workers' answers (`pumpWorld`). */
+  /** The frame's steps as marks on the DevTools timeline: in a development build only, and let go every `FRAME_MARKS_KEPT` frames. DO NOT mark them in every build and keep them all: the browser keeps every mark until it is cleared, thirteen a frame, and nothing reads them but a trace (~1 s of the page in the opening of the step-70k city, 2026-10-22). */
+  const FRAME_MARK_NAMES = new Set<string>();
+  const FRAME_MARKS_KEPT = 600;
+  let frameMarksDrawn = 0;
+  const frameMark = (name: string): void => {
+    if (!import.meta.env.DEV) return;
+    FRAME_MARK_NAMES.add(name);
+    performance.mark(name);
+  };
   const HIDDEN_RUN_MS = 50;
   let waitLook: ReturnType<typeof setTimeout> | null = null;
   const lookAgain = (): void => {
@@ -981,28 +994,11 @@ export function createSceneRenderer(
   let terrainRevision = -1;
   /** The ground under the roads a solve will read, read off the page (`roadStations.ts`): the solve waits for it, the world standing as it was. */
   const roadStations = new RoadStations(() => onAssetsReady());
-  /** The streamed world's active tiles (`setActiveTiles`): where the near roads are built; how many times they changed, and for which the world was built. */
-  let activeAt: ((x: number, y: number) => boolean) | null = null;
-  let activeSerial = 0;
-  let activeBuilt = 0;
   let builtTriangles = 0;
   let rebuildMs = 0;
   let rebuilds = 0;
   /** The network revision the last world build that landed was of (`worldSteps`): the near roads stand for it. */
   let landedRevision = -1;
-  /** The tiles put in whose near products are not all drawn yet (`tileLoaded`): the far level stands for each until they are (as Cidade's `cellLayer.ts` cellsReady: a tile draws by cells only once every cell is ready). */
-  const nearPending = new Map<number, { readonly rect: ChangeRect; readonly revision: number }>();
-  let onNearDrawn: ((key: number) => void) | null = null;
-  const settleNearTiles = (): void => {
-    if (nearPending.size === 0) return;
-    // The roads drawn are the last build that landed: a tile put in at or before its revision has its near roads on screen, whatever build runs now (DO NOT wait for a frame with no job: with tiles coming one after another only a landing frame had none).
-    for (const [key, p] of nearPending) {
-      if (landedRevision < 0 || landedRevision < p.revision) continue;
-      if (!buildings.drawnOver(p.rect, p.revision)) continue;
-      nearPending.delete(key);
-      onNearDrawn?.(key);
-    }
-  };
   let terrainMs = 0;
 
   const deckHeight = (
@@ -1016,6 +1012,22 @@ export function createSceneRenderer(
 
   /** The footway's rise over the carriageway at a point (`footwayRiseAt`), kerbed before any network is built. */
   const footwayRiseHere = (x: number, y: number): number => (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE);
+  /** THE GROUND OF A BOX ON LEVEL LAND, DIGESTED WITHOUT READING A HEIGHT (`layer.ts` `digestOfCell`, one a cell of buildings): there the ground is the level cut and filled to the roads and to the buildings' platforms, so its content is the level, the roads' profiles a point of the box can read (`RoadElevation.digest`), the flush footways (`packFlush`) and the platforms over it (`TownPads.cut`). Content, never a serial: the masses and floors kept on disk under it are found again only on the same ground. */
+  const levelGroundDigest = (minX: number, minY: number, maxX: number, maxY: number): number => {
+    const out = new Digest().add(Math.round(builtGroundAt(minX, minY) * 100)).add(elevation?.digest(minX, minY, maxX, maxY) ?? 0);
+    const flush = worldNet ? packFlush(worldNet, [[minX, minY, maxX, maxY]]).data : null;
+    if (flush) out.addAll(flush.rects).addAll(flush.lineEnds).addAll(flush.lines).addPlain(flush.roads);
+    const pads = sitesGraded.pads?.cut([[minX, minY, maxX, maxY]]);
+    if (pads) out.add(pads.apron).addPlain(pads.pads);
+    return out.value();
+  };
+  /** THE GROUND OF A BOX OFF LEVEL LAND, DIGESTED WITHOUT SAMPLING UNDER EACH BUILDING: the land's own heights there as the terrain keeps them (`TerrainSurface.digest`: what `renderedHeightAt` reads, by content), the roads' profiles and flush footways the paving reads. DO NOT sample 36 points under every building of the map at the first look (`layer.ts` `boxGroundDigest`, a cell's buildings each): one digest a cell of what its ground is made of. */
+  const landGroundDigest = (minX: number, minY: number, maxX: number, maxY: number): number => {
+    const out = new Digest().add(terrain.digest(minX, minY, maxX, maxY)).add(elevation?.digest(minX, minY, maxX, maxY) ?? 0);
+    const flush = worldNet ? packFlush(worldNet, [[minX, minY, maxX, maxY]]).data : null;
+    if (flush) out.addAll(flush.rects).addAll(flush.lineEnds).addAll(flush.lines).addPlain(flush.roads);
+    return out.value();
+  };
   /** See `SceneHandle.pavedHeightAt` (`world/paving.ts`). */
   const pavedHeightAt: PavingSource = Object.assign((x: number, y: number): number => {
     if (!elevation || !elevation.has(GROUND_ONLY)) return NaN;
@@ -1048,9 +1060,9 @@ export function createSceneRenderer(
   const crowdFrustum = new Frustum();
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
+  /** The roads' blocks at their full level: in the view's frustum (the buildings' detail's, set each frame) and under the tier's budget (`applyGeometryBudget`). */
+  const roadResidency: RoadResidency = { view: detailFrustum, budget: Infinity, farBudget: Infinity, network: networkFar };
   const detailProjection = new Matrix4();
-  /** A square of the plan as `farSees` tests it. */
-  const seenBox = new Box3();
   const crowdProjection = new Matrix4();
   const crowdBounds = new Sphere(new Vector3(), 8);
   const pedestrianVisible = (x: number, y: number, height: number): boolean => {
@@ -1120,31 +1132,106 @@ export function createSceneRenderer(
   // The shell batches write their buffers on the GPU with this context (`gpuBatchedMesh.ts`).
   gpuBatchContext(renderer.getContext() as WebGL2RenderingContext);
   const buildings = createBuildingLayer(anisotropy);
+  // The tier's memory for the buildings' detail (`quality.ts` detailMemoryMB); the lab's switch over it (`setEffects`).
+  buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
+  /** The detail's budget the governor gave last (`governGeometry`); the tier's own when it has not cut it. */
+  let governedDetail = Infinity;
+  /** The budgets given in place of the tier's (`setGeometryBudget`); null: the tier's. */
+  let geometryBudget: GeometryBudget | null = null;
+  const budgetNow = (): GeometryBudget => geometryBudget ?? GEOMETRY_BUDGETS[tier];
+  /** The tier's geometry budgets (`quality.ts` GEOMETRY_BUDGETS): the masses' and the view cells' share, the governor's whole. */
+  const applyGeometryBudget = (): void => {
+    const budget = budgetNow();
+    buildings.setMassBudget(budget.massesMB * 1048576);
+    roadResidency.budget = budget.roadsNearMB * 1048576;
+    roadResidency.farBudget = budget.roadsFarMB * 1048576;
+    ViewCells.gpuShare = budget.viewCellsShare;
+    governedDetail = Infinity;
+  };
+  applyGeometryBudget();
+  /**
+   * THE TIER'S GEOMETRY UNDER ITS WHOLE BUDGET (`GEOMETRY_BUDGETS.totalMB`), read off the scene every `GOVERN_FRAMES` (`countMemory`, what
+   * `__roadcraft.memory()` reports): what is out of the view has gone first by its own budgets (the masses' levels, the view cells), and
+   * what is still over comes off the buildings' detail budget, the farthest cells stepping down to their facade level and masses
+   * (`MassCells.cap`) - never a hole. Given back as the rest shrinks, up to the tier's `detailMemoryMB`. The lab's own detail budget
+   * (`buildingChoices.detailMemoryMB`) is left as it is set. Returns the geometry counted, bytes.
+   */
+  const governGeometry = (): number => {
+    const geometry = countMemory(scene).geometryBytes;
+    if (buildingChoices.detailMemoryMB >= 0) return geometry;
+    const total = budgetNow().totalMB * 1048576;
+    const tierDetail = quality.detailMemoryMB * 1048576;
+    const detail = buildings.residentBytes;
+    // Over the whole: the detail's budget cut by what is over (at least a sixteenth of the whole). Under it, the cut held till the
+    // geometry is a tenth under the whole (DO NOT give it back at the first frame under: the cells it let go came back over), then the
+    // tier's. DO NOT cap the detail while the whole is under its budget: a budget given changes the cells the view draws (`MassCells.cap`).
+    let next = governedDetail;
+    if (geometry > total) next = Math.max(total / 16, Math.min(tierDetail, detail - (geometry - total)));
+    else if (geometry < total * 0.9) next = Infinity;
+    if (next !== governedDetail) {
+      governedDetail = next;
+      buildings.setDetailBudget(Number.isFinite(next) ? next : tierDetail);
+    }
+    return geometry;
+  };
+  let governFrames = 0;
   // Buildings are placed once, never moved: a still tree.
   holdStill(buildings.group);
   scene.add(buildings.group);
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
   // And every layer that registered its meshes by size (`shadowCasters.ts`): cellInstances, flags, signals, things in the hand.
   // The far cascades (1 and 2) take the buildings by their masses only (`BuildingLayer.castInto` coarse).
-  environment.setCasters((texel, cascade) => {
+  environment.setCasters((texel, cascade, half) => {
     // The effects panel's buildings without shadows: out of every cascade's pass (`buildingSwitches.ts`).
     buildingSwitcher.casters(effectSwitches, texel);
     // The lab's optimisations: the parts cast by a wider texel, the masses from another cascade (`optimizationsApply.ts`).
-    buildings.castInto(texel === null ? null : texel * optimizer.castTexel, cascade >= optimizer.coarseFrom);
+    // Past the first cascade, the parts also by their size in it (`CAST_RADIUS_SHARE`); the first keeps every part as wide as its texel.
+    buildings.castInto(texel === null ? null : texel * optimizer.castTexel, cascade >= optimizer.coarseFrom, cascade > 0 ? half : 0);
     castCastersInto(texel);
   });
+  /** THE BUILDINGS' OCCLUSION CULLING (`occlusion.ts`): the walls that surely stand round the eye laid on the page before the colour
+   *  pass, the buildings' objects wholly behind them left out of that pass alone (`BuildingLayer.hideOccluded`). Never out of a shadow:
+   *  three draws the sun's cascades inside the colour pass's render (r186 `WebGLRenderer.render` calls `shadowMap.render`), and this
+   *  wrap of the cascades' own wrap (`sunCascades.ts`) shows what was hidden for their draw. Built after the casters' signature, which
+   *  never sees what is hidden (the cascades' stores would be drawn again every frame). */
+  const occlusion = new OcclusionBuffer();
+  const occlusionProbe = { enabled: true, stats: { ...occlusion.stats, objectsHidden: 0, active: false } };
+  /** Whether each cell's walls may hide (`BuildingLayer.occluderCell`), asked once a cell a frame. */
+  const occluderCells = new Map<number, boolean>();
+  const occluderDrawn = (x: number, y: number): boolean => {
+    const i = Math.floor(x / BATCH_CELL), j = Math.floor(y / BATCH_CELL);
+    const key = (i + 32768) * 65536 + (j + 32768);
+    let drawn = occluderCells.get(key);
+    if (drawn === undefined) occluderCells.set(key, drawn = buildings.occluderCell(i, j));
+    return drawn;
+  };
+  const occlusionHidden = (x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): boolean => occlusion.hidden(x0, y0, x1, y1, z0, z1);
+  let occludedNow = false;
+  /** Frames left before the walls are laid again after a frame they hid nothing in (a view from above looks over them): the ms of laying them
+   *  spared where they pay nothing. Conservative either way: a frame not laid hides nothing. */
+  let occlusionIdle = 0;
+  {
+    const cascadesRender = renderer.shadowMap.render.bind(renderer.shadowMap);
+    renderer.shadowMap.render = (lights, shadowScene, camera) => {
+      if (!occludedNow) { cascadesRender(lights, shadowScene, camera); return; }
+      buildings.revealOccluded(true);
+      try {
+        cascadesRender(lights, shadowScene, camera);
+      } finally {
+        buildings.revealOccluded(false);
+      }
+    };
+  }
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     refillArrays(scene);
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
-    farRoads.refill();
-    nearTiles.refill();
     signs.refill();
     wantAllTexels();
   });
-  /** The buildings' garden plants, and the buildings and ground they were planted for. */
-  let gardens: Gardens | null = null;
+  /** The buildings' garden plants held round the view (`gardens.ts` createGardenCells). */
+  let gardens: GardenCells | null = null;
   const coverKit = createGroundCoverKit();
   // The countryside's trees are hand-made models (`natureTrees.ts`), loaded once
   let natureTreeKit: NatureTreeKit | null = null;
@@ -1185,17 +1272,15 @@ export function createSceneRenderer(
   let elementLayer: ElementLayer | null = null;
   /** What the elements stand on and are, from the diary: a dab lays its own cells again, not the map's. */
   const elementRead = new JournalCursor(['elements', 'terrain', 'ground']);
-  /** The elements' layer, made once their models are in: the region's cells draw in it, and a streamed world's tiles (`elementTiles.ts`). */
+  /** The elements' layer, made once their models are in: the region's cells draw in it. */
   const elementLayerOf = (): ElementLayer | null => {
     if (!elementKit) return null;
     if (!elementLayer) {
-      elementLayer = createElementLayer(elementKit, activeTiles);
+      elementLayer = createElementLayer(elementKit);
       world.add(elementLayer.group);
     }
     return elementLayer;
   };
-  // The streamed world's brush elements per tile, in the elements' layer.
-  nearTiles.add(elementProduct(elementLayerOf));
   void loadElementKit(anisotropy).then((kit) => { elementKit = kit; }, (error: unknown) => {
     console.warn('[elements] models not loaded', error);
   });
@@ -1315,23 +1400,6 @@ export function createSceneRenderer(
     // DO NOT leave it out: without it the gardens asked every planted building of the city whether the ground moved under it
     rectsSince: (since) => groundRectsSince(since),
   };
-  /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
-  const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt), activeTiles);
-  // The streamed world's gardens per tile (`gardenTiles.ts`), in the gardens' own cells: the region places none.
-  nearTiles.add(gardenProduct(() => (gardens ??= createGardens(sceneryKit)), world));
-  // The near products' bakes read the ground shared with the workers and the clearings; a tile the ground changed under (a stroke of the relief too) or a clearing cut in is asked again, its bake kept where what it reads did not change (`nearTileBake.ts` groundDigest, readKey).
-  const NEAR_GROUND_KINDS: readonly ChangeKind[] = ['elevation', 'ground', 'terrain', 'clearings'];
-  nearTiles.setGround(() => ({ ground: farRoadGround(), naturalIsGround: buildings.farEnv().naturalIsGround }), {
-    get version() { return groundDiary?.version ?? 0; },
-    touches: (since, area) => groundDiary?.touches(since, area, NEAR_GROUND_KINDS) ?? false,
-    rectsSince: (since) => {
-      const entries = groundDiary?.since(since, NEAR_GROUND_KINDS);
-      if (!entries) return null;
-      const rects: ChangeRect[] = [];
-      for (const entry of entries) { if (entry.rects === null) return null; rects.push(...entry.rects); }
-      return rects;
-    },
-  });
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
@@ -1415,8 +1483,7 @@ export function createSceneRenderer(
       if (net.doc.segment(ribbon.id)?.structure === 'tunnel') continue;
       if (Number.isFinite(paved) && land > paved + m(0.3)) { buried = { x: p.x, y: p.y, land, paved }; break; }
     }
-    // The streamed world's roads are the tiles' (`farRoads.ts`): the region draws none by design.
-    const missing = activeAt === null && (!roads || !roads.group.parent || vertices === 0);
+    const missing = !roads || !roads.group.parent || vertices === 0;
     if ((missing || buried) && !roadsReported) {
       roadsReported = true;
       // Once, latched by `roadsReported`; as text, so a headless console log keeps it.
@@ -1724,32 +1791,21 @@ export function createSceneRenderer(
   let utilityRevision = -1;
   /** What moves a pole or its parts: the poles and wires, the roads (its kerb), the roads' heights and the ground under it. */
   const POLE_KINDS: readonly ChangeKind[] = ['utilities', 'roads', 'elevation', 'ground', 'terrain'];
+  /** Time a frame may spend making the poles' blocks the view asks for, ms (one at least). */
+  const POLE_FRAME_MS = 3;
   /** The diary's serial of `POLE_KINDS` the pole layer was brought up to. */
   let poleSerial = -1;
-  /** Where the active tiles moved since the poles were last brought up: their poles placed or let go (`activeTiles.ts`). */
-  const poleMoves = activeTiles.reader();
-  /** The pole layer brought up to the diary (`poleLayer.ts`) */
+  /** The pole layer brought up to the diary (`poleLayer.ts` PoleCells): the blocks its changes reached dropped, made again as the view asks (`draw`). */
   const syncUtilities = (net: Network, groundAt: (x: number, y: number) => number): void => {
     const serial = net.doc.changes.serialOf(...POLE_KINDS);
-    // THE STREAMED WORLD'S POLES ARE THE TILES' (`poleTiles.ts`, each tile baked in a worker, an edited one from the page's records): the region places none. Its layer took in and let go three tiles of poles on the page at every tile's edge the camera crossed (plan 2.4.1).
-    if (activeAt !== null) {
-      if (utilities) { builtTriangles -= utilities.triangles; world.remove(utilities.group); utilities.dispose(); utilities = null; }
-      poleMoves.take();
-      poleSerial = serial;
-      return;
-    }
-    if (utilities && serial === poleSerial && !poleMoves.pending) return;
-    const entries = utilities ? net.doc.changes.since(poleSerial, POLE_KINDS) : null;
-    const moved = poleMoves.entries('utilities');
-    const before = utilities?.triangles ?? 0;
-    if (!utilities || entries === null || moved === null || entries.some((e) => e.rects === null)) {
-      if (utilities) { world.remove(utilities.group); utilities.dispose(); }
-      utilities = buildUtilities(net, groundAt, sceneryKit, docPoles(net.doc, activeTiles));
+    if (utilities) utilities.source(net, groundAt);
+    if (utilities && serial === poleSerial) return;
+    if (!utilities) {
+      utilities = new PoleCells(sceneryKit);
+      utilities.source(net, groundAt);
       world.add(utilities.group);
-    } else {
-      utilities.follow(net, groundAt, net.doc, [...entries, ...moved], docPoles(net.doc, activeTiles));
     }
-    builtTriangles += utilities.triangles - before;
+    utilities.follow(net.doc.changes);
     poleSerial = serial;
   };
   /** The poles and the placed things, outside a world being built: a pole edit moves only `doc.utilityRevision` */
@@ -1876,7 +1932,7 @@ export function createSceneRenderer(
   const rebuildWorld = (net: Network): void => {
     worldNet = net;
     // A map opened always builds its own world (`mapRoadsIn`), whatever its revision says.
-    if (!mapOpened && networkRevision === net.revision && terrainRevision === net.doc.terrainRevision && activeBuilt === activeSerial) {
+    if (!mapOpened && networkRevision === net.revision && terrainRevision === net.doc.terrainRevision) {
       stationsWait = false;
       // A world being built builds the poles too (`worldSteps`)
       if (worldJob === null && (utilityRevision !== net.doc.utilityRevision || poleSerial !== net.doc.changes.serialOf(...POLE_KINDS))) {
@@ -1890,19 +1946,128 @@ export function createSceneRenderer(
   };
   /** The roads the next solve reads the ground under, worked out once a state of the network and solve (`roadsRead.ts`): with no solve to start from every road is read whatever the ground, with one the land has not moved (`landStill`), and a moved region is never kept. */
   const roadsRead = new RoadsRead<ReturnType<typeof roadsToRead>>();
+  /** Whether a solve waits for the ground under `roads`, read off the page on the shared ground as it stands (`RoadStations.waiting`). */
+  const stationsAsked = (net: Network, roads: ReturnType<typeof roadsToRead>): boolean =>
+    roadStations.waiting(roads, (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
+  /** The roads a scoped opening's solve left (`SolveScope`), nearest its view first (`order`, made at the first share), and how many are taken. */
+  let solveLeft: { readonly x: number; readonly y: number; order: readonly SegmentId[] | null; at: number } | null = null;
+  /** The network's state the solve standing was made of (`Network.state`). */
+  let solvedState: object | null = null;
+  /**
+   * @rebuild One share of the roads the opening's solve left, solved from the solve standing (`SOLVE_SHARE` a frame, nearest the view
+   * first); true once every road is solved. The heights it moved are told to the diary where they moved, a share's boxes a frame: what
+   * read them there follows. DO NOT solve the rest in one go after the curtain: the whole network's solve in the frame the town is shown.
+   */
+  const completeSolve = (net: Network): boolean => {
+    const partial = elevation;
+    if (!partial?.pending) { solveLeft = null; return true; }
+    // The network moved since the solve standing and its world is not built yet: that build's solve (no scope) takes every road left. DO NOT take a share of it here: the edit's roads would be solved in it, and the build's comparison of the two solves would find none of them moved (`compareSolves`).
+    if (net.state !== solvedState) return false;
+    const left = solveLeft ??= { x: rig.viewport.centre.x, y: rig.viewport.centre.y, order: null, at: 0 };
+    left.order ??= pendingOrder(net, partial.pendingRoads!(), left.x, left.y);
+    const scope: SolveScope = { roads: left.order.slice(left.at, left.at + SOLVE_SHARE) };
+    const groundAt = isLevelLand(net) ? FLAT_GROUND : builtGroundAt;
+    // Off level ground the share's stations are read off the page first, as a world build's (`roadStations.ts`).
+    if (stationsAsked(net, roadsToRead(net, groundAt, partial, null, scope))) return false;
+    const started = performance.now();
+    elevation = buildRoadElevation(net, groundAt, partial, roadStations.current, null, scope);
+    roadStations.used();
+    left.at += SOLVE_SHARE;
+    const moved = elevation.differences?.(partial) ?? null;
+    derived(net, 'elevation', moved ? moved.map((r): ChangeRect => [r.minX, r.minY, r.maxX, r.maxY]) : null, 'road heights solved past the opening', worldCause,
+      { ms: performance.now() - started, detail: `${elevation.pending ?? 0} roads left` });
+    measureHitch('hitch:opening/solve share', started);
+    onAssetsReady();
+    if (elevation.pending) return false;
+    solveLeft = null;
+    return true;
+  };
+  /** The key of the far level's cell (`networkFarRoads.ts`, a road block's square) a point is in. */
+  const farCellOf = (x: number, y: number): string => `${Math.floor((x - TILE_ORIGIN) / FAR_ROAD_CELL)},${Math.floor((y - TILE_ORIGIN) / FAR_ROAD_CELL)}`;
+  /** A far level cell's square, world units. */
+  const farCellRect = (key: string): Rect => {
+    const [i, j] = key.split(',').map(Number) as [number, number];
+    const x = TILE_ORIGIN + i * FAR_ROAD_CELL, y = TILE_ORIGIN + j * FAR_ROAD_CELL;
+    return [x, y, x + FAR_ROAD_CELL, y + FAR_ROAD_CELL];
+  };
+  /** The fill's next step: the cells left nearest the view now (those under it first, the camera read again at every step), built in detail by a world build of their squares alone. */
+  const fillStep = (net: Network): void => {
+    const left = fillLeft!;
+    const { x, y } = rig.viewport.centre;
+    const gap = (key: string): number => {
+      const r = farCellRect(key);
+      return Math.hypot(Math.max(r[0] - x, 0, x - r[2]), Math.max(r[1] - y, 0, y - r[3]));
+    };
+    const ranked = [...left].map((key) => ({ key, gap: gap(key) })).sort((p, q) => p.gap - q.gap);
+    // The cells the view stands over in one step, however many; past them a few, the step's fixed cost shared.
+    const near = ranked.filter((c) => c.gap === 0).length;
+    const taken = ranked.slice(0, Math.max(near, FILL_CELLS)).map((c) => c.key);
+    fillRects = taken.map(farCellRect);
+    for (const key of taken) {
+      left.delete(key);
+      fillTaken.add(key);
+      fillAwaiting.add(key);
+    }
+    // Every build visits the tiles that came into the scope (`roadSurfaces.ts` withinMoved), whichever lands first.
+    surfaceReuse.withinMoved?.push(...fillRects);
+    try {
+      buildWorld(net, true);
+    } finally {
+      fillRects = null;
+    }
+  };
+  /**
+   * AN EDIT DURING THE FILL GOES FIRST: the far level's cells a road edit reached that the fill has not taken yet are taken now, built in
+   * detail by the edit's own build (their squares put in the scope that moved, `withinMoved`, which every build visits) and their far
+   * level let go when it lands (`fillAwaiting`). DO NOT leave them to their turn: the edited road was drawn in detail where it lay, the
+   * rest of its cell stood in the network's far level made before the edit, the old outline of the road shown beside the new one, until
+   * the fill came round to it (minutes in a city of 25,000 buildings).
+   */
+  const takeEditedCells = (net: Network): void => {
+    const left = fillLeft;
+    if (left === null || left.size === 0) return;
+    // Null: the first read, or a diary that cannot say where (the whole map: left to the fill's own order).
+    const edits = fillEditRead.read(net.doc.changes);
+    if (!edits) return;
+    const pad = SURFACE_READ_REACH;
+    const rects: Rect[] = [];
+    for (const entry of edits) {
+      if (isStreaming(entry)) continue;
+      for (const r of entry.rects ?? []) {
+        const [i0, j0] = farCellOf(r[0] - pad, r[1] - pad).split(',').map(Number) as [number, number];
+        const [i1, j1] = farCellOf(r[2] + pad, r[3] + pad).split(',').map(Number) as [number, number];
+        for (let i = i0; i <= i1; i++) {
+          for (let j = j0; j <= j1; j++) {
+            const key = `${i},${j}`;
+            if (!left.delete(key)) continue;
+            fillTaken.add(key);
+            fillAwaiting.add(key);
+            rects.push(farCellRect(key));
+          }
+        }
+      }
+    }
+    if (rects.length) surfaceReuse.withinMoved?.push(...rects);
+  };
   /** @rebuild The roads' heights solved again and the world's rebuild started (`worldSteps`). `full`: the whole map, after a scoped opening (`openingFill`). */
   const buildWorld = (net: Network, full = false): void => {
     const started = performance.now();
     const opening = openingBuild && !full;
+    // A player's edit while the fill is under way: the cells it reached built by this build, before any other (`takeEditedCells`).
+    if (!full) takeEditedCells(net);
     // The opening's first world builds only the tiles and the ground round the view; the rest is filled after the curtain.
     const centre = rig.viewport.centre;
     const openingHalf = m(700);
     openingWithin = opening ? (rect) => rect[0] <= centre.x + openingHalf && rect[2] >= centre.x - openingHalf
       && rect[1] <= centre.y + openingHalf && rect[3] >= centre.y - openingHalf : null;
     const openingRegion = opening ? terrainRegion([centre.x - openingHalf, centre.y - openingHalf, centre.x + openingHalf, centre.y + openingHalf]) : null;
+    // The opening's solve: the roads round its view and a margin (`OPENING_SOLVE_MARGIN`), the rest solved once the town is shown (`completeSolve`). DO NOT solve a large city's whole network before its first frame: no pixel of the opening reads a road past the margin.
+    const reach = openingHalf + OPENING_SOLVE_MARGIN;
+    const solveScope: SolveScope | null = opening ? { region: [centre.x - reach, centre.y - reach, centre.x + reach, centre.y + reach] } : null;
+    if (opening) solveLeft = { x: centre.x, y: centre.y, order: null, at: 0 };
     // The fill after the reveal (`full`): the solve stands and only the road tiles the opening's scope left out are built, in place - DO NOT rebuild every tile of the city and hold the old and the new surfaces at once (the 3.4 GB peak of the metropolis).
     // Over the whole network's extent: DO NOT take one plate's (`TERRAIN_HALF`) - a metropolis spans several, and every street past the middle plate was left unbuilt (the player, 2026-10-20: "não gera vias").
-    const fillBlocks = full ? blocksOver(networkExtent(net)) : null;
+    const fillBlocks = full ? (fillRects ? fillRects.flatMap((r) => blocksOver(r)) : blocksOver(networkExtent(net))) : null;
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
     // A map just opened (`mapOpened`): the last solve is another city's. DO NOT start from it or compare the two: every block of the map differed, and the whole-map digest held the opening's world 1.7 s on a worker (2026-10-21).
     const newMap = mapOpened && !full;
@@ -1914,15 +2079,16 @@ export function createSceneRenderer(
     const groundMoved = full ? null : (landBlocks && land !== null && land !== 'all' ? [land] : null);
     const from = landStill || groundMoved ? elevation : null;
     // A new map on level ground (`RELIEF_FLAT`, no stamp): every station's ground is the same, and reading it costs most of a large city's solve. A stroke or a height stamp makes it real ground again.
-    const levelLand = net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
+    const levelLand = isLevelLand(net);
     const groundAt = levelLand ? FLAT_GROUND : builtGroundAt;
     // DO NOT read the ground under a tile's hundreds of new roads in this frame: a job reads it off the shared plates, the solve waits for it.
-    const solvedAhead = offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision;
+    // A step of the opening's fill on the network solved whole (`completeSolve`): the solve stands, not made again for each step.
+    const fillSolved = full && fillRects !== null && elevation !== null && !elevation.pending && net.state === solvedState;
+    const solvedAhead = fillSolved || (offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision);
     performance.mark('world:stations-start');
-    const stationAsk = roadsRead.of(groundMoved ? null : [net.state, from], () => roadsToRead(net, groundAt, from, groundMoved));
+    const stationAsk = roadsRead.of(groundMoved ? null : [net.state, from, ...(solveScope?.region ?? [])], () => roadsToRead(net, groundAt, from, groundMoved, solveScope));
     performance.mark('world:stations-read');
-    stationsWait = !solvedAhead && roadStations.waiting(stationAsk,
-      (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
+    stationsWait = !solvedAhead && stationsAsked(net, stationAsk);
     performance.mark('world:stations-done');
     if (stationsWait) return;
     landDirty = null;
@@ -1930,17 +2096,25 @@ export function createSceneRenderer(
     mapOpened = false;
     networkRevision = net.revision;
     terrainRevision = net.doc.terrainRevision;
-    activeBuilt = activeSerial;
 
     // ONE solve for the whole network, shared by every consumer below.
     const offered = offeredElevation;
     offeredElevation = null;
     performance.mark('world:solve');
-    elevation = offered && offered.revision === net.revision && offered.terrain === terrainRevision
+    elevation = fillSolved && elevation ? elevation : offered && offered.revision === net.revision && offered.terrain === terrainRevision
       ? offered.elevation
       // On land that has not moved, from the last solve
-      : buildRoadElevation(net, groundAt, from, roadStations.current, groundMoved);
+      : buildRoadElevation(net, groundAt, from, roadStations.current, groundMoved, solveScope);
     performance.mark('world:solved');
+    // A scoped opening: every road of the map drawn at once at its far level, from the network, the tiles the opening builds in detail cut out (`openingWithin`: every tile meeting the view's square).
+    if (opening) {
+      const lo = (v: number): number => Math.ceil((v - TILE_ORIGIN) / TILE - 1) * TILE + TILE_ORIGIN;
+      const hi = (v: number): number => (Math.floor((v - TILE_ORIGIN) / TILE) + 1) * TILE + TILE_ORIGIN;
+      networkFarRead.read(net.doc.changes);
+      networkFar.request(net, elevation, terrain.renderedHeightAt, FAR_ROAD_CELL, TILE_ORIGIN,
+        [lo(centre.x - openingHalf), lo(centre.y - openingHalf), hi(centre.x + openingHalf), hi(centre.y + openingHalf)]);
+    }
+    solvedState = net.state;
     roadStations.used();
     measureHitch('hitch:road-edit/elevation', started);
     // Now the ground comes to meet the roads
@@ -1959,7 +2133,9 @@ export function createSceneRenderer(
   function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
     started: number, sliced: boolean, region: TerrainRegion | null, levelLand: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
-    // The revision this build is of: what its landing says the near roads are built for (`settleNearTiles`).
+    // The fill's cells taken before this build started: their far level goes when it lands (a build replaced halfway leaves them to the next).
+    const fillLanding = [...fillAwaiting];
+    // The revision this build is of: what its landing says the roads drawn stand for (`RoadStandIn.landed`).
     const builtOf = networkRevision;
     // The blocks the solves differ in, once the worker has digested them (`compareSolves`).
     while (compares.some((c) => c && !c.ready)) { groundWorkers.check(); yield 'wait'; }
@@ -1993,22 +2169,16 @@ export function createSceneRenderer(
     // Only the tiles the changed blocks reach are digested again (`roadSurfaces.ts` `depends`): the blocks hold where the land moved too (`landBlocks`), null when that cannot be said.
     // The blocks every build since the last finished one changed (a build replaced halfway left its own for this one).
     surfaceBlocks = blocks !== null && surfaceBlocks !== null ? [...surfaceBlocks, ...blocks] : null;
-    // THE STREAMED WORLD'S ROADS ARE THE TILES' (`farRoads.ts` near level: every tile one way, an edited one from the page's records): the region builds none to draw. Two ways of drawing them met at the region's edge, its detail on one side and the far level's flat colour on the other at the same distance (2026-10-16).
-    const byTile = activeAt !== null;
     performance.mark('world:surfaces');
-    const freshRoads = byTile ? noRoadSurfaces() : yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
+    const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
       sliced ? roadTiles : null, surfaceBlocks);
     performance.mark('world:surfaced');
     surfaceBlocks = [];
-    if (!byTile) {
-      derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
-        { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles built, ${freshRoads.reused} reused` });
-    }
+    derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
+      { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles built, ${freshRoads.reused} reused` });
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
-    // A streamed world's structures are the tiles' (`structureTiles.ts`, baked in workers): the region builds none, its cells let go.
     const atdetails = performance.now();
-    if (byTile && details) { builtTriangles -= details.triangles; world.remove(details.group); details.dispose(); details = null; }
-    const freshDetails = byTile ? null : (details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles)).prepare(net, solve, terrain.renderedHeightAt, blocks);
+    const freshDetails = (details ??= createStructureCells(materials, terrain.vergeMaterial)).prepare(net, solve, terrain.renderedHeightAt, blocks);
     measureHitch('hitch:road-edit/details', atdetails);
     yield;
     // The overhead utility network.
@@ -2018,7 +2188,7 @@ export function createSceneRenderer(
     // The new pieces' shaders compiled before they are drawn - in parallel where the driver can
     if (sliced) {
       const stage = new Group();
-      for (const piece of [freshRoads.group, ...(freshDetails?.fresh ?? [])]) {
+      for (const piece of [freshRoads.group, ...freshDetails.fresh]) {
         if (piece.parent === null) stage.add(piece);
       }
       if (stage.children.length > 0) {
@@ -2031,16 +2201,26 @@ export function createSceneRenderer(
     // Everything in place at once: the world as it was goes - only what is replaced here.
     let triangles = builtTriangles;
     if (roads && roads !== freshRoads) { triangles -= roads.triangles; world.remove(roads.group); roads.dispose(); }
-    // The region's blocks of a world drawn by tiles now: let go once out of the picture.
-    if (byTile && surfaceReuse.chunks.size) dropSurfaceBlocks(surfaceReuse);
     triangles -= details?.triangles ?? 0;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     mapRoadsIn = true;
+    // The roads drawn changed by an edit since the network's far level was asked: it stands for none of them (`NetworkFarRoads.covers`), not shown for a cell let go till made again.
+    const roadEdits = networkFarRead.read(net.doc.changes);
+    if (roadEdits === null || roadEdits.some((entry) => !isStreaming(entry))) networkFar.outdate();
+    // The fill's cells this build made in detail: their far level hidden, the blocks and their own far levels stand for their roads now.
+    for (const key of fillLanding) { networkFar.hide(key); fillAwaiting.delete(key); }
+    // The whole fill landed: the tiles are no longer scoped, and the network's far level stays as the roads' top level (`mesh/roadResidency.ts`), hidden but where the far budget let blocks go; made again for the whole map (the opening's view no longer cut out of it, every road at its solved height).
+    if (fillLeft !== null && fillLeft.size === 0 && fillAwaiting.size === 0) {
+      fillLeft = null;
+      openingWithin = null;
+      networkFar.settle(roadResidency.dropped ?? []);
+      requestNetworkFar(net, solve);
+    } else if (fillLeft === null && !openingBuild && openingWithin === null && !networkFar.settled) networkFar.settle(roadResidency.dropped ?? []);
     performance.mark('world:roads');
     roads.adopt();
     world.add(roads.group);
-    freshDetails?.apply();
+    freshDetails.apply();
     if (details && !details.group.parent) world.add(details.group);
     utilityRevision = utilityBuilt;
     builtTriangles = triangles + roads.triangles + (details?.triangles ?? 0);
@@ -2198,8 +2378,7 @@ export function createSceneRenderer(
   const switchedOff = (on: EffectSwitches): (Object3D | null | undefined)[] => [
     ...(on.terrain ? [] : terrain.meshes),
     ...(on.water || !on.terrain ? [] : waterMeshes()),
-    ...(on.roads ? [] : [roads?.group, details?.group, roadStandIn.group]),
-    ...(on.farRoads ? [] : [farRoads.group]),
+    ...(on.roads ? [] : [roads?.group, details?.group, roadStandIn.group, networkFar.group]),
     ...(on.buildings ? [] : [buildings.group]),
     ...(on.vegetation ? [] : [...[coverCells, natureCards, natureForest, paintedForest, plantedForest].map((plants) => plants?.group), ...(gardens?.meshes ?? [])]),
     ...(on.furniture ? [] : [furniture.group, furniture.grass]),
@@ -2220,6 +2399,8 @@ export function createSceneRenderer(
     renderer.shadowMap.enabled = quality.shadows && effectSwitches.shadows;
     materials.setDetail(quality.surfaceDetail && effectSwitches.surfaceDetail);
     environment.setQuality({ shadows: quality.shadows && effectSwitches.shadows, shadowMapSize: quality.shadowMapSize });
+    if (buildingChoices.detailMemoryMB < 0) buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
+    applyGeometryBudget();
     post?.dispose();
     post = createPostChain(renderer, scene, rig.camera, quality, level);
     post.setNight(Math.max(0, lastDark));
@@ -2228,7 +2409,7 @@ export function createSceneRenderer(
     shadowMoved = true;
   };
 
-  let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, governor.current);
+  let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, tier);
   /** The chain's targets that hold memory on the GPU now: those bound at least once (three makes a target's framebuffer at its first `setRenderTarget`, r186 `WebGLTextures.setupRenderTarget`; a disposed one loses it). DO NOT charge the ledger for targets never drawn into (the clouds' with no cloud placed, the bloom's mips by day): ~40 MB at 1440p taken from the buildings' detail for nothing (RND-19). */
   const livePostTargets = (): ReturnType<PostChain['targets']>[number][] => liveTargets(post.targets(), renderer.properties);
   /** How many were live when the ledger was last told: told again when that changes (a target drawn into for the first time, the bloom at nightfall). */
@@ -2280,7 +2461,7 @@ export function createSceneRenderer(
   let transitPreviewKey = '';
 
   /** The map zoom and the plant layers `setMap` was last told about (`draw`). */
-  let plantMapFor: { map: boolean | null; gardens: Gardens | null } = { map: null, gardens: null };
+  let plantMapFor: { map: boolean | null; gardens: GardenCells | null } = { map: null, gardens: null };
   /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
   const VIEW_SEEN = m(320);
   /** In perspective: radians added to each side of the camera's width (the camera turns). */
@@ -2495,14 +2676,9 @@ export function createSceneRenderer(
   const allCoverCells = (): Set<number> => new Set([...coverKeeps.forest.cellKeys(), ...coverKeeps.scrub.cellKeys(), ...coverKeeps.rocks.cellKeys(), ...coverKeeps.shore.cellKeys()]);
   /** Which of the trees the player planted stand: off the roads, out of the buildings. */
   const plantedKeeps = new CellKeeps<PlantedTree>((t) => (onCarriageway(keepNet!, t) || buildings.covers(t.x, t.y) ? null : terrain.renderedHeightAt(t.x, t.y)));
-  /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`); none in a cell of the kept ring (`ActiveTiles.keepsCell`). */
-  /** A keep cell whose tile's planted trees the tiles draw (`plantedTiles.ts`): the region files none there; until that tile's bake lands the region draws them (never a hole while it is baked). */
-  const plantedByTile = (key: number): boolean => { const r = keepCellRect(key); return nearTiles.landed('planted', tileKeyAt((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)); };
-  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) && !plantedByTile(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
-  /** The tiles whose planted bake came or went since the region last filed its trees: their cells filed again. */
-  const plantedFlips = new Set<number>();
-  nearTiles.onLanded = (kind, tile) => { if (kind === 'planted') { plantedFlips.add(tile); onAssetsReady(); } };
-  /** The planted forest's cells, made once the woods' models are in: the region's keep draws in them, and a streamed world's tiles (`plantedTiles.ts`). */
+  /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`). */
+  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key);
+  /** The planted forest's cells, made once the woods' models are in: the region's keep draws in them. */
   const plantedForestOf = (): PlantCells | null => {
     if (!natureTreeKit) return null;
     const kit = natureTreeKit;
@@ -2513,10 +2689,6 @@ export function createSceneRenderer(
       return made;
     })();
   };
-  // The streamed world's planted trees per tile, in the planted forest's cells.
-  nearTiles.add(plantedProduct(plantedForestOf, () => natureTreeKit?.variants.length ?? 0));
-  // The streamed world's road structures per tile (`structureTiles.ts`): piers, parapets, retaining walls, portals.
-  nearTiles.add(structureProduct(world, materials, terrain.vergeMaterial));
   /** @rebuild Every planted tree filed cell by cell: the map opened, or its trees replaced whole. */
   const plantAll = (doc: RoadDoc): void => {
     plantedKeeps.clear();
@@ -2526,7 +2698,7 @@ export function createSceneRenderer(
       const list = byCell.get(key);
       if (list) list.push(t); else byCell.set(key, [t]);
     }
-    for (const [key, list] of byCell) if (activeTiles.keepsCell(key) && !plantedByTile(key)) plantedKeeps.fill(key, list);
+    for (const [key, list] of byCell) plantedKeeps.fill(key, list);
   };
   /** What the cover sweeps read of the ground (`coverSweep.ts`). */
   const coverField: CoverField = {
@@ -2537,11 +2709,9 @@ export function createSceneRenderer(
   /** The painted covers of keep cells swept again, each cell's places kept as they stand where the sweep finds the same. */
   const resweepCovers = (cells: Iterable<number>): void => {
     for (const key of cells) {
-      // A cell of the kept ring round the active tiles: its covers let go (`ActiveTiles.keepsCell`).
-      const kept = activeTiles.keepsCell(key);
-      coverKeeps.forest.fill(key, kept ? forestIn(key, coverField) : [], sameCandidate);
-      coverKeeps.scrub.fill(key, kept ? scrubIn(key, coverField) : [], sameCandidate);
-      coverKeeps.rocks.fill(key, kept ? rocksIn(key, coverField) : [], sameCandidate);
+      coverKeeps.forest.fill(key, forestIn(key, coverField), sameCandidate);
+      coverKeeps.scrub.fill(key, scrubIn(key, coverField), sameCandidate);
+      coverKeeps.rocks.fill(key, rocksIn(key, coverField), sameCandidate);
     }
   };
   /** @rebuild The painted covers swept over every cover dab of the map (opened, replaced, or a change the diary cannot place). */
@@ -2555,7 +2725,7 @@ export function createSceneRenderer(
   };
   /** The rivers' stones plate by plate (`ShorePlates`): a plate come in, or whose water changed, sweeps its own cells; one gone lets them go. */
   const shorePlates = new ShorePlates((key, water) => coverKeeps.shore.fill(key, shoreIn(key, coverField, water), sameShore));
-  /** The cover layer's cells (stones, scrub, card trees), made once: the region's keeps draw in them, and a streamed world's tiles (`coverTiles.ts`). */
+  /** The cover layer's cells (stones, scrub, card trees), made once: the region's keeps draw in them. */
   const coverCellsOf = (): PlantCells => coverCells ??= (() => {
     const made = createCoverCells(coverKit, 'ground-cover', {
       rocksIn: (cell) => [...coverKeeps.rocks.standingIn(cell), ...coverKeeps.shore.standingIn(cell)]
@@ -2576,21 +2746,19 @@ export function createSceneRenderer(
       return made;
     })();
   };
-  /** The region's painted cover let go for the tiles' (a streamed world open). */
-  let coverTiled = false;
-  // The streamed world's painted cover per tile (`coverTiles.ts`): its stones and scrub in the cover's cells, its woods in the painted forest's.
-  nearTiles.add(coverProduct({
-    coverCells: coverCellsOf,
-    forest: paintedForestOf,
-    version: () => `${!natureTreeKit && !natureTreesPending ? 'cards' : 'trees'}:${natureTreeKit?.variants.length ?? 0}`,
-    extra: (tile) => coverExtraFor(tile, coverKit, natureTreeKit?.variants.length ?? 0, !natureTreeKit && !natureTreesPending, worldNet?.doc.treeClearings ?? []),
-  }));
   /** A change of the lit materials' programs: built off the draw, the last picture held meanwhile. */
   function compileChanged(): void {
     // DO NOT draw the next frame with the new settings' programs not built: shadows switched off or on change every lit material's program,
     // and the frame built them all in the draw (the probe, 2026-10-19: one frame of 6.9 s, 6.8 s waiting on the driver in `getProgramInfoLog`).
     // Built off the draw (`compileAsync`, the driver's parallel compile); the last picture stays on screen until they are, the page answering.
-    const compiling: Promise<void> = renderer.compileAsync(scene, rig.camera, scene).then(() => undefined, () => undefined).then(() => {
+    // DO NOT compile for whatever target the last pass left bound (the screen, after the output pass): the scene's programs carry the tone mapping and colour space of the target
+    // it is really drawn into (r186 WebGLPrograms reads `getRenderTarget()`), and the chain's target has none - built for the screen, every lit program was linked again in the first frame.
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(post.target);
+    const scenePrograms = renderer.compileAsync(scene, rig.camera, scene);
+    renderer.setRenderTarget(previous);
+    // And the chain's own passes, made again by a tier change (`createPostChain` builds them ahead).
+    const compiling: Promise<void> = Promise.all([scenePrograms, post.ready]).then(() => undefined, () => undefined).then(() => {
       if (qualityCompile === compiling) qualityCompile = null;
       askDraw();
     });
@@ -2652,6 +2820,7 @@ export function createSceneRenderer(
       return view.compare(renderer, scene, rig.camera, options);
     },
     webgpuLeftOut: () => gpuView?.leftOut() ?? {},
+    occlusion: occlusionProbe,
     viewport: rig.viewport,
     scene,
     gl: renderer,
@@ -2661,7 +2830,7 @@ export function createSceneRenderer(
         builtTriangles: builtTriangles + buildings.triangles,
         drawnTriangles: frameDrawn.triangles,
         drawCalls: frameDrawn.calls,
-        quality: governor.current,
+        quality: tier,
         fps: Math.round(fps),
         rebuildMs: Math.round(rebuildMs),
         roadTiles: roads ? { built: roads.built, reused: roads.reused } : { built: 0, reused: 0 },
@@ -2699,57 +2868,25 @@ export function createSceneRenderer(
     get programsReady() {
       return programs.ready;
     },
-    tileLoaded(key, rect, revision) {
-      nearPending.set(key, { rect, revision });
-    },
-    tileLetGo(key) {
-      nearPending.delete(key);
-    },
-    nearDrawn(key) {
-      return !nearPending.has(key);
-    },
-    get farReach() {
-      return farRoads.reachNow;
-    },
-    farSees(x0, y0, x1, y1) {
-      // Three's axes: the plan's y is -z.
-      seenBox.min.set(x0, -m(50), -y1);
-      seenBox.max.set(x1, m(500), -y0);
-      return detailFrustum.intersectsBox(seenBox);
-    },
-    get onNearDrawn() { return onNearDrawn; },
-    set onNearDrawn(fn) { onNearDrawn = fn; },
-    setActiveTiles(at, rects) {
-      buildings.setActive(at, rects);
-      // The furniture and the signs of a streamed world are the tiles' (`nearTiles`): the page's own let go.
-      furniture.setTiled(at !== null);
-      signs.setTiled(at !== null);
-      barriers.setTiled(at !== null);
-      plantLists.setTiled(at !== null);
-      // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
-      activeTiles.set(at, rects);
-      // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).
-      if (rects.length || at === null) activeSerial++;
-      activeAt = at;
-      // Where the near roads start or stop: the next finished build visits those road tiles (none known when the region goes: every tile).
-      if (at === null) surfaceReuse.withinMoved = null;
-      else surfaceReuse.withinMoved?.push(...rects);
-      if (rects.length) onAssetsReady();
-    },
-    holdOpening(until) {
-      openingHeld = until;
-    },
-    get farBuildings() {
-      return buildings.far;
-    },
-    get farRoads() {
-      return roadsAndNear;
-    },
     shadowStats() {
       return environment.shadowStats();
     },
+    setGeometryBudget(budget) {
+      geometryBudget = budget;
+      applyGeometryBudget();
+      if (buildingChoices.detailMemoryMB < 0) buildings.setDetailBudget(quality.detailMemoryMB * 1048576);
+    },
+    governGeometry: () => governGeometry(),
+    viewCamera: () => rig.camera,
     buildingLevels() {
       return buildings.levels();
+    },
+    buildingCensus() {
+      return buildings.census();
+    },
+    openingState() {
+      return { roadsIn: roads !== null && mapRoadsIn, coarsePending: buildings.coarsePending, viewPending: buildings.viewPending, treesStarted: natureTreesStarted,
+        treesPending: natureTreesPending, programs: openingPrograms, worked: reveal.worked, worldBusy: worldJob !== null, fillPending: openingFillPending, fillCellsLeft: fillLeft?.size ?? 0 };
     },
     beginLoad() {
       reveal.begin();
@@ -2759,6 +2896,11 @@ export function createSceneRenderer(
       revealedPrograms = false;
       openingBuild = scopeNextOpening;
       openingFillPending = openingBuild;
+      fillLeft = null;
+      fillTaken.clear();
+      fillAwaiting.clear();
+      networkFar.clear();
+      forgetRoadCells(roadResidency);
       scopeNextOpening = false;
       mapOpened = true;
       mapRoadsIn = false;
@@ -2834,7 +2976,7 @@ export function createSceneRenderer(
       transitPreview.set(preview?.points ?? [], preview?.mode ?? 'train', terrain.renderedHeightAt, pavedHeightAt);
     },
     setLotOverlay(input, changes) {
-      lotOverlay ??= createLotOverlay((x, y) => handle.surfaceHeightAt(x, y), activeTiles);
+      lotOverlay ??= createLotOverlay((x, y) => handle.surfaceHeightAt(x, y));
       lotOverlay.set(input, changes);
     },
     setPolePreview(net, preview) {
@@ -2857,7 +2999,7 @@ export function createSceneRenderer(
       rig.setPerspective(on);
       // The passes hold the camera they were made with.
       post.dispose();
-      post = createPostChain(renderer, scene, rig.camera, quality, governor.current);
+      post = createPostChain(renderer, scene, rig.camera, quality, tier);
       post.setNight(Math.max(0, lastDark));
       resize();
       onAssetsReady();
@@ -2883,7 +3025,8 @@ export function createSceneRenderer(
     resize,
     // Wall-clock time between drawn frames, for things that age as they are watched.
     draw(net, sim, alpha, delta, options) {
-      performance.mark('frame:draw-start');
+      if (import.meta.env.DEV && ++frameMarksDrawn % FRAME_MARKS_KEPT === 0) for (const name of FRAME_MARK_NAMES) performance.clearMarks(name);
+      frameMark('frame:draw-start');
       renderer.info.reset();
       groundDiary = net.doc.changes;
       // Planted trees and shrubs grow with the city's clock: resized once a city hour.
@@ -2904,7 +3047,7 @@ export function createSceneRenderer(
       const terrainStarted = performance.now();
       const stroking = !!options?.holdRoads && !!elevation && networkRevision === net.revision;
       const groundMoved = terrain.update(net.doc, stroking);
-      performance.mark('frame:terrain');
+      frameMark('frame:terrain');
       const landEntries = landRead.read(net.doc.changes);
       if (groundMoved) {
         landVersion++;
@@ -2922,27 +3065,27 @@ export function createSceneRenderer(
         }
       } else {
         const atRebuild = performance.now();
-        performance.mark('frame:rebuild-start');
+        frameMark('frame:rebuild-start');
         rebuildWorld(net);
-        performance.mark('frame:rebuild');
+        frameMark('frame:rebuild');
         measureHitch('hitch:draw/Rebuild', atRebuild);
         terrain.settle();
       }
       const atPump = performance.now();
       pumpWorld();
-      performance.mark('frame:pump');
+      frameMark('frame:pump');
       measureHitch('hitch:draw/Pump', atPump);
       // A building placed, moved or reshaped grades its own site. Level ground (a generated city's new map) moves under nothing: DO NOT follow 29 thousand floors or grade every pad again (3.7 s of the opening's frame).
-      const levelLand = net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
+      const levelLand = isLevelLand(net);
       landShapes();
       if (!levelLand) followFloors(net);
-      performance.mark('frame:follow');
+      frameMark('frame:follow');
       if (!levelLand && !(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
         if (changed) shapeGround(net, changed.map(terrainRegion), true);
       }
-      performance.mark('frame:graded');
+      frameMark('frame:graded');
       // What stands on the ground - the buildings, the walls, the transport, the gardens
       const groundSettled = !stroking && !worldJob;
       // The street furniture, the signs, the barriers and the transport on the world as it stands (the engine's 'draw' products)
@@ -2959,17 +3102,13 @@ export function createSceneRenderer(
       // At the opening the buildings come once the first world (the roads, the ground cut and filled to them) is in
       if (roads !== null && (reveal.opened || (groundIn && networkRevision === net.revision))) {
         buildings.hidden = !reveal.opened;
-        buildingsGrounded = true;
-        farRoads.coarseFirst(buildings.hidden);
-        nearTiles.coarseFirst(buildings.hidden);
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
-        settleNearTiles();
-        performance.mark('frame:buildings-start');
+        frameMark('frame:buildings-start');
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
-          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
+          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))), levelLand ? levelGroundDigest : landGroundDigest)) shadowMoved = true;
         // Another frame while they land, nothing more: what lands stirs the stores itself (childadded, the door, `update`'s answer).
         if (buildings.pending) askDraw();
-        performance.mark('frame:buildings-end');
+        frameMark('frame:buildings-end');
       }
       // The countryside's trees' kit (its models, its programs compiled ahead: `loadNatureTrees`) made while the first world is built, not after: it reads nothing of the world, and the opening waited for it once the world was in (`natureTreesPending`, the curtain's `whole`). The trees themselves are grown once the world stands (the nature's keeps, `!worldJob`).
       if (!natureTreesStarted && roads !== null) startNatureTrees();
@@ -2978,16 +3117,14 @@ export function createSceneRenderer(
         fxPreload = true;
         requestIdleCallback(() => { void loadEffects(); }, { timeout: 5000 });
       }
-      // Each building's plants (`gardenLists.ts`), placed again only when some changed.
-      const plants = plantLists.update(net.doc.buildings, groundSettled);
-      if (plants) {
-        // Kept building by building (`gardens.ts`): a list the same as before keeps its plants' slots.
-        gardens ??= createGardens(sceneryKit);
-        const swapped = gardens.update(plants);
-        for (const mesh of swapped.removed) world.remove(mesh);
-        for (const mesh of swapped.added) world.add(mesh);
+      // The gardens held round the view (`gardens.ts` createGardenCells): placed from the buildings as the view asks (`lookProps`), the cells an edit or the ground reached dropped once the ground is settled (a stroke over).
+      if (!gardens) {
+        gardens = createGardenCells(sceneryKit);
+        world.add(gardens.layer.group);
       }
-      performance.mark('frame:plants');
+      gardens.source(net.doc.buildings, terrain.renderedHeightAt);
+      if (groundSettled) gardens.follow(net.doc.changes);
+      frameMark('frame:plants');
       // THE PLANTS AND STONES (`coverSweep.ts`/`coverKeeps`, `natureSweep`/`natureKeeps`, the planted trees)
       if (!stroking && !worldJob) {
         keepNet = net;
@@ -3001,11 +3138,8 @@ export function createSceneRenderer(
         // The stones, the scrub and the painted woods: swept again only in the cells the paint reached (`coverSweep.ts`).
         {
           const at = performance.now();
-          const paint = activeTiles.read(coverPaintRead, net.doc.changes);
-          // A streamed world's painted cover is the tiles' (`coverTiles.ts`, baked in workers): the region sweeps none; the rivers' stones stay the plates'.
-          if (activeAt !== null) {
-            if (!coverTiled) { coverTiled = true; for (const keep of [coverKeeps.forest, coverKeeps.scrub, coverKeeps.rocks]) keep.clear(); }
-          } else if (paint === null || paint.some((e) => e.rects === null) || coverTiled) { coverTiled = false; sweepAllCovers(net.doc); }
+          const paint = coverPaintRead.read(net.doc.changes);
+          if (paint === null || paint.some((e) => e.rects === null)) sweepAllCovers(net.doc);
           else if (paint.length) {
             const cells = new Set<number>();
             for (const e of paint) for (const r of e.rects!) keepCellsOver(r, COVER_SWEEP_PAD, cells);
@@ -3093,20 +3227,17 @@ export function createSceneRenderer(
           measureHitch('hitch:nature', at);
         }
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
-        // A streamed world's planted trees are the tiles' (`plantedTiles.ts`, baked in workers) once a tile's bake landed; until then the region draws its own tiles' (`plantedByTile`).
         if (natureTreeKit) {
-          const planted = activeTiles.read(plantedRead, net.doc.changes);
-          if (planted === null || planted.some((e) => e.rects === null)) { plantAll(net.doc); plantedFlips.clear(); }
-          else if (planted.length || plantedFlips.size) {
+          const planted = plantedRead.read(net.doc.changes);
+          const plantedWhole = planted === null || planted.some((e) => e.rects === null);
+          if (plantedWhole) plantAll(net.doc);
+          else if (planted.length) {
             const cells = new Set<number>();
             for (const e of planted) for (const r of e.rects!) keepCellsOver(r, 0, cells);
-            // A tile whose bake came or went: its cells filed again, its trees let go or taken back.
-            for (const tile of plantedFlips) { const { i, j } = tileOfKey(tile); keepCellsOver([i * TILE, j * TILE, (i + 1) * TILE - 1e-6, (j + 1) * TILE - 1e-6], 0, cells); }
-            plantedFlips.clear();
             for (const key of cells) plantedKeeps.fill(key, plantedIn(net.doc, key), (a, b) => a === b);
           }
-          if (rects === null) plantedKeeps.refreshAll();
-          else if (rects.length) plantedKeeps.refresh(rects, KEEP_REACH);
+          // DO NOT test every tree again right after `plantAll` tested them on the same roads and buildings: a map just opened reads no rectangle (`rects` null), and every tree of a city of 70,000 buildings was tested twice in one frame, the buildings' cover cells made twice (the first ones let go for their budget): a page task of 3.8 s behind the curtain (trace of step-70k, 2026-10-22).
+          if (rects === null) { if (!plantedWhole) plantedKeeps.refreshAll(); } else if (rects.length) plantedKeeps.refresh(rects, KEEP_REACH);
           const cells = plantedKeeps.takeChangedCells();
           if (cells === null || cells.size || vegetationRedraw) {
             const forest = plantedForestOf()!;
@@ -3116,10 +3247,10 @@ export function createSceneRenderer(
         }
         vegetationRedraw = false;
       }
-      performance.mark('frame:vegetation');
+      frameMark('frame:vegetation');
       // The perspective camera kept out of the buildings (`IsoRig.setSolids`). Level ground moves under nothing: DO NOT follow every floor again.
       if (!levelLand) followFloors(net);
-      performance.mark('frame:follow2');
+      frameMark('frame:follow2');
       // Looking down from above, the eye crosses no building: the solids (boxes of 28,800 buildings, 2 s of the opening's first frame) are built only where the camera tilts low enough to enter one, as in a street.
       const solidsNeeded = rig.perspective && rig.viewport.elevation < 1.2;
       if (solidsNeeded) {
@@ -3131,7 +3262,7 @@ export function createSceneRenderer(
         rig.setSolids(null);
         townSolids = null;
       }
-      performance.mark('frame:solids');
+      frameMark('frame:solids');
       // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
       post.followTown(rig.target.x, -rig.target.z, townSolids, canyonChanges(net.doc.changes));
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;
@@ -3161,16 +3292,11 @@ export function createSceneRenderer(
         // The sun's cascades are made by three at their first draw: counted as they stand before the detail is chosen.
         gpuLedger.set('shadow maps', 'shadow maps', renderTargetsBytes(environment.shadowMaps()));
         // The view's budget of triangles (`core/perfBudget.ts`): the levels' error scale rises until they fit (`buildings/frameBudget.ts`).
-        buildings.frame.budget = buildingChoices.triangles === 0 ? Infinity : VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles * buildingChoices.triangles;
+        buildings.frame.budget = buildingChoices.triangles === 0 ? Infinity : VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles * buildingChoices.triangles * quality.triangleScale;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre * optimizer.buildingPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
-        farRoads.choose(ex, ey, ez, pxAtMetre * optimizer.roadPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
-        nearTiles.choose(ex, ey, ez, pxAtMetre * optimizer.roadPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
-        // DO NOT leave a road just built invisible until its tile's near roads come back (over 2 s, the player): drawn now from the network the commit solved, let go once its tile's edit is drawn or no near roads are wanted there (`farTree.ts` standInDone).
-        for (const tile of roadStandIn.settled()) if (farRoads.standInDone(tile)) roadStandIn.drop(tile);
-        roadStandIn.settle();
+        // DO NOT leave a road just built invisible until the world's build lands (over 2 s, the player): drawn now from the network the commit solved, let go by the build of the commit's revision landing, every commit not landed yet standing.
         if (pendingStandIn.length && elevation && net.revision === net.doc.revision) {
-          // Drawn by tiles: let go by each tile's near roads; drawn whole by the page (a map of its own): by the build of the commit's revision landing, every commit not landed yet standing.
-          roadStandIn.show(net, elevation, pendingStandIn.splice(0), activeAt === null ? net.revision : undefined);
+          roadStandIn.show(net, elevation, pendingStandIn.splice(0), net.revision);
         }
         roadStandIn.landed(landedRevision);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
@@ -3188,7 +3314,6 @@ export function createSceneRenderer(
       for (const mesh of gardens?.meshes ?? []) {
         mesh.visible = detailed && (!plantMap || !isLeafCards(mesh));
       }
-      gardens?.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
       // After `visible` is set (the contract of `Scenery.setMap`), and only when the map zoom is crossed or the layer is new
       if (plantMap !== plantMapFor.map || gardens !== plantMapFor.gardens) {
         plantMapFor = { map: plantMap, gardens };
@@ -3243,6 +3368,13 @@ export function createSceneRenderer(
       // Plants and street furniture outside the view are not drawn at all.
       // The layers' shadow margin away from the sun the cascades cast by. DO NOT take the light's position less its target: both move with every fit of the cascades (the ground coming in, the camera), their difference by the last bits, and every layer's every kind was culled again each frame the view stood still.
       setShadowSun(environment.toSun.x, environment.toSun.y, environment.toSun.z);
+      // The props held round the view (`propCells.ts`): the near square's cells and the far blocks the view reaches placed within the frame's time, the poles' blocks too; none of a layer not drawn at this zoom.
+      {
+        const view = propView(cullCamera, crowdFrustum, screenHalf(), rig.target.y);
+        const props = [...(gardens && detailed ? [gardens.layer] : []), ...(quality.detailProps && detailed ? [furniture.layer] : [])];
+        if (props.length) lookProps(props, view);
+        utilities?.look(view, performance.now() + POLE_FRAME_MS);
+      }
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
       barriers.cull(crowdFrustum, crowdProjection);
@@ -3454,7 +3586,12 @@ export function createSceneRenderer(
         if (roadFocus.frames++ % 6 === 0) {
           const blocks: Mesh[] = [];
           for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
-          updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach);
+          updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach, roadResidency);
+          // Over the far budget with cells the network's far level does not stand for (none made, or made before the roads changed): made again for the roads drawn, off the page.
+          if (roadResidency.wantsNetwork && elevation && worldJob === null && !openingBuild && fillLeft === null && !networkFar.pending && networkFar.outdated()) {
+            networkFar.settle(roadResidency.dropped ?? []);
+            requestNetworkFar(net, elevation);
+          }
         }
         if (optimizer.reliefDue()) terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }
@@ -3489,9 +3626,7 @@ export function createSceneRenderer(
         if (elementKit && !landHeld) {
           const startedAt = performance.now();
           const layer = elementLayerOf()!;
-          // A streamed world's elements are the tiles' (`elementTiles.ts`, baked in workers): the region makes none.
-          layer.setTiled(activeAt !== null);
-          const entries = activeTiles.read(elementRead, doc.changes);
+          const entries = elementRead.read(doc.changes);
           let cells: Set<number> | null = null;
           if (entries !== null && entries.every((e) => e.rects !== null)) {
             cells = new Set();
@@ -3534,18 +3669,17 @@ export function createSceneRenderer(
       openingSince ??= performance.now();
       roadTiles.unseen = !reveal.opened;
       if (!reveal.opened) {
-        // THE OPENING IN TWO STEPS (CLAUDE.md "Streaming world"): shown once the roads built so far, the masses and the far levels are in; the near cells' detail, the tiles still coming and the world's later builds land after, as they do when the camera moves (DO NOT wait for `buildings.pending`, `worldJob` or every tile of the region: the whole city waited 2.5-4.5 min for them, 2026-10-16).
-        const held = openingHeld?.() ?? true;
+        // THE OPENING IN TWO STEPS: shown once the roads built so far and the masses are in; the near cells' detail and the world's later builds land after, as they do when the camera moves (DO NOT wait for `buildings.pending` or `worldJob`: the whole city waited 2.5-4.5 min for them, 2026-10-16).
         // OPEN = WHAT THE VIEW SEES IN ITS FINAL DETAIL (CLAUDE.md; Cesium3DTileset tilesLoaded: every tile meeting the screen's error this frame loaded): the near cells, the near roads and the tiles' near products in the frustum too, not the masses alone - the curtain fell with the district in masses and the street in a smooth mass (conf130/131/133).
         // A FULL-MAP OPENING (the fit on a rounded city, zoom under 1: a metre under a pixel at every distance): the masses and the far roads
         // ARE the final detail there. The near levels were still waited for and took seconds of the curtain (2026-10-20); they stream after it,
         // where a pixel cannot tell them from what stands.
         const mapView = !rig.perspective && rig.viewport.zoom < 1;
         // THE MAP'S OWN ROADS (`mapRoadsIn`), not whatever stands: DO NOT take the last city's for this one's - the curtain fell on a town of buildings over grass, no street drawn (2026-10-21).
-        const roadsIn = roads !== null && mapRoadsIn;
-        const whole = roadsIn && !buildings.coarsePending && farRoads.waiting === 0
-          && (mapView || (!buildings.viewPending && nearTiles.pendingInView() === 0))
-          && natureTreesStarted && !natureTreesPending && held;
+        // And every road past the opening's view at its far level (`networkFar`): DO NOT show a map whose streets stop at the view's edge.
+        const roadsIn = roads !== null && mapRoadsIn && !networkFar.pending;
+        const whole = roadsIn && !buildings.coarsePending && (mapView || !buildings.viewPending)
+          && natureTreesStarted && !natureTreesPending;
         // DO NOT draw the unseen frame before the town's programs are built: drawn first, each program was built at its first use, one after the other, in that one frame (4.5 s of the opening's 62, 2026-10-16); asked together, the driver builds them in parallel (KHR_parallel_shader_compile).
         // The programs are asked once the BUILDINGS are in, not when every road tile and tree is: the town's cells are what bring every
         // material the reveal draws, and the driver builds the shaders while the last tiles stream (the compile was on the critical path
@@ -3558,7 +3692,7 @@ export function createSceneRenderer(
           const ready = programs.ready;
           void ready.then(() => { if (programs.ready === ready) { openingPrograms = 'built'; performance.mark('reveal:programs'); onAssetsReady(); } });
         }
-        const next = reveal.step(whole && openingPrograms === 'built', performance.now(), !held);
+        const next = reveal.step(whole && openingPrograms === 'built', performance.now());
         if (next === 'warm') {
           // One frame drawn unseen first, its programs built: the new meshes go to the GPU
           performance.mark('reveal:warm');
@@ -3584,12 +3718,22 @@ export function createSceneRenderer(
       else if (reveal.opened) {
         if (!revealedPrograms) { revealedPrograms = true; programs.afterReveal(); }
         // The rest of a large city's roads and ground, now that its view is shown: built in slices while the game runs (`openingBuild`).
-        if (openingFillPending && worldJob === null) {
+        // The roads' heights past the opening's view first, a share a frame (`completeSolve`): the fill builds on the whole solve.
+        if (openingFillPending && worldJob === null && completeSolve(net)) {
           openingFillPending = false;
           openingBuild = false;
-          openingWithin = null;
-          buildWorld(net, true);
+          // The opening's tiles stay built; the far level's cells are taken a few at a time (`fillStep`).
+          const scope = openingWithin;
+          fillTaken.clear();
+          fillAwaiting.clear();
+          fillLeft = new Set(networkFar.cellKeys());
+          fillEditRead.reset();
+          fillEditRead.read(net.doc.changes);
+          openingWithin = (rect) => (scope?.(rect) ?? false) || fillTaken.has(farCellOf((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2));
         }
+        if (fillLeft !== null && fillLeft.size > 0 && worldJob === null && !openingFillPending) fillStep(net);
+        // The tier's geometry budget kept (`governGeometry`), a read of the scene now and then.
+        if (++governFrames >= GOVERN_FRAMES) { governFrames = 0; governGeometry(); }
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
         // The effects panel's switches: the passes skipped, the layers hidden for this drawing only, the shadows kept as they stand.
@@ -3601,9 +3745,31 @@ export function createSceneRenderer(
         }
         optimizer.beforeRender();
         if (backend === 'webgl') {
+          // The walls round the eye laid from the camera as this frame draws it (its shake included), the buildings behind them out of the colour pass.
+          // Only where the town is drawn as it stands (no effect switched off, the camera low enough for the solids to be filed: `solidsNeeded`).
+          const wanted = occlusionProbe.enabled && townSolids !== null && rig.perspective && effectSwitches === ALL_EFFECTS_ON && buildingChoices === DEFAULT_BUILDING_CHOICES;
+          const occluding = wanted && occlusionIdle === 0;
+          if (wanted && occlusionIdle > 0) occlusionIdle--;
+          occludedNow = false;
+          occlusionProbe.stats.objectsHidden = 0;
+          occlusionProbe.stats.active = occluding;
+          if (occluding) {
+            occluderCells.clear();
+            const camera = rig.camera as PerspectiveCamera;
+            occlusion.build(camera, camera.aspect, townSolids!(), occluderDrawn, camera.near);
+            occlusionProbe.stats.objectsHidden = buildings.hideOccluded(camera, occlusionHidden);
+            occludedNow = occlusionProbe.stats.objectsHidden > 0;
+            if (!occludedNow) occlusionIdle = OCCLUSION_RETRY_FRAMES;
+          } else occlusion.clear();
           gpuTimer.begin();
-          post.render(delta);
+          try {
+            post.render(delta);
+          } finally {
+            if (occluding) buildings.restoreOccluded();
+            occludedNow = false;
+          }
           gpuTimer.end();
+          if (occluding) Object.assign(occlusionProbe.stats, occlusion.stats);
         // Under WebGPU, the frame its renderer can draw so far: the scene without the post chain nor the shadows (stages 3 and 4); nothing until its device stands.
         } else gpuView?.render(scene, rig.camera);
         // What came into the scene given the optimisations on, a few times a second: built off the draw when that changed programs.
@@ -3635,8 +3801,8 @@ export function createSceneRenderer(
     },
     setQuality(level, settings) {
       requested = level;
-      const resolved = level === 'auto' ? governor.current : level;
-      governor.set(resolved);
+      const resolved = level === 'auto' ? tier : level;
+      tier = resolved;
       baseQuality = settings ?? QUALITY[resolved];
       // The lab's optimisations over the tier's settings: the same settings when none changes them.
       applyQuality(resolved, withOptimizations(baseQuality, optimizer.values));
@@ -3648,7 +3814,7 @@ export function createSceneRenderer(
       const { programs, shadows } = optimizer.set(values);
       let compile = programs;
       if (qualityOptionsDiffer(before, values)) {
-        applyQuality(governor.current, withOptimizations(baseQuality, values));
+        applyQuality(tier, withOptimizations(baseQuality, values));
         compile = true;
       }
       if (shadows) shadowMoved = true;
@@ -3660,7 +3826,7 @@ export function createSceneRenderer(
       const before = effectSwitches;
       effectSwitches = Object.values(next).every(Boolean) ? ALL_EFFECTS_ON : next;
       if (nextBuildings.detailMemoryMB !== buildingChoices.detailMemoryMB) {
-        buildings.setDetailBudget(nextBuildings.detailMemoryMB < 0 ? GAME_DETAIL_MEMORY_MB * 1048576 : nextBuildings.detailMemoryMB * 1048576);
+        buildings.setDetailBudget((nextBuildings.detailMemoryMB < 0 ? quality.detailMemoryMB : nextBuildings.detailMemoryMB) * 1048576);
       }
       const plain = (Object.keys(DEFAULT_BUILDING_CHOICES) as (keyof BuildingChoices)[]).every((key) => nextBuildings[key] === DEFAULT_BUILDING_CHOICES[key]);
       buildingChoices = plain ? DEFAULT_BUILDING_CHOICES : nextBuildings;
@@ -3701,6 +3867,7 @@ export function createSceneRenderer(
       gpuView?.dispose();
       void comparer?.then((view) => { if (view !== gpuView) view.dispose(); });
       roadTiles.dispose();
+      networkFar.dispose();
       groundWorkers.dispose();
       tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the previews and the effects too
@@ -3710,8 +3877,6 @@ export function createSceneRenderer(
       densityCars.dispose();
       exhaust.dispose();
       wear.dispose();
-      // The tiles' products first: they take their runs back from the layers below.
-      nearTiles.dispose();
       barriers.dispose();
       transit.dispose();
       transitPreview?.dispose();
@@ -3722,7 +3887,7 @@ export function createSceneRenderer(
       agents.dispose();
       signals.dispose();
       buildings.dispose();
-      farRoads.dispose();
+      roadPrograms.dispose();
       blinkMaterial.dispose();
       worldJob = null;
       roads?.dispose();

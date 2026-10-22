@@ -1,0 +1,670 @@
+{
+  "storage": {
+    "roadcraft.quality": "ultra"
+  },
+  "viewport": [
+    1920,
+    1080
+  ],
+  "steps": [
+    {
+      "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large', radiusMetres: 8850 }); 'started'"
+    },
+    {
+      "until": "(() => { const e = performance.getEntriesByName('city:applied')[0]; if (e && window.__cityAt === undefined) window.__cityAt = e.startTime; return window.__cityAt !== undefined; })()",
+      "name": "city applied",
+      "timeout": 1800000,
+      "polling": 250
+    },
+    {
+      "until": "(() => { const at = window.__cityAt ?? 0; return performance.getEntriesByName('opening:shown').some((e) => e.startTime > at) || !window.__roadcraft.scene().opening; })()",
+      "name": "city shown",
+      "timeout": 600000,
+      "polling": 250
+    },
+    {
+      "until": "(() => { const c = document.getElementById('loading-curtain'); return !!c && getComputedStyle(c).display === 'none'; })()",
+      "name": "curtain gone",
+      "timeout": 600000,
+      "polling": 250
+    },
+    {
+      "press": "Começar a construir",
+      "optional": true
+    },
+    {
+      "press": "Continuar",
+      "optional": true
+    },
+    {
+      "eval": "window.__roadcraft.sim.setClock(720); window.__roadcraft.scene().setSkyMode('day'); window.__roadcraft.measure(true); 1"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        0.12,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-map"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        0.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-mid05"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-mid12"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-district"
+    },
+    {
+      "setView": [
+        5530,
+        5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-ne-mid12"
+    },
+    {
+      "setView": [
+        5530,
+        5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-ne-district"
+    },
+    {
+      "setView": [
+        -5530,
+        5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-nw-mid12"
+    },
+    {
+      "setView": [
+        -5530,
+        5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-nw-district"
+    },
+    {
+      "setView": [
+        -5530,
+        -5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-sw-mid12"
+    },
+    {
+      "setView": [
+        -5530,
+        -5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-sw-district"
+    },
+    {
+      "setView": [
+        5530,
+        -5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-se-mid12"
+    },
+    {
+      "setView": [
+        5530,
+        -5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-se-district"
+    },
+    {
+      "setView": [
+        6320,
+        0,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-e-mid12"
+    },
+    {
+      "setView": [
+        6320,
+        0,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-e-district"
+    },
+    {
+      "setView": [
+        -6320,
+        0,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-w-mid12"
+    },
+    {
+      "setView": [
+        -6320,
+        0,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-w-district"
+    },
+    {
+      "setView": [
+        0,
+        6320,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-n-mid12"
+    },
+    {
+      "setView": [
+        0,
+        6320,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-n-district"
+    },
+    {
+      "setView": [
+        0,
+        -6320,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-s-mid12"
+    },
+    {
+      "setView": [
+        0,
+        -6320,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 300
+    },
+    {
+      "shot": "early-s-district"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        0.12,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "shot": "map"
+    },
+    {
+      "memory": "exact"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        0.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "mid05"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "mid12"
+    },
+    {
+      "setView": [
+        0,
+        0,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "shot": "district"
+    },
+    {
+      "memory": "exact"
+    },
+    {
+      "setView": [
+        150,
+        0,
+        5,
+        20,
+        35
+      ]
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "shot": "street"
+    },
+    {
+      "memory": "exact"
+    },
+    {
+      "setView": [
+        5530,
+        5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "ne-mid12"
+    },
+    {
+      "setView": [
+        5530,
+        5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "ne-district"
+    },
+    {
+      "setView": [
+        -5530,
+        5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "nw-mid12"
+    },
+    {
+      "setView": [
+        -5530,
+        5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "nw-district"
+    },
+    {
+      "setView": [
+        -5530,
+        -5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "sw-mid12"
+    },
+    {
+      "setView": [
+        -5530,
+        -5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "sw-district"
+    },
+    {
+      "setView": [
+        5530,
+        -5530,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "se-mid12"
+    },
+    {
+      "setView": [
+        5530,
+        -5530,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "se-district"
+    },
+    {
+      "setView": [
+        6320,
+        0,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "e-mid12"
+    },
+    {
+      "setView": [
+        6320,
+        0,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "e-district"
+    },
+    {
+      "setView": [
+        -6320,
+        0,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "w-mid12"
+    },
+    {
+      "setView": [
+        -6320,
+        0,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "w-district"
+    },
+    {
+      "setView": [
+        0,
+        6320,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "n-mid12"
+    },
+    {
+      "setView": [
+        0,
+        6320,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "n-district"
+    },
+    {
+      "setView": [
+        0,
+        -6320,
+        1.2,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "shot": "s-mid12"
+    },
+    {
+      "setView": [
+        0,
+        -6320,
+        2.5,
+        45,
+        48
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "shot": "s-district"
+    },
+    {
+      "memory": "exact"
+    }
+  ]
+}

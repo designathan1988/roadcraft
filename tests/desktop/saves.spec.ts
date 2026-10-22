@@ -42,11 +42,12 @@ describe('the desktop saves folder', () => {
     expect(await saves.run({ op: 'keys' })).toEqual(['a:1']);
   });
 
-  it('encodes a save batch as the browser writer does: JSON, gzip when packed', async () => {
+  it('writes a save batch as the browser writer does: the frames\' bytes, gzip when packed', async () => {
     const saves = createSaves(folder());
-    await saves.run({ op: 'batch', batch: { put: [{ key: 'p', value: { r: [1, 2] }, packed: true }, { key: 'm', value: [3], packed: false }], remove: [] } });
+    const frame = new Uint8Array([0x52, 0x43, 0x53, 0x51, 1, 2, 3, 4]);
+    await saves.run({ op: 'batch', batch: { put: [{ key: 'p', bytes: frame.slice().buffer, packed: true }, { key: 'm', bytes: bytes('[3]').buffer, packed: false }], remove: [] } });
     const [packed, plain] = (await saves.run({ op: 'get', keys: ['p', 'm'] })) as Uint8Array[];
-    expect(JSON.parse(gunzipSync(packed!).toString('utf8'))).toEqual({ r: [1, 2] });
+    expect([...gunzipSync(packed!)]).toEqual([...frame]);
     expect(text(plain)).toBe('[3]');
   });
 

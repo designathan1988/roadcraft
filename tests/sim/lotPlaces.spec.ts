@@ -10,7 +10,7 @@ import { SimWorld } from '@sim/world';
 import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { createAgentWalkEngine, joinsFootway } from '@sim/agents/walk';
-import { type DoorWay, doorWay, personGates } from '@sim/agents/lotDoors';
+import { type DoorWay, doorWay } from '@sim/agents/lotDoors';
 import { busy, kindOf, outShare, PEOPLE, type Mix } from '@sim/ambient/demand';
 import { ambientIndexWork } from '@sim/ambient/ambientIndex';
 import { LotPlaces, PLACE_KINDS } from '@sim/ambient/lotPlaces';
@@ -59,7 +59,7 @@ function worldOf(doc: RoadDoc, seed = 0x0be9): SimWorld {
 }
 
 const WALK_DECAY = m(470);
-const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });
+const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay });
 
 /** The old `AmbientWorld.refreshPlaces` with every way worked out (no time budget): the oracle's places. */
 function oldPlaces(w: SimWorld): { b: TrafficBuilding; kind: keyof Mix; way: DoorWay | null }[] {
@@ -201,7 +201,7 @@ describe('the lots people walk into', () => {
     };
     for (const [hour, out, cutting] of [[8.5, true, false], [18, false, false], [12, true, true]] as const) {
       const fresh = (): LotPlaces<DoorWay> => {
-        const made = cutting ? new LotPlaces<DoorWay>({ wayOf: narrower, gatesOf: personGates }) : newPlaces();
+        const made = cutting ? new LotPlaces<DoorWay>({ wayOf: narrower }) : newPlaces();
         made.sync(w.buildings, doc.changes);
         return made;
       };

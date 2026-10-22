@@ -7,7 +7,7 @@ import type { Casualty } from '../people/casualties';
 import type { KerbStop } from '../vehicles/kerbStops';
 import { FLEET_CEILING, PED_CEILING } from '../params';
 import type { SignalState } from '../signals/query';
-import type { TileEvent } from '../meso/meso';
+import type { MesoDelta } from '../meso/memory';
 
 /** THE SIMULATION'S WORKER AND THE PAGE (`simHost.ts` there, `simClient.ts` here): what goes between them */
 
@@ -85,28 +85,20 @@ export interface TrainState { readonly colour: string; readonly metro: boolean; 
 
 /** The page to the worker: never the whole map nor a building's record, only what traffic reads (`agents/trafficBuildings.ts`). */
 export type ToSim =
-  /** `live`: the tiles the page's document holds (`world/tiles.ts`): the meso takes the others from their link tables. */
-  | { readonly type: 'init'; readonly frames: SharedFrames; readonly map: TrafficMap; readonly live: readonly number[]; readonly seed: number; readonly zones: ReadonlyMap<string, Float64Array | null>; readonly zonesPrefix: string | null; readonly ambient: 'view' | 'edges'; readonly bake?: NetworkBake | null }
-  | { readonly type: 'load'; readonly map: TrafficMap; readonly live: readonly number[]; readonly bake?: NetworkBake | null }
+  | { readonly type: 'init'; readonly frames: SharedFrames; readonly map: TrafficMap; readonly seed: number; readonly zones: ReadonlyMap<string, Float64Array | null>; readonly zonesPrefix: string | null; readonly ambient: 'view' | 'edges'; readonly bake?: NetworkBake | null }
+  | { readonly type: 'load'; readonly map: TrafficMap; readonly bake?: NetworkBake | null }
   /** The SAME map sent whole again, when the diary cannot say what changed (its entries let go, a change without ids): the replica brought up to it, the simulation kept running (SIM-18). */
-  | { readonly type: 'resync'; readonly map: TrafficMap; readonly live: readonly number[] }
-  /** The streamed world's tile store the meso reads its far tiles from (`meso/tileFeed.ts`), in IndexedDB by `map`, or over `port` (the desktop's), within `reach` of the camera. */
-  | { readonly type: 'tiles'; readonly map: string; readonly reach: number; readonly port: MessagePort | null }
+  | { readonly type: 'resync'; readonly map: TrafficMap }
   /** The page's job lanes for the lots' bays and the conflict pairs (`jobPool.ts` jobChannel), before `init`: the worker opens no pool of its own. */
   | { readonly type: 'lanes'; readonly bays: readonly MessagePort[]; readonly conflicts: readonly MessagePort[] }
   /** The page's worker serving those lanes failed: their pool falls back to working here. */
   | { readonly type: 'laneLost'; readonly service: 'bays' | 'conflicts'; readonly why: string }
-  /** A tile of the page taken in, let go, or written at `version` (`worldStreamer.ts` StreamerEvents). */
-  /** `fromPage`: a tile loaded whose store is behind the page (a write not confirmed): its buildings come from the page, DO NOT read them, or its bays, from the store. */
-  | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number; readonly fromPage?: boolean }
   /** The roads', lots' and transit's records the diary named (`delta`), and where the buildings it named are read (worked out as traffic reads them in the worker). */
   | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingSent[] }
-  /** A tile's junctions and ribbons as the page has them solved (`NetworkBake`): the worker's network takes them where its inputs are the same, never solving them again. */
-  | { readonly type: 'bake'; readonly bake: NetworkBake }
   | { readonly type: 'frame'; readonly wall: number; readonly hold: boolean; readonly controls: SimControls }
   | { readonly type: 'reset' }
-  /** The micro window's centre and radius (`meso/meso.ts`), and the page's buffer the meso traffic is written into (`meso/memory.ts`). */
-  | { readonly type: 'window'; readonly x: number; readonly y: number; readonly r: number; readonly meso: SharedArrayBuffer }
+  /** The micro window's centre and radius (`meso/meso.ts`); `whole`: the page's copy of the meso links is new, the next delta carries every link (`meso/memory.ts`). */
+  | { readonly type: 'window'; readonly x: number; readonly y: number; readonly r: number; readonly whole: boolean }
   | { readonly type: 'act'; readonly id: number; readonly act: SimAct }
   | { readonly type: 'ask'; readonly id: number; readonly ask: SimAsk }
   /** The zoning tool's proposed lots planned on the worker's copy of the region (`SimHost.lotPlan`), answered with `answer`: a `LotPlan`, or null when not now. */
@@ -127,6 +119,8 @@ export interface SimControls {
   readonly focus: SimFocus | null;
   /** The city's time of day set to these minutes after midnight (a saved map reopened), told once. */
   readonly clock?: number;
+  /** A map opening behind its curtain (`SceneHandle.opening`): its traffic's topology, bays and steps wait for it to be shown (`simHost.ts` frame). */
+  readonly opening?: boolean;
 }
 
 export interface SimFocus {
@@ -164,6 +158,8 @@ export type FromSim =
   | { readonly type: 'tick'; readonly slot: number; readonly vehicles: readonly (readonly [number, VehicleRich])[]; readonly peds: readonly (readonly [number, PedRich])[];
       readonly signals: readonly SignalLights[]; readonly layout: { readonly all: boolean; readonly junctions: readonly SignalLayout[] } | null; readonly trains: readonly TrainState[];
       readonly parked: ParkedChanges | null; readonly stats: SimStats;
+      /** The meso links changed since the last tick (null: none), their buffers handed over (`meso/memory.ts`). */
+      readonly meso?: MesoDelta | null;
       readonly wounds: readonly Wound[]; readonly casualties: readonly Casualty[] }
   | { readonly type: 'acted'; readonly id: number; readonly result: unknown }
   | { readonly type: 'answer'; readonly id: number; readonly answer: unknown };
