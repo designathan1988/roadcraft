@@ -1,4 +1,4 @@
-import type { HairStudio, HairTool } from './hairStudio';
+import type { HairStudio, HairTool, LockKind } from './hairStudio';
 import type { ShellPreset } from './hairShell';
 import { icon } from './icons';
 import { el, type widgets } from './widgets';
@@ -6,13 +6,15 @@ import { el, type widgets } from './widgets';
 /** THE HAIR STUDIO'S PANEL: tools as icons, styles to start from, the brush, the strands' settings */
 
 const TOOLS: readonly (readonly [HairTool, string, string])[] = [
-  ['comb', 'comb', 'Pentear'], ['grab', 'grab', 'Puxar'], ['cut', 'scissors', 'Cortar'], ['grow', 'grow', 'Crescer'],
+  ['draw', 'plant', 'Desenhar mecha'], ['erase', 'trash', 'Apagar mecha'], ['comb', 'comb', 'Pentear'], ['grab', 'grab', 'Puxar'], ['cut', 'scissors', 'Cortar'], ['grow', 'grow', 'Crescer'],
   ['puff', 'inflate', 'Volume'], ['smooth', 'smooth', 'Alisar'], ['curl', 'wave', 'Ondular'], ['part', 'part', 'Risca'], ['tie', 'tie', 'Prender'],
 ];
 
 const STYLES: readonly (readonly [ShellPreset, string])[] = [
-  ['short', 'Curto'], ['bob', 'Chanel'], ['long', 'Longo'], ['ponytail', 'Rabo'], ['bun', 'Coque'], ['pigtails', 'Marias'],
+  ['short', 'Curto'], ['bob', 'Chanel'], ['long', 'Longo'], ['curly', 'Cacheado'], ['ponytail', 'Rabo'], ['bun', 'Coque'], ['pigtails', 'Marias'],
 ];
+
+const KINDS: readonly (readonly [LockKind, string])[] = [['straight', 'Lisa'], ['curl', 'Cacho'], ['braid', 'Trança']];
 
 export interface HairPanelHooks {
   readonly ui: ReturnType<typeof widgets>;
@@ -22,7 +24,7 @@ export interface HairPanelHooks {
 }
 
 export function hairPanel(s: HairStudio, { ui, render, close, colours }: HairPanelHooks): Node[] {
-  const { slider, swatches } = ui;
+  const { slider, swatches, seg } = ui;
   const button = (label: string, run: () => void, ico?: string, cls = 'big alt'): HTMLButtonElement => {
     const b = ico ? el('button', { cls }, icon(ico, 15), label) : el('button', { cls, textContent: label });
     b.onclick = () => { run(); render(); };
@@ -45,6 +47,13 @@ export function hairPanel(s: HairStudio, { ui, render, close, colours }: HairPan
       b.onclick = () => { s.preset(id); render(); };
       return b;
     })),
+    el('h3', { textContent: 'Adicionar' }),
+    el('div', { cls: 'chips' },
+      button('Franja', () => s.addFringe(false), undefined, ''), button('Franja lateral', () => s.addFringe(true), undefined, ''),
+      button(s.braid ? 'Sem trança' : 'Trançar rabo', () => s.toggleBraid(), undefined, ''), button('Tirar mechas', () => s.clearLocks(), undefined, '')),
+    el('h3', { textContent: 'Mecha desenhada' }),
+    seg(KINDS, s.lockKind, (v) => { s.lockKind = v; render(); }),
+    slider('Largura', 3, 16, 0.5, s.lockWidth * 100, (v) => { s.lockWidth = v / 100; }, (v) => `${(v / 10).toFixed(1)} cm`),
     el('h3', { textContent: 'Pincel' }),
     slider('Tamanho', 2, 30, 0.5, s.radius * 10, (v) => { s.radius = v / 10; }, (v) => `${v} cm`),
     slider('Força', 0.05, 1, 0.01, s.strength, (v) => { s.strength = v; }),

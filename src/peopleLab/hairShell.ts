@@ -26,7 +26,16 @@ const RING = 6;
 /** A strand's normal: its own share and the surface's (`strand`). */
 const SHELL_NORMAL = [0.35, 0.65] as const;
 
-export type ShellPreset = 'short' | 'bob' | 'long' | 'ponytail' | 'bun' | 'pigtails';
+export type ShellPreset = 'short' | 'bob' | 'long' | 'curly' | 'ponytail' | 'bun' | 'pigtails';
+
+/** A lock drawn by hand over the base (VRoid's freehand groups): a fringe, a layer, a stray lock, a quiff - its path (x y z, dm, evenly spaced
+ *  LOCK_STEP apart) kept exactly as drawn, its half width (dm), its curl (helix radius, dm), braided or not, cut blunt or tapering. */
+export interface Lock { pts: number[]; width: number; curl: number; braid: boolean; blunt: boolean }
+
+/** A drawn lock's spacing (dm). */
+export const LOCK_STEP = 0.06;
+/** A curl's turn, a braid's cross (dm along the hair). */
+const CURL_PERIOD = 0.35, BRAID_PERIOD = 0.42;
 
 /** A hairstyle, saved: the guide surface's parameters per column, its pulls, its ties. Small and exact (rounded to 0.1 mm). */
 export interface ShellRecord {
@@ -46,9 +55,13 @@ export interface ShellRecord {
   readonly overlap: number;
   /** Cut straight across at the ends (a bob) rather than tapering. */
   readonly blunt: boolean;
+  /** Locks drawn over the base (fringes, layers, quiffs, braids). */
+  readonly locks?: Lock[];
+  /** A tied tail braided. */
+  readonly braid?: boolean;
 }
 
-const LENGTHS: Record<ShellPreset, number> = { short: 2.4, bob: 2.6, long: 4.4, ponytail: 4.4, bun: 4.4, pigtails: 3.8 };
+const LENGTHS: Record<ShellPreset, number> = { short: 2.4, bob: 2.6, long: 4.4, curly: 3.2, ponytail: 4.4, bun: 4.4, pigtails: 3.8 };
 
 /** A preset's record on this body. */
 export function presetRecord(preset: ShellPreset, body: GroomBody): ShellRecord {
@@ -58,9 +71,10 @@ export function presetRecord(preset: ShellPreset, body: GroomBody): ShellRecord 
     : preset === 'bun' ? [{ x: sx, y: top - 0.3, z: sz - 0.85, radius: 0.28 }]
       : preset === 'pigtails' ? [{ x: sx + 0.85, y: top - 1.15, z: sz - 0.35, radius: 0.18 }, { x: sx - 0.85, y: top - 1.15, z: sz - 0.35, radius: 0.18 }] : [];
   return {
-    v: 2, preset, length: Array.from({ length: n }, () => LENGTHS[preset]), lift: Array.from({ length: n }, () => preset === 'short' ? 0.04 : 0.06),
-    wave: Array.from({ length: n }, () => 0), offsets: Array.from({ length: n * KNOTS * 3 }, () => 0), ties, part: 0,
-    strands: 34, overlap: 1.7, blunt: preset === 'bob',
+    v: 2, preset, length: Array.from({ length: n }, () => LENGTHS[preset]), lift: Array.from({ length: n }, () => preset === 'short' ? 0.04 : preset === 'curly' ? 0.14 : 0.06),
+    // Curly: every strand wound into curls (`curled`).
+    wave: Array.from({ length: n }, () => preset === 'curly' ? 0.09 : 0), offsets: Array.from({ length: n * KNOTS * 3 }, () => 0), ties, part: 0,
+    strands: 34, overlap: 1.7, blunt: preset === 'bob', locks: [],
   };
 }
 
@@ -104,11 +118,12 @@ function oldGroomLength(guides: string): { length: number; blunt: boolean } {
 export function compactShell(r: ShellRecord): ShellRecord {
   const q = (xs: number[]): number[] => xs.map((x) => Math.round(x * 1000) / 1000);
   return { ...r, length: q(r.length), lift: q(r.lift), wave: q(r.wave), offsets: q(r.offsets), part: Math.round(r.part * 1000) / 1000,
+    locks: (r.locks ?? []).map((l) => ({ ...l, pts: q(l.pts), width: Math.round(l.width * 1000) / 1000, curl: Math.round(l.curl * 1000) / 1000 })),
     ties: r.ties.map((t) => ({ x: +t.x.toFixed(3), y: +t.y.toFixed(3), z: +t.z.toFixed(3), radius: +t.radius.toFixed(3) })) };
 }
 
 /** A point on the smooth head (`GroomBody.head`) in direction `d` from its middle, `lift` further out along that direction. */
-function onHead(h: HeadProxy, d: number[], lift: number): number[] {
+export function onHead(h: HeadProxy, d: number[], lift: number): number[] {
   const u = norm(d);
   const t = h.radius(u) + lift;
   return [h.c[0]! + u[0]! * t, h.c[1]! + u[1]! * t, h.c[2]! + u[2]! * t];
@@ -310,29 +325,13 @@ function layRing(body: GroomBody, r: ShellRecord, column: (k: number) => number[
       const f = t * (KNOTS - 1), j = Math.min(KNOTS - 2, Math.floor(f)), u = f - j;
       for (let a = 0; a < 3; a++) even[i]![a] = even[i]![a]! + (r.offsets[(k * KNOTS + j) * 3 + a]! * (1 - u) + r.offsets[(k * KNOTS + j + 1) * 3 + a]! * u) * Math.min(1, t * 4);
     }
-    // The wave: side to side across the column within the hair's surface (square to the column and to the way out from the head), growing from
-    // the root - never in and out of the head.
-    const wv = r.wave[k]!;
-    if (wv) {
-      const h = body.head;
-      const shifted = even.map((q) => [...q]);
-      for (let i = 1; i < SAMPLES; i++) {
-        const a = even[i - 1]!, b = even[Math.min(SAMPLES - 1, i + 1)]!;
-        const along = norm([b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]);
-        const out = norm([even[i]![0]! - h.c[0]!, even[i]![1]! - h.c[1]!, even[i]![2]! - h.c[2]!]);
-        const side = norm([along[1]! * out[2]! - along[2]! * out[1]!, along[2]! * out[0]! - along[0]! * out[2]!, along[0]! * out[1]! - along[1]! * out[0]!]);
-        const t = i / (SAMPLES - 1), amount = Math.sin(t * Math.PI * 5) * wv * Math.min(1, t * 2.5);
-        for (let c = 0; c < 3; c++) shifted[i]![c] = even[i]![c]! + side[c]! * amount;
-      }
-      even.splice(0, even.length, ...shifted);
-    }
     constrain(body, even, seg, k < COLUMNS ? 1 : -1);
     cols.push(even);
   }
   return cols;
 }
 
-function resample(pts: number[][], count: number): number[][] {
+export function resample(pts: number[][], count: number): number[][] {
   if (pts.length < 2) return Array.from({ length: count }, () => [...(pts[0] ?? [0, 0, 0])]);
   const acc = [0];
   for (let i = 1; i < pts.length; i++) acc.push(acc[i - 1]! + dist(pts[i]!, pts[i - 1]!));
@@ -356,6 +355,7 @@ export function shellGeometry(body: GroomBody, r: ShellRecord, rings = layShell(
   const pos: number[] = [], nor: number[] = [], tan: number[] = [], uv: number[] = [], idx: number[] = [];
   for (const cols of rings) ringStrands(body, r, cols, pos, nor, tan, uv, idx);
   tails(body, r, pos, nor, tan, uv, idx);
+  for (const lock of r.locks ?? []) lockStrands(body, lock, pos, nor, tan, uv, idx);
   return { positions: Float32Array.from(pos), normals: Float32Array.from(nor), tangents: Float32Array.from(tan), uvs: Float32Array.from(uv), index: Uint32Array.from(idx) };
 }
 
@@ -397,7 +397,15 @@ function ringStrands(body: GroomBody, r: ShellRecord, cols: number[][][], pos: n
         const side = k0 % (COLUMNS * 2) < COLUMNS ? 1 : -1;
         for (let i = 1; i < pts.length; i++) body.collide(pts[i]!, 0, 0.025 + (layer === 1 ? 0 : 0.01), true, false, side);
         const len = (r.length[k0 % (COLUMNS * 2)]! * (1 - f) + r.length[k1 % (COLUMNS * 2)]! * f) * jitter;
-        strand(pts, half, len, r.blunt, body.skull, pos, nor, tan, uv, idx);
+        const wv = r.wave[k0 % (COLUMNS * 2)]! * (1 - f) + r.wave[k1 % (COLUMNS * 2)]! * f;
+        if (wv > 0.004) {
+          // Waves and curls: the strand wound round its own line, more from a little below the root.
+          // Strands curl in clumps (a ringlet every few strands: one phase within a clump, its own between clumps), as curly hair forms ringlets.
+          const curly = curled(pts, (t) => wv * Math.min(1, t * 2.5), hash(Math.floor((k0 + f) * 1.3) * 7 + layer * 977) * Math.PI * 2, body.skull);
+          const ch = curly.map((_, i) => half[Math.round(i / (curly.length - 1) * (half.length - 1))]! * 0.8);
+          for (let i = 1; i < curly.length; i++) body.collide(curly[i]!, 0, 0.02, true, false, side);
+          strand(curly, ch, len, r.blunt, body.skull, pos, nor, tan, uv, idx);
+        } else strand(pts, half, len, r.blunt, body.skull, pos, nor, tan, uv, idx);
       }
     }
   }
@@ -407,6 +415,14 @@ function ringStrands(body: GroomBody, r: ShellRecord, cols: number[][][], pos: n
 function tails(body: GroomBody, r: ShellRecord, pos: number[], nor: number[], tan: number[], uv: number[], idx: number[]): void {
   for (const tie of r.ties) {
     const tail = r.preset === 'bun' ? 0.9 : Math.max(0.8, avg(r.length) - 1.6);
+    if (r.braid && r.preset !== 'bun') {
+      // A braided tail: down from the tie, sliding over the back, plaited in three (`braided`).
+      const path: number[][] = [];
+      let q = [tie.x, tie.y, tie.z - 0.05];
+      for (let d = 0; d <= tail; d += LOCK_STEP) { path.push(q); q = [q[0]!, q[1]! - LOCK_STEP, q[2]! - 0.012]; body.collide(q, 0, tie.radius * 0.9, false); }
+      lockStrands(body, { pts: path.flat(), width: tie.radius * 0.85, curl: 0, braid: true, blunt: false }, pos, nor, tan, uv, idx);
+      continue;
+    }
     for (let s = 0; s < 22; s++) {
       const th = (s / 22) * Math.PI * 2, pts: number[][] = [], half: number[] = [];
       for (let i = 0; i < SAMPLES; i++) {
@@ -424,6 +440,90 @@ function tails(body: GroomBody, r: ShellRecord, pos: number[], nor: number[], ta
       strand(pts, half, tail, false, [tie.x, tie.y, tie.z + 0.2], pos, nor, tan, uv, idx);
     }
   }
+}
+
+/** A path's frame at each point: along it, out from the head (from its middle above it, level below it), across. */
+function frames(pts: number[][], centre: readonly number[]): { t: number[]; o: number[]; s: number[] }[] {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)]!, b = pts[Math.min(pts.length - 1, i + 1)]!;
+    const t = norm([b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]);
+    let o = [p[0]! - centre[0]!, Math.max(0, p[1]! - centre[1]!), p[2]! - centre[2]!];
+    const od = o[0]! * t[0]! + o[1]! * t[1]! + o[2]! * t[2]!;
+    o = norm([o[0]! - t[0]! * od, o[1]! - t[1]! * od, o[2]! - t[2]! * od]);
+    return { t, o, s: [t[1]! * o[2]! - t[2]! * o[1]!, t[2]! * o[0]! - t[0]! * o[2]!, t[0]! * o[1]! - t[1]! * o[0]!] };
+  });
+}
+
+function pathLength(pts: number[][]): number { let l = 0; for (let i = 1; i < pts.length; i++) l += dist(pts[i]!, pts[i - 1]!); return l; }
+
+/** A path wound into a helix round itself (waves when wide and slow, curls when tight): `amount` its radius along it (t 0..1), flatter out
+ *  from the head than across (curls lie on the hair, not standing off it), resampled finely enough for the turns. */
+function curled(pts: number[][], amount: (t: number) => number, phase: number, centre: readonly number[]): number[][] {
+  const len = pathLength(pts), n = Math.max(pts.length, Math.ceil(len / 0.035) + 1);
+  const fine = resample(pts, n), fr = frames(fine, centre);
+  return fine.map((p, i) => {
+    const t = i / (n - 1), a = amount(t), phi = phase + (t * len) / CURL_PERIOD * Math.PI * 2;
+    const { o, s: sv } = fr[i]!;
+    return [0, 1, 2].map((c) => p[c]! + (sv[c]! * Math.cos(phi) + o[c]! * Math.sin(phi) * 0.6) * a);
+  });
+}
+
+/** A path plaited in three: the classic braid curve (each strand x = sin θ, y = sin 2θ / 2, a third of a turn apart), `width` its half width,
+ *  loose over its last eighth (the tuft under the band). */
+function braided(pts: number[][], width: number, centre: readonly number[]): number[][][] {
+  const len = pathLength(pts), n = Math.max(pts.length, Math.ceil(len / 0.03) + 1);
+  const fine = resample(pts, n), fr = frames(fine, centre);
+  return [0, 1, 2].map((k) => fine.map((p, i) => {
+    const t = i / (n - 1), th = (t * len) / BRAID_PERIOD * Math.PI * 2 + k * Math.PI * 2 / 3;
+    const fade = t < 0.86 ? 1 : Math.max(0, 1 - (t - 0.86) / 0.14);
+    const { o, s: sv } = fr[i]!;
+    const x = Math.sin(th) * width * 0.75 * fade + (1 - fade) * (k - 1) * width * 0.5, y = Math.sin(2 * th) * 0.5 * width * 0.6 * fade;
+    return [0, 1, 2].map((c) => p[c]! + sv[c]! * x + o[c]! * y);
+  }));
+}
+
+/** A drawn lock's strands: one tapering lock, or wound into curls, or plaited in three. */
+function lockStrands(body: GroomBody, lock: Lock, pos: number[], nor: number[], tan: number[], uv: number[], idx: number[]): void {
+  const pts: number[][] = [];
+  for (let i = 0; i + 2 < lock.pts.length; i += 3) pts.push([lock.pts[i]!, lock.pts[i + 1]!, lock.pts[i + 2]!]);
+  if (pts.length < 2) return;
+  const len = pathLength(pts), c = body.skull;
+  if (lock.braid) {
+    for (const p3 of braided(pts, lock.width, c)) strand(p3, p3.map(() => lock.width * 0.5), len, false, c, pos, nor, tan, uv, idx);
+    return;
+  }
+  const path = lock.curl > 0.004 ? curled(pts, (t) => lock.curl * Math.min(1, t * 3), hash(Math.round(pts[0]![0]! * 997)) * 6.28, c) : pts;
+  strand(path, path.map(() => lock.width), len, lock.blunt, c, pos, nor, tan, uv, idx);
+}
+
+/** A fringe as locks (VRoid's bangs are a group drawn over the front): roots across the front of the top a few centimetres behind the hairline,
+ *  over the hairline and down the forehead to the brows (longer towards the temples, as bangs frame the face); `side`: all swept across the
+ *  forehead to one side, longer at the far end. */
+export function fringeLocks(body: GroomBody, side: boolean): Lock[] {
+  const h = body.head, out: Lock[] = [];
+  const n = 13, brow = body.face.top - 0.03;
+  for (let i = 0; i < n; i++) {
+    const u = i / (n - 1), theta = (u - 0.5) * 1.6;
+    const rootUp = (body.hairlineY(theta) + 0.45 - h.c[1]!) / h.radius([0, 1, 0]);
+    const rootDir = norm([Math.sin(theta) * Math.sqrt(Math.max(0.05, 1 - rootUp * rootUp)), rootUp, Math.cos(theta) * Math.sqrt(Math.max(0.05, 1 - rootUp * rootUp))]);
+    const root = onHead(h, rootDir, 0.12);
+    const sweep = side ? -0.5 : 0;
+    const drop = side ? 0.35 * u : 0.22 * Math.abs(u - 0.5) * 2;
+    const tipDir = norm([root[0]! - h.c[0]! + sweep, brow - drop - h.c[1]!, h.radius([0, 0, 1]) * 0.9]);
+    const angle = Math.acos(Math.max(-1, Math.min(1, rootDir[0]! * tipDir[0]! + rootDir[1]! * tipDir[1]! + rootDir[2]! * tipDir[2]!)));
+    const pts: number[][] = [];
+    const steps = Math.max(4, Math.ceil(angle * h.radius(rootDir) / LOCK_STEP));
+    for (let k = 0; k <= steps; k++) {
+      const v = k / steps;
+      const s0 = Math.sin((1 - v) * angle) / Math.max(1e-6, Math.sin(angle)), s1 = Math.sin(v * angle) / Math.max(1e-6, Math.sin(angle));
+      const q = onHead(h, [rootDir[0]! * s0 + tipDir[0]! * s1, rootDir[1]! * s0 + tipDir[1]! * s1, rootDir[2]! * s0 + tipDir[2]! * s1], 0.12 - 0.06 * v);
+      // Over the forehead: lying on it, not through it.
+      body.collide(q, 0, 0.04, false);
+      pts.push(q);
+    }
+    out.push({ pts: resample(pts, Math.max(3, Math.round(pathLength(pts) / LOCK_STEP) + 1)).flat().map((x) => Math.round(x * 1000) / 1000), width: 0.085, curl: 0, braid: false, blunt: !side });
+  }
+  return out;
 }
 
 /** One strand swept along `pts` (dm): a flattened ellipse `half` wide each side, flat against the head (its face out from `centre`), tapering

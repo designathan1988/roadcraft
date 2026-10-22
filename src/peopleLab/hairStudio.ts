@@ -5,14 +5,16 @@ import {
 import type { ProxyPack } from '@people/body/proxy';
 import { GroomBody, type Tie } from './groom';
 import {
-  COLUMNS, KNOTS, compactShell, layShell, presetRecord, shellBuffer, shellGeometry, shellOf, shellPack, type ShellPreset, type ShellRecord,
+  COLUMNS, KNOTS, LOCK_STEP, compactShell, fringeLocks, layShell, onHead, presetRecord, resample, shellBuffer, shellGeometry, shellOf, shellPack,
+  type Lock, type ShellPreset, type ShellRecord,
 } from './hairShell';
 
 /** THE HAIR STUDIO: a hairstyle made the way VRoid Studio makes one (`hairShell.ts`) - a guide surface round the head with strands generated on it.
  *  The tools reshape the surface and the strands follow: comb and pull it, cut and grow it, give it volume, smooth it, wave it, move the parting,
  *  tie it. The hair is always one closed covering of strands: no scalp shows, nothing is painted. */
 
-export type HairTool = 'comb' | 'grab' | 'cut' | 'grow' | 'puff' | 'smooth' | 'curl' | 'part' | 'tie';
+export type HairTool = 'draw' | 'comb' | 'grab' | 'cut' | 'grow' | 'puff' | 'smooth' | 'curl' | 'part' | 'tie' | 'erase';
+export type LockKind = 'straight' | 'curl' | 'braid';
 
 const DM = 0.1;
 /** How far the parting may move off the middle (dm): a side parting sits 2-3 cm off it. */
@@ -41,7 +43,12 @@ export class HairStudio {
   radius = 0.9;
   strength = 0.6;
   mirror = true;
+  /** New drawn locks: half width (dm) and kind. */
+  lockWidth = 0.08;
+  lockKind: LockKind = 'straight';
   private style: Mutable<ShellRecord>;
+  /** The lock being drawn (points, dm), shown as it is drawn. */
+  private drawing: number[][] | null = null;
   /** The surface's rings of columns as last laid (for the brush to find what it touches). */
   private rings: number[][][][] = [];
   private readonly hairMesh: Mesh;
@@ -115,6 +122,14 @@ export class HairStudio {
 
   clearTies(): void { this.remember(); this.style.ties = []; this.rebuild(); }
 
+  /** A fringe added over the front (straight, or swept to one side); a tied tail braided or not; every drawn lock taken off. */
+  addFringe(side: boolean): void { this.remember(); this.style.locks = [...this.locks().filter((l) => !l.fringe), ...fringeLocks(this.body, side).map((l) => ({ ...l, fringe: true }))]; this.rebuild(); }
+  toggleBraid(): void { this.remember(); this.style.braid = !this.style.braid; this.rebuild(); }
+  get braid(): boolean { return !!this.style.braid; }
+  clearLocks(): void { this.remember(); this.style.locks = []; this.rebuild(); }
+  get lockCount(): number { return this.locks().length; }
+  private locks(): (Lock & { fringe?: boolean })[] { return (this.style.locks ??= []) as (Lock & { fringe?: boolean })[]; }
+
   /** Kept for the frame loop: the hairstyle has no dynamics of its own in the studio. */
   tick(_dt: number): void { /* the surface is the style */ }
 
@@ -126,9 +141,9 @@ export class HairStudio {
   }
 
   /** The point under the pointer on the hair or the body, in dm. */
-  private hit(ndc: Vector2, camera: Camera): Vector3 | null {
+  private hit(ndc: Vector2, camera: Camera, bodyOnly = false): Vector3 | null {
     this.raycaster.setFromCamera(ndc, camera);
-    const h = this.raycaster.intersectObjects([this.hairMesh, this.skinMesh], false)[0];
+    const h = this.raycaster.intersectObjects(bodyOnly ? [this.skinMesh] : [this.hairMesh, this.skinMesh], false)[0];
     return h ? this.group.worldToLocal(h.point.clone()) : null;
   }
 
@@ -178,6 +193,12 @@ export class HairStudio {
         tie = 0;
       }
     }
+    if (this.tool === 'draw') { const skin = this.hit(ndc, camera, true); this.drawing = [this.drawPoint(skin ?? at, true)]; }
+    if (this.tool === 'erase') {
+      const ray = this.ray(ndc, camera);
+      const r2 = this.radius * this.radius;
+      this.style.locks = this.locks().filter((l) => { for (let i = 0; i + 2 < l.pts.length; i += 3) if (ray.distanceSqToPoint(new Vector3(l.pts[i], l.pts[i + 1], l.pts[i + 2])) < r2) return false; return true; });
+    }
     if (this.tool === 'part') this.style.part = Math.max(-PART, Math.min(PART, at.x - this.body.skull[0]));
     this.stroke = { plane: new Plane().setFromNormalAndCoplanarPoint(facing.clone().transformDirection(this.group.matrixWorld.clone().invert()).normalize(), at), last: at, tie };
     this.apply(ndc, camera, new Vector3(), invert);
@@ -193,6 +214,16 @@ export class HairStudio {
     if (!at) return;
     const delta = at.clone().sub(s.last);
     s.last = at;
+    if (this.tool === 'draw' && this.drawing) {
+      // The stroke follows the head and the hair where the pointer is on them, the stroke's plane where it is past them (a lock hanging free).
+      // On the body only: the hair (and the lock being drawn) would lift every next point onto the last one.
+      const on = this.hit(ndc, camera, true);
+      const q = on ? this.drawPoint(on, true) : this.drawPoint(at, false);
+      if (Math.hypot(q[0]! - this.drawing.at(-1)![0]!, q[1]! - this.drawing.at(-1)![1]!, q[2]! - this.drawing.at(-1)![2]!) > LOCK_STEP * 0.6) this.drawing.push(q);
+      if (performance.now() - this.builtAt > 50) this.rebuild();
+      return;
+    }
+    if (this.tool === 'erase') return;
     this.apply(ndc, camera, delta, invert);
     if (performance.now() - this.builtAt > 50) this.rebuild();
   }
@@ -200,7 +231,74 @@ export class HairStudio {
   end(): void {
     if (!this.stroke) return;
     this.stroke = null;
+    if (this.drawing) {
+      const lock = this.lockOf(this.drawing);
+      this.drawing = null;
+      if (lock) {
+        this.locks().push(lock);
+        // Mirrored across the middle, as the base is (a centred lock is not doubled).
+        const mid = this.body.skull[0];
+        if (this.mirror && Math.abs(lock.pts[0]! - mid) > 0.15) this.locks().push({ ...lock, pts: lock.pts.map((v, i) => (i % 3 === 0 ? 2 * mid - v : v)) });
+      }
+    }
     this.rebuild();
+  }
+
+  /** A drawn point. Drawn on the scalp or the hair over it: on the outside of the base hair (layered over it). Drawn on the skin elsewhere (the
+   *  forehead, a cheek, the neck): just over it. Drawn in the air (past the head - a quiff, a lock held out): exactly where drawn, out of the body. */
+  private drawPoint(at: Vector3, onSurface: boolean): number[] {
+    const h = this.body.head;
+    const q = [at.x, at.y, at.z];
+    if (onSurface && at.y > this.body.hugFloor && this.body.aboveHairline(at.x, at.y, at.z) > -0.03) return onHead(h, [at.x - h.c[0]!, at.y - h.c[1]!, at.z - h.c[2]!], 0.13);
+    if (onSurface) {
+      const o = [q[0]! - h.c[0]!, Math.max(0, q[1]! - h.c[1]!), q[2]! - h.c[2]!], l = Math.hypot(o[0]!, o[1]!, o[2]!) || 1;
+      for (let c = 0; c < 3; c++) q[c] = q[c]! + o[c]! / l * 0.04;
+    }
+    this.body.collide(q, 0, 0.04, false);
+    return q;
+  }
+
+  /** A stroke as a lock: smoothed (a few 1-2-1 passes), resampled LOCK_STEP apart; null when too short. */
+  private lockOf(stroke: number[][]): Lock | null {
+    if (stroke.length < 2) return null;
+    let pts = stroke.map((q) => [...q]);
+    for (let pass = 0; pass < 3; pass++) pts = pts.map((q, i) => (i === 0 || i === pts.length - 1 ? q : [0, 1, 2].map((c) => (pts[i - 1]![c]! + 2 * q[c]! + pts[i + 1]![c]!) / 4)));
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i]![0]! - pts[i - 1]![0]!, pts[i]![1]! - pts[i - 1]![1]!, pts[i]![2]! - pts[i - 1]![2]!);
+    if (len < LOCK_STEP * 2) return null;
+    const even = resample(pts, Math.round(len / LOCK_STEP) + 1);
+    return { pts: even.flat(), width: this.lockWidth, curl: this.lockKind === 'curl' ? 0.07 : 0, braid: this.lockKind === 'braid', blunt: false };
+  }
+
+  /** The drawn locks' points under the brush (round the ray and its mirror): lock, point and falloff. */
+  private locksUnder(ray: Ray): { l: Lock; i: number; w: number }[] {
+    const rays = this.mirror ? [ray, mirrorRay(ray, this.body.skull[0])] : [ray];
+    const out: { l: Lock; i: number; w: number }[] = [], r2 = this.radius * this.radius, p = new Vector3();
+    for (const l of this.locks()) {
+      let best = Infinity, at = -1;
+      for (let i = 3; i + 2 < l.pts.length; i += 3) {
+        p.set(l.pts[i]!, l.pts[i + 1]!, l.pts[i + 2]!);
+        for (const r of rays) { const d = r.distanceSqToPoint(p); if (d < best) { best = d; at = i / 3; } }
+      }
+      if (at > 0 && best < r2) out.push({ l, i: at, w: (1 - best / r2) ** 2 });
+    }
+    return out;
+  }
+
+  /** A lock made physical again after an edit: every segment back to LOCK_STEP from its root, out of the head and the body. */
+  private settleLock(l: Lock): void {
+    const h = this.body.head;
+    for (let i = 3; i + 2 < l.pts.length; i += 3) {
+      const a = [l.pts[i - 3]!, l.pts[i - 2]!, l.pts[i - 1]!];
+      let q = [l.pts[i]!, l.pts[i + 1]!, l.pts[i + 2]!];
+      const d = Math.hypot(q[0]! - a[0]!, q[1]! - a[1]!, q[2]! - a[2]!) || 1;
+      q = [0, 1, 2].map((c) => a[c]! + (q[c]! - a[c]!) / d * LOCK_STEP);
+      const v = [q[0]! - h.c[0]!, q[1]! - h.c[1]!, q[2]! - h.c[2]!], r = Math.hypot(v[0]!, v[1]!, v[2]!) || 1;
+      const min = h.radius([v[0]! / r, v[1]! / r, v[2]! / r]) + 0.03;
+      if (r < min) q = [0, 1, 2].map((c) => h.c[c]! + v[c]! / r * min);
+      this.body.collide(q, 0, 0.04, false);
+      l.pts[i] = q[0]!; l.pts[i + 1] = q[1]!; l.pts[i + 2] = q[2]!;
+    }
   }
 
   /** One touch of the tool; `delta` is how far the pointer moved on the stroke's plane (dm). */
@@ -211,6 +309,25 @@ export class HairStudio {
     const mid = this.body.skull[0];
     // The mirrored side moves mirrored across the middle.
     const mx = (col: number): number => (this.mirror && (col < COLUMNS) !== (ray.origin.x + ray.direction.x * 10 > mid) ? -1 : 1);
+    // The drawn locks under the brush, edited with the same tools.
+    for (const { l, i, w } of this.locksUnder(ray)) {
+      const n = l.pts.length / 3;
+      switch (this.tool) {
+        case 'comb': case 'grab':
+          for (let j = Math.max(1, this.tool === 'grab' ? i - 3 : i); j < n; j++) {
+            const f = this.tool === 'comb' ? w * k * Math.min(1, (j - i + 2) / 4) : w * Math.max(0, 1 - Math.abs(j - i) / 4);
+            l.pts[j * 3] = l.pts[j * 3]! + delta.x * f * (this.mirror && Math.sign(l.pts[0]! - mid) !== Math.sign(ray.origin.x - mid) ? -1 : 1);
+            l.pts[j * 3 + 1] = l.pts[j * 3 + 1]! + delta.y * f; l.pts[j * 3 + 2] = l.pts[j * 3 + 2]! + delta.z * f;
+          }
+          break;
+        case 'cut': if (w > 0.2 && i >= 2) { l.pts = l.pts.slice(0, (i + 1) * 3); l.blunt = true; } break;
+        case 'grow': if (!invert && n < 120) { const e = l.pts.slice(-6); l.pts.push(e[3]! * 2 - e[0]!, e[4]! * 2 - e[1]! - 0.01, e[5]! * 2 - e[2]!); } else if (invert && n > 3) l.pts = l.pts.slice(0, -3); break;
+        case 'curl': l.curl = Math.max(0, Math.min(MAX_WAVE, l.curl + sign * w * k * 0.006)); break;
+        case 'puff': l.width = Math.max(0.03, Math.min(0.16, l.width + sign * w * k * 0.004)); break;
+        default: break;
+      }
+      this.settleLock(l);
+    }
     switch (this.tool) {
       case 'comb':
       case 'grab':
@@ -270,7 +387,9 @@ export class HairStudio {
 
   private rebuild(): void {
     this.rings = layShell(this.body, this.style);
-    shellBuffer(shellGeometry(this.body, this.style, this.rings), this.hairMesh.geometry);
+    const preview = this.drawing && this.drawing.length > 1 ? this.lockOf(this.drawing) : null;
+    const shown = preview ? { ...this.style, locks: [...this.locks(), preview] } : this.style;
+    shellBuffer(shellGeometry(this.body, shown, this.rings), this.hairMesh.geometry);
     this.builtAt = performance.now();
     this.tieMarks.clear();
     for (const t of this.style.ties) {
