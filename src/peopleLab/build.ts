@@ -108,8 +108,8 @@ export class LabBuilder {
   async groomItem(person: LabPerson): Promise<ProxyItem> {
     const body = await this.studioBody(person);
     const gb = new GroomBody(body.positions, body.skin, body.faces, body.faceGroup, body.skinGroup);
-    // An older studio's groom is not a hairstyle any more: worn as the chanel until remade.
-    return { pack: shellPack(shellOf(person.groom) ?? presetRecord('bob', gb), gb, body.anchors), texture: null, transparent: false, textureFile: null };
+    // An older studio's groom converted to the style it was closest to (`shellOf`).
+    return { pack: shellPack(shellOf(person.groom, gb) ?? presetRecord('bob', gb), gb, body.anchors), texture: null, transparent: false, textureFile: null };
   }
 
   /** The atelier's garment as an item: its draped positions pinned to this body's skin. */

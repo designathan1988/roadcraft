@@ -23,6 +23,8 @@ const STEP = 0.05;
 /** A strand's depth as a share of its width (a flat lock), and points round its cross-section. */
 const FLAT = 0.42;
 const RING = 6;
+/** A strand's normal: its own share and the surface's (`strand`). */
+const SHELL_NORMAL = [0.35, 0.65] as const;
 
 export type ShellPreset = 'short' | 'bob' | 'long' | 'ponytail' | 'bun' | 'pigtails';
 
@@ -62,10 +64,40 @@ export function presetRecord(preset: ShellPreset, body: GroomBody): ShellRecord 
   };
 }
 
-/** A saved record checked (an older studio's groom is not one): the record, or null. */
-export function shellOf(value: unknown): ShellRecord | null {
+/** A saved record checked: the record; an older studio's groom (guide strands, `{ guides, ties }`) converted on this body to the style it was
+ *  closest to - its strands' mean length, blunt ends if it was cut, its ties kept; or null. */
+export function shellOf(value: unknown, body?: GroomBody): ShellRecord | null {
   const r = value as Partial<ShellRecord> | null;
-  return r && r.v === 2 && Array.isArray(r.length) && r.length.length === COLUMNS * 2 ? r as ShellRecord : null;
+  if (r && r.v === 2 && Array.isArray(r.length) && r.length.length === COLUMNS * 2) return r as ShellRecord;
+  const old = value as { guides?: unknown; ties?: Tie[] } | null;
+  if (!body || !old || typeof old.guides !== 'string') return null;
+  const { length, blunt } = oldGroomLength(old.guides);
+  const ties = Array.isArray(old.ties) ? old.ties : [];
+  const preset: ShellPreset = ties.length > 1 ? 'pigtails' : ties.length === 1 ? 'ponytail' : length < 1.6 ? 'short' : length < 3.2 ? 'bob' : 'long';
+  const base = presetRecord(preset, body);
+  return { ...base, length: base.length.map(() => Math.max(0.5, length)), blunt: blunt || base.blunt, ties: ties.length ? ties.map((t) => ({ ...t })) : base.ties };
+}
+
+/** An older groom's strands (`[count u32]` then per strand `[root u16, points u16, radius|blunt u16, tie i16]` and its points from the root in
+ *  thousandths of a dm, int16): their mean length (dm) and whether most were cut blunt. */
+function oldGroomLength(guides: string): { length: number; blunt: boolean } {
+  const raw = atob(guides);
+  const view = new DataView(Uint8Array.from(raw, (ch) => ch.charCodeAt(0)).buffer);
+  const count = view.byteLength >= 4 ? view.getUint32(0, true) : 0;
+  let o = 4, total = 0, blunt = 0, n = 0;
+  for (let g = 0; g < count && o + 8 <= view.byteLength; g++) {
+    const points = view.getUint16(o + 2, true), packed = view.getUint16(o + 4, true);
+    o += 8;
+    let len = 0, px = 0, py = 0, pz = 0;
+    for (let i = 0; i < points && o + 6 <= view.byteLength; i++, o += 6) {
+      const x = view.getInt16(o, true) / 1000, y = view.getInt16(o + 2, true) / 1000, z = view.getInt16(o + 4, true) / 1000;
+      if (i) len += Math.hypot(x - px, y - py, z - pz);
+      px = x; py = y; pz = z;
+    }
+    total += len; n++;
+    if (packed & 0x8000) blunt++;
+  }
+  return { length: n ? total / n : LENGTHS.bob, blunt: blunt > n / 2 };
 }
 
 /** The record rounded for saving. */
@@ -328,7 +360,10 @@ function strand(pts: number[][], half: number[], len: number, blunt: boolean, ce
     for (let k = 0; k <= RING; k++) {
       const ang = (k / RING) * Math.PI * 2, c = Math.cos(ang), s = Math.sin(ang);
       for (let q = 0; q < 3; q++) pos.push(pts[i]![q]! + sv[q]! * c * w + o[q]! * s * d);
-      const nn = norm([sv[0]! * c / w + o[0]! * s / d, sv[1]! * c / w + o[1]! * s / d, sv[2]! * c / w + o[2]! * s / d]);
+      // The strand's own normal mostly replaced by the surface's (out from the head), as hair-card artists transfer normals from a smooth shell:
+      // the strands shade as one sheet of hair with only a soft groove between them, not as a row of tubes.
+      const own = norm([sv[0]! * c / w + o[0]! * s / d, sv[1]! * c / w + o[1]! * s / d, sv[2]! * c / w + o[2]! * s / d]);
+      const nn = norm([own[0]! * SHELL_NORMAL[0] + o[0]! * SHELL_NORMAL[1], own[1]! * SHELL_NORMAL[0] + o[1]! * SHELL_NORMAL[1], own[2]! * SHELL_NORMAL[0] + o[2]! * SHELL_NORMAL[1]]);
       nor.push(nn[0]!, nn[1]!, nn[2]!);
       tan.push(t3[0]!, t3[1]!, t3[2]!, 1);
       uv.push(k / RING, t);

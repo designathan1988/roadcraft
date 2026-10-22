@@ -75,7 +75,7 @@ export class HairStudio {
     this.group.add(this.skinMesh);
 
     // The strands, the highlight drawn along them by the material's anisotropy (KHR_materials_anisotropy; its direction the geometry's tangent).
-    this.hairMesh = new Mesh(new BufferGeometry(), new MeshPhysicalMaterial({ color: hairColour, roughness: 0.62, metalness: 0, anisotropy: 0.45, specularIntensity: 0.45, envMapIntensity: 0.12 }));
+    this.hairMesh = new Mesh(new BufferGeometry(), new MeshPhysicalMaterial({ color: hairColour, roughness: 0.6, metalness: 0, anisotropy: 0.35, specularIntensity: 0.4, envMapIntensity: 0.12 }));
     this.hairMesh.castShadow = true;
     this.group.add(this.hairMesh);
     this.group.add(this.tieMarks);
@@ -85,7 +85,7 @@ export class HairStudio {
     this.cursor.visible = false;
     this.group.add(this.cursor);
 
-    this.style = clone(shellOf(record) ?? presetRecord('bob', this.body));
+    this.style = clone(shellOf(record, this.body) ?? presetRecord('bob', this.body));
     this.rebuild();
   }
 
