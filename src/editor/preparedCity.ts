@@ -1,6 +1,6 @@
 import type { SerializedDoc } from '@world/doc';
-import { RecordTable, TableWriter, encodeRecords } from '@world/buildings/recordTable';
-import type { SharedMembers } from '@world/buildings/intern';
+import { RecordTable, TableWriter } from '@world/buildings/recordTable';
+import { SharedMembers } from '@world/buildings/intern';
 import { migrateBuilding } from '@world/buildings/serialize';
 import { type Building, settleBuilding } from '@world/buildings/types';
 
@@ -13,17 +13,21 @@ export interface PreparedCity {
 }
 
 /** DO NOT post a city's buildings as objects: the page held the message's clone and its migrated copy, walked and interned every record again on adopting it, and made a table of its own for each building the first time a job or a write asked for it (`refOf`): ~1.3 GB allocated opening the large city, 2026-10-20. */
+// DO NOT `intern` a whole map's records in one synchronous pass (`settleBuilding` interning): every member got a WeakRef, a finalizer and
+// a freeze, held until the task ended - reopening a saved city of 8,102 buildings spent 0.85 s of the page in it (`npm run diagnose`,
+// 2026-10-22). Written as a generated city's are (`PreparedCityWriter`, the members shared a batch at a time): the same table.
+const PREPARE_BATCH = 2000;
+
 export function prepareCity(data: SerializedDoc): PreparedCity {
-  const settled = new WeakSet<object>(), ids = new Set<number>();
-  const buildings: Building[] = [];
-  for (const raw of data.buildings ?? []) {
-    const b = migrateBuilding(raw);
-    // The first of an id, as the page's load keeps it (`BuildingStore.load`).
-    if (!b || ids.has(b.id)) continue;
-    ids.add(b.id);
-    buildings.push(settleBuilding(b, settled));
+  const shared = new SharedMembers();
+  const writer = new PreparedCityWriter(shared);
+  const all = (data.buildings ?? []) as readonly Building[];
+  for (let i = 0; i < all.length; i += PREPARE_BATCH) {
+    writer.add(all.slice(i, i + PREPARE_BATCH));
+    shared.end();
+    writer.endBatch();
   }
-  return { data: { ...data, buildings: [] }, buildings: encodeRecords(buildings).buffer };
+  return { data: { ...data, buildings: [] }, buildings: writer.finish() };
 }
 
 /**

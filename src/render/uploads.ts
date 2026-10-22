@@ -105,7 +105,8 @@ function casterKey(mesh: Mesh): string {
   const geometry = mesh.geometry;
   const morph = geometry.morphAttributes['position'] ?? geometry.morphAttributes['normal'] ?? geometry.morphAttributes['color'];
   return [custom?.uuid ?? 'plain', materials.map((m) => variantKey(depthVariantOf(m))).join(';'),
-    !!instanced.isInstancedMesh, !!instanced.instanceColor, !!instanced.morphTexture, !!(mesh as { isSkinnedMesh?: boolean }).isSkinnedMesh,
+    // Batched too (`litKey` has it): a batched caster's depth program is its own (BATCHING), DO NOT let a plain caster's stand-in stand for it.
+    !!instanced.isInstancedMesh, !!(mesh as { isBatchedMesh?: boolean }).isBatchedMesh, !!instanced.instanceColor, !!instanced.morphTexture, !!(mesh as { isSkinnedMesh?: boolean }).isSkinnedMesh,
     Object.keys(geometry.attributes).sort().join(','), Object.keys(geometry.morphAttributes).sort().join(','), morph?.length ?? 0].join('/');
 }
 

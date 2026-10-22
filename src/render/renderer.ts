@@ -173,6 +173,7 @@ import { measureHitch } from '@core/hitch';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
+import { fenceCompilePolls } from './fencedCompile';
 import { chosenBackend } from './gpu/backendChoice';
 import type { CompareOptions, CompareResult, WebGpuView } from './gpu/webgpuView';
 
@@ -493,6 +494,8 @@ export function createSceneRenderer(
   renderer.info.autoReset = false;
   // Checking every program's compile and link log makes each new shader wait for the driver on the main thread
   renderer.debug.checkShaderErrors = import.meta.env.DEV;
+  // Programs built off the draw polled behind a fence: the page never waits on the GPU process's backlog (`fencedCompile.ts`).
+  fenceCompilePolls(renderer);
   // The GPU time of every frame.
   const gpuTimer = createGpuTimer(renderer);
   renderer.outputColorSpace = SRGBColorSpace;
@@ -1008,6 +1011,31 @@ export function createSceneRenderer(
   const tileWrites = tileWriter ? new DerivedWriterLane(tileWriter, 48 * 2 ** 20) : null;
   /** Where the camera looks and how far the roads are at full detail round it (`mesh/roadResidency.ts`). */
   const roadFocus = { x: initialCentre.x, y: initialCentre.y, reach: 700, frames: 0 };
+  /** Kept road tiles being read, by key: the blocks of one chunk (asphalt, footway, kerb, paint) brought near in the same look share one read. */
+  const tileReads = new Map<string, Promise<TileBundle | undefined>>();
+  /** DO NOT read a kept tile once for each of its surfaces' blocks: every block of a chunk read and rebuilt the whole bundle on the page, its
+   *  keys listed once a member surface - ~560 ms of a 13 s flight in IndexedDB's onsuccess (`npm run diagnose`, 2026-10-22). Each key read
+   *  once, the reads in flight shared (the blocks copy the arrays they take: `tileArrays`). */
+  const fetchTiles = (keys: readonly string[]): Promise<Map<string, TileBundle>> => {
+    if (!tilesPrefix) return Promise.resolve(new Map());
+    const unique = [...new Set(keys)];
+    const missing = unique.filter((key) => !tileReads.has(key));
+    if (missing.length) {
+      const batch = readDerivedSome<TileBundle>(tilesPrefix, missing);
+      for (const key of missing) {
+        const one = batch.then((got) => got.get(key));
+        tileReads.set(key, one);
+        void one.finally(() => { if (tileReads.get(key) === one) tileReads.delete(key); });
+      }
+    }
+    return Promise.all(unique.map((key) => tileReads.get(key)!.then((bundle) => [key, bundle] as const))).then((pairs) => {
+      const out = new Map<string, TileBundle>();
+      for (const [key, bundle] of pairs) if (bundle) out.set(key, bundle);
+      return out;
+    });
+  };
+  /** The cells the network's far level draws: the ones the far budget let go and the ones the map's view hands it (`roadResidency.ts` parked). */
+  const farShown = (): string[] => [...(roadResidency.dropped ?? []), ...(roadResidency.parked ?? [])];
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     depends: new Map(),
@@ -1031,7 +1059,7 @@ export function createSceneRenderer(
     // DO NOT read the whole store at the opening: it grows with every place the camera went (CLAUDE.md, "Streaming world").
     stored: {
       has: (key) => storedKeys.has(key),
-      fetch: (keys) => (tilesPrefix ? readDerivedSome<TileBundle>(tilesPrefix, keys) : Promise.resolve(new Map())),
+      fetch: (keys) => fetchTiles(keys),
     },
     // Kept by the road tile workers that make them (`roadTile.worker.ts`): the page only marks the key.
     workersKeep: tilesPrefix && typeof Worker !== 'undefined' ? tilesPrefix : null,
@@ -2389,9 +2417,9 @@ export function createSceneRenderer(
     if (fillLeft !== null && fillLeft.size === 0 && fillAwaiting.size === 0) {
       fillLeft = null;
       openingWithin = null;
-      networkFar.settle(roadResidency.dropped ?? []);
+      networkFar.settle(farShown());
       requestNetworkFar(net, solve);
-    } else if (fillLeft === null && !openingBuild && openingWithin === null && !networkFar.settled) networkFar.settle(roadResidency.dropped ?? []);
+    } else if (fillLeft === null && !openingBuild && openingWithin === null && !networkFar.settled) networkFar.settle(farShown());
     performance.mark('world:roads');
     roads.adopt();
     world.add(roads.group);
@@ -3762,12 +3790,14 @@ export function createSceneRenderer(
         // Shortened by the frame's error scale: a frame that cannot afford the buildings' detail cannot afford the roads' either.
         roadFocus.reach = Math.min(900, Math.max(320, halfHeight * 1.8)) / buildings.frame.scale;
         if (roadFocus.frames++ % 6 === 0) {
+          // The map's view (as the opening's `mapView`): every cell drawn by the network's far level, its blocks' paint and verges under a pixel.
+          roadResidency.networkFrom = !rig.perspective && rig.viewport.zoom < 1 ? 0 : undefined;
           const blocks: Mesh[] = [];
           for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
           updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach, roadResidency);
           // Over the far budget with cells the network's far level does not stand for (none made, or made before the roads changed): made again for the roads drawn, off the page.
           if (roadResidency.wantsNetwork && elevation && worldJob === null && !openingBuild && fillLeft === null && !networkFar.pending && networkFar.outdated()) {
-            networkFar.settle(roadResidency.dropped ?? []);
+            networkFar.settle(farShown());
             requestNetworkFar(net, elevation);
           }
         }

@@ -53,12 +53,18 @@ vec3 facadeLamp = vec3(1.0);
 ${ROOM_LAMP_GLSL}
 // The integral of a pulse [a0, a1) repeated every 1, from 0 to x.
 float facadePulseIntegral(float x, float a0, float a1) { return floor(x) * (a1 - a0) + clamp(fract(x), a0, a1) - a0; }
-// The pulse averaged over a pixel's footprint w (a box filter): far away the facade's mean, no moire.
+// The pulse averaged over a pixel's footprint w (a box filter, its kernel 1.5 pixels: a box of one still rings), faded to its mean as a
+// cell goes from 4 pixels to 2 (Inigo Quilez, "filterable procedurals"). DO NOT switch to the mean at once at w = 0.5: the box over half a
+// period is not the mean, and the jump drew a band; the district's facades sparkled against a supersampled frame (diagnosis 2026-10-22).
 float facadePulse(float x, float w, float a0, float a1) {
   if (a1 <= a0) return 0.0;
-  // A pixel covering more than half a period: the mean IS the answer (the filter's variation is under a pixel): none of the floor/fract work, and none of its moire.
-  if (w >= 0.5) return clamp(a1 - a0, 0.0, 1.0);
-  return (facadePulseIntegral(x + 0.5 * w, a0, a1) - facadePulseIntegral(x - 0.5 * w, a0, a1)) / w;
+  float mean = clamp(a1 - a0, 0.0, 1.0);
+  float fade = smoothstep(0.25, 0.5, w);
+  // A pixel covering half a period or more: the mean is the answer, none of the floor/fract work.
+  if (fade >= 1.0) return mean;
+  float k = 1.5 * w;
+  float box = (facadePulseIntegral(x + 0.5 * k, a0, a1) - facadePulseIntegral(x - 0.5 * k, a0, a1)) / k;
+  return mix(box, mean, fade);
 }
 // buildingMesh.ts bayHash, to the bit: Math.imul is a uint product, >>> a uint shift.
 uint facadeBayHash(int volume, int level, int side, int index, int x7, int y7) {
@@ -79,6 +85,9 @@ function facadeColour(): string {
   const K = FACADE_KIND;
   return `
 vec2 facadeFoot = max(fwidth(vFacadeGrid.xy), vec2(1e-4));
+// What a bay picks for itself (a dark pane, a shutter, a streak) faded to the share of bays that pick it as a bay drops under a few pixels:
+// DO NOT let each pixel take one random bay's pick at full contrast (the sparkle of the district's facades).
+float facadeSub = smoothstep(0.25, 0.5, max(facadeFoot.x, facadeFoot.y));
 int facadeRaw = int(vFacadeKey.x + 0.5);
 int facadeKind = facadeRaw & ${FACADE_FLIP - 1};
 uint facadeHash = 0u;
@@ -95,9 +104,11 @@ if (facadeKind > ${K.none}) {
   vec2 centre = vec2(vFacadeWorld.x, -vFacadeWorld.z) + vFacadeKey.zw * (bayW * (index + 0.5 - cell.x));
   int key = int(vFacadeKey.y + 0.5);
   facadeHash = facadeBayHash(key / 4, int(level), key - (key / 4) * 4, int(index), int(floor(centre.x * 7.0 + 0.5)), int(floor(centre.y * 7.0 + 0.5)));
-  facadeDark = facadeKind == ${K.window} ? (facadeHash % 20u < 5u ? 1.0 : 0.0)
+  float darkNear = facadeKind == ${K.window} ? (facadeHash % 20u < 5u ? 1.0 : 0.0)
     : facadeKind == ${K.darkQuarter} ? (facadeHash % 4u == 0u ? 1.0 : 0.0)
     : facadeKind == ${K.darkFifth} ? (facadeHash % 5u == 0u ? 1.0 : 0.0) : 0.0;
+  float darkMean = facadeKind == ${K.darkFifth} ? 0.2 : (facadeKind == ${K.window} || facadeKind == ${K.darkQuarter}) ? 0.25 : 0.0;
+  facadeDark = mix(darkNear, darkMean, facadeSub);
   facadeFrame = max(hole - pane, 0.0);
   facadeGlass = pane;
   if (facadeKind == ${K.door} || facadeKind == ${K.shutterDoor}) {
@@ -107,24 +118,31 @@ if (facadeKind > ${K.none}) {
   } else if (facadeKind == ${K.window}) {
     // A roller shutter part way down in four bays of twenty, from the head.
     uint pick = facadeHash % 20u;
+    float solidNear = 0.0;
     if (pick >= 9u && pick < 13u) {
       float down = (o.w - o.z) * (0.25 + float(pick - 9u) * 0.15);
-      facadeSolid = paneAcross * facadePulse(cell.y, facadeFoot.y, o.w - fh - down, o.w - fh);
-      facadeShutter = 1.0;
-      facadeGlass = max(pane - facadeSolid, 0.0);
+      solidNear = paneAcross * facadePulse(cell.y, facadeFoot.y, o.w - fh - down, o.w - fh);
     }
+    // Far, the shutters' share: four bays in twenty, down 0.475 of the opening on average, within the pane.
+    float paneH = max(o.w - o.z - 2.0 * fh, 1e-3);
+    float solidMean = 0.2 * pane * min(0.475 * (o.w - o.z) / paneH, 1.0);
+    facadeSolid = mix(solidNear, solidMean, facadeSub);
+    facadeShutter = facadeSolid > 0.0 ? 1.0 : 0.0;
+    facadeGlass = max(pane - facadeSolid, 0.0);
   }
   facadeWall = 1.0 - facadeFrame - facadeGlass - facadeSolid;
   // The rain streak under the sill (\`emitStreak\`): two bays in three, darkest at the sill, fading down its reach.
   int streak = facadeRaw / ${FACADE_STREAK};
-  if (streak > 0 && facadeHash % 3u != 0u) {
+  if (streak > 0) {
     float sill = o.z * storeyH - (streak == 1 ? ${num(STREAK_SILL[1]!)} : ${num(STREAK_SILL[2]!)});
     float reach = min(sill - ${num(m(0.05))}, ${num(m(0.7))} + float(facadeHash % 7u) * ${num(m(0.12))});
     float am = 0.5 * (o.x + o.y), spread = (o.y - o.x) * (0.32 + float(facadeHash % 5u) * 0.03);
     float bottom = sill - reach, top = sill - ${num(m(0.02))};
     float under = facadePulse(cell.x, facadeFoot.x, am - spread, am + spread) * facadePulse(cell.y, facadeFoot.y, bottom / storeyH, top / storeyH);
-    float rise = clamp((fract(cell.y) * storeyH - bottom) / max(top - bottom, 1e-3), 0.0, 1.0);
-    facadeStreak = 1.0 - under * rise * (0.07 + 0.12 * vDecay);
+    // Two bays in three streaked, each darkest at its sill: far, their share and the ramp's mean.
+    float rise = mix(clamp((fract(cell.y) * storeyH - bottom) / max(top - bottom, 1e-3), 0.0, 1.0), 0.5, facadeSub);
+    float chosen = mix(facadeHash % 3u != 0u ? 1.0 : 0.0, 2.0 / 3.0, facadeSub);
+    facadeStreak = 1.0 - chosen * under * rise * (0.07 + 0.12 * vDecay);
   }
   // The pane scatters next to nothing, as the detail's (\`glassRoom.ts\`: its albedo times 0.06): its sky reflection and the room behind it show (emissive). DO NOT draw it its base colour: black glass read pale blue at this level (the player, 2026-10-20).
   vec3 glassColour = mix(FACADE_GLASS, FACADE_GLASS_DARK, facadeDark) * 0.06;
@@ -201,6 +219,6 @@ totalEmissiveRadiance += (facadeLamp * massingNight * facadeLit + ${ROOM_SEEN_GL
     // The shell's own after: each of its additions lands right after its chunk, so before these (its finish's map, roughness, metalness and relief first).
     baseCompile(shader, renderer);
   };
-  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v6`;
+  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v7`;
   return material;
 }

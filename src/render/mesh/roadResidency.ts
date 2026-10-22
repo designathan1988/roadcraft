@@ -113,6 +113,42 @@ export interface RoadResidency {
   cellBytes?: Map<string, number>;
   /** Set by a look over the far budget that found cells the network's level could not stand for (none, or made before the roads changed): the owner makes it again. */
   wantsNetwork?: boolean;
+  /** From this distance (scene units) the network's far level draws a cell in place of its blocks, whatever the budget: the map's view
+   *  (`renderer.ts`), where a block's paint and verges are under a pixel; none: the budget alone decides. */
+  networkFrom?: number | undefined;
+  /** The cells drawn by the network's level for the view (`networkFrom`): their blocks kept, only hidden, so coming back costs nothing. */
+  parked?: Set<string>;
+}
+
+/** The view's cells drawn by the network's far level (`networkFrom`) and the others given back to their blocks; returns the cells changed.
+ *  DO NOT draw a cell's blocks at the map's view: one mesh a block for each surface (asphalt, footway, kerb, verge, planting, each paint
+ *  colour), ~320 draw calls of the 448 of a city of 8,102 buildings, against the network level's two (`npm run diagnose`, 2026-10-22). */
+function parkCells(cells: ReadonlyMap<string, Cell>, residency: RoadResidency, network: CellCover): number {
+  const parked = residency.parked ??= new Set();
+  const dropped = residency.dropped!, restoring = residency.restoring!;
+  const from = residency.networkFrom;
+  let changed = 0;
+  for (const cell of cells.values()) {
+    const moving = cell.blocks.some((mesh) => { const levels = levelsOf(mesh)!; return levels.pending || levels.bringing; });
+    const want = from !== undefined && cell.d >= from && !dropped.has(cell.key) && !restoring.has(cell.key) && !moving;
+    if (want && !network.covers(cell.key)) { residency.wantsNetwork = true; }
+    if (want && network.covers(cell.key)) {
+      // Hidden again at every look: a level a build or a bring showed meanwhile goes back under the network's.
+      for (const mesh of cell.blocks) { mesh.visible = false; const coarse = levelsOf(mesh)!.coarse; if (coarse) coarse.visible = false; }
+      if (!parked.has(cell.key)) { parked.add(cell.key); network.show(cell.key); changed++; }
+    } else if (parked.has(cell.key)) {
+      for (const mesh of cell.blocks) {
+        const levels = levelsOf(mesh)!;
+        if (!levels.coarse) { mesh.visible = true; continue; }
+        mesh.visible = levels.full;
+        levels.coarse.visible = !levels.full && !levels.dropped;
+      }
+      parked.delete(cell.key);
+      if (!dropped.has(cell.key)) network.hide(cell.key);
+      changed++;
+    }
+  }
+  return changed;
 }
 
 /** The network's far level as the residency sees it (`networkFarRoads.ts`). */
@@ -210,11 +246,14 @@ function fitFarLevels(cells: ReadonlyMap<string, Cell>, residency: RoadResidency
   const cellBytes = residency.cellBytes ??= new Map();
   residency.wantsNetwork = false;
   if (!network) return 0;
-  let changed = 0;
+  let changed = parkCells(cells, residency, network);
+  const parked = residency.parked!;
   let used = 0;
   const free: Cell[] = [];
   for (const cell of cells.values()) {
     const isDropped = dropped.has(cell.key);
+    // Drawn by the network's level for the view: its blocks' far levels kept as they are.
+    if (parked.has(cell.key)) { used += cell.bytes; continue; }
     if (!isDropped && cell.live > 0) cellBytes.set(cell.key, cell.bytes);
     // A cell dropped that a build put blocks in since (an edit, the fill): the rest of it made again at once, the new blocks over the network's level meanwhile.
     if (isDropped && cell.live > 0 && !restoring.has(cell.key)) { restoreCell(cell, residency); changed++; }
@@ -290,7 +329,7 @@ export function updateRoadLevels(blocks: Iterable<Mesh>, focusX: number, focusY:
       const bytes = fullBytes(mesh, levels);
       total += bytes;
       full.push({ mesh, d, seen, bytes, at: levels.seenAt ?? 0 });
-    } else if (d < reach && seen && !levels.bringing && !levels.dropped && !(levels.cell !== undefined && dropped.has(levels.cell))) wanted.push({ mesh, d });
+    } else if (d < reach && seen && !levels.bringing && !levels.dropped && !(levels.cell !== undefined && (dropped.has(levels.cell) || residency.parked?.has(levels.cell)))) wanted.push({ mesh, d });
   }
   // Past the budget: out of the view first, the least recently seen first; then the farthest of the view.
   if (total > budget) {
@@ -325,6 +364,7 @@ export function forgetRoadCells(residency: RoadResidency): void {
   residency.dropped?.clear();
   residency.restoring?.clear();
   residency.cellBytes?.clear();
+  residency.parked?.clear();
   residency.wantsNetwork = false;
 }
 

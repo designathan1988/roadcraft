@@ -165,7 +165,11 @@ export class ShellBatch {
     this.faded = faded;
     const material = faded ? this.kit.dimShell : this.kit.shellMaterial;
     const facadeMaterial = faded ? this.kit.dimShell : this.kit.facade;
-    for (const batch of this.batches) batch.mesh.material = batch.set === 'detail' ? material : facadeMaterial;
+    for (const batch of this.batches) {
+      batch.mesh.material = batch.set === 'detail' ? material : facadeMaterial;
+      // Faded (transparent) shells drawn back to front; opaque ones unsorted (`makeBatches`).
+      batch.mesh.sortObjects = faded;
+    }
   }
 
   /** Every instance let go (a lost context's cells asked again): the batches made again, their meshes put back in the groups. */
@@ -201,6 +205,10 @@ export class ShellBatch {
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
       mesh.frustumCulled = false;
+      // DO NOT sort opaque walls by depth: three's BatchedMesh sorts every instance in every pass when `sortObjects` (the colour pass and each
+      // of the 3 cascades, opaque too: BatchedMesh.js onBeforeRender), and depth testing gives opaque walls the same picture unsorted. A
+      // transparent set (the faded shells) keeps its back-to-front order.
+      mesh.sortObjects = material.transparent;
       group.add(mesh);
       return { set, mesh, vertices: 1 << 14, indices: 1 << 15, instances: 64 };
     };

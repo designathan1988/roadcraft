@@ -232,13 +232,48 @@ const STREAMED_MARK = 'roadcraft.streamedWorld';
 try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
 const streamedAtBoot: string | null = null;
 // The autosave: the small key, or IndexedDB for a map too large for it (`Persistence.loadSessionAsync`); not read under a streamed world (its tiles are its save).
+/** Buildings from which a saved map is restored through one table (`prepareCity`): a small map loads as it did. */
+const TABLE_RESTORE_BUILDINGS = 1000;
 performance.mark('boot:session-asked');
-const savedSession = streamedAtBoot ? null : await persistence.loadSessionAsync();
-performance.mark('boot:session-read');
-// The game opens on an empty map - zoning starts from nothing - unless the player has a map of their own.
-const saved = savedSession?.document && !isUntouchedStarter(savedSession.document)
-  ? savedSession.document
-  : null;
+/** The autosave read and restored into the document; what the boot reads on - the save's settings, whether the player had a map, whether it failed to load.
+ *  DO NOT keep the loaded save in the module's scope: it held the save's whole map (every building decoded, ~8 KB of heap each) for the whole session,
+ *  beside the table the document reads (`npm run diagnose`, 2026-10-22). Restored here, it is let go with this call. */
+const bootSave = restoreBootSave(streamedAtBoot ? null : await persistence.loadSessionAsync());
+/** The boot's save without its map: its settings, read on through the boot. */
+const savedSession = bootSave.settings && { settings: bootSave.settings };
+/** Whether the player had a map of their own at the boot (the start screen's continue). */
+const hadSavedMap = bootSave.hadMap;
+const bootFailed = bootSave.failed;
+
+function restoreBootSave(loaded: Awaited<ReturnType<Persistence['loadSessionAsync']>>): { readonly settings: SavedSettings | null; readonly hadMap: boolean; readonly failed: boolean } {
+  performance.mark('boot:session-read');
+  // The game opens on an empty map - zoning starts from nothing - unless the player has a map of their own.
+  const map = loaded?.document && !isUntouchedStarter(loaded.document) ? loaded.document : null;
+  const settings = loaded?.settings ?? null;
+  if (!map) return { settings, hadMap: false, failed: false };
+  // A saved map that validates and still fails to load must not take the game down with it - on every reload.
+  try {
+    doc.changes.causeNext('saved map loaded');
+    performance.mark('boot:restore');
+    // A large map's buildings made one table, as a generated city's are (`prepareCity`), and filed from it: DO NOT load them one object at a time - each was migrated and interned again (0.83 s of the large city's boot), and each written to a row of its own for the traffic's worker after (`refOf`, 0.5 s more).
+    const asTable = (map.buildings?.length ?? 0) >= TABLE_RESTORE_BUILDINGS ? (() => { const made = prepareCity(map); return preparedCity(made.data, made.buildings); })() : null;
+    restoreInto(doc, asTable?.data ?? map, net, asTable?.table ?? null);
+    performance.mark('boot:restored');
+    doc.changes.causeNext('game');
+    // Opened from the map's parts: those parts are this document, the next save writes only what changes.
+    persistence.adoptLoaded(doc);
+    return { settings, hadMap: true, failed: false };
+  } catch (error) {
+    console.error('The saved map could not be loaded; it was set aside.', error);
+    persistence.quarantineStored();
+    const fresh = new RoadDoc();
+    fresh.terrainRelief = NEW_RELIEF;
+    fresh.nature = null;
+    doc.replaceWith(fresh);
+    net.rebuild();
+    return { settings, hadMap: true, failed: true };
+  }
+}
 
 /** The cities saved before 2026-10-04 (the shipped town, the player's own maps, the copies set aside) are removed, once */
 function clearOldMapsOnce(): void {
@@ -256,33 +291,6 @@ function clearOldMapsOnce(): void {
     // Storage blocked: nothing was kept to clear.
   }
 }
-/** Buildings from which a saved map is restored through one table (`prepareCity`): a small map loads as it did. */
-const TABLE_RESTORE_BUILDINGS = 1000;
-// A saved map that validates and still fails to load must not take the game down with it - on every reload.
-let bootFailed = false;
-if (saved) {
-  try {
-    doc.changes.causeNext('saved map loaded');
-    performance.mark('boot:restore');
-    // A large map's buildings made one table, as a generated city's are (`prepareCity`), and filed from it: DO NOT load them one object at a time - each was migrated and interned again (0.83 s of the large city's boot), and each written to a row of its own for the traffic's worker after (`refOf`, 0.5 s more).
-    const asTable = (saved.buildings?.length ?? 0) >= TABLE_RESTORE_BUILDINGS ? (() => { const made = prepareCity(saved); return preparedCity(made.data, made.buildings); })() : null;
-    restoreInto(doc, asTable?.data ?? saved, net, asTable?.table ?? null);
-    performance.mark('boot:restored');
-    doc.changes.causeNext('game');
-    // Opened from the map's parts: those parts are this document, the next save writes only what changes.
-    persistence.adoptLoaded(doc);
-  } catch (error) {
-    console.error('The saved map could not be loaded; it was set aside.', error);
-    persistence.quarantineStored();
-    const fresh = new RoadDoc();
-    fresh.terrainRelief = NEW_RELIEF;
-    fresh.nature = null;
-    doc.replaceWith(fresh);
-    net.rebuild();
-    bootFailed = true;
-  }
-}
-
 /** The simulation, in a worker of its own (`sim/host/simHost.ts`): the page sends it the map's changes and reads its frames. */
 const sim = new SimClient(doc, net);
 /** The population the machine sustains (`sim/populationGovernor.ts`, run in the worker), never more than the device's own share. */
@@ -308,7 +316,7 @@ function bootZoomBounds(): { min: number; max: number } {
 }
 
 // A streamed world's camera, where the player left it (its map is its tiles, read round it).
-const bootSettings = savedSession && saved ? savedSession.settings : streamedAtBoot ? persistence.readSettings() : null;
+const bootSettings = savedSession && hadSavedMap ? savedSession.settings : streamedAtBoot ? persistence.readSettings() : null;
 if (bootSettings) {
   camera.x = bootSettings.camera.x;
   camera.y = bootSettings.camera.y;
@@ -1920,7 +1928,7 @@ function mountInterface(): void {
     },
   });
   // The title screen first (`ui/v2/start.ts`); the game's health stays on F9, out of the player's bar.
-  mountStart(document.querySelector<HTMLElement>('.v2') ?? document.body, { saved: saved !== null && saved !== undefined, newMap, openMap: () => void openMap(), graphicsOptions: () => graphics.openPanel(), about: openAbout });
+  mountStart(document.querySelector<HTMLElement>('.v2') ?? document.body, { saved: hadSavedMap, newMap, openMap: () => void openMap(), graphicsOptions: () => graphics.openPanel(), about: openAbout });
   // The compass in a corner (`ui/v2/compass.ts`): a click faces north, a drag turns and tilts.
   if (view.kind !== '2d') {
     compass = mountCompass(document.querySelector<HTMLElement>('.v2') ?? document.body, {

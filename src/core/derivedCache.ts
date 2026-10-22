@@ -89,9 +89,10 @@ export async function readDerivedSome<T>(prefix: string, keys: readonly string[]
     try {
       const tx = db.transaction(STORE, 'readonly');
       const store = tx.objectStore(STORE);
-      for (const key of keys) {
+      // Each key once (a list may name one twice), its value read once: `result` is where the value is rebuilt on the page.
+      for (const key of new Set(keys)) {
         const request = store.get(prefix + key);
-        request.onsuccess = () => { if (request.result !== undefined) out.set(key, request.result as T); };
+        request.onsuccess = () => { const value: unknown = request.result; if (value !== undefined) out.set(key, value as T); };
       }
       tx.oncomplete = () => resolve(out);
       tx.onerror = () => resolve(out);
