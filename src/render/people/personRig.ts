@@ -125,6 +125,8 @@ export interface PersonRig {
   readonly morph?: (positions: Float32Array) => Float32Array;
   /** An item fitted to this body as a piece of its own: on the body as built, or on a changed shape of it */
   readonly wear?: (item: ProxyItem, shape?: Float32Array) => WornPiece;
+  /** Each bone's head (in the skeleton's order) in the bind posture for a changed body shape (decimetres, as `positions`), metres, the scene's frame: the joints refitted, as MakeHuman refits them, without building again. */
+  readonly heads?: (shape: Float32Array) => Vector3[];
   /** A changed body shape (decimetres, as `positions`) as moves of every base mesh vertex in the bind posture, metres */
   readonly deltas?: (shape: Float32Array) => Float32Array;
   /** `deltas(positions + offset)` at the listed vertices only */
@@ -387,7 +389,17 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
   const deltasData: RigDeltas = { positions, lowestDm, bodyRange, linear };
   const deltasAt = (offset: Float32Array, vertices: ArrayLike<number>): Float32Array =>
     rigDeltasAt(deltasData, data.weights, data.joints, offset, vertices);
-  return { scene, mesh, height: highest - lowest, wear, deltas, deltasAt, deltasData, ...(morph ? { morph } : {}) };
+  const headsOf = (shape: Float32Array): Vector3[] => {
+    const inMetres = new Float32Array(shape.length);
+    toMetres(shape, inMetres, bodyRange);
+    return meta.bones.map((b, i) => {
+      const parent = b.parent === null ? undefined : index.get(b.parent);
+      const h = headOf(b, data, inMetres).applyMatrix4(parent === undefined ? correction[i]! : correction[parent]!);
+      h.y -= lowest;
+      return h;
+    });
+  };
+  return { scene, mesh, height: highest - lowest, wear, deltas, deltasAt, deltasData, heads: headsOf, ...(morph ? { morph } : {}) };
 }
 
 // ---------------------------------------------------------------- geometry

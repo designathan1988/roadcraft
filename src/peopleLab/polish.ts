@@ -1,4 +1,4 @@
-import { CanvasTexture, Color, type BufferAttribute, type MeshStandardMaterial, type SkinnedMesh, type Texture } from 'three';
+import { CanvasTexture, Color, type BufferAttribute, type BufferGeometry, type MeshStandardMaterial, type SkinnedMesh, type Texture } from 'three';
 import type { PersonLook } from '@people/spec';
 
 /** THE LAB'S FINISH on a person the game built (`createPersonRig`): what the lab shows better than the game does today, without changing the game */
@@ -41,12 +41,11 @@ function clearScalpPaint(mesh: SkinnedMesh, look: PersonLook): void {
   colour.needsUpdate = true;
 }
 
-/** Shading smooth across seams: copies of one point (split by the texture's seams) take one normal, within the same part (skin, an item, the eyes). */
-function smoothSeams(mesh: SkinnedMesh): void {
-  const g = mesh.geometry;
+/** Copies of one point (split by the texture's seams) within the same part (skin, an item, the eyes), two or more: found once a build and kept on the geometry, so a reshaped body (`reshape.ts`) smooths the same seams. */
+export function seamGroups(g: BufferGeometry): readonly (readonly number[])[] {
+  const kept = g.userData['seamGroups'] as number[][] | undefined;
+  if (kept) return kept;
   const position = g.getAttribute('position') as BufferAttribute;
-  const normal = g.getAttribute('normal') as BufferAttribute | undefined;
-  if (!normal) return;
   const part = (g.getAttribute('garmentSlot') ?? g.getAttribute('hairMask')) as BufferAttribute | undefined;
   const hair = g.getAttribute('hairMask') as BufferAttribute | undefined;
   const groups = new Map<string, number[]>();
@@ -56,12 +55,22 @@ function smoothSeams(mesh: SkinnedMesh): void {
     const list = groups.get(key);
     if (list) list.push(v); else groups.set(key, [v]);
   }
-  for (const list of groups.values()) {
-    if (list.length < 2) continue;
+  const out = [...groups.values()].filter((list) => list.length > 1);
+  g.userData['seamGroups'] = out;
+  return out;
+}
+
+/** Shading smooth across seams: copies of one point take one normal. */
+export function smoothSeams(mesh: SkinnedMesh): void {
+  const g = mesh.geometry;
+  const normal = g.getAttribute('normal') as BufferAttribute | undefined;
+  if (!normal) return;
+  const n = normal.array as Float32Array;
+  for (const list of seamGroups(g)) {
     let x = 0, y = 0, z = 0;
-    for (const v of list) { x += normal.getX(v); y += normal.getY(v); z += normal.getZ(v); }
+    for (const v of list) { x += n[v * 3]!; y += n[v * 3 + 1]!; z += n[v * 3 + 2]!; }
     const l = Math.hypot(x, y, z) || 1;
-    for (const v of list) normal.setXYZ(v, x / l, y / l, z / l);
+    for (const v of list) { n[v * 3] = x / l; n[v * 3 + 1] = y / l; n[v * 3 + 2] = z / l; }
   }
   normal.needsUpdate = true;
 }

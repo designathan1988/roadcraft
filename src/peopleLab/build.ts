@@ -1,4 +1,4 @@
-import { SkinnedMesh, type Object3D } from 'three';
+import { SkinnedMesh, type Object3D, type Vector3 } from 'three';
 import { loadPeopleAssets, type PeopleAssets } from '@people/body/assets';
 import { Morpher } from '@people/body/morph';
 import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
@@ -42,6 +42,8 @@ export interface BuiltPerson {
   readonly morphs: number;
   /** A changed body shape (decimetres, `shape`) as relative moves of the mesh's vertices: live dragging (`PersonRig.morph`); absent on the tailored shells. */
   readonly morph?: (positions: Float32Array) => Float32Array;
+  /** The bones' heads for a changed body shape (`PersonRig.heads`): the skeleton refitted without building. */
+  readonly heads?: (positions: Float32Array) => Vector3[];
 }
 
 /** Builds the lab's people; keeps the MakeHuman packs and the grown hairstyles between builds. */
@@ -202,6 +204,6 @@ export class LabBuilder {
     await Promise.all(waits);
     let triangles = 0;
     for (const m of meshes) triangles += (m.geometry.index?.count ?? m.geometry.getAttribute('position').count) / 3;
-    return { scene: rig.scene, meshes, triangles, morphs: Object.keys(rig.mesh.morphTargetDictionary ?? {}).length, ...(rig.morph ? { morph: rig.morph } : {}) };
+    return { scene: rig.scene, meshes, triangles, morphs: Object.keys(rig.mesh.morphTargetDictionary ?? {}).length, ...(rig.morph ? { morph: rig.morph } : {}), ...(rig.heads ? { heads: rig.heads } : {}) };
   }
 }

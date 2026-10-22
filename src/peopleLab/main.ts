@@ -1,4 +1,4 @@
-import { LiveShape } from './live';
+import { Reshaper, type ShapeAxis } from './reshape';
 import { PLAIN_SHAPE } from './hairShape';
 import {
   ACESFilmicToneMapping, BufferAttribute, CylinderGeometry, Vector2, type Texture, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
@@ -51,9 +51,12 @@ function startLab(): void {
   let activity: string | undefined;
   let pose: PoseName = 'idle';
   let built: BuiltPerson | null = null;
-  /** Shape changes shown on the built person at once (`live.ts`); the rebuild waits until the slider has rested this long (ms). */
-  const live = new LiveShape();
-  const LIVE_REST = 700;
+  /** Shape changes drawn on the built person at once (`reshape.ts`), the exact shape once the slider has rested this long (ms); a build only when what is worn changes. */
+  let reshaper: Reshaper | null = null;
+  /** The person whose shape is drawn now, and when the exact shape is next worked out (ms, 0: not waiting). */
+  let committed: LabPerson | null = null;
+  let reshapeAt = 0;
+  const SHAPE_REST = 220;
   let poser: Poser | null = null;
   /** The captured clip the body plays (`ClipPlayer`), and the player on the person built now. */
   let clipName: LibraryClipName = 'idle';
@@ -88,20 +91,61 @@ function startLab(): void {
   const female = (): boolean => person.spec.body.gender < 0.5;
   const sexName = (): 'female' | 'male' => (female() ? 'female' : 'male');
 
-  function setSpec(patch: Partial<PersonSpec>): void {
+  /** One slider of the shape: its value in a person, and that person with it set. */
+  interface Slider { readonly key: string; readonly range: readonly [number, number]; get(p: LabPerson): number; set(p: LabPerson, v: number): LabPerson }
+
+  function setSpec(patch: Partial<PersonSpec>, slider?: Slider): void {
     person = { ...person, spec: { ...person.spec, ...patch } };
-    // The body's and face's shape seen at once (`live.ts`), the full rebuild once the slider rests; what is worn changes by rebuilding.
-    if (('body' in patch || 'features' in patch) && !('look' in patch) && showLive()) rebuild(LIVE_REST); else rebuild();
+    if (slider && reshapeTo(slider)) return;
+    rebuild();
   }
-  /** The person's new shape shown on the built one at once; false when it cannot be (the tailored shells, or nothing built yet). */
-  function showLive(): boolean {
-    const b = built, mesh = b?.meshes[0];
-    if (!b?.morph || !mesh) return false;
-    const target = person;
-    live.show(mesh, b.morph, async () => (built === b ? builder.shape(effective(target)) : null));
+
+  /** What a build depends on beyond the body's shape: what is worn (a child wears the tailored shells), the sex's motion capture. Equal keys reshape (`reshape.ts`), unequal ones build. */
+  function buildKey(p: LabPerson): string {
+    const e = effective(p);
+    const { body: _b, motion: _m, style: _s, ...rest } = e;
+    void _b; void _m; void _s;
+    return JSON.stringify({ ...rest, spec: { ...e.spec, name: '', mood: 0, features: null, body: e.spec.body.gender < 0.5 } });
+  }
+  /** Everything the body's shape is made from. */
+  const shapeOf = (p: LabPerson): string => JSON.stringify([p.spec.body, p.spec.features, p.style, p.body ?? null]);
+
+  /** The person now drawn on the built one: at once from the slider's samples, exactly once it rests. False when it needs a build. */
+  function reshapeTo(slider?: Slider): boolean {
+    const r = reshaper, from = committed;
+    if (!r || !from || buildKey(person) !== buildKey(from)) return false;
+    if (slider) {
+      const axis: ShapeAxis = { key: slider.key, value: slider.get(person), base: slider.get(from), range: slider.range,
+        context: shapeOf(slider.set(from, 0)), at: (v) => builder.shape(effective(slider.set(from, v))) };
+      r.move([axis]);
+    } else r.move([]);
+    reshapeAt = performance.now() + (slider ? SHAPE_REST : 0);
     return true;
   }
-  function setBody(k: keyof MacroParams, v: number): void { setSpec({ body: { ...person.spec.body, [k]: v } }); }
+  let reshaping = false;
+  /** The exact shape written on the built person and its skeleton refitted (`Reshaper.commit`). */
+  async function commitShape(): Promise<void> {
+    const r = reshaper;
+    if (!r || reshaping) { if (r) reshapeAt = performance.now() + 30; return; }
+    reshaping = true;
+    try {
+      const target = person;
+      if (committed && shapeOf(committed) === shapeOf(target)) return;
+      const shape = await builder.shape(effective(target));
+      if (r !== reshaper) return;
+      r.commit(shape);
+      committed = target;
+      settle();
+    } finally {
+      reshaping = false;
+    }
+  }
+
+  const bodySlider = (k: keyof MacroParams): Slider => ({ key: `body:${k}`, range: [0, 1], get: (p) => p.spec.body[k],
+    set: (p, v) => ({ ...p, spec: { ...p.spec, body: { ...p.spec.body, [k]: v } } }) });
+  const featureSlider = (k: string): Slider => ({ key: `feature:${k}`, range: [-1, 1], get: (p) => p.spec.features[k] ?? 0,
+    set: (p, v) => ({ ...p, spec: { ...p.spec, features: { ...p.spec.features, [k]: v } } }) });
+  function setBody(k: keyof MacroParams, v: number): void { setSpec({ body: { ...person.spec.body, [k]: v } }, bodySlider(k)); }
   /** Partial, where a field set to undefined is taken off. */
   type Loose<T> = { [K in keyof T]?: T[K] | undefined };
   const defined = <T extends object>(o: Loose<T>): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
@@ -109,8 +153,8 @@ function startLab(): void {
     const merged: Loose<PersonLook> = { ...person.spec.look, ...patch };
     setSpec({ look: defined<PersonLook>(merged) });
   }
-  function setFeature(k: string, v: number): void { setSpec({ features: { ...person.spec.features, [k]: v } }); }
-  function setStyle(s: CartoonStyle): void { person = { ...person, style: s }; if (showLive()) rebuild(LIVE_REST); else rebuild(); }
+  function setFeature(k: string, v: number): void { setSpec({ features: { ...person.spec.features, [k]: v } }, featureSlider(k)); }
+  function setStyle(s: CartoonStyle): void { person = { ...person, style: s }; rebuild(); }
   function setHair(h: HairStyle): void {
     person = { ...person, hair: h, spec: { ...person.spec, look: { ...person.spec.look, hairCut: `${PROC_PREFIX}${h.name}`, hairStyle: h.length > 2 ? 'long' : 'short' } } };
     rebuild();
@@ -251,6 +295,8 @@ function startLab(): void {
   /** When the waiting rebuild starts (ms, `performance.now`), or 0: sliders dragged are built once they rest, in the frame loop. */
   let buildAt = 0;
   function rebuild(delay = 280): void {
+    // Only the shape changed: drawn on the person built, no build.
+    if (reshapeTo()) return;
     busy.classList.add('on');
     buildAt = performance.now() + delay;
   }
@@ -267,8 +313,9 @@ function startLab(): void {
     const mine = ++generation;
     pictures.paused = true;
     const started = performance.now();
+    const target = person;
     try {
-      const next = await builder.build(effective(person));
+      const next = await builder.build(effective(target));
       if (mine !== generation) { dispose(next.scene); return; }
       if (built) { scene.remove(built.scene); dispose(built.scene); }
       built = next;
@@ -278,7 +325,7 @@ function startLab(): void {
       const spec = person.spec;
       const nextShaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
       if (nextShaper) next.meshes[0]!.geometry.setAttribute('labRegion', new BufferAttribute(nextShaper.regionAttribute(), 1));
-      const skin = await dressPerson(next, effective(person).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit), person.garment?.colour ?? null);
+      const skin = await dressPerson(next, effective(target).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit), person.garment?.colour ?? null);
       for (const m of next.meshes) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) if (m.geometry.hasAttribute('labRegion')) regionGlow(mat as MeshStandardMaterial, glow);
       if (mine !== generation) { releaseSkinAppearance(skin); dispose(next.scene); return; }
       if (appearance) releaseSkinAppearance(appearance);
@@ -288,20 +335,20 @@ function startLab(): void {
       poser = new Poser(next.scene);
       posing.setRoot(next.scene);
       player = null;
+      clips = null;
       const sexNow = sexName();
-      void loadRocketboxClips(sexNow).then((clips) => {
+      void loadRocketboxClips(sexNow).then((loaded) => {
         if (built !== next || !next.meshes[0]) return;
-        player = new ClipPlayer(next.scene, next.meshes[0], clips);
-        player.play(clipName, (performance.now() - clock0) / 1000);
-        player.hold = heldAt;
+        clips = loaded;
+        startClip();
       }, (error: unknown) => { console.warn('[people-lab] the motion library could not be loaded; the lab poses instead', error); });
       if (!shaping) dragWeights = null;
       shaper = nextShaper;
-      next.scene.updateWorldMatrix(true, true);
-      // Standing height from the head bone (a skinned geometry's own box is in its bind space, not the scene's).
-      let headY = 1.5;
-      next.scene.traverse((o) => { if (o.name === 'head' || o.name === 'Bip01_Head') headY = o.getWorldPosition(new Vector3()).y; });
-      height = Math.max(0.6, headY * 1.13);
+      reshaper = next.morph && next.heads && next.meshes[0] ? new Reshaper(next.meshes[0], next.morph, next.heads) : null;
+      committed = target;
+      measureHeight();
+      // Changed while it was built: drawn now (`reshapeTo`) or built again.
+      if (person !== target) rebuild(0);
       const first = !stage.dataset['framed'];
       if (first) { stage.dataset['framed'] = '1'; frame('body', true); }
       stats.innerHTML = `${Math.round(next.triangles).toLocaleString('pt-BR')} triângulos · ${next.morphs} expressões<br>`
@@ -312,6 +359,32 @@ function startLab(): void {
     } finally {
       if (mine === generation) { busy.classList.remove('on'); pictures.paused = !!shaping; }
     }
+  }
+
+  /** The motion library of the sex built, once loaded. */
+  let clips: Awaited<ReturnType<typeof loadRocketboxClips>> | null = null;
+  /** The clip played on the person built now, measured from its skeleton as it stands. */
+  function startClip(): void {
+    const b = built, mesh = b?.meshes[0];
+    if (!b || !mesh || !clips) return;
+    player = new ClipPlayer(b.scene, mesh, clips);
+    player.play(clipName, (performance.now() - clock0) / 1000);
+    player.hold = heldAt;
+  }
+  /** Standing height from the head bone (a skinned geometry's own box is in its bind space, not the scene's). */
+  function measureHeight(): void {
+    if (!built) return;
+    built.scene.updateWorldMatrix(true, true);
+    let headY = 1.5;
+    built.scene.traverse((o) => { if (o.name === 'head' || o.name === 'Bip01_Head') headY = o.getWorldPosition(new Vector3()).y; });
+    height = Math.max(0.6, headY * 1.13);
+  }
+  /** After the skeleton was refitted (`Reshaper.commit`): the clip and the rig editor measure the new bones. */
+  function settle(): void {
+    if (!built) return;
+    posing.setRoot(built.scene);
+    if (player) startClip();
+    measureHeight();
   }
 
   // ---------------------------------------------------------------- controls
@@ -718,6 +791,8 @@ function startLab(): void {
     lastTick = now;
     glow.time.value = t;
     if (buildAt && now >= buildAt) { buildAt = 0; void runBuild(); }
+    if (reshapeAt && now >= reshapeAt) { reshapeAt = 0; void commitShape(); }
+    reshaper?.tick();
     if (toastUntil && now >= toastUntil) { toastUntil = 0; toast.classList.remove('on'); }
     while (revokeAt.length && revokeAt[0]![0] <= now) URL.revokeObjectURL(revokeAt.shift()![1]);
     if (built) {
@@ -759,7 +834,7 @@ function startLab(): void {
   void fitFace();
   loop();
   // For checks from outside (the lab's screenshots): the person as it is now.
-  (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, setHair, setStyle, frame, get built() { return built; },
+  (window as unknown as { peopleLab: unknown }).peopleLab = { get person() { return person; }, buildNow() { busy.classList.add('on'); buildAt = performance.now(); }, setHair, setStyle, frame, get built() { return built; },
     pick(tabId: string) { tab = tabId; render(); }, posing, async bakePictures() {
       // Every panel of both sexes asked once, each picture drawn on the mannequin; the bake script writes them as files.
       pictures.baking = true;
