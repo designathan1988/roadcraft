@@ -103,6 +103,135 @@ export function intern<T>(value: T): T {
   return value;
 }
 
+/**
+ * RECORDS' MEMBERS SHARED AMONG THEM, A BATCH AT A TIME, in place (hash-consing as `intern`, with tables of its own): what records written
+ * to a table have alike written once (`recordTable.ts` TableWriter, a member reached twice is one node). DO NOT `intern` records a long
+ * synchronous job writes and lets go (a city grown off the page, `editor/preparedCity.ts`): each canonical object gets a `WeakRef`, and a
+ * `WeakRef`'s target is held until the job's task ends (ECMA-262 AddToKeptObjects) - every member of every building grown stayed alive
+ * for the whole generation. Its objects are not frozen: the records are written once and let go.
+ * After each batch only the members met more than once are kept
+ * in that batch (a material, a storey, a facade), the next batch's equal members made those very objects - a table written a batch at a
+ * time with its shared nodes kept (`TableWriter` keepShared) writes each of them once while it is met. DO NOT keep every member met: a
+ * building's own volumes and elements are met once, and keeping them is keeping every record.
+ */
+export class SharedMembers {
+  private ids = new Map<object, number>();
+  private buckets = new Map<number, Plain[]>();
+  private next = 1;
+  private readonly keyCodes = new Map<string, number>();
+
+  /** The members met twice in the batch so far (`end`). */
+  private hits = new Set<Plain>();
+
+  /** The records' members made canonical, in place, against those kept and each other. Several lists may make one batch (a city's records, then the same migrated, `editor/smallCityMap.ts`): the members of the first met again in the next one are found by identity, never hashed again. */
+  share(records: readonly object[]): void {
+    this.callStart = this.next;
+    for (const record of records) this.shareRecord(record as Record<string, unknown>, this.hits);
+  }
+
+  /** The first id of this batch, and of this call (`share`): a member of an earlier call of the batch met again by identity is the same member read through another list (the migrated record), not one shared - DO NOT count it met twice: every member of the batch was kept, and the next batch walked them all. */
+  private batchStart = 1;
+  private callStart = 1;
+
+  /** The batch over: the members met twice in it kept for the next (`keeps`), the others let go. */
+  end(): void {
+    const hits = this.hits;
+    this.hits = new Set();
+    // Only the members met twice (and their members, which their hashes are made of) stay known.
+    const kept = new Map<object, number>(), buckets = new Map<number, Plain[]>();
+    const keep = (node: Plain, h: number): void => {
+      if (kept.has(node)) return;
+      kept.set(node, this.ids.get(node)!);
+      let bucket = buckets.get(h);
+      if (!bucket) buckets.set(h, bucket = []);
+      bucket.push(node);
+    };
+    // DO NOT keep what an earlier batch met twice and this one never: kept for good, they grew with the city (56 MB of the city of 25,000 buildings, 2026-10-22).
+    for (const [h, bucket] of this.buckets) {
+      for (const node of bucket) if (hits.has(node)) { keep(node, h); this.keepChildren(node, keep); }
+    }
+    this.ids = kept;
+    this.buckets = buckets;
+    this.batchStart = this.next;
+  }
+
+  /** Whether meeting `node` again now means it is shared: one kept from an earlier batch, or one of this list (`batchStart`, `callStart`). */
+  private sharedAgain(node: Plain): boolean {
+    const id = this.ids.get(node)!;
+    return id < this.batchStart || id >= this.callStart;
+  }
+
+  /** Whether a member is kept for the next batch (`share`). */
+  keeps(node: object): boolean {
+    return this.ids.has(node);
+  }
+
+  /** Each node's hash, for the children of a node kept. */
+  private readonly hashes = new WeakMap<object, number>();
+
+  private keepChildren(node: Plain, keep: (node: Plain, h: number) => void): void {
+    const children = Array.isArray(node) ? node : Object.values(node);
+    for (const child of children) {
+      if (typeof child !== 'object' || child === null) continue;
+      const h = this.hashes.get(child);
+      if (h === undefined) continue;
+      keep(child as Plain, h);
+      this.keepChildren(child as Plain, keep);
+    }
+  }
+
+  private shareRecord(r: Record<string, unknown>, hits: Set<Plain>): void {
+    for (const key of Object.keys(r)) {
+      const value = r[key];
+      if (typeof value === 'object' && value !== null) r[key] = this.canon(value as Plain, hits);
+    }
+  }
+
+  private local(h: number, v: unknown): number {
+    if (typeof v === 'string') return mix(mix(h, 3), this.code(v));
+    return typeof v === 'object' && v !== null ? mix(mix(h, 6), this.ids.get(v) ?? 0) : hashValue(h, v);
+  }
+
+  /** A key's or a text's number, not its characters hashed again at every member (a few hundred texts, met millions of times). */
+  private code(text: string): number {
+    let code = this.keyCodes.get(text);
+    if (code === undefined) this.keyCodes.set(text, code = this.keyCodes.size + 1);
+    return code;
+  }
+
+  private canon(node: Plain, hits: Set<Plain>): Plain {
+    // Met again (kept from the batch before, or reached twice in this list): shared.
+    if (this.ids.has(node)) {
+      if (this.sharedAgain(node)) hits.add(node);
+      return node;
+    }
+    // One shared already (`intern`, frozen): its own canonical here, never written.
+    if (Object.isFrozen(node)) { this.ids.set(node, this.next++); return node; }
+    let h = Array.isArray(node) ? 0x811c9dc5 : 0x01000193;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        const item = node[i];
+        if (typeof item === 'object' && item !== null) node[i] = this.canon(item as Plain, hits);
+        h = this.local(h, node[i]);
+      }
+    } else {
+      for (const key of Object.keys(node)) {
+        const item = node[key];
+        if (typeof item === 'object' && item !== null) node[key] = this.canon(item as Plain, hits);
+        h = this.local(mix(h, this.code(key)), node[key]);
+      }
+    }
+    let bucket = this.buckets.get(h);
+    if (bucket) {
+      for (const known of bucket) if (sameShallow(known, node)) { if (this.sharedAgain(known)) hits.add(known); return known; }
+    } else this.buckets.set(h, bucket = []);
+    bucket.push(node);
+    this.ids.set(node, this.next++);
+    this.hashes.set(node, h);
+    return node;
+  }
+}
+
 /** A record's object members made canonical, in place (the record itself stays its own: its id, place and wear). */
 export function internMembers(record: Record<string, unknown>): void {
   for (const key of Object.keys(record)) {

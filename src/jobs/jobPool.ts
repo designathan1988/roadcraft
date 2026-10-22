@@ -314,6 +314,8 @@ function grow(long: boolean): Host | null {
     host.job = null;
     if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
     else system.queue.answer(job, event.data.data);
+    // A whole city's job answered (`RETIRED_AFTER`): its worker let go with all it held, a new one made for the next job.
+    if (RETIRED_AFTER.includes(job.spec.service) && idle(host)) retire(host);
     dispatch();
   };
   worker.onerror = (event) => {
@@ -334,6 +336,16 @@ function pageWorkers(): number {
   let n = 0;
   for (const host of system.workers) if (host.inPage) n++;
   return n;
+}
+
+/** Services whose one job reads or makes a whole city (its generation, its network solved): the worker let go once it answers, if nothing else is on it. DO NOT keep it idle for the session: its heap stays at the job's peak until a collection the idle worker may never run, in the V8 cage the page and its workers share (`CAGE_BYTES`); the city of 160,000 buildings peaked at 5.6 GB to make (2026-10-22). Rare jobs: a worker made again costs a fraction of a second. */
+const RETIRED_AFTER: readonly JobService[] = ['cityGen', 'networkBake'];
+
+/** A worker let go now: out of the pool, its thread ended. */
+function retire(host: Host): void {
+  const at = system.workers.indexOf(host);
+  if (at >= 0) system.workers.splice(at, 1);
+  host.worker.terminate();
 }
 
 /** How long a worker of the page stands with nothing on it before it may be let go: a burst of jobs keeps its workers. */

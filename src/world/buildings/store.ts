@@ -1,4 +1,4 @@
-import { internMembers } from './intern';
+import { type SharedMembers, internMembers } from './intern';
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect, rectsAround } from '../changes';
 import { JournalCursor } from '../derived';
@@ -10,6 +10,7 @@ import { BuildingItems } from './items';
 import type { RecordRef } from './recordTable';
 import type { TableRows } from './tableRows';
 import { type BuildingSections, itemsOfSections, sectionsOf } from './sections';
+import { SpilledItems } from './spilledItems';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
 import { type Building, type BuildingId, asBuildingId, settleBuilding } from './types';
 
@@ -41,6 +42,15 @@ export class BuildingStore {
 
   /** Whether a record's members alike with other buildings' are shared with them (`intern.ts`): DO NOT for a store thrown away once written out (the tile generator's, whose tile is read and interned again where it is used: 0.28 s of a dense tile's 1.64 s for nothing). */
   internShared = true;
+
+  /** The buildings kept from now on as a table that their older records are spilled into (`SpilledItems.spill`), read back when asked: a city grown off the page (`editor/smallCityMap.ts` buildCityTable). Only on a store with no building yet. */
+  spillToTable(shared?: SharedMembers): SpilledItems {
+    if (this.items.size > 0 || this.below) throw new Error('[buildings] only an empty store spills its records to a table');
+    const items = new SpilledItems(shared);
+    this.items = items;
+    this.grid = null;
+    return items;
+  }
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}

@@ -74,8 +74,10 @@ class Stream {
 
   private room(n: number): void {
     if (this.length + n <= this.bytes.length) return;
-    let size = this.bytes.length * 2;
-    while (size < this.length + n) size *= 2;
+    // Doubled while small; past 64 MB a quarter more (a city's table, `TableWriter`: DO NOT leave up to half of a buffer of hundreds of MB empty).
+    const grow = (size: number): number => (size < 1 << 26 ? size * 2 : Math.ceil(size * 1.25));
+    let size = grow(this.bytes.length);
+    while (size < this.length + n) size = grow(size);
     const next = new Uint8Array(size);
     next.set(this.bytes.subarray(0, this.length));
     this.bytes = next;
@@ -104,83 +106,189 @@ function sharedObjects(rows: readonly object[]): Set<object> {
 
 /** The rows written as one table: their values as JSON would keep them (undefined members left out, in arrays null), numbers exact. */
 export function encodeRecords(rows: readonly Building[]): RecordTable {
-  const shared = sharedObjects(rows);
-  const strings = new Map<string, number>(), stringList: string[] = [];
-  const shapes = new Map<string, number>(), shapeList: number[][] = [];
-  const nodes = new Map<object, number>(), nodeAt: number[] = [];
-  const stream = new Stream();
-  const stringId = (s: string): number => {
-    let id = strings.get(s);
-    if (id === undefined) { strings.set(s, id = stringList.length); stringList.push(s); }
-    return id;
-  };
-  const shapeId = (keys: readonly string[]): number => {
-    const name = keys.join('\u0000');
-    let id = shapes.get(name);
-    if (id === undefined) { shapes.set(name, id = shapeList.length); shapeList.push(keys.map(stringId)); }
-    return id;
-  };
-  const number = (v: number): void => {
-    if (Number.isInteger(v) && !Object.is(v, -0)) {
-      if (v >= 0 && v < 256) { stream.u8(T_U8); stream.u8(v); return; }
-      if (v >= -0x80000000 && v <= 0x7fffffff) { stream.u8(T_I32); stream.i32(v); return; }
-    }
-    stream.u8(T_F64); stream.f64(v);
-  };
-  // A shared member is written where it is first met, behind its node's mark; later meetings write only the mark.
-  const value = (v: unknown): void => {
-    if (v === null || v === undefined) { stream.u8(T_NULL); return; }
-    switch (typeof v) {
-      case 'boolean': stream.u8(v ? T_TRUE : T_FALSE); return;
-      case 'number': number(v); return;
-      case 'string': stream.u8(T_STR); stream.u32(stringId(v)); return;
-      case 'object': break;
-      default: stream.u8(T_NULL); return;
-    }
-    const known = nodes.get(v);
-    if (known !== undefined) { stream.u8(T_NODE); stream.u32(known); return; }
-    if (shared.has(v)) {
-      const id = nodeAt.length;
-      nodes.set(v, id);
-      nodeAt.push(stream.length + 5);
-      stream.u8(T_NODE); stream.u32(id);
-    }
-    body(v);
-  };
-  const body = (v: object): void => {
-    if (Array.isArray(v)) {
-      stream.u8(T_ARR); stream.u32(v.length);
-      for (const item of v) value(item);
-      return;
-    }
-    const record = v as Record<string, unknown>;
-    const keys = Object.keys(record).filter((k) => { const t = typeof record[k]; return t !== 'undefined' && t !== 'function' && t !== 'symbol'; });
-    stream.u8(T_OBJ); stream.u32(shapeId(keys));
-    for (const k of keys) value(record[k]);
-  };
-  const rootAt: number[] = [];
-  for (const row of rows) { rootAt.push(stream.length); body(row); }
+  const writer = new TableWriter();
+  writer.add(rows);
+  return writer.finish();
+}
 
-  const units = stringList.reduce((n, s) => n + s.length, 0);
-  const keys = shapeList.reduce((n, s) => n + s.length, 0);
-  const at = layout(rows.length, stringList.length, units, shapeList.length, keys, nodeAt.length, stream.length);
-  const buffer = allocate(at.bytes);
-  new Uint32Array(buffer, 0, HEAD).set([MAGIC, FORMAT, at.rows, at.strings, at.units, at.shapes, at.keys, at.nodes, at.stream]);
-  const ids = new Float64Array(buffer, at.ids, at.rows), xs = new Float64Array(buffer, at.xs, at.rows);
-  const ys = new Float64Array(buffer, at.ys, at.rows), turns = new Float64Array(buffer, at.turns, at.rows);
-  rows.forEach((b, i) => { ids[i] = b.id; xs[i] = b.x; ys[i] = b.y; turns[i] = b.rotation; });
-  new Uint32Array(buffer, at.rootAt, at.rows).set(rootAt);
-  new Uint32Array(buffer, at.nodeAt, at.nodes).set(nodeAt);
-  const strStart = new Uint32Array(buffer, at.strStart, at.strings + 1), strUnits = new Uint16Array(buffer, at.strUnits, at.units);
-  let u = 0;
-  stringList.forEach((s, i) => { strStart[i] = u; for (let c = 0; c < s.length; c++) strUnits[u++] = s.charCodeAt(c); });
-  strStart[at.strings] = u;
-  const shapeStart = new Uint32Array(buffer, at.shapeStart, at.shapes + 1), shapeKeys = new Uint32Array(buffer, at.shapeKeys, at.keys);
-  let k = 0;
-  shapeList.forEach((s, i) => { shapeStart[i] = k; for (const id of s) shapeKeys[k++] = id; });
-  shapeStart[at.shapes] = k;
-  new Uint8Array(buffer, at.streamAt, at.stream).set(stream.bytes.subarray(0, stream.length));
-  return new RecordTable(buffer);
+/**
+ * A TABLE WRITTEN A BATCH OF ROWS AT A TIME (a city generated off the page, `editor/smallCityMap.ts` buildCityTable): every string and
+ * object shape once for the whole table, a member shared within a batch written once (`sharedObjects` of the batch), each row read back
+ * while the table is still being written (`read`). One batch writes the very bytes `encodeRecords` always wrote. DO NOT hold a whole
+ * city's records as objects to encode them at the end: ~20 KB of JS heap a building, and the city of 160,000 buildings took its worker
+ * to 5.6 GB, past the V8 cage it shares with its page (2026-10-22); the table holds ~1 KB a building, outside the JS heap.
+ */
+export class TableWriter {
+  private readonly strings = new Map<string, number>();
+  private readonly stringList: string[] = [];
+  private readonly shapes = new Map<string, number>();
+  private readonly shapeList: number[][] = [];
+  /** Each shape's keys as strings, for `read`. */
+  private readonly shapeNames: string[][] = [];
+  private readonly nodeAt: number[] = [];
+  private readonly stream = new Stream();
+  private readonly ids: number[] = [];
+  private readonly xs: number[] = [];
+  private readonly ys: number[] = [];
+  private readonly turns: number[] = [];
+  private readonly rootAt: number[] = [];
+  /** Where `read` stands in the stream. */
+  private pos = 0;
+  /** The shared members written as nodes, kept across batches (`keepShared`): a member met again in a later batch written as its mark. */
+  private readonly keptNodes = new Map<object, number>();
+
+  /** `keepShared`: a member written as a node in one batch is that node in the batches after (the members shared across batches, `intern.ts` SharedMembers); without it each batch writes its own. */
+  constructor(private readonly keepShared = false) {}
+
+  get rows(): number {
+    return this.rootAt.length;
+  }
+
+  /** The id of a row written. */
+  idAt(row: number): number {
+    return this.ids[row]!;
+  }
+
+  private stringId(s: string): number {
+    let id = this.strings.get(s);
+    if (id === undefined) { this.strings.set(s, id = this.stringList.length); this.stringList.push(s); }
+    return id;
+  }
+
+  private shapeId(keys: readonly string[]): number {
+    const name = keys.join('\u0000');
+    let id = this.shapes.get(name);
+    if (id === undefined) {
+      this.shapes.set(name, id = this.shapeList.length);
+      this.shapeList.push(keys.map((k) => this.stringId(k)));
+      this.shapeNames.push([...keys]);
+    }
+    return id;
+  }
+
+  /** Of the nodes kept across batches (`keepShared`), only those `keep` keeps (`SharedMembers.keeps`): DO NOT keep every node ever written, they grew with the city. */
+  keepOnly(keep: (node: object) => boolean): void {
+    for (const node of this.keptNodes.keys()) if (!keep(node)) this.keptNodes.delete(node);
+  }
+
+  /** Rows written after those before; a member shared between rows of this batch written once, as a node. */
+  add(rows: readonly Building[]): void {
+    const shared = sharedObjects(rows);
+    const nodes = this.keepShared ? this.keptNodes : new Map<object, number>();
+    const stream = this.stream, nodeAt = this.nodeAt;
+    const number = (v: number): void => {
+      if (Number.isInteger(v) && !Object.is(v, -0)) {
+        if (v >= 0 && v < 256) { stream.u8(T_U8); stream.u8(v); return; }
+        if (v >= -0x80000000 && v <= 0x7fffffff) { stream.u8(T_I32); stream.i32(v); return; }
+      }
+      stream.u8(T_F64); stream.f64(v);
+    };
+    // A shared member is written where it is first met, behind its node's mark; later meetings write only the mark.
+    const value = (v: unknown): void => {
+      if (v === null || v === undefined) { stream.u8(T_NULL); return; }
+      switch (typeof v) {
+        case 'boolean': stream.u8(v ? T_TRUE : T_FALSE); return;
+        case 'number': number(v); return;
+        case 'string': stream.u8(T_STR); stream.u32(this.stringId(v)); return;
+        case 'object': break;
+        default: stream.u8(T_NULL); return;
+      }
+      const known = nodes.get(v);
+      if (known !== undefined) { stream.u8(T_NODE); stream.u32(known); return; }
+      if (shared.has(v)) {
+        const id = nodeAt.length;
+        nodes.set(v, id);
+        nodeAt.push(stream.length + 5);
+        stream.u8(T_NODE); stream.u32(id);
+      }
+      body(v);
+    };
+    const body = (v: object): void => {
+      if (Array.isArray(v)) {
+        stream.u8(T_ARR); stream.u32(v.length);
+        for (const item of v) value(item);
+        return;
+      }
+      const record = v as Record<string, unknown>;
+      const keys = Object.keys(record).filter((k) => { const t = typeof record[k]; return t !== 'undefined' && t !== 'function' && t !== 'symbol'; });
+      stream.u8(T_OBJ); stream.u32(this.shapeId(keys));
+      for (const k of keys) value(record[k]);
+    };
+    for (const row of rows) {
+      this.rootAt.push(stream.length);
+      this.ids.push(row.id); this.xs.push(row.x); this.ys.push(row.y); this.turns.push(row.rotation);
+      body(row);
+    }
+  }
+
+  /** A row written, decoded: a fresh object of its own, its shared members its own too. */
+  read(row: number): Building {
+    if (row < 0 || row >= this.rows) throw new Error(`[buildings] no row ${row} in the table being written`);
+    this.pos = this.rootAt[row]!;
+    return this.value(this.stream.view) as Building;
+  }
+
+  private value(view: DataView): unknown {
+    const tag = view.getUint8(this.pos++);
+    switch (tag) {
+      case T_NULL: return null;
+      case T_FALSE: return false;
+      case T_TRUE: return true;
+      case T_U8: return view.getUint8(this.pos++);
+      case T_I32: { const v = view.getInt32(this.pos, true); this.pos += 4; return v; }
+      case T_F64: { const v = view.getFloat64(this.pos, true); this.pos += 8; return v; }
+      case T_STR: { const id = view.getUint32(this.pos, true); this.pos += 4; return this.stringList[id]!; }
+      case T_ARR: {
+        const n = view.getUint32(this.pos, true); this.pos += 4;
+        const out = new Array<unknown>(n);
+        for (let i = 0; i < n; i++) out[i] = this.value(view);
+        return out;
+      }
+      case T_OBJ: {
+        const keys = this.shapeNames[view.getUint32(this.pos, true)]!; this.pos += 4;
+        const out: Record<string, unknown> = {};
+        for (const key of keys) out[key] = this.value(view);
+        return out;
+      }
+      case T_NODE: {
+        const id = view.getUint32(this.pos, true); this.pos += 4;
+        // Met here first: its body follows the mark.
+        if (this.pos === this.nodeAt[id]) return this.value(view);
+        const back = this.pos;
+        this.pos = this.nodeAt[id]!;
+        const node = this.value(view);
+        this.pos = back;
+        return node;
+      }
+      default: throw new Error(`[buildings] a record table holds an unknown tag ${tag}`);
+    }
+  }
+
+  /** The table as written so far, in a buffer of its own (shared where the thread is isolated, `allocate`). */
+  finish(): RecordTable {
+    const { stringList, shapeList, nodeAt, stream, rootAt } = this;
+    const units = stringList.reduce((n, s) => n + s.length, 0);
+    const keys = shapeList.reduce((n, s) => n + s.length, 0);
+    const at = layout(this.rows, stringList.length, units, shapeList.length, keys, nodeAt.length, stream.length);
+    const buffer = allocate(at.bytes);
+    new Uint32Array(buffer, 0, HEAD).set([MAGIC, FORMAT, at.rows, at.strings, at.units, at.shapes, at.keys, at.nodes, at.stream]);
+    new Float64Array(buffer, at.ids, at.rows).set(this.ids);
+    new Float64Array(buffer, at.xs, at.rows).set(this.xs);
+    new Float64Array(buffer, at.ys, at.rows).set(this.ys);
+    new Float64Array(buffer, at.turns, at.rows).set(this.turns);
+    new Uint32Array(buffer, at.rootAt, at.rows).set(rootAt);
+    new Uint32Array(buffer, at.nodeAt, at.nodes).set(nodeAt);
+    const strStart = new Uint32Array(buffer, at.strStart, at.strings + 1), strUnits = new Uint16Array(buffer, at.strUnits, at.units);
+    let u = 0;
+    stringList.forEach((s, i) => { strStart[i] = u; for (let c = 0; c < s.length; c++) strUnits[u++] = s.charCodeAt(c); });
+    strStart[at.strings] = u;
+    const shapeStart = new Uint32Array(buffer, at.shapeStart, at.shapes + 1), shapeKeys = new Uint32Array(buffer, at.shapeKeys, at.keys);
+    let k = 0;
+    shapeList.forEach((s, i) => { shapeStart[i] = k; for (const id of s) shapeKeys[k++] = id; });
+    shapeStart[at.shapes] = k;
+    new Uint8Array(buffer, at.streamAt, at.stream).set(stream.bytes.subarray(0, stream.length));
+    return new RecordTable(buffer);
+  }
 }
 
 /** Whether a buffer holds a record table of this format: written once when encoded (`encodeRecords`), never again - a job process's thread keeps the copy it is sent (`jobs/processWorker.ts` KeptBuffer). */
