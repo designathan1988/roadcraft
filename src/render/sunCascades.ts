@@ -1,6 +1,7 @@
 import {
+  type Frustum,
   BasicShadowMap,
-  type Box3,
+  Box3,
   DepthFormat,
   DepthTexture,
   DirectionalLight,
@@ -40,6 +41,8 @@ const SHADOW_DEPTH_MAX = m(8000);
 const SUN_STEP = (0.1 * Math.PI) / 180;
 /** A cascade whose square only moved by whole texels keeps the store's depth where the squares overlap and draws the strips uncovered alone (`scrollInto`); strips over this share of the map's area are a whole draw instead (two strip passes and their blits cost more than one whole pass there). */
 const SCROLL_MOST = 0.5;
+/** How far a change's shadow may reach past its box, world units: a change farther than this from the view is patched once it comes nearer (`deferredNear`). */
+const NEAR_DEFER_REACH = m(120);
 /** The near cascades whose casters the layers keep off the frame (`coverBox`): cascade 0 is the one drawn whole most often in a move (318
  *  of 606 passes, `npm run diagnose`, 2026-10-22). Keeping cascade 1 too held 21 → 27 M triangles in the district view for 318 → 281
  *  whole redraws; DO NOT take the far ones: from the map's view they cover the whole city, and every prop of it would be drawn. */
@@ -113,6 +116,8 @@ export interface ShadowPassInput {
   /** The town is shown (the curtain is down, `renderer.ts` reveal): a cascade drawn whole is kept as its store whatever the view does, the
    *  frames after it scrolling and patching it. Absent: kept only as above (behind the curtain the town is hidden, and no store of it stands). */
   readonly opened?: boolean;
+  /** The camera's frustum: what changed under the near cascade where no shadow of it reaches the view is patched later (`deferredNear`). Absent: every change patched at once. */
+  readonly view?: Frustum | null;
 }
 
 export interface SunCascades {
@@ -489,6 +494,34 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     return { left: -f.half + x0 * texel, right: -f.half + x1 * texel, bottom: -f.half + y0 * texel, top: -f.half + y1 * texel, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   };
   /** The strips of cascade `i` the changed casters' boxes fall in, at most `MOST_STRIPS` (the nearest two joined while there are more): an empty list when none does (the store stands), null when their union covers more than `UNION_MOST` of the map (`drawStrips` draws the union: a whole draw costs the same). DO NOT join them into two: each strip was a pass of three over the scene, so they were joined to two, and two changes at opposite edges of the near cascade made one strip over most of its map - the store thrown away in 322 of 420 passes of a move (`npm run diagnose`, 2026-10-22). */
+  /** The near cascade's changes put off (`nearBoxes`): world boxes, the cascade's own copies. */
+  let deferredNear: Box3[] = [];
+  let deferredNext: Box3[] = [];
+  const deferPool: Box3[] = [];
+  const nearNow: Box3[] = [];
+  const reached = new Box3();
+  /** Of `changed` and what was put off before, those whose shadow may reach `view` (patched now); the others kept for later. */
+  const nearBoxes = (changed: readonly Box3[], view: Frustum): Box3[] => {
+    for (const box of nearNow) deferPool.push(box);
+    nearNow.length = 0;
+    deferredNext.length = 0;
+    const route = (box: Box3): void => {
+      const own = (deferPool.pop() ?? new Box3()).copy(box);
+      if (view.intersectsBox(reached.copy(box).expandByScalar(NEAR_DEFER_REACH))) nearNow.push(own); else deferredNext.push(own);
+    };
+    for (const box of changed) route(box);
+    for (const box of deferredNear) { route(box); deferPool.push(box); }
+    const swap = deferredNear;
+    deferredNear = deferredNext;
+    deferredNext = swap;
+    deferredNext.length = 0;
+    return nearNow;
+  };
+  /** What was put off let go: the near cascade drawn whole, or its store gone. */
+  const dropDeferred = (): void => {
+    for (const box of deferredNear) deferPool.push(box);
+    deferredNear.length = 0;
+  };
   const rectsOf = (i: number, boxes: readonly Box3[]): Strip[] | null => {
     const size = Math.max(1, lights[i]!.shadow.mapSize.x);
     const strips: Strip[] = [];
@@ -823,7 +856,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       for (const k of Object.keys(stats.why) as (keyof typeof stats.why)[]) stats.why[k] = 0;
       return out;
     },
-    pass({ changed, effects, still = false, keep = false, patch, opened = false }) {
+    pass({ changed, effects, still = false, keep = false, patch, opened = false, view = null }) {
       if (!enabled) return false;
       stats.passes++;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
@@ -843,14 +876,25 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         framesSince[i]!++;
         // A store stands for its town only while nothing of it changed since it was taken - or while what changed is known by its box: the store drawn again under the box alone (`patched`), untouched where the box falls outside the square.
         patched[i] = null;
-        if (!still && storeValid[i]) {
-          const rects = patch === undefined || patch === null || !renderer ? null : rectsOf(i, patch);
+        // The near cascade: what changed where its shadow cannot reach the view put off (`deferredNear`), patched once it comes near the
+        // view or drawn with the next whole. DO NOT patch the near store at every frame of a move for what changed behind the camera: each
+        // patch is a pass of three over the whole scene, at nearly every frame of a flight (`patch` 573 of 631 passes, 2026-10-22).
+        let boxes: readonly Box3[] | null | undefined = patch;
+        let stillHere = still;
+        if (i === 0 && view !== null && renderer !== null && storeValid[0] && (patch !== undefined ? patch !== null : still)) {
+          boxes = nearBoxes(patch ?? [], view);
+          stillHere = still && boxes.length === 0;
+        }
+        if (!stillHere && storeValid[i]) {
+          const rects = boxes === undefined || boxes === null || !renderer ? null : rectsOf(i, boxes);
           if (rects === null) {
             // Why the store goes (`takeStats`): no box given, a change with no box to tell, or boxes over half the map together.
             if (patch === undefined) stats.why.thrown++; else if (patch === null) stats.why.noBox++; else { stats.why.tooBig++; if (i === 0) stats.why.tooBigNear++; }
             storeValid[i] = false;
           } else if (rects.length > 0) patched[i] = rects;
-        } else if (!still) storeValid[i] = false;
+        } else if (!stillHere) storeValid[i] = false;
+        // No store for the near cascade: what was put off is drawn with it, whole.
+        if (i === 0 && !storeValid[0]) dropDeferred();
         // A far cascade out of its turn (`setFarEvery`): what asked it to be drawn kept for its turn, its map and its matrix left as they were drawn (three updates a light's shadow matrix only as it draws it).
         if (i > 0 && farEvery > 1 && (passNo + i) % farEvery !== 0) {
           carried[i] = carried[i]! || changed || effects;
@@ -874,6 +918,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           if (refitAlone) refitDrawn = true;
           everDrawn[i] = true;
           stats.whole[i]!++;
+          // Drawn whole: what was put off is in it.
+          if (i === 0) dropDeferred();
           if (refitted[i]) stats.why.refit++; else if (changed || wasCarried) stats.why.changed++; else if (effects) stats.why.effects++; else if (framesSince[i]! >= SAFETY_FRAMES) stats.why.safety++; else stats.why.noStore++;
           lights[i]!.shadow.needsUpdate = true;
           // Kept whenever the town is shown (`opened`): the frames after it scroll and patch it. DO NOT draw it whole unkept in a move: the next
