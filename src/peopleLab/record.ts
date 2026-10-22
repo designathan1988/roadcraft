@@ -3,7 +3,7 @@ import type { HairStyle } from '@people/hair/procedural';
 import type { CartoonStyle } from '@render/people/cartoon';
 import type { HairSculpt } from './sculpt';
 import type { Motion } from './posing';
-import type { GroomRecord } from './groom';
+import type { ShellRecord } from './hairShell';
 import type { GarmentRecord } from './atelier';
 import { yearsFromAge } from '@people/body/macro';
 
@@ -24,7 +24,7 @@ export interface LabPerson {
   /** The rig as reshaped, the pose held and the animation made in the pose tab (`posing.ts`). */
   readonly motion?: Motion;
   /** Hair made in the hair studio (`groom.ts`), worn when `spec.look.hairCut` is `groom`. */
-  readonly groom?: GroomRecord;
+  readonly groom?: ShellRecord;
   /** A garment made in the atelier (`atelier.ts`), worn over the outfit (`spec.look.extras` has `atelier`). */
   readonly garment?: GarmentRecord;
   /** The body and face sculpted with brushes (`bodySculpt.ts`): moves of the base mesh's vertices. */

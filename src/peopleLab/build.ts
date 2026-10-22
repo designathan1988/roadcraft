@@ -13,7 +13,8 @@ import { captureBind, captureBindRotations } from '@render/citizenWalk';
 import { ATELIER, GROOM, PROC_PREFIX, type LabPerson } from './record';
 import { ClothSim, PATTERNS } from './cloth';
 import { garmentPack } from './atelier';
-import { GroomBody, decodeGroom, groomPack } from './groom';
+import { GroomBody } from './groom';
+import { presetRecord, shellOf, shellPack } from './hairShell';
 import type { StudioBody } from './hairStudio';
 import { FaceProportions } from './proportions';
 import { decodeSculpt, sculptedPack, type SculptBody } from './sculpt';
@@ -107,7 +108,8 @@ export class LabBuilder {
   async groomItem(person: LabPerson): Promise<ProxyItem> {
     const body = await this.studioBody(person);
     const gb = new GroomBody(body.positions, body.skin, body.faces, body.faceGroup, body.skinGroup);
-    return { pack: groomPack(decodeGroom(person.groom!, gb), gb, body.anchors), texture: null, transparent: false, textureFile: null };
+    // An older studio's groom is not a hairstyle any more: worn as the chanel until remade.
+    return { pack: shellPack(shellOf(person.groom) ?? presetRecord('bob', gb), gb, body.anchors), texture: null, transparent: false, textureFile: null };
   }
 
   /** The atelier's garment as an item: its draped positions pinned to this body's skin. */
