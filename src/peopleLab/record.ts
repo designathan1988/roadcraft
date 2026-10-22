@@ -4,7 +4,6 @@ import type { HairStyle } from '@people/hair/procedural';
 import type { CartoonStyle } from '@render/people/cartoon';
 import type { HairSculpt } from './sculpt';
 import type { Motion } from './posing';
-import type { GarmentRecord } from './atelier';
 import { yearsFromAge } from '@people/body/macro';
 
 /** A PERSON MADE IN THE LAB, as saved: the game's own `PersonSpec` plus what the game does not yet keep per person */
@@ -23,8 +22,6 @@ export interface LabPerson {
   readonly sculpts?: readonly HairSculpt[];
   /** The rig as reshaped, the pose held and the animation made in the pose tab (`posing.ts`). */
   readonly motion?: Motion;
-  /** A garment made in the atelier (`atelier.ts`), worn over the outfit (`spec.look.extras` has `atelier`). */
-  readonly garment?: GarmentRecord;
   /** The body and face sculpted with brushes (`bodySculpt.ts`): moves of the base mesh's vertices. */
   readonly body?: HairSculpt;
   /** The worn hairstyle's length, volume and waves (`hairShape.ts`). */
@@ -44,7 +41,7 @@ export const PROC_PREFIX = 'proc:';
 /** An older hair studio's hair, as `spec.look.hairCut`: worn as the base it was nearest, a bob (that studio is gone). */
 export const GROOM = 'groom';
 
-/** The atelier's garment, as an extra worn. */
+/** The atelier's garment, as an extra worn by people saved while the atelier existed: taken off (`shapeKeys.ts` effective). */
 export const ATELIER = 'atelier';
 
 const round = (x: number, places = 3): number => {
@@ -75,7 +72,6 @@ export function compactPerson(person: LabPerson): LabPerson {
     ...(person.body ? { body: person.body } : {}),
     ...(!isPlain(person.hairShape) ? { hairShape: person.hairShape } : {}),
     ...(!isPlain(person.outfitShape) ? { outfitShape: person.outfitShape } : {}),
-    ...(person.garment && spec.look.extras?.includes(ATELIER) ? { garment: person.garment } : {}),
   };
 }
 

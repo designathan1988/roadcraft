@@ -47,8 +47,6 @@ export interface PanelContext {
   setExtra(kinds: readonly WardrobeItem['kind'][], name: string): void;
   sex(): 'female' | 'male';
   setSex(v: 'female' | 'male'): void;
-  /** The garment atelier (`atelier.ts`). */
-  openAtelier(): void;
   /** Brushes on the body and face (`bodySculpt.ts`). */
   openCarver(): void;
 }
@@ -293,9 +291,6 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
       ]],
       ['oculos', 'Óculos', () => [extraPics('glasses', 'Sem')]],
       ['joias', 'Joias', () => [extraPics('jewelry', 'Sem')]],
-      ['criar', 'Criar', () => {
-        return [el('div', { cls: 'bar' }, iconButton('pattern', 'Ateliê: molde, costura e caimento', () => c.openAtelier()))];
-      }],
     ],
     expressao: [
       ['acoes', 'Ações', () => [

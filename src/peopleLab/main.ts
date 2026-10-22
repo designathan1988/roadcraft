@@ -32,13 +32,11 @@ import { regionGlow } from './polish';
 import { Thumbs } from './thumbs';
 import { makePanels } from './panels';
 import { HairSculptor, decodeSculpt, encodeSculpt } from './sculpt';
-import { Atelier } from './atelier';
 import { BodySculptor, bodyDelta } from './bodySculpt';
 import { bodySculptPanel } from './bodySculptPanel';
-import { atelierPanel } from './atelierPanel';
 import { sculptPanel } from './sculptPanel';
-import { ATELIER, loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
-import { CLOTH, HAIR_CATALOGUE, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
+import { loadRoster, loadThumbs, readRoster, rosterMarkdown, rosterOf, savedBytes, type LabPerson } from './record';
+import { HAIR_CATALOGUE, NICE_HAIR, READY_POSES, ROADCRAFT } from './choices';
 import { el, widgets } from './widgets';
 import { icon } from './icons';
 
@@ -74,12 +72,10 @@ function startLab(): void {
   const thumbs: Record<string, string> = loadThumbs();
   /** The hair sculptor while it is open, the person hidden. */
   let sculptor: HairSculptor | null = null;
-  /** The atelier while it is open. */
-  let atelier: Atelier | null = null;
   /** The body sculptor while it is open. */
   let carver: BodySculptor | null = null;
-  /** The editor taking the pointer: the sculptor, the atelier or the body's brushes. */
-  const editor = (): HairSculptor | Atelier | BodySculptor | null => sculptor ?? atelier ?? carver;
+  /** The editor taking the pointer: the sculptor or the body's brushes. */
+  const editor = (): HairSculptor | BodySculptor | null => sculptor ?? carver;
   /** Click-and-drag shaping of the person built now. */
   let shaper: HandShaper | null = null;
 
@@ -202,7 +198,7 @@ function startLab(): void {
   controls.maxPolarAngle = Math.PI * 0.55;
   // Navigation as editors do it (`navigation.ts`): right orbits, middle pans, wheel zooms to the cursor, Alt with any button, F frames.
   setupNavigation(controls, camera, renderer.domElement, {
-    targets: () => [built?.scene, sculptor?.group, atelier?.group, carver?.group, tab === 'pose' ? posing.helpers : null].filter((o): o is Object3D => !!o),
+    targets: () => [built?.scene, sculptor?.group, carver?.group, tab === 'pose' ? posing.helpers : null].filter((o): o is Object3D => !!o),
     frame: () => frame(view),
   });
   const posing = new PoseEditor(camera, renderer.domElement, scene, controls);
@@ -312,7 +308,7 @@ function startLab(): void {
       const spec = person.spec;
       const nextShaper = next.meshes[0] ? new HandShaper(next.meshes[0], (slider) => faces.influenceOf(slider, spec)) : null;
       if (nextShaper) next.meshes[0]!.geometry.setAttribute('labRegion', new BufferAttribute(nextShaper.regionAttribute(), 1));
-      const skin = await dressPerson(next, effective(target).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit), person.garment?.colour ?? null);
+      const skin = await dressPerson(next, effective(target).spec, layers, paintedSkins, !!person.sculpts?.some((x) => x.base === person.spec.look.outfit));
       for (const m of next.meshes) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) if (m.geometry.hasAttribute('labRegion')) regionGlow(mat as MeshStandardMaterial, glow);
       if (mine !== generation) { releaseSkinAppearance(skin); dispose(next.scene); return; }
       if (appearance) releaseSkinAppearance(appearance);
@@ -407,7 +403,6 @@ function startLab(): void {
     if (tab !== 'pose') tl?.classList.remove('on');
     if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
     else if (carver) panel.replaceChildren(...bodySculptPanel(carver, { slider, render, close: closeCarver }));
-    else if (atelier) panel.replaceChildren(...atelierPanel(atelier, { ui, render, close: closeAtelier, colours: CLOTH }));
     else if (tab === 'pose') panel.replaceChildren(...posePanelNodes());
     else {
       // The category's groups along the top (Create-a-Sim's sub tabs), the chosen one below.
@@ -440,7 +435,7 @@ function startLab(): void {
     setOutfitShape: (os) => { person = { ...person, outfitShape: os }; rebuild(200); },
     dropSculpt: () => { const { sculpt: _s, ...rest } = person; void _s; person = rest; rebuild(0); render(); },
     extraOf, setExtra, sex: sexName,
-    openCarver: () => { void openCarver(); }, openAtelier: () => { void openAtelier(); },
+    openCarver: () => { void openCarver(); },
     setSex: (v) => {
       // The hair and the outfit go with the sex unless they suit both.
       const look = person.spec.look;
@@ -608,30 +603,6 @@ function startLab(): void {
     if (keep) rebuild(0);
   }
 
-  // ---------------------------------------------------------------- the atelier
-
-  async function openAtelier(): Promise<void> {
-    const body = await builder.studioBody(person);
-    atelier = new Atelier(body, person.spec.look.extras?.includes(ATELIER) ? person.garment ?? null : null, person.spec.look.skin);
-    scene.add(atelier.group);
-    if (built) built.scene.visible = false;
-    frame('body');
-    render();
-  }
-
-  function closeAtelier(keep: boolean): void {
-    const a = atelier;
-    if (!a) return;
-    if (keep) person = { ...person, garment: a.record(), spec: { ...person.spec, look: { ...person.spec.look, extras: [...(person.spec.look.extras ?? []).filter((x) => x !== ATELIER), ATELIER] } } };
-    scene.remove(a.group);
-    a.dispose();
-    atelier = null;
-    if (built) built.scene.visible = true;
-    controls.enabled = true;
-    render();
-    if (keep) rebuild(0);
-  }
-
   // ---------------------------------------------------------------- the hair sculptor
 
   /** The item the sculptor has open: the hair, or any worn piece by name. */
@@ -722,15 +693,12 @@ function startLab(): void {
   // ---------------------------------------------------------------- the loop
 
   const clock0 = performance.now();
-  let lastTick = clock0;
   /** How much stronger the lab draws a feeling than the street. */
   const EXPRESSIVE = 1.6;
   const CALM = new Set(['faceBlink', 'lookLeft', 'lookRight']);
   function loop(): void {
     const now = performance.now();
     const t = (now - clock0) / 1000;
-    atelier?.tick(Math.min(0.05, (now - lastTick) / 1000));
-    lastTick = now;
     glow.time.value = t;
     if (buildAt && now >= buildAt) { buildAt = 0; void runBuild(); }
     if (reshapeAt && now >= reshapeAt) { reshapeAt = 0; void commitShape(); }
@@ -790,7 +758,7 @@ function startLab(): void {
       built?.scene.traverse((o) => { if (o.name === 'Bip01_Head') o.getWorldPosition(head); });
       controls.target.copy(head).add(new Vector3(0, 0.02, 0.05));
       camera.position.copy(controls.target).add(new Vector3(x, y, dist));
-    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, openAtelier, closeAtelier, get atelier() { return atelier; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
+    }, features(patch: Record<string, number>) { setSpec({ features: { ...person.spec.features, ...patch } }); }, openSculptor, closeSculptor, get sculptor() { return sculptor; }, act(a: string | undefined, p: PoseName) { activity = a; pose = p; render(); } };
 }
 
 startLab();

@@ -1,10 +1,13 @@
 import { yearsFromAge, type MacroParams } from '@people/body/macro';
-import type { LabPerson } from './record';
+import { ATELIER, type LabPerson } from './record';
 
 /** WHAT A CHANGE TO A PERSON NEEDS: drawing on the person built (`reshape.ts`) when only the shape moved, a build when what is worn did. */
 
 /** What is built and saved: a child wears the tailored shells (the garments are cut for grown bodies, as the game has it). */
-export function effective(p: LabPerson): LabPerson {
+export function effective(person: LabPerson): LabPerson {
+  // The atelier's garment is gone: a person saved with one wears the outfit alone.
+  const p = person.spec.look.extras?.includes(ATELIER)
+    ? { ...person, spec: { ...person.spec, look: { ...person.spec.look, extras: person.spec.look.extras.filter((x) => x !== ATELIER) } } } : person;
   if (yearsFromAge(p.spec.body.age) >= 16) {
     if (p.spec.look.outfit) return p;
     return { ...p, spec: { ...p.spec, look: { ...p.spec.look, outfit: p.spec.body.gender < 0.5 ? 'female_casualsuit02' : 'male_casualsuit02', footwear: 'shoes01' } } };

@@ -10,9 +10,7 @@ import { createPersonRig, personSimplifier, type Reshaped } from '@render/people
 import { attachFacialMorphs } from '@render/people/facialMorphs';
 import { channelShapes } from '@render/people/faceExpression';
 import { captureBind, captureBindRotations } from '@render/citizenWalk';
-import { ATELIER, GROOM, PROC_PREFIX, type LabPerson } from './record';
-import { ClothSim, PATTERNS } from './cloth';
-import { garmentPack } from './atelier';
+import { GROOM, PROC_PREFIX, type LabPerson } from './record';
 import { GroomBody, type StudioBody } from './groom';
 import { FaceProportions } from './proportions';
 import { isPlain, shapedPack } from './hairShape';
@@ -110,21 +108,6 @@ export class LabBuilder {
   }
 
 
-  /** The atelier's garment as an item: its draped positions pinned to this body's skin. */
-  async garmentItem(person: LabPerson): Promise<ProxyItem> {
-    const body = await this.studioBody(person);
-    const g = person.garment!;
-    const raw = atob(g.pos);
-    const view = new DataView(Uint8Array.from(raw, (ch) => ch.charCodeAt(0)).buffer);
-    const pos = new Float32Array(raw.length / 2);
-    for (let i = 0; i < pos.length; i++) pos[i] = view.getInt16(i * 2, true) / 1000;
-    // The topology from the pattern and the measures it was drafted to (deterministic); only the drape is kept.
-    const sim = new ClothSim(PATTERNS[g.pattern]!(g.measures, g.cut), 0.12, g.measures.axis);
-    const tris = sim.tris;
-    const P = body.positions;
-    return { pack: garmentPack(pos, tris, P, body.skin, g.colour), texture: null, transparent: false, textureFile: null };
-  }
-
   /** Any worn item by name, before its sculpt. */
   async item(person: LabPerson, name: string): Promise<ProxyItem | null> {
     if (name === person.spec.look.hairCut) return this.hairItem(person);
@@ -172,7 +155,7 @@ export class LabBuilder {
     const proxies = new Map<string, ProxyItem>();
     try {
       for (const [name, item] of await Promise.all(wornItems(spec.look).map(async (n) =>
-        [n, n === ATELIER && person.garment ? await this.garmentItem(person) : n === GROOM ? await loadProxyItem('bob02') : n.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : await loadProxyItem(n)] as const))) proxies.set(name, item);
+        [n, n === GROOM ? await loadProxyItem('bob02') : n.startsWith(PROC_PREFIX) && person.hair ? this.grownHair(person.hair, a, mo) : await loadProxyItem(n)] as const))) proxies.set(name, item);
     } catch (error) {
       // Drawn in the tailored shells rather than not at all, as the game does.
       console.warn('[people-lab] an item could not be loaded; drawn in the tailored shells', error);
