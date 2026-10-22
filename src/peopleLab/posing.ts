@@ -26,15 +26,9 @@ const CHAINS: readonly (readonly [string, string, readonly string[]])[] = [
   ['Pé dir. (IK)', 'Bip01_R_Foot', ['Bip01_R_Calf', 'Bip01_R_Thigh']],
 ];
 
-/** The face's channels a key can hold (`faceExpression.ts` CHANNELS), with their names. */
-export const FACE_CHANNELS: readonly (readonly [string, string])[] = [
-  ['faceJoy', 'Alegria'], ['faceSadness', 'Tristeza'], ['faceAnger', 'Raiva'], ['faceSurprise', 'Surpresa'], ['faceBrowRaise', 'Sobrancelhas'],
-  ['faceBlink', 'Olhos fechados'], ['mouthOpen', 'Boca aberta'], ['mouthRound', 'Boca em O'], ['mouthSpread', 'Boca esticada'], ['mouthPuckered', 'Bico'],
-];
-
 /** A pose: each turned bone's local rotation (x, y, z, w), by name. */
 export type Pose = Record<string, [number, number, number, number]>;
-/** A face: channel weights. */
+/** A face: weights of the 52 ARKit shapes (`faceRig.ts`), or of the game's channels in older saves. */
 export type Face = Record<string, number>;
 
 /** A keyframe: a pose and a face at a time, seconds. */
@@ -279,7 +273,7 @@ export class PoseEditor {
       bone.quaternion.copy(qa.slerp(qb, u));
     }
     const face: Face = {};
-    for (const [ch] of FACE_CHANNELS) {
+    for (const ch of new Set([...Object.keys(a.face ?? {}), ...Object.keys(b.face ?? {})])) {
       const v = (a.face?.[ch] ?? 0) * (1 - u) + (b.face?.[ch] ?? 0) * u;
       if (v > 0.001) face[ch] = v;
     }
@@ -293,6 +287,9 @@ export class PoseEditor {
     if (v <= 0.001) delete this.face[channel]; else this.face[channel] = v;
     this.onChange();
   }
+
+  /** A whole face at once (an expression), or none to let it live again. */
+  setWholeFace(face: Face): void { this.face = { ...face }; this.onChange(); }
 
   private drawSkeleton(): void {
     if (!this.root) return;

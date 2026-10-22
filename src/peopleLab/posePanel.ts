@@ -1,8 +1,9 @@
-import { FACE_CHANNELS, JOINTS, type PoseEditor } from './posing';
+import { FACE_GROUPS, FACE_LABELS, FACE_PRESETS, shapesOf } from './faceRig';
+import type { PoseEditor } from './posing';
 import { icon } from './icons';
 import { el, type widgets } from './widgets';
 
-/** THE RIG AND ANIMATION PANEL: poses to start from, the bones (also clicked on the body), IK, the face, and the timeline under the view */
+/** THE RIG AND ANIMATION PANEL: poses to start from, the bones (clicked on the body), IK, the face's 52 shapes, and the timeline under the view */
 
 export interface PosePanelHooks {
   readonly ui: ReturnType<typeof widgets>;
@@ -10,29 +11,27 @@ export interface PosePanelHooks {
   readonly now: () => number;
   /** Ready poses: a name each, set when picked. */
   readonly poses: readonly (readonly [string, () => void, boolean])[];
-  /** The part shown: rig or animation. */
+  /** The part shown: pose, rig, face or animation. */
   readonly group: string;
   readonly setGroup: (g: string) => void;
+  /** The face's 52 shapes are on the person (`faceRig.attachFace`); asked for when the face opens. */
+  readonly faceReady: boolean;
+  readonly prepareFace: () => void;
 }
 
-export function posePanel(e: PoseEditor, { ui, render, now, poses, group, setGroup }: PosePanelHooks): Node[] {
-  const { slider } = ui;
-  const groups: readonly (readonly [string, string])[] = [['pose', 'Pose'], ['rig', 'Rig'], ['rosto', 'Expressão'], ['anim', 'Animação']];
-  const bar = el('div', { cls: 'subtabs' }, ...groups.map(([id, label]) => {
-    const b = el('button', { textContent: label, cls: id === group ? 'on' : '' });
-    b.onclick = () => { setGroup(id); render(); };
-    return b;
-  }));
-  const tool = (label: string, ico: string, on: boolean, run: () => void): HTMLButtonElement => {
-    const b = el('button', { cls: `tool${on ? ' on' : ''}`, title: label }, icon(ico, 18), label);
+/** The face's region shown and whether a pair moves as one. */
+const faceView = { group: 'smile', mirrored: true };
+
+export function posePanel(e: PoseEditor, { ui, render, now, poses, group, setGroup, faceReady, prepareFace }: PosePanelHooks): Node[] {
+  const { slider, iconSeg, toggle } = ui;
+  const groups: readonly (readonly [string, string, string])[] = [['pose', 'pose', 'Poses'], ['rig', 'bones', 'Rig e IK'], ['rosto', 'face', 'Expressão'], ['anim', 'anim', 'Animação']];
+  const bar = iconSeg(groups, group, (g) => setGroup(g));
+  const button = (ico: string, title: string, on: boolean, run: () => void): HTMLButtonElement => {
+    const b = el('button', { cls: `toggle${on ? ' on' : ''}`, title }, icon(ico, 16));
     b.onclick = () => { run(); render(); };
     return b;
   };
-  const bones = (): HTMLElement => el('div', { cls: 'chips' }, ...JOINTS.map(([label, name]) => {
-    const b = el('button', { textContent: label, cls: e.bone === name ? 'on' : '' });
-    b.onclick = () => { e.stop(); e.select(e.bone === name ? null : name); render(); };
-    return b;
-  }));
+  const CHAIN_ICONS: readonly (readonly [string, boolean])[] = [['hand', false], ['hand', true], ['foot', false], ['foot', true]];
   const body: Record<string, () => Node[]> = {
     pose: () => [
       el('div', { cls: 'grid' }, ...poses.map(([label, set, on]) => {
@@ -42,33 +41,53 @@ export function posePanel(e: PoseEditor, { ui, render, now, poses, group, setGro
       })),
     ],
     rig: () => [
-      el('div', { cls: 'tools' }, tool('Girar', 'rotate', e.mode === 'rotate', () => e.setMode('rotate')), tool('Mover osso', 'move', e.mode === 'translate', () => e.setMode('translate'))),
-      el('div', { cls: 'gap' }),
-      bones(),
-      el('h3', { textContent: 'IK' }),
-      el('div', { cls: 'chips' }, ...e.chains.map((label, i) => {
-        const b = el('button', { textContent: label, cls: e.ikActive(i) ? 'on' : '' });
-        b.onclick = () => { e.toggleIk(i); render(); };
-        return b;
-      })),
-      el('div', { cls: 'gap' }),
-      (() => { const b = el('button', { cls: 'big alt' }, icon('trash', 15), 'Repor pose'); b.onclick = () => { e.reset(); render(); }; return b; })(),
+      el('div', { cls: 'bar' },
+        button('rotate', 'Girar osso', e.mode === 'rotate', () => e.setMode('rotate')),
+        button('move', 'Mover osso', e.mode === 'translate', () => e.setMode('translate')),
+        el('span', { cls: 'bar-gap' }),
+        ...e.chains.map((label, i) => {
+          const [ico, right] = CHAIN_ICONS[i] ?? ['key', false];
+          const b = button(ico, label, e.ikActive(i), () => e.toggleIk(i));
+          if (right) b.classList.add('flip');
+          return b;
+        }),
+        el('span', { cls: 'bar-gap' }),
+        button('undo', 'Repor pose', false, () => e.reset())),
     ],
-    rosto: () => FACE_CHANNELS.map(([ch, label]) => slider(label, 0, 1, 0.01, e.face[ch] ?? 0, (v) => e.setFace(ch, v))),
-    anim: () => {
-      const add = el('button', { cls: 'big save' }, icon('key', 15), 'Chave');
-      add.onclick = () => { e.addKey(); render(); };
-      const play = el('button', { cls: 'big alt' }, icon(e.playing ? 'stop' : 'play', 15), e.playing ? 'Parar' : 'Tocar');
-      play.onclick = () => { if (e.playing) e.stop(); else e.play(now()); render(); };
-      const loop = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: e.loop }), 'Repetir');
-      loop.querySelector('input')!.addEventListener('change', (ev) => { e.loop = (ev.target as HTMLInputElement).checked; });
+    rosto: () => {
+      if (!faceReady) { prepareFace(); return [el('div', { cls: 'loading' })]; }
+      const regions = FACE_GROUPS.map(([id, ico, title]) => [id, ico, title] as const);
+      const shown = FACE_GROUPS.find(([id]) => id === faceView.group) ?? FACE_GROUPS[0]!;
+      const sliders: Node[] = [];
+      for (const entry of shown[3]) {
+        for (const [key, names] of shapesOf(entry, faceView.mirrored)) {
+          const pair = entry.endsWith('*');
+          const base = pair ? entry.slice(0, -1) : key;
+          const side = pair && key.endsWith('Left') ? ' E' : pair && key.endsWith('Right') ? ' D' : '';
+          const value = Math.max(...names.map((n) => e.face[n] ?? 0));
+          sliders.push(slider(`${FACE_LABELS[base] ?? base}${side}`, 0, 1, 0.01, value, (v) => { for (const n of names) e.setFace(n, v); }));
+        }
+      }
       return [
-        el('div', { cls: 'pair' }, add, play),
+        el('div', { cls: 'chips' }, ...FACE_PRESETS.map(([label, weights]) => {
+          const b = el('button', { textContent: label });
+          b.onclick = () => { e.setWholeFace(weights); render(); };
+          return b;
+        })),
+        el('div', { cls: 'bar' }, iconSeg(regions, faceView.group, (g) => { faceView.group = g; }),
+          toggle('mirror', 'Espelhar esquerda e direita', faceView.mirrored, (v) => { faceView.mirrored = v; })),
+        ...sliders,
+      ];
+    },
+    anim: () => {
+      const add = button('key', 'Chave aqui', false, () => e.addKey());
+      const play = button(e.playing ? 'stop' : 'play', e.playing ? 'Parar' : 'Tocar', e.playing, () => { if (e.playing) e.stop(); else e.play(now()); });
+      const loop = button('loop', 'Repetir', e.loop, () => { e.loop = !e.loop; });
+      return [
+        el('div', { cls: 'bar' }, add, play, loop),
         slider('Duração', 1, 12, 0.5, e.duration, (v) => { e.duration = v; render(); }, (v) => `${v} s`),
-        loop,
-        el('h3', { textContent: 'Chaves' }),
         el('div', { cls: 'chips' }, ...e.keys.map((k) => {
-          const b = el('button', { textContent: `${k.t.toFixed(2)} s`, cls: Math.abs(k.t - e.time) < 1e-3 ? 'on' : '' });
+          const b = el('button', { textContent: `${k.t.toFixed(2)} s`, cls: Math.abs(k.t - e.time) < 1e-3 ? 'on' : '', title: 'Clique: ir · botão direito: apagar' });
           b.onclick = () => { e.scrub(k.t); render(); };
           b.oncontextmenu = (ev) => { ev.preventDefault(); e.deleteKey(k.t); render(); };
           return b;

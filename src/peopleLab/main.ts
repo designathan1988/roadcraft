@@ -12,7 +12,7 @@ import type { HairStyle } from '@people/hair/procedural';
 import { randomPerson, type PersonLook, type PersonSpec } from '@people/spec';
 import { communityItem, type WardrobeItem } from '@people/wardrobe';
 import type { CartoonStyle } from '@render/people/cartoon';
-import { applyFace, faceAt } from '@render/people/faceExpression';
+import { faceAt } from '@render/people/faceExpression';
 import { createPersonLayers, releaseSkinAppearance, type SkinAppearance } from '@render/people/skinAppearance';
 import { drainUploads } from '@render/uploads';
 import { LabBuilder, type BuiltPerson } from './build';
@@ -24,6 +24,7 @@ import { loadRocketboxClips, type LibraryClipName } from '@render/citizenWalk';
 import { variedFace } from './presets';
 import { HandShaper } from './direct';
 import { HandDrag } from './handDrag';
+import { applyLabFace, attachFace } from './faceRig';
 import { measureBody } from './proportions';
 import { fitBody } from './bodyFit';
 import { dressPerson } from './dress';
@@ -389,7 +390,8 @@ function startLab(): void {
     nameInput.value = person.spec.name;
     const scroll = panel.scrollTop;
     pictures.clearQueue();
-    posing.show(tab === 'pose' && !editor());
+    // The skeleton drawn over the body, not over the face being edited.
+    posing.show(tab === 'pose' && poseGroup !== 'rosto' && !editor());
     if (tab !== 'pose') tl?.classList.remove('on');
     if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
     else if (carver) panel.replaceChildren(...bodySculptPanel(carver, { slider, render, close: closeCarver }));
@@ -544,6 +546,9 @@ function startLab(): void {
 
   /** The rig and animation tab (`posePanel.ts`), and its timeline under the view. */
   let poseGroup = 'pose';
+  /** The person whose face carries the 52 shapes (`faceRig.ts`), and the one being given them. */
+  let faceOn: BuiltPerson | null = null;
+  let facePending: BuiltPerson | null = null;
   let tl: (HTMLElement & { draw?: () => void }) | null = null;
   function posePanelNodes(): Node[] {
     const now = (): number => (performance.now() - clock0) / 1000;
@@ -551,7 +556,14 @@ function startLab(): void {
     tl.classList.toggle('on', poseGroup === 'anim');
     tl.draw?.();
     return posePanel(posing, {
-      ui, render, now, group: poseGroup, setGroup: (g) => { poseGroup = g; },
+      ui, render, now, group: poseGroup, setGroup: (g) => { poseGroup = g; if (g === 'rosto') frame('face'); },
+      faceReady: !!built && faceOn === built,
+      prepareFace: () => {
+        const b = built;
+        if (!b || facePending === b) return;
+        facePending = b;
+        void attachFace(b, () => built === b).then((ok) => { if (ok && built === b) { faceOn = b; render(); } });
+      },
       poses: READY_POSES.map(([label, clip, at]) => [label, () => {
         clipName = clip; stool.visible = clip === 'sitIdle';
         heldAt = at;
@@ -717,10 +729,10 @@ function startLab(): void {
     while (revokeAt.length && revokeAt[0]![0] <= now) URL.revokeObjectURL(revokeAt.shift()![1]);
     if (built) {
       if (player?.playing) player.apply(t); else poser?.apply(pose, t);
-      posing.apply(t);
-      if (posing.playing) tl?.draw?.();
       // Arms clear of the body in the standing clips (not when they reach for something).
       if (['idle', 'talk', 'listen', 'look', 'nervous', 'laugh', 'walkStroll', 'walkCool'].includes(clipName)) { spreadArms(built.scene, 0.14); uprightHead(built.scene); }
+      posing.apply(t);
+      if (posing.playing) tl?.draw?.();
       if (stool.visible) {
         // Under the pelvis wherever the clip puts it, its top just below the seat.
         built.scene.traverse((o) => { if (o.name === 'Bip01_Pelvis') { o.updateWorldMatrix(true, false); const at = o.getWorldPosition(new Vector3()); stool.scale.y = Math.max(0.2, (at.y - 0.1) / 0.44); stool.position.set(at.x, stool.scale.y * 0.22, at.z - 0.04); } });
@@ -730,7 +742,7 @@ function startLab(): void {
       const face = posing.faceNow() ?? faceAt(person.spec.id, t, activity, person.spec.mood ?? 0);
       for (const m of built.meshes as SkinnedMesh[]) {
         if (m.morphTargetInfluences && m.morphTargetDictionary) {
-          applyFace(m.morphTargetInfluences, m.morphTargetDictionary, face);
+          applyLabFace(m.morphTargetInfluences, m.morphTargetDictionary, face);
           // Past the game's cap of 1 (three.js blends any weight): blinks and gaze kept as they are.
           if (activity) for (const [name, i] of Object.entries(m.morphTargetDictionary)) if (!CALM.has(name)) m.morphTargetInfluences[i] = m.morphTargetInfluences[i]! * EXPRESSIVE;
         }

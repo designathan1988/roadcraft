@@ -169,3 +169,9 @@ details.fine summary:hover { color: var(--ink); }
 .timeline .tl-tick { position: absolute; top: 2px; font-size: 9px; color: var(--ink-3); transform: translateX(-50%); border-left: 1px solid var(--line); height: 30px; padding-left: 2px; }
 .timeline .tl-key { position: absolute; top: 12px; width: 10px; height: 10px; background: #ffb547; transform: translateX(-50%) rotate(45deg); border-radius: 1px; }
 .timeline .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); transform: translateX(-50%); }
+.panel .bar .bar-gap { flex: 1; }
+.toggle.flip .icon { transform: scaleX(-1); }
+.panel > .seg.icons { margin-bottom: 8px; }
+.panel .loading { height: 3px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: lab-loading 1s linear infinite; margin: 12px 0; }
+@keyframes lab-loading { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+.panel .chips + .bar { margin-top: 8px; }
