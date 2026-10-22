@@ -8,7 +8,7 @@
   ],
   "steps": [
     {
-      "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large', radiusMetres: 7900 }); 'started'"
+      "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large', radiusMetres: 8850 }); 'started'"
     },
     {
       "until": "(() => { const e = performance.getEntriesByName('city:applied')[0]; if (e && window.__cityAt === undefined) window.__cityAt = e.startTime; return window.__cityAt !== undefined; })()",

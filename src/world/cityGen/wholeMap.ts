@@ -10,8 +10,8 @@ import type { CityOptions, CityStyle } from './plan';
 
 /** THE MAP (the player's order, 2026-10-16): a square of `MAP_TILES` tiles each way round the origin, 10 km x 10 km, the city over the WHOLE of it; never a world without an edge. The size will be the player's choice; the rules below stay pure functions of the seed and the place, so a larger map is the same rules over more tiles. */
 declare const __MAP_TILES__: number | undefined;
-/** Set at build time (`vite.config.ts`, ROADCRAFT_MAP_TILES: the page and every worker read the same); 14 otherwise (~14.3 km a side). */
-export const MAP_TILES = typeof __MAP_TILES__ === 'number' ? __MAP_TILES__ : 14;
+/** Set at build time (`vite.config.ts`, ROADCRAFT_MAP_TILES: the page and every worker read the same); 18 otherwise (~18.4 km a side; the edge on the 2 km plates' edges, so 10, 14, 18... tiles). */
+export const MAP_TILES = typeof __MAP_TILES__ === 'number' ? __MAP_TILES__ : 18;
 /** Bumped when what the plan puts where changes (the map's edge, the city's spread): a world's stored tiles and far bakes are kept under it, so a city of an older plan is never shown for a new one. */
 export const PLAN_VERSION = 5;
 /** The key a world is stored and baked under: the seed, the map's size and the plan's version. */

@@ -6,7 +6,7 @@ import { m } from '../units';
 /** The large city's radius: its grid spans 1.7 radii, about 2.7 km across (the small city's 1.1 km). */
 export const LARGE_CITY_RADIUS = m(1_600);
 
-/** The large city of a seed (made once a city is asked for, `cityGen.worker.ts`: nothing kept between them); `radius`: the same city over another radius, its density kept (the scale steps: ~2.8 km for ~25 000 buildings, ~4.7 km for ~70 000, ~7.9 km for ~200 000 on the 14-tile map). */
+/** The large city of a seed (made once a city is asked for, `cityGen.worker.ts`: nothing kept between them); `radius`: the same city over another radius, its density kept (the scale steps: ~2.8 km for ~25 000 buildings, ~4.7 km for ~70 000, ~8.85 km for ~200 000 on the 18-tile map). */
 export function largeCityPlan(seed: number, radius: number = LARGE_CITY_RADIUS): CityPlan {
   return planCity({ ...DEFAULT_CITY, seed, size: 'large', radius });
 }
