@@ -2176,7 +2176,8 @@ async function openCityNow(ask: CityGenAsk): Promise<void> {
     const bake = await networkBakeOf({ ...city.data, relief: NEW_RELIEF, markingStyle: 'br' }, city.table);
     performance.mark('city:baked');
     generatingCity = false;
-    openCity(city.data, openedBuildings(city) > 5_000, city.table, bake);
+    // Its ecosystem laid by the city's own seed: the same city opens with the same woods every time (a random one moved them at each opening, 0.6-1.2 % of a district's pixels).
+    openCity({ ...city.data, nature: city.data.nature ?? { region: DEFAULT_REGION, seed: ask.seed ?? 7 } }, openedBuildings(city) > 5_000, city.table, bake);
     performance.mark('city:applied');
   } catch (error) {
     console.error('The city could not be made.', error);

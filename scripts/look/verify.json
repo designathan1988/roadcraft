@@ -8,7 +8,7 @@
   ],
   "steps": [
     {
-      "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'small' }); 'started'"
+      "eval": "performance.clearMarks(); window.__roadcraft.setTraffic(false); window.__roadcraft.generateCity({ seed: 7, size: 'small' }); 'started'"
     },
     {
       "until": "performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0",

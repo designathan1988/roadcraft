@@ -62,6 +62,13 @@ cidade pequena e contando tudo o que as vistas de bairro e de rua desenhariam. O
 | Save completo da cidade grande | texto de 60 M caracteres | 0,7 s, 4,9 MB, sem texto do mapa | Node |
 | Save de uma edição de 1 prédio | save inteiro | 15 ms, 55 KB | Node |
 | Oclusão na altura da rua | — | −8 a −17 % triângulos, −10 a −15 % draws | jogo, RTX 3060 |
+| Pico de memória para gerar a cidade (160 mil prédios) | 5,6 GB | cabe em heap limitado a 2 GB (~200 mil e 249 mil prédios) | Node, `--max-old-space-size=2048` |
+| Pico vivo da geração, 70 mil prédios | 2,49 GB | ~0,96 GB | Node, GC nos pontos de controle |
+| Abertura da cidade de 70 mil (aplicada → mostrada) | ~40–46 s | ~16 s | jogo, marcas da página, máquina carregada (±30 %) |
+| Textura no mapa, 70 mil | 602–606 MB | 367 MB | jogo, `memory()` |
+| Draws do mapa, 70 mil (8 s depois) | 858 | 418 | jogo |
+| Superfícies cozidas na GPU | 124 MB (RGBA8) | ~31 MB (UASTC → BC7) | calculado dos níveis KTX2 (BC7: 1 byte por texel, ¼ do RGBA8) |
+| Heap da página por prédio | ~36 KB | ~6–8 KB | jogo, 25 mil e 70 mil |
 
 ## O que ficou de fora (e por quê)
 
@@ -71,6 +78,20 @@ cidade pequena e contando tudo o que as vistas de bairro e de rua desenhariam. O
 - **WebGPU:** parado na etapa 1 (`MIGRACAO-WEBGPU.md`); nada desta arquitetura depende dele.
 - **Oclusão por prédio:** hoje a menor peça escondível é a célula de 256 m; o ganho só aparece na altura da
   rua. Esconder prédio a prédio exige lotes por prédio no desenho.
+- **Ultra com sombra 3072, MSAA 4× e AO em resolução cheia, e a pré-compilação dos passes de pós:** revertidos
+  (56c1ff5c). Cada um sozinho lavava a imagem (18 % dos pixels do bairro mudavam contra o visual aprovado).
+- **Placas de nomes de rua:** 41,6 MB na cidade de 70 mil contra 21,5 MB na de 8 mil; cobrem todo o mapa.
+  Torná-las limitadas pela vista é uma mudança maior no `signLayer`.
+- **Draws de sombra do mapa logo na abertura:** 480 vêm das 160 massas de célula desenhadas nas 3 cascatas.
+- **Tráfego só começa depois da cortina** (efeito da abertura mais rápida).
+
+## Armadilha conhecida: o carimbo da cidade cozida
+
+`cooked/cities/manifest.json` só vale se o hash bater com o código do gerador, e esse código inclui arquivos
+de pessoas (`public/models/people/proxies/community.json`, `src/people/wardrobe*.json`). Com o carimbo velho,
+o jogo descarta a cidade cozida e gera a cidade na hora. Rode `npm run cook:cities` depois de mudar qualquer
+um deles. Antes, a cidade gerada na hora abria sem as árvores da paisagem (`nature` nulo); corrigido em
+f925948c, e a semente do ecossistema agora é a da própria cidade.
 
 (As medições finais no build desktop — fps com vsync nas vistas map/district/street, heap, abertura e tick
 da simulação nas cidades de 8 mil e 200 mil — entram na seção seguinte quando feitas com a máquina livre.)
