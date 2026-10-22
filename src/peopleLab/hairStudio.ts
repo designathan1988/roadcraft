@@ -3,7 +3,7 @@ import {
   type Camera,
 } from 'three';
 import {
-  GroomBody, decodeGroom, encodeGroom, gather, groomPack, plant, remember, settle, step,
+  GroomBody, decodeGroom, encodeGroom, gather, groomMargin, groomPack, plant, remember, settle, step,
   type Guide, type GroomRecord, type Tie,
 } from './groom';
 import type { ProxyPack } from '@people/body/proxy';
@@ -38,7 +38,7 @@ export class HairStudio {
   strength = 0.6;
   /** New guides: length (dm), clump half width (dm), how many a click plants. */
   length = 3.2;
-  thickness = 0.26;
+  thickness = 0.18;
   density = 6;
   gravity = false;
   /** How firmly the hair keeps its style while gravity pulls (0 loose, 1 set). */
@@ -125,25 +125,28 @@ export class HairStudio {
         if (last !== null && Math.hypot(P[last * 3]! - P[v * 3]!, P[last * 3 + 1]! - P[v * 3 + 1]!, P[last * 3 + 2]! - P[v * 3 + 2]!) < spacing) continue;
         last = v;
         used.add(v);
-        const g = plant(this.body, v, length * (0.96 + 0.08 * hash(v)), this.thickness);
+        // A point every 1.6 cm or so: long strands follow the head's curve instead of cutting across it.
+        const g = plant(this.body, v, length * (0.96 + 0.08 * hash(v)), this.thickness, Math.max(14, Math.round(length / 0.16) + 1));
         g.row = row; g.theta = angleOf(v);
         guides.push(g);
       }
     }
     void sy;
     this.guides = guides;
+    this.pairUp();
     this.ties = [];
     this.relax(90);
+    this.symmetrize();
     this.rebuild();
   }
 
   /** The style presets: lengths and ties on a full head. */
   preset(name: 'short' | 'bob' | 'long' | 'ponytail' | 'bun' | 'pigtails'): void {
     const lengths = { short: 0.9, bob: 2.0, long: 4.2, ponytail: 4.4, bun: 4.4, pigtails: 4.0 } as const;
-    const thick = { short: 0.2, bob: 0.24, long: 0.25, ponytail: 0.22, bun: 0.22, pigtails: 0.22 } as const;
+    const thick = { short: 0.16, bob: 0.18, long: 0.18, ponytail: 0.17, bun: 0.17, pigtails: 0.17 } as const;
     const keep = this.thickness;
     this.thickness = thick[name];
-    this.fill(lengths[name], name === 'short' ? 0.18 : 0.2);
+    this.fill(lengths[name], 0.15);
     this.thickness = keep;
     const [sx, , sz] = this.body.skull;
     const top = this.body.top;
@@ -154,6 +157,7 @@ export class HairStudio {
       this.tieAll({ x: sx - 0.8, y: top - 1.1, z: sz - 0.4, radius: 0.2 }, (g) => this.body.positions[g.root * 3]! < sx);
     }
     this.relax(120);
+    this.symmetrize();
     if (name === 'bun') {
       // The tail wound round the tie into a bun: a flat spiral out from it, each strand at its own angle.
       const t = this.ties[0]!;
@@ -179,6 +183,48 @@ export class HairStudio {
     for (const g of this.guides) if (only(g)) gather(g, this.body, t, id, this.margin(g));
   }
 
+  /** Each guide's mirror twin across the body's middle (the guide whose root is nearest its root's mirror image), or -1. */
+  private twins: number[] = [];
+
+  private pairUp(): void {
+    const P = this.body.positions, mid = this.body.skull[0];
+    this.twins = this.guides.map((g) => {
+      const mx = 2 * mid - P[g.root * 3]!, my = P[g.root * 3 + 1]!, mz = P[g.root * 3 + 2]!;
+      let best = -1, bd = 0.2 * 0.2;
+      this.guides.forEach((h, j) => {
+        const d = (P[h.root * 3]! - mx) ** 2 + (P[h.root * 3 + 1]! - my) ** 2 + (P[h.root * 3 + 2]! - mz) ** 2;
+        if (d < bd) { bd = d; best = j; }
+      });
+      return best;
+    });
+  }
+
+  /** A style made symmetric: every guide on the left takes its right twin's shape, mirrored (hair falls the same on both sides). */
+  private symmetrize(): void {
+    if (this.twins.length !== this.guides.length) return;
+    const P = this.body.positions, mid = this.body.skull[0];
+    this.guides.forEach((g, i) => {
+      const j = this.twins[i]!;
+      if (j < 0 || P[g.root * 3]! >= mid) return;
+      const t = this.guides[j]!;
+      const n = Math.min(g.pts.length, t.pts.length) / 3;
+      if (g.pts.length !== t.pts.length) { g.pts = new Float32Array(t.pts.length); g.vel = new Float32Array(t.pts.length); g.rest = new Float32Array(t.pts.length); }
+      for (let k = 1; k < t.pts.length / 3; k++) {
+        g.pts[k * 3] = 2 * mid - t.pts[k * 3]!; g.pts[k * 3 + 1] = t.pts[k * 3 + 1]!; g.pts[k * 3 + 2] = t.pts[k * 3 + 2]!;
+      }
+      g.pts[0] = P[g.root * 3]! + this.body.normals[g.root * 3]! * 0.04; g.pts[1] = P[g.root * 3 + 1]! + this.body.normals[g.root * 3 + 1]! * 0.04; g.pts[2] = P[g.root * 3 + 2]! + this.body.normals[g.root * 3 + 2]! * 0.04;
+      g.seg = t.seg; g.radius = t.radius;
+      // Its tie: the mirror of the twin's (the same one when it sits on the middle, the other of a pair of pigtails).
+      if (t.tie) {
+        const src = this.ties[t.tie.id]!;
+        const m = this.ties.findIndex((x) => Math.abs(x.x - (2 * mid - src.x)) < 0.05 && Math.abs(x.y - src.y) < 0.05 && Math.abs(x.z - src.z) < 0.05);
+        g.tie = m >= 0 ? { id: m, k: t.tie.k } : null;
+      } else g.tie = null;
+      void n;
+      remember(g);
+    });
+  }
+
   /** Run the dynamics `steps` times with gravity (settling a new style). */
   relax(steps: number): void {
     for (let s = 0; s < steps; s++) for (const g of this.guides) step(g, this.body, this.ties, 1 / 60, 30, 0, this.margin(g));
@@ -186,7 +232,7 @@ export class HairStudio {
   }
 
   /** How far a guide's middle stays off the skin: the clump's surface (a radius further out) then lies a few centimetres off the head, not a helmet. */
-  private margin(g: Guide): number { return 0.03 + g.radius * 0.2; }
+  private margin(g: Guide): number { return groomMargin(g.radius); }
 
   /** Each frame: the dynamics when gravity is on. */
   tick(dt: number): void {

@@ -100,7 +100,12 @@ export class GroomBody {
     // The skull's middle from the head's box (the mean of the skin was pulled forward by the face's dense vertices).
     this.skull = [mid[0]!, top - 1.0, mid[2]!];
     this.face = { x: mid[0]!, half: (hi[0]! - lo[0]!) * 0.36, front: mid[2]! + 0.25, top: mid[1]! + ry * 0.12, bottom: lo[1]! - 0.2 };
+    // Hair lies on the head down to the ears' middle; below it hangs free.
+    this.hugFloor = mid[1]! - ry * 0.55;
   }
+
+  /** Down to here (dm) hair lies combed on the head; below it hangs. */
+  hugFloor = 0;
 
   private key(x: number, y: number, z: number): number {
     const c = GroomBody.CELL;
@@ -111,17 +116,24 @@ export class GroomBody {
   face = { x: 0, half: 0.7, front: 0, top: 0, bottom: 0 };
 
   /** A point in front of the face moved out to its side (unless above the brow, where a fringe may lie). */
-  private clearFace(p: Float32Array, i: number): void {
+  private clearFace(p: Float32Array, i: number, margin: number, side: number): void {
     const f = this.face;
     const y = p[i + 1]!, z = p[i + 2]!;
     if (z < f.front || y > f.top || y < f.bottom) return;
     const dx = p[i]! - f.x;
-    if (Math.abs(dx) >= f.half) return;
-    p[i] = f.x + Math.sign(dx || 1) * f.half;
+    // The clump's own thickness beyond its middle (`hairVolume.ts`, about its margin) kept off the eyes too.
+    const half = f.half + margin;
+    if (Math.abs(dx) >= half) return;
+    // Eased in below the brow line (no shelf where the face begins): strands slide aside like curtain bangs.
+    const below = Math.min(1, (f.top - y) / 0.3);
+    const ease = below * below * (3 - 2 * below);
+    // To the strand's own side of the parting (a strand never zigzags across the face).
+    p[i] = p[i]! + (f.x + (side || Math.sign(dx || 1)) * half - p[i]!) * ease;
   }
 
   /** The point pushed out of the body to `margin` above the skin (the nearest skin vertex's tangent plane, as a signed distance near the surface). */
-  collide(p: Float32Array, i: number, margin: number, face = true): void {
+  /** With `hug`, a point near the head above `hugFloor` is also drawn in to `margin`: hair lies on the skull, it does not stand off it. */
+  collide(p: Float32Array, i: number, margin: number, face = true, hug = false, side = 0): void {
     const P = this.positions, N = this.normals, c = GroomBody.CELL;
     const x = p[i]!, y = p[i + 1]!, z = p[i + 2]!;
     const cx = Math.floor(x / c), cy = Math.floor(y / c), cz = Math.floor(z / c);
@@ -134,13 +146,18 @@ export class GroomBody {
         if (d < bestD) { bestD = d; best = v; }
       }
     }
-    if (face) this.clearFace(p, i);
-    if (best < 0) return;
-    const d = (x - P[best * 3]!) * N[best * 3]! + (y - P[best * 3 + 1]!) * N[best * 3 + 1]! + (z - P[best * 3 + 2]!) * N[best * 3 + 2]!;
-    if (d < margin) {
-      const push = margin - d;
-      p[i] = x + N[best * 3]! * push; p[i + 1] = y + N[best * 3 + 1]! * push; p[i + 2] = z + N[best * 3 + 2]! * push;
+    if (best >= 0) {
+      const d = (x - P[best * 3]!) * N[best * 3]! + (y - P[best * 3 + 1]!) * N[best * 3 + 1]! + (z - P[best * 3 + 2]!) * N[best * 3 + 2]!;
+      // Drawn onto the head only off the face: never down onto the brow or the eyes.
+      const f = this.face, onFace = P[best * 3 + 2]! > f.front - 0.1 && P[best * 3 + 1]! < f.top;
+      const lies = hug && !onFace && y > this.hugFloor && P[best * 3 + 1]! > this.hugFloor && d < margin + 0.35;
+      if (d < margin || lies) {
+        const push = margin - d;
+        p[i] = x + N[best * 3]! * push; p[i + 1] = y + N[best * 3 + 1]! * push; p[i + 2] = z + N[best * 3 + 2]! * push;
+      }
     }
+    // Last, so nothing draws hair back over the eyes.
+    if (face) this.clearFace(p, i, margin, side);
   }
 }
 
@@ -164,12 +181,14 @@ export function plant(body: GroomBody, root: number, length: number, radius: num
   // Combed from a centre parting: to the left or right of it, down and a little back, along the scalp, lifted a little off it.
   const n = [N[root * 3]!, N[root * 3 + 1]!, N[root * 3 + 2]!];
   const side = Math.sign(o[0]! - body.skull[0]) || 1;
-  let fx = side * 0.8, fy = -0.6, fz = -0.45;
+  // The front of the head combed to the sides along the forehead, off the face (a centre parting framing it).
+  const front = Math.max(0, Math.min(1, (o[2]! - body.skull[2]) / 0.8));
+  let fx = side * (0.8 + 0.6 * front), fy = -0.6 + 0.3 * front, fz = -0.45 - 0.3 * front;
   const along = fx * n[0]! + fy * n[1]! + fz * n[2]!;
   fx -= n[0]! * along; fy -= n[1]! * along; fz -= n[2]! * along;
   const fl = Math.hypot(fx, fy, fz) || 1;
   // Lying on the head, lifted only a little: hair falls from the crown, it does not stand off it.
-  let d = [n[0]! * 0.12 + fx / fl * 0.88, n[1]! * 0.12 + fy / fl * 0.88 - 0.1, n[2]! * 0.12 + fz / fl * 0.88];
+  let d = [fx / fl, fy / fl - 0.1, fz / fl];
   const dl = Math.hypot(d[0]!, d[1]!, d[2]!) || 1;
   d = [d[0]! / dl, d[1]! / dl, d[2]! / dl];
   for (let i = 0; i < points; i++) {
@@ -181,22 +200,26 @@ export function plant(body: GroomBody, root: number, length: number, radius: num
     d = [d[0]! / l, d[1]! / l, d[2]! / l];
   }
   const g: Guide = { root, pts, rest: new Float32Array(points * 3), vel: new Float32Array(points * 3), seg, radius, tie: null, row: -1, theta: 0 };
-  settle(g, body, 0.03 + radius * 0.2);
+  settle(g, body, groomMargin(radius));
   remember(g);
   return g;
 }
+
+/** How far a guide's middle lies off the skin: its clump's inner edge (`hairVolume.ts`, about 0.6 of its radius) just on the scalp. */
+export function groomMargin(radius: number): number { return radius * 0.6; }
 
 /** Follow-The-Leader: every point brought to its segment's length from the one before (the root fixed), then out of the body. */
 export function settle(g: Guide, body: GroomBody, margin: number, from = 1): void {
   const p = g.pts;
   const n = p.length / 3;
+  const side = Math.sign(p[0]! - body.face.x) || 1;
   // A tied strand's stretch up to the tie is laid along the head (`gather`): only the tail after it is settled.
   for (let i = Math.max(from, g.tie ? g.tie.k + 1 : 1); i < n; i++) {
     const a = (i - 1) * 3, b = i * 3;
     const dx = p[b]! - p[a]!, dy = p[b + 1]! - p[a + 1]!, dz = p[b + 2]! - p[a + 2]!;
     const l = Math.hypot(dx, dy, dz) || 1;
     p[b] = p[a]! + dx / l * g.seg; p[b + 1] = p[a + 1]! + dy / l * g.seg; p[b + 2] = p[a + 2]! + dz / l * g.seg;
-    body.collide(p, b, margin * (1 - 0.5 * i / n));
+    body.collide(p, b, margin, true, true, side);
   }
 }
 
@@ -215,6 +238,7 @@ export function step(g: Guide, body: GroomBody, ties: readonly Tie[], dt: number
   const d = new Float32Array(n * 3);
   // Up to its tie a tied strand lies combed along the head (`gather`) and does not move.
   const fixed = g.tie ? g.tie.k : 0;
+  const side = Math.sign(p[0]! - body.face.x) || 1;
   for (let i = fixed + 1; i < n; i++) {
     const b = i * 3;
     v[b + 1] = v[b + 1]! - gravity * dt;
@@ -232,7 +256,7 @@ export function step(g: Guide, body: GroomBody, ties: readonly Tie[], dt: number
     const dx = p[b]! - p[a]!, dy = p[b + 1]! - p[a + 1]!, dz = p[b + 2]! - p[a + 2]!;
     const l = Math.hypot(dx, dy, dz) || 1;
     p[b] = p[a]! + dx / l * g.seg; p[b + 1] = p[a + 1]! + dy / l * g.seg; p[b + 2] = p[a + 2]! + dz / l * g.seg;
-    body.collide(p, b, margin * (1 - 0.5 * i / n));
+    body.collide(p, b, margin, true, true, side);
     d[b] = p[b]! - ox; d[b + 1] = p[b + 1]! - oy; d[b + 2] = p[b + 2]! - oz;
   }
   const S = 0.9;

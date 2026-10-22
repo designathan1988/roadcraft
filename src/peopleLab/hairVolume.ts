@@ -7,7 +7,7 @@ import type { Guide } from './groom';
  *  them stay (the union is the densest clump at each point, not their sum), tips come to points: the solid, sculpted hair of The Sims, from any groom. */
 
 /** The level of the surface: a clump's edge at about two thirds of its radius. */
-const ISO = 0.42;
+const ISO = 0.3;
 
 export class HairVolume {
   readonly mesh: MarchingCubes;
@@ -42,10 +42,11 @@ export class HairVolume {
     const field = mc.field;
     for (const g of guides) {
       const p = g.pts, n = p.length / 3;
+      const along = g.seg;
       for (let i = 0; i < n - 1; i++) {
         const t0 = i / (n - 1), t1 = (i + 1) / (n - 1);
-        // The clump: full at the root, narrowing to a point over the last third.
-        const r0 = g.radius * taper(t0), r1 = g.radius * taper(t1);
+        // The clump: thin where it grows (the hairline a fine edge, not a rolled brim), full a few centimetres on, narrowing to a point over its last part.
+        const r0 = g.radius * taper(t0) * sprout(i * along), r1 = g.radius * taper(t1) * sprout((i + 1) * along);
         const r = Math.max(r0, r1);
         if (r <= 0) continue;
         const ax = p[i * 3]!, ay = p[i * 3 + 1]!, az = p[i * 3 + 2]!, bx = p[i * 3 + 3]!, by = p[i * 3 + 4]!, bz = p[i * 3 + 5]!;
@@ -67,8 +68,8 @@ export class HairVolume {
               if (d2 >= 1) continue;
               const v = (1 - d2) * (1 - d2);
               const q = row + x;
-              // Blended, not the densest alone: neighbouring clumps flow into one mass (a soft sum, capped so a crowd of them does not swell).
-              field[q] = Math.min(1.3, field[q]! + v * 0.7);
+              // The densest clump at each point (a crowd of them never swells the hair), the blur below then rounds their seams into one mass.
+              if (v > field[q]!) field[q] = v;
             }
           }
         }
@@ -112,6 +113,9 @@ function blur(f: Float32Array, N: number): void {
 
 /** A clump's width along it: full, then narrowing to a rounded point. */
 function taper(t: number): number { return t < 0.55 ? 1 : Math.max(0.12, 1 - ((t - 0.55) / 0.45) ** 1.4 * 0.88); }
+
+/** A clump's width near its root, by the distance from it (dm): from 60% up to full over 3 cm. */
+function sprout(s: number): number { return Math.min(1, 0.6 + 0.4 * s / 0.3); }
 
 /** Welded geometry as a BufferGeometry with smooth normals. */
 export function volumeBuffer(g: { positions: Float32Array; index: Uint32Array }): BufferGeometry {
