@@ -41,6 +41,16 @@ const PATHS: Readonly<Record<string, string>> = {
   pinch: 'M5 5l5 5M19 5l-5 5M5 19l5-5M19 19l-5-5',
   pattern: 'M5 4h6l2 3h6v13H5zM9 11h6M9 15h4',
   sew: 'M4 20L20 4M6 14l4 4M10 10l4 4M14 6l4 4',
+  search: 'M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13M15.5 15.5L20 20',
+  left: 'M15 5l-7 7 7 7',
+  right: 'M9 5l7 7-7 7',
+  all: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+  loose: 'M6 20c0-10 2.5-16 6-16s6 6 6 16M9 20c0-7 1-11 3-11s3 4 3 11',
+  fringe: 'M5 19c0-9 3-15 7-15s7 6 7 15M6.5 10c2 1.5 9 1.5 11 0M8 10v3M12 10.5v3M16 10v3',
+  tied: 'M7 13c0-5 2-9 5-9s5 4 5 9M12 4c2-1 4 0 5 2M17 6c2 1 3 4 2 8',
+  trousers: 'M7 4h10l1 16h-4l-2-10-2 10H6z',
+  skirt: 'M8 4h8l3 15H5zM8 4l-1 4M16 4l1 4',
+  globe: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
   sim: 'M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z',
 };
 

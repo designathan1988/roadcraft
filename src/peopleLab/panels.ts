@@ -11,6 +11,7 @@ import type { LabPerson } from './record';
 import type { Framing, Thumbs } from './thumbs';
 import { el, type widgets } from './widgets';
 import { icon } from './icons';
+import { PickerMemory, picker } from './picker';
 
 /** THE CREATOR'S PANELS, as Create-a-Sim lays them out: pictures of every choice first, the fine sliders folded away under them */
 
@@ -75,20 +76,19 @@ const FRAMES: Readonly<Record<string, Framing>> = { eyes: 'eyes', brows: 'brows'
 
 export function makePanels(c: PanelContext): Record<string, Groups> {
   const { slider, swatches, seg } = c.ui;
+  const memory = new PickerMemory();
+  /** The kind of hairstyle shown, and of lower garment. */
+  let hairKind: 'all' | 'loose' | 'fringe' | 'tied' = 'all';
+  let lowerKind: 'bottom' | 'skirt' = 'bottom';
   const p = (): LabPerson => c.person;
 
   /** A grid of pictures, each the person wearing that choice. */
-  const pics = (entries: readonly Pic[], current: string | null | undefined, pick: (id: string) => void, framing: Framing): HTMLElement => {
-    const grid = el('div', { cls: 'pics' });
-    for (const e of entries) {
-      const key = `${framing}:${JSON.stringify([e.variant.spec.body, e.variant.spec.features, e.variant.spec.look, e.variant.style, e.variant.sculpt?.deltas.length])}`;
-      // The picture says it; the name is only the tooltip.
-      const t = el('button', { cls: `pic${e.id === current ? ' on' : ''}`, title: e.label }, c.pictures.image(key, e.variant, framing));
-      t.onclick = () => { pick(e.id); c.render(); };
-      grid.append(t);
-    }
-    return grid;
-  };
+  const pics = (entries: readonly Pic[], current: string | null | undefined, pick: (id: string) => void, framing: Framing): HTMLElement =>
+    // A page at a time, filling the panel's height (`picker.ts`); the picture says it, the name is the tooltip and what the search reads.
+    picker(memory, `${framing}:${entries.map((e) => e.id).join(',')}`, entries, current, (e) => {
+      const v = (e as Pic).variant;
+      return c.pictures.image(`${framing}:${JSON.stringify([v.spec.body, v.spec.features, v.spec.look, v.style, v.sculpt?.deltas.length])}`, v, framing);
+    }, (id) => { pick(id); c.render(); }, c.pictures.baking);
   /** Pictures are of the mannequin (`presets.ts` mannequin), never of the person: the item shown alone, each picture made once. */
   const m = (): LabPerson => mannequin(c.sex());
   const withLook = (patch: Partial<PersonLook>): LabPerson => ({ ...m(), spec: { ...m().spec, look: { ...m().spec.look, ...patch } } });
@@ -100,13 +100,12 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
   /** A worn piece's sculpt buttons: open the sculptor on it, or take its sculpt off. */
   const carvePiece = (item: string | undefined, label: string): HTMLElement[] => {
     if (!item || item === 'none') return [];
-    const carve = el('button', { cls: 'big alt' }, icon('sculpt', 15), label);
+    const carve = el('button', { cls: 'toggle', title: label }, icon('sculpt', 16));
     carve.onclick = () => c.openSculptor(item);
     const sculpted = p().sculpts?.some((x) => x.base === item);
-    if (!sculpted) return [carve];
-    const drop = el('button', { cls: 'big alt', textContent: 'Desfazer escultura' });
+    const drop = el('button', { cls: 'toggle', title: 'Desfazer escultura' }, icon('undo', 16));
     drop.onclick = () => c.dropPiece(item);
-    return [el('div', { cls: 'pair' }, carve, drop)];
+    return [el('div', { cls: 'bar' }, carve, ...(sculpted ? [drop] : []))];
   };
   const nameOf = (n: string): string => n.replace(/^(female|male)_/, '').replace(/^[a-z0-9]+_(?=[a-z])/i, '').replace(/_/g, ' ').slice(0, 18);
 
@@ -131,15 +130,13 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
   const sex = (): 'female' | 'male' => c.sex();
   const outfitPics = (names: readonly string[]): HTMLElement =>
     pics(names.map((n) => ({ id: n, label: nameOf(n), variant: withLook({ outfit: n }) })), p().spec.look.outfit, (id) => c.setLook({ outfit: id }), 'body');
-  const allToggle = (label: string): HTMLElement => {
-    const all = el('label', { cls: 'check' }, el('input', { type: 'checkbox', checked: c.showAll }), label);
-    all.querySelector('input')!.addEventListener('change', (e) => { c.setShowAll((e.target as HTMLInputElement).checked); });
-    return all;
-  };
+  const allToggle = (): HTMLElement => c.ui.toggle('globe', 'Mostrar tudo (todos os sexos e estilos)', c.showAll, (v) => c.setShowAll(v));
   const opts = (kind: WardrobeItem['kind']): readonly string[] => itemsOf(kind, { street: !c.showAll, sex: sex() });
   const child = (): boolean => yearsFromAge(b().age) < 16;
   const extraPics = (kind: WardrobeItem['kind'], none: string): HTMLElement =>
-    pics(['none', ...itemsOf(kind, { street: true, sex: sex() })].map((n) => ({ id: n, label: n === 'none' ? none : nameOf(n), variant: withLook({ extras: n === 'none' ? [] : [n] }) })),
+    pics(['none', ...itemsOf(kind, { street: true, sex: sex() })].map((n) => ({ id: n, label: n === 'none' ? none : nameOf(n),
+      // A lower garment over the mannequin's whole-body suit would not show: shown under a top alone.
+      variant: withLook({ extras: n === 'none' ? [] : [n], ...(kind === 'bottom' || kind === 'skirt' ? { outfit: itemsOf('top', { street: true, sex: sex() })[0] } : {}) }) })),
       c.extraOf([kind]), (id) => c.setExtra([kind], id), kind === 'beard' ? 'jaw' : kind === 'glasses' ? 'eyes' : kind === 'jewelry' ? 'head' : 'body');
 
   return {
@@ -229,37 +226,26 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
     ],
     cabelo: [
       ['penteado', 'Penteado', () => {
-        const l = p().spec.look;
+        // The catalogue's whole hairstyles by kind, then shaped: length, volume and waves (`hairShape.ts`) and the sculptor - made hair, no seams.
         const list = c.showAll ? [...HAIR_CATALOGUE[sex()], ...HAIR_CATALOGUE[sex() === 'female' ? 'male' : 'female']] : HAIR_CATALOGUE[sex()];
+        const kind = (n: string): 'fringe' | 'tied' | 'loose' => (HAIR_FRINGED.includes(n) ? 'fringe' : HAIR_TIED.includes(n) ? 'tied' : 'loose');
+        const cut = p().spec.look.hairCut;
+        const hs = c.hairShape();
+        const shape = el('button', { cls: 'toggle', title: 'Esculpir este penteado' }, icon('sculpt', 16));
+        shape.onclick = () => c.openSculptor();
+        const bald = !cut || cut === 'none';
         return [
-          allToggle('Mostrar tudo'),
-          pics(['none', ...list].map((n) => ({ id: n, label: n === 'none' ? 'Careca' : HAIR_LABELS[n] ?? nameOf(n), variant: withLook({ hairCut: n }) })), l.hairCut, (id) => c.setLook({ hairCut: id }), 'head'),
+          el('div', { cls: 'bar' }, c.ui.iconSeg([['all', 'all', 'Todos'], ['loose', 'loose', 'Solto'], ['fringe', 'fringe', 'Com franja'], ['tied', 'tied', 'Preso']] as const, hairKind, (v) => { hairKind = v; }), allToggle(), ...(bald ? [] : [shape])),
+          pics(['none', ...list.filter((n) => hairKind === 'all' || kind(n) === hairKind)].map((n) => ({ id: n, label: n === 'none' ? 'Careca' : HAIR_LABELS[n] ?? nameOf(n), variant: withLook({ hairCut: n }) })),
+            cut, (id) => c.setLook({ hairCut: id }), 'head'),
+          ...(bald ? [] : [
+            slider('Comprimento', 0.5, 1.6, 0.01, hs.length, (v) => c.setHairShape({ ...c.hairShape(), length: v }), (v) => `${Math.round(v * 100)}%`),
+            slider('Volume', -0.4, 2, 0.05, hs.volume * 10, (v) => c.setHairShape({ ...c.hairShape(), volume: v / 10 }), (v) => `${v.toFixed(1)} cm`),
+            slider('Ondas', 0, 1.2, 0.05, hs.wave * 10, (v) => c.setHairShape({ ...c.hairShape(), wave: v / 10 }), (v) => `${v.toFixed(1)} cm`),
+          ]),
         ];
       }],
       ['cor', 'Cor', () => [swatches(HAIR_COLOURS, p().spec.look.hair, (col) => c.setLook({ hair: col }))]],
-      ['montar', 'Montar', () => {
-        // Whole hairstyles of the catalogue by kind, then shaped with the sculptor: made hair, no seams (its pieces were never made to be
-        // joined, so none is cut and joined).
-        const all = [...HAIR_CATALOGUE[sex()], ...(c.showAll ? HAIR_CATALOGUE[sex() === 'female' ? 'male' : 'female'] : [])];
-        const kind = (n: string): 'fringe' | 'tied' | 'loose' => (HAIR_FRINGED.includes(n) ? 'fringe' : HAIR_TIED.includes(n) ? 'tied' : 'loose');
-        const group = (k: 'fringe' | 'tied' | 'loose'): HTMLElement =>
-          pics(all.filter((n) => kind(n) === k).map((n) => ({ id: n, label: HAIR_LABELS[n] ?? nameOf(n), variant: withLook({ hairCut: n }) })),
-            p().spec.look.hairCut, (id) => c.setLook({ hairCut: id }), 'head');
-        const hs = c.hairShape();
-        const shape = el('button', { cls: 'big save' }, icon('sculpt', 16), 'Esculpir este penteado');
-        shape.onclick = () => c.openSculptor();
-        return [
-          allToggle('Mostrar tudo'),
-          el('h3', { textContent: 'Solto' }), group('loose'),
-          el('h3', { textContent: 'Com franja' }), group('fringe'),
-          el('h3', { textContent: 'Preso' }), group('tied'),
-          el('h3', { textContent: 'Ajustar' }),
-          slider('Comprimento', 0.5, 1.6, 0.01, hs.length, (v) => c.setHairShape({ ...c.hairShape(), length: v }), (v) => `${Math.round(v * 100)}%`),
-          slider('Volume', -0.4, 2, 0.05, hs.volume * 10, (v) => c.setHairShape({ ...c.hairShape(), volume: v / 10 }), (v) => `${v.toFixed(1)} cm`),
-          slider('Ondas', 0, 1.2, 0.05, hs.wave * 10, (v) => c.setHairShape({ ...c.hairShape(), wave: v / 10 }), (v) => `${v.toFixed(1)} cm`),
-          shape,
-        ];
-      }],
       ['barba', 'Barba', () => [extraPics('beard', 'Sem barba')]],
       ['chapeu', 'Chapéu', () => [
         pics(['none', ...WARDROBE.hats, ...itemsOf('hat', { street: true })].map((n) => ({ id: n, label: n === 'none' ? 'Sem' : nameOf(n), variant: withLook({ hat: n }) })),
@@ -290,9 +276,9 @@ export function makePanels(c: PanelContext): Record<string, Groups> {
         pics(LOOKS.map((lk) => ({ id: lk.label, label: lk.label, variant: withLook(sex() === 'female' ? lk.female : lk.male) })), null,
           (id) => { const lk = LOOKS.find((x) => x.label === id)!; c.setLook(sex() === 'female' ? lk.female : lk.male); }, 'body'),
       ]],
-      ['inteira', 'Conjuntos', () => [allToggle('Mostrar tudo'), outfitPics([...WARDROBE.outfits[sex()], ...opts('suit'), ...opts('dress')]), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
-      ['cima', 'Parte de cima', () => [allToggle('Mostrar tudo'), outfitPics(opts('top')), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
-      ['baixo', 'Parte de baixo', () => [extraPics('bottom', 'Nenhuma'), el('div', { cls: 'gap' }), extraPics('skirt', 'Nenhuma')]],
+      ['inteira', 'Conjuntos', () => [allToggle(), outfitPics([...WARDROBE.outfits[sex()], ...opts('suit'), ...opts('dress')]), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
+      ['cima', 'Parte de cima', () => [allToggle(), outfitPics(opts('top')), ...carvePiece(p().spec.look.outfit, 'Editar peça')]],
+      ['baixo', 'Parte de baixo', () => [c.ui.iconSeg([['bottom', 'trousers', 'Calças e shorts'], ['skirt', 'skirt', 'Saias']] as const, lowerKind, (v) => { lowerKind = v; }), ...(c.pictures.baking ? [extraPics('bottom', 'Nenhuma'), extraPics('skirt', 'Nenhuma')] : [extraPics(lowerKind, 'Nenhuma')])]],
       ['cor', 'Cor', () => [swatches(CLOTH, p().spec.look.outfitTint ?? -1, (col) => c.setLook({ outfitTint: col }))]],
       ['sapatos', 'Sapatos', () => [
         pics(SHOES_CATALOGUE[sex()].map((n) => ({ id: n, label: nameOf(n), variant: withLook({ footwear: n }) })), p().spec.look.footwear, (id) => c.setLook({ footwear: id }), 'feet'),

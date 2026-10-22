@@ -1,6 +1,7 @@
 import { proxyUrl } from '@people/body/proxy';
 import PROXY_FILES from 'virtual:model-urls/people/proxies?ext=json,bin,webp';
 import { communityItem } from '@people/wardrobe';
+import { icon } from './icons';
 
 /** THE LAB'S CONTROLS: a slider, colour swatches, a segmented choice, a grid of items with their thumbnails */
 
@@ -70,5 +71,23 @@ export function widgets(render: () => void) {
     for (const n of names) add(n, pretty(n));
     return grid;
   }
-  return { slider, swatches, seg, tiles };
+  /** A segmented choice drawn as icons, each named by its tooltip. */
+  function iconSeg<T extends string>(options: readonly (readonly [T, string, string])[], current: T, set: (v: T) => void): HTMLElement {
+    const box = el('div', { cls: 'seg icons' });
+    for (const [v, name, title] of options) {
+      const b = el('button', { title }, icon(name, 16));
+      if (v === current) b.classList.add('on');
+      b.onclick = () => { set(v); render(); };
+      box.append(b);
+    }
+    return box;
+  }
+
+  /** An on/off icon button. */
+  function toggle(name: string, title: string, on: boolean, set: (v: boolean) => void): HTMLElement {
+    const b = el('button', { cls: `toggle${on ? ' on' : ''}`, title }, icon(name, 16));
+    b.onclick = () => { set(!on); render(); };
+    return b;
+  }
+  return { slider, swatches, seg, iconSeg, toggle, tiles };
 }

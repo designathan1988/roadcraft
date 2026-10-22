@@ -146,7 +146,8 @@ function startLab(): void {
   // ---------------------------------------------------------------- scene
 
   const app = document.getElementById('app')!;
-  const { slider, swatches, seg, tiles } = widgets(() => render());
+  const ui = widgets(() => render());
+  const { slider } = ui;
 
   const rail = el('nav', { cls: 'rail' });
   const panel = el('section', { cls: 'panel' });
@@ -392,7 +393,7 @@ function startLab(): void {
     if (tab !== 'pose') tl?.classList.remove('on');
     if (sculptor) panel.replaceChildren(...sculptPanel(sculptor, { slider, render, close: closeSculptor }));
     else if (carver) panel.replaceChildren(...bodySculptPanel(carver, { slider, render, close: closeCarver }));
-    else if (atelier) panel.replaceChildren(...atelierPanel(atelier, { ui: { slider, swatches, seg, tiles }, render, close: closeAtelier, colours: CLOTH }));
+    else if (atelier) panel.replaceChildren(...atelierPanel(atelier, { ui, render, close: closeAtelier, colours: CLOTH }));
     else if (tab === 'pose') panel.replaceChildren(...posePanelNodes());
     else {
       // The category's groups along the top (Create-a-Sim's sub tabs), the chosen one below.
@@ -410,7 +411,7 @@ function startLab(): void {
 
   const PANELS = makePanels({
     get person() { return person; }, get showAll() { return showAll; }, get activity() { return activity; }, get pose() { return pose; }, get clip() { return clipName; },
-    ui: { slider, swatches, seg, tiles }, pictures,
+    ui, pictures,
     setSpec, setLook: (patch) => setLook(patch as Loose<PersonLook>), setBody, setFeature,
     // The Roadcraft style is the fitted one: picking it refits the body (the head to ~6.3 heads tall).
     setStyle: (st) => { setStyle(st); if (st === ROADCRAFT) void fitFace(); },
@@ -550,7 +551,7 @@ function startLab(): void {
     tl.classList.toggle('on', poseGroup === 'anim');
     tl.draw?.();
     return posePanel(posing, {
-      ui: { slider, swatches, seg, tiles }, render, now, group: poseGroup, setGroup: (g) => { poseGroup = g; },
+      ui, render, now, group: poseGroup, setGroup: (g) => { poseGroup = g; },
       poses: READY_POSES.map(([label, clip, at]) => [label, () => {
         clipName = clip; stool.visible = clip === 'sitIdle';
         heldAt = at;

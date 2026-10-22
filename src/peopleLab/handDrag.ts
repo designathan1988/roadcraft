@@ -72,8 +72,7 @@ export class HandDrag {
     this.tip.style.top = `${e.clientY - r.top + 12}px`;
     const bar = (arrow: string, label: string, v: number): string =>
       `<div class="tip-axis"><span>${arrow} ${label}</span><i><b style="left:${Math.min(50, 50 + v * 50)}%;width:${Math.abs(v) * 50}%"></b></i><em>${v.toFixed(2)}</em></div>`;
-    this.tip.innerHTML = `<b>${region.label}</b>${bar('↔', region.x.label, this.host.value(region.x.slider))}${bar('↕', region.y.label, this.host.value(region.y.slider))}`
-      + (this.drag ? '<small>Shift: fino · Esc: desfaz</small>' : '<small>Arraste · duplo clique: zera</small>');
+    this.tip.innerHTML = `<b>${region.label}</b>${bar('↔', region.x.label, this.host.value(region.x.slider))}${bar('↕', region.y.label, this.host.value(region.y.slider))}`;
     this.tip.classList.add('on');
     this.host.canvas.style.cursor = this.drag ? 'grabbing' : 'grab';
   }
