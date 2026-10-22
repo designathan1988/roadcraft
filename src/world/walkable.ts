@@ -8,6 +8,9 @@ import type { Junction } from './junction/build';
 import { Level, type SurfaceLevel } from './roadTypes';
 import { levelRingsOf } from './surfaces';
 
+/** How many cells a surface keeps (the latest asked), ~50 KB each: DO NOT keep every cell ever asked (the crossings fitted at a map's load ask every cell with a road: 23 MB in the city of 25,000 buildings, 2026-10-21). A cell let go is made again, the same, when asked again. */
+const KEPT_CELLS = 128;
+
 /** DO NOT go back to one index of every ring of the map made at each network rebuild */
 export class WalkableSurface {
   /** Each cell made, its stamp, and the two filings and their epochs when it was last found to match (`cellOf`). */
@@ -58,6 +61,8 @@ export class WalkableSurface {
     const area: ChangeRect = [x0, y0, x1 - CELL * 1e-9, y1 - CELL * 1e-9];
     const net = this.net;
     const known = this.made.get(key);
+    // The latest asked last in the map's order (the oldest let go first, `keep`): moved only when another cell was asked since.
+    if (known && key !== this.lastKey) { this.made.delete(key); this.made.set(key, known); this.lastKey = key; }
     // DO NOT write the cell's stamp again while neither filing changed anywhere (EDT-25: a string a cell of each filing, at every point asked): their epochs move with each change.
     const seg = net.segmentCells, jun = net.junctionCells, was = known?.filings;
     if (known && was![0] === seg && was![1] === seg.epoch && was![2] === jun && was![3] === jun.epoch) return known;
@@ -88,8 +93,22 @@ export class WalkableSurface {
       outer: RegionIndex.fromRings(ringsOf(Level.Sidewalk), 'nonzero'),
       road: RegionIndex.fromRings(ringsOf(Level.Asphalt), 'nonzero'),
     };
-    this.made.set(key, cell);
+    this.keep(key, cell);
     return cell;
+  }
+
+  /** The cell asked last (`cellOf`): its place in the order stands while it is asked again. */
+  private lastKey = NaN;
+
+  /** A cell made kept, the cells asked longest ago let go past `KEPT_CELLS`. */
+  private keep(key: number, cell: { readonly stamp: string; readonly outer: RegionIndex; readonly road: RegionIndex; filings: readonly [object, number, object, number] }): void {
+    this.made.delete(key);
+    this.made.set(key, cell);
+    this.lastKey = key;
+    for (const old of this.made.keys()) {
+      if (this.made.size <= KEPT_CELLS) break;
+      this.made.delete(old);
+    }
   }
 }
 

@@ -33,6 +33,58 @@ export interface Leg {
   readonly shift: number;
 }
 
+/** A leg as plain data, every field its own (`legData`, `legOf`): what a message's clone keeps of it (`NetworkBake`). */
+export type LegData = { -readonly [K in keyof Leg]: Leg[K] };
+
+/** Where a leg's numbers stand in its run (`PackedLeg`). */
+const OX = 0, OY = 1, DX = 2, DY = 3, NX = 4, NY = 5, ANG = 6, HW = 7, HW_LEFT = 8, HW_RIGHT = 9, HW_SIDEWALK = 10, LENGTH = 11, SHIFT = 12;
+
+/**
+ * DO NOT keep a leg as an object of points and numbers (three points and seven boxed numbers, ~300 B a leg, four levels of every
+ * junction: 2026-10-21): its numbers in one run of doubles, its points made when read. A class: a message's clone of it keeps no
+ * getter, so it crosses as `legData` and is made again by `legOf`.
+ */
+class PackedLeg implements Leg {
+  constructor(
+    readonly seg: SegmentId,
+    readonly far: NodeId,
+    readonly plusSide: RoadSide,
+    readonly typeIndex: number,
+    readonly direction: SegmentDirection,
+    readonly approaching: boolean,
+    readonly road: RoadType,
+    private readonly v: readonly number[],
+  ) {}
+
+  get origin(): Vec2 { return { x: this.v[OX]!, y: this.v[OY]! }; }
+  get dir(): Vec2 { return { x: this.v[DX]!, y: this.v[DY]! }; }
+  get nrm(): Vec2 { return { x: this.v[NX]!, y: this.v[NY]! }; }
+  get ang(): number { return this.v[ANG]!; }
+  get hw(): number { return this.v[HW]!; }
+  get hwLeft(): number { return this.v[HW_LEFT]!; }
+  get hwRight(): number { return this.v[HW_RIGHT]!; }
+  get hwSidewalk(): number { return this.v[HW_SIDEWALK]!; }
+  get length(): number { return this.v[LENGTH]!; }
+  get shift(): number { return this.v[SHIFT]!; }
+}
+
+/** A leg kept compact (`PackedLeg`) from its fields. */
+export function legOf(d: Leg): Leg {
+  const v = new Array<number>(SHIFT + 1);
+  v[OX] = d.origin.x; v[OY] = d.origin.y; v[DX] = d.dir.x; v[DY] = d.dir.y; v[NX] = d.nrm.x; v[NY] = d.nrm.y;
+  v[ANG] = d.ang; v[HW] = d.hw; v[HW_LEFT] = d.hwLeft; v[HW_RIGHT] = d.hwRight; v[HW_SIDEWALK] = d.hwSidewalk; v[LENGTH] = d.length; v[SHIFT] = d.shift;
+  return new PackedLeg(d.seg, d.far, d.plusSide, d.typeIndex, d.direction, d.approaching, d.road, v);
+}
+
+/** A leg's fields as plain data (`LegData`). */
+export function legData(leg: Leg): LegData {
+  return {
+    seg: leg.seg, far: leg.far, origin: leg.origin, dir: leg.dir, nrm: leg.nrm, ang: leg.ang, hw: leg.hw, hwLeft: leg.hwLeft,
+    hwRight: leg.hwRight, plusSide: leg.plusSide, hwSidewalk: leg.hwSidewalk, length: leg.length, typeIndex: leg.typeIndex,
+    direction: leg.direction, approaching: leg.approaching, road: leg.road, shift: leg.shift,
+  };
+}
+
 export interface LegBuildOptions {
   /** Per-leg trim guesses, keyed by SEGMENT. */
   readonly trims?: ReadonlyMap<SegmentId, number>;
@@ -68,7 +120,7 @@ export function buildLegs(
     const clamped = Math.max(0, Math.min(guess, pl.length * (refined === undefined ? LEG_TRIM_CAP : 1)));
     const f = frameFromNode(pl, startsHere, clamped);
 
-    return {
+    return legOf({
       seg: segId,
       far: farNode(seg, nodeId),
       // Back-project so that origin + dir * trim lands exactly on the mouth.
@@ -89,7 +141,7 @@ export function buildLegs(
         (startsHere ? seg.direction === 'bToA' : seg.direction === 'aToB'),
       road: rt,
       shift: travelShift(rt) * (startsHere ? 1 : -1),
-    };
+    });
   });
 
   legs.sort((p, q) => p.ang - q.ang || p.seg - q.seg);

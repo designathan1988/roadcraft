@@ -9,6 +9,8 @@ import type { NodeId, SegmentId } from './ids';
 import { Level, SURFACE_LEVELS, type SurfaceLevel, flushOn } from './roadTypes';
 import { type Junction, buildJunction, surfaceMode } from './junction/build';
 import { deriveJunctionLevel } from './junction/derive';
+import { type LegData, legData, legOf } from './junction/legs';
+import { type CornerData, cornerData, cornerOf } from './junction/corners';
 import { clampSegmentTrims } from './junction/trim';
 import { MIN_LEG_ANGLE, legAngles, smallestGap } from './legAngles';
 import { CellFiling } from './cells';
@@ -67,7 +69,11 @@ export interface BakedNode {
 }
 /** A ring as its data (`Ring` is a class: the message's clone keeps its fields, not its methods, `structuredClone`). */
 interface BakedRing { readonly start: { readonly x: number; readonly y: number }; readonly edges: readonly RingEdge[] }
-type BakedJunction = Omit<Junction, 'ring' | 'tongues' | 'rings'> & { readonly ring: BakedRing; readonly tongues: readonly BakedRing[]; readonly rings: readonly BakedRing[] };
+/** A junction as its data: its rings (`BakedRing`), its legs and corners as plain fields (`legData`, `cornerData`: kept compact on a thread, `legOf`, `cornerOf`). */
+type BakedJunction = Omit<Junction, 'ring' | 'tongues' | 'rings' | 'legs' | 'corners'> & {
+  readonly ring: BakedRing; readonly tongues: readonly BakedRing[]; readonly rings: readonly BakedRing[];
+  readonly legs: readonly LegData[]; readonly corners: readonly CornerData[];
+};
 interface BakedMemo { readonly key: number; readonly byLevel: ReadonlyMap<SurfaceLevel, BakedJunction>; readonly plate: MemoEntry['plate'] }
 /** A ribbon with its polylines as their flat arrays (`Polyline.xy`) and its rings as data, made whole again on the page (`ribbonFromBake`). */
 export type BakedRibbon = Omit<SegmentRibbon, 'centre' | 'full' | 'rings'> & {
@@ -80,13 +86,17 @@ const ringOf = (r: BakedRing): Ring => new Ring(r.start, r.edges);
 function memoData(entry: MemoEntry | undefined): BakedMemo | null {
   if (!entry) return null;
   const byLevel = new Map<SurfaceLevel, BakedJunction>();
-  for (const [level, j] of entry.byLevel) byLevel.set(level, { ...j, ring: ringData(j.ring), tongues: j.tongues.map(ringData), rings: j.rings.map(ringData) });
+  for (const [level, j] of entry.byLevel) {
+    byLevel.set(level, { ...j, ring: ringData(j.ring), tongues: j.tongues.map(ringData), rings: j.rings.map(ringData), legs: j.legs.map(legData), corners: j.corners.map(cornerData) });
+  }
   return { key: entry.key, byLevel, plate: entry.plate };
 }
 
 function memoOf(baked: BakedMemo): MemoEntry {
   const byLevel = new Map<SurfaceLevel, Junction>();
-  for (const [level, j] of baked.byLevel) byLevel.set(level, { ...j, ring: ringOf(j.ring), tongues: j.tongues.map(ringOf), rings: j.rings.map(ringOf) });
+  for (const [level, j] of baked.byLevel) {
+    byLevel.set(level, { ...j, ring: ringOf(j.ring), tongues: j.tongues.map(ringOf), rings: j.rings.map(ringOf), legs: j.legs.map(legOf), corners: j.corners.map(cornerOf) });
+  }
   return { key: baked.key, byLevel, plate: baked.plate };
 }
 export interface BakedSegment {

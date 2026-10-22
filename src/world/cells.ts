@@ -32,8 +32,6 @@ function forCellsOver(rect: ChangeRect, visit: (key: number) => void, side = CEL
 /** A rectangle grown by `pad` on every side. */
 export const grow = (r: ChangeRect, pad: number): ChangeRect => [r[0] - pad, r[1] - pad, r[2] + pad, r[3] + pad];
 
-/** Whether two rectangles overlap (touching counts). */
-const rectsMeet = (a: ChangeRect, b: ChangeRect): boolean => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 
 /** The clock every filing's cell versions are read from */
 const nextVersion = uniqueCounter();
@@ -41,13 +39,31 @@ const nextVersion = uniqueCounter();
 /** The work a filing did: things filed and cells visited. A count for the performance budgets (`core/perfBudget.ts`). */
 export const cellWork = { filed: 0, cellsRead: 0 };
 
+/** What a filing keeps of a thing: the object it was filed for and one run of numbers, its rectangle then the keys of its cells (`RECT`). */
+interface Entry<T> {
+  readonly item: T;
+  /** DO NOT keep the rectangle and the cells as two lists (and a set a cell: ~440 B a thing filed, 2026-10-21): [x0, y0, x1, y1, cell...], laid at its size. */
+  readonly data: readonly number[];
+}
+/** From how many ids a cell's list grows by pushing (a list pushed to takes room for ~17 more: kept at its size below). */
+const GROWN_LIST = 16;
+/** How many numbers of an entry's run are its rectangle. */
+const RECT = 4;
+
+/** An entry's rectangle, as `rectOf` hands it out (a new one: the entry keeps numbers). */
+const rectIn = (data: readonly number[]): ChangeRect => [data[0]!, data[1]!, data[2]!, data[3]!];
+
+/** Whether an entry's rectangle meets `rect` (touching counts). */
+const entryMeets = (d: readonly number[], rect: ChangeRect): boolean => d[0]! <= rect[2] && d[2]! >= rect[0] && d[1]! <= rect[3] && d[3]! >= rect[1];
+
 /** Things (by id) filed in the cells their bounds reach, each with the object it was filed for */
 export class CellFiling<Id extends number, T extends object> {
   /** `side`: the side of its cells, world units - the world's cell by default */
   constructor(private readonly side = CELL) {}
 
-  private entries: Map<Id, { readonly item: T; readonly rect: ChangeRect; readonly cells: readonly number[] }> = new Map();
-  private byCell: Map<number, Set<Id>> = new Map();
+  private entries: Map<Id, Entry<T>> = new Map();
+  /** Each cell's ids in the order they were filed there (a list, not a set: a few ids a cell, a set's table ~100 B). */
+  private byCell: Map<number, Id[]> = new Map();
   private versions: Map<number, number> = new Map();
   /** Moves whenever any cell's version does: the clock's reading at the latest change. */
   epoch = 0;
@@ -60,24 +76,38 @@ export class CellFiling<Id extends number, T extends object> {
   file(id: Id, item: T, rect: ChangeRect): void {
     const known = this.entries.get(id);
     if (known && known.item === item) return;
-    if (known) this.unfile(id, known.cells);
+    if (known) this.unfile(id, known.data);
     cellWork.filed++;
-    const cells: number[] = [];
+    const side = this.side;
+    const cx0 = Math.floor(rect[0] / side), cx1 = Math.floor(rect[2] / side);
+    const cy0 = Math.floor(rect[1] / side), cy1 = Math.floor(rect[3] / side);
+    // No cell for a rectangle turned inside out or of NaN (the walk over it visits none).
+    const across = cx1 >= cx0 ? cx1 - cx0 + 1 : 0, down = cy1 >= cy0 ? cy1 - cy0 + 1 : 0;
+    const data = new Array<number>(RECT + across * down);
+    data[0] = rect[0]; data[1] = rect[1]; data[2] = rect[2]; data[3] = rect[3];
+    let k = RECT;
     forCellsOver(rect, (key) => {
-      cells.push(key);
-      let set = this.cellToWrite(key);
-      if (!set) this.byCell.set(key, set = new Set());
-      set.add(id);
+      data[k++] = key;
+      const list = this.cellToWrite(key);
+      if (!list) this.byCell.set(key, [id]);
+      else if (list.length >= GROWN_LIST) list.push(id);
+      else {
+        // A short list laid again at its size: one pushed to grows its room past a dozen and a half ids (most cells hold a few).
+        const next = new Array<Id>(list.length + 1);
+        for (let i = 0; i < list.length; i++) next[i] = list[i]!;
+        next[list.length] = id;
+        this.byCell.set(key, next);
+      }
       this.bump(key);
-    }, this.side);
-    this.entries.set(id, { item, rect, cells });
+    }, side);
+    this.entries.set(id, { item, data });
   }
 
   /** Takes `id` out (nothing when it is not filed). */
   remove(id: Id): void {
     const known = this.entries.get(id);
     if (!known) return;
-    this.unfile(id, known.cells);
+    this.unfile(id, known.data);
     this.entries.delete(id);
   }
 
@@ -88,7 +118,8 @@ export class CellFiling<Id extends number, T extends object> {
 
   /** The rectangle `id` is filed over, or undefined. */
   rectOf(id: Id): ChangeRect | undefined {
-    return this.entries.get(id)?.rect;
+    const known = this.entries.get(id);
+    return known ? rectIn(known.data) : undefined;
   }
 
   /** The ids filed (any order). */
@@ -103,20 +134,20 @@ export class CellFiling<Id extends number, T extends object> {
     const cx = Math.floor(rect[0] / side), cy = Math.floor(rect[1] / side);
     if (cx === Math.floor(rect[2] / side) && cy === Math.floor(rect[3] / side)) {
       cellWork.cellsRead++;
-      const set = this.byCell.get(cellKey(cx, cy));
-      if (!set) return [];
+      const list = this.byCell.get(cellKey(cx, cy));
+      if (!list) return [];
       const one: Id[] = [];
-      for (const id of set) if (rectsMeet(this.entries.get(id)!.rect, rect)) one.push(id);
+      for (const id of list) if (entryMeets(this.entries.get(id)!.data, rect)) one.push(id);
       return one.length > 1 ? one.sort((a, b) => a - b) : one;
     }
     const out = new Set<Id>();
     forCellsOver(rect, (key) => {
       cellWork.cellsRead++;
-      const set = this.byCell.get(key);
-      if (!set) return;
-      for (const id of set) {
+      const list = this.byCell.get(key);
+      if (!list) return;
+      for (const id of list) {
         if (out.has(id)) continue;
-        if (rectsMeet(this.entries.get(id)!.rect, rect)) out.add(id);
+        if (entryMeets(this.entries.get(id)!.data, rect)) out.add(id);
       }
     }, this.side);
     return [...out].sort((a, b) => a - b);
@@ -125,11 +156,11 @@ export class CellFiling<Id extends number, T extends object> {
   /** Whether `test` holds for some id whose bounds hold the point (x, y): its one cell looked at, nothing made (no rectangle, set nor list a point, as `idsMeeting` makes: asked for every vertex of a road surface). */
   someAt(x: number, y: number, test: (id: Id, item: T) => boolean): boolean {
     cellWork.cellsRead++;
-    const set = this.byCell.get(cellKey(Math.floor(x / this.side), Math.floor(y / this.side)));
-    if (!set) return false;
-    for (const id of set) {
-      const entry = this.entries.get(id)!, r = entry.rect;
-      if (r[0] <= x && r[2] >= x && r[1] <= y && r[3] >= y && test(id, entry.item)) return true;
+    const list = this.byCell.get(cellKey(Math.floor(x / this.side), Math.floor(y / this.side)));
+    if (!list) return false;
+    for (const id of list) {
+      const entry = this.entries.get(id)!, r = entry.data;
+      if (r[0]! <= x && r[2]! >= x && r[1]! <= y && r[3]! >= y && test(id, entry.item)) return true;
     }
     return false;
   }
@@ -147,12 +178,12 @@ export class CellFiling<Id extends number, T extends object> {
     const out = new Set<Id>();
     for (const [key, list] of over) {
       cellWork.cellsRead++;
-      const set = this.byCell.get(key);
-      if (!set) continue;
-      for (const id of set) {
+      const ids = this.byCell.get(key);
+      if (!ids) continue;
+      for (const id of ids) {
         if (out.has(id)) continue;
-        const box = this.entries.get(id)!.rect;
-        for (const rect of list) if (rectsMeet(box, rect)) { out.add(id); break; }
+        const box = this.entries.get(id)!.data;
+        for (const rect of list) if (entryMeets(box, rect)) { out.add(id); break; }
       }
     }
     return [...out].sort((a, b) => a - b);
@@ -172,7 +203,7 @@ export class CellFiling<Id extends number, T extends object> {
     this.byCell.clear();
     this.versions.clear();
     for (const [id, entry] of other.entries) this.entries.set(id, entry);
-    for (const [key, set] of other.byCell) this.byCell.set(key, new Set(set));
+    for (const [key, list] of other.byCell) this.byCell.set(key, list.slice());
     for (const [key, version] of other.versions) this.versions.set(key, version);
     this.epoch = other.epoch;
   }
@@ -191,23 +222,27 @@ export class CellFiling<Id extends number, T extends object> {
   takeBack(fork: CellFiling<Id, T>): void {
     if (!(fork.entries instanceof ForkMap)) throw new Error('CellFiling.takeBack: not a working copy');
     fork.entries.applyTo(this.entries);
-    (fork.byCell as ForkMap<number, Set<Id>>).applyTo(this.byCell);
+    (fork.byCell as ForkMap<number, Id[]>).applyTo(this.byCell);
     (fork.versions as ForkMap<number, number>).applyTo(this.versions);
     this.epoch = fork.epoch;
   }
 
-  /** A cell's set to change: in a working copy, the one below copied first (a cell it files in, not the map). */
-  private cellToWrite(key: number): Set<Id> | undefined {
-    return this.byCell instanceof ForkMap ? this.byCell.writable(key, (set) => new Set(set)) : this.byCell.get(key);
+  /** A cell's list to change: in a working copy, the one below copied first (a cell it files in, not the map). */
+  private cellToWrite(key: number): Id[] | undefined {
+    return this.byCell instanceof ForkMap ? this.byCell.writable(key, (list) => list.slice()) : this.byCell.get(key);
   }
 
-  private unfile(id: Id, cells: readonly number[]): void {
-    for (const key of cells) {
-      const set = this.cellToWrite(key);
-      if (!set) continue;
-      set.delete(id);
+  /** `id` taken out of the cells of its entry's run (`data` past `RECT`). */
+  private unfile(id: Id, data: readonly number[]): void {
+    for (let k = RECT; k < data.length; k++) {
+      const key = data[k]!;
+      const list = this.cellToWrite(key);
+      if (!list) continue;
+      // In the order filed (as a set's), the rest kept in theirs.
+      const at = list.indexOf(id);
+      if (at >= 0) list.splice(at, 1);
       // An emptied cell's version let go with it (DO NOT keep a number for every cell ever filed in: a version reads 0 for a cell holding nothing, as it did before anything came).
-      if (set.size === 0) { this.byCell.delete(key); this.versions.delete(key); this.epoch = nextVersion(); } else this.bump(key);
+      if (list.length === 0) { this.byCell.delete(key); this.versions.delete(key); this.epoch = nextVersion(); } else this.bump(key);
     }
   }
 

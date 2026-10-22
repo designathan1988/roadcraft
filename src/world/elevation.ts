@@ -976,9 +976,12 @@ const NO_PROFILES: readonly never[] = Object.freeze([]);
 function withProfile(list: readonly Profile[], profile: Profile): Profile[] {
   let at = 0;
   while (at < list.length && list[at]!.id < profile.id) at++;
-  const out = list.slice();
-  if (at < list.length && list[at]!.id === profile.id) out[at] = profile;
-  else out.splice(at, 0, profile);
+  const replaced = at < list.length && list[at]!.id === profile.id;
+  // Laid at its size (DO NOT splice into a copy: its room grew ~16 past the list, a list a cell of the index, 2026-10-21).
+  const out = new Array<Profile>(replaced ? list.length : list.length + 1);
+  for (let k = 0; k < at; k++) out[k] = list[k]!;
+  out[at] = profile;
+  for (let k = replaced ? at + 1 : at; k < list.length; k++) out[replaced ? k : k + 1] = list[k]!;
   return out;
 }
 

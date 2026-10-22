@@ -145,8 +145,10 @@ class KeyedState {
   /** The buildings' squares whose wears alone changed. */
   wear = new Set<string>();
 
-  /** A record now in `now` (null: gone): where it was and where it is are both written again. */
-  place(id: number, now: string | null): void {
+  private readonly names = new Map<string, string>();
+  /** A record now in `square` (null: gone): where it was and where it is are both written again. Each square's name kept once (`names`): DO NOT keep a string of its own for every record's square in `where` (~30 B a record of the map). */
+  place(id: number, square: string | null): void {
+    const now = square === null ? null : this.names.get(square) ?? this.names.set(square, square).get(square)!;
     const was = this.where.get(id);
     if (was !== undefined) this.dirty.add(was);
     if (now !== null) this.dirty.add(now);

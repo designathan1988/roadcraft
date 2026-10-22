@@ -18,6 +18,9 @@ export interface Zone {
 
 export const isZoneUse = (value: unknown): value is ZoneUse => ZONE_USES.includes(value as ZoneUse);
 export const isZoneDensity = (value: unknown): value is ZoneDensity => ZONE_DENSITIES.includes(value as ZoneDensity);
+/** The game's own string for a use or a density read from a map (DO NOT keep the parsed one: a string of its own a lot, ~30 B each). */
+export const zoneUseName = (use: ZoneUse): ZoneUse => ZONE_USES.find((u) => u === use) ?? use;
+export const zoneDensityName = (density: ZoneDensity): ZoneDensity => ZONE_DENSITIES.find((d) => d === density) ?? density;
 
 /** One zoned cell of the street grid */
 export interface ZoneMark {
