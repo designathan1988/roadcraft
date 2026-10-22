@@ -212,9 +212,12 @@ export class GpuBatchedMesh extends BatchedMesh {
     }
     const index = new Uint32Array(info.reservedIndexCount);
     const sourceArray = sourceIndex.array;
-    for (let i = 0; i < sourceIndex.count; i++) index[i] = info.vertexStart + sourceArray[i]!;
-    const local = vertices <= 65535 ? new Uint16Array(sourceIndex.count) : new Uint32Array(sourceIndex.count);
-    for (let i = 0; i < sourceIndex.count; i++) local[i] = sourceArray[i]!;
+    const count = sourceIndex.count, start = info.vertexStart;
+    // The geometry's own indices kept as they are (a typed copy, the engine's), the batch's shifted to its first vertex: one walk, not two
+    // (setGeometryAt was 0.37 s of a 13 s flight over the city, `npm run diagnose`, 2026-10-22).
+    const local = vertices <= 65535 ? new Uint16Array(count) : new Uint32Array(count);
+    local.set(sourceArray.length === count ? sourceArray : sourceArray.subarray(0, count));
+    for (let i = 0; i < count; i++) index[i] = start + local[i]!;
     this.localIndex.set(geometryId, local);
     // The rest of what is reserved points at its first vertex, as three's fill (degenerate triangles).
     index.fill(info.vertexStart, sourceIndex.count);
