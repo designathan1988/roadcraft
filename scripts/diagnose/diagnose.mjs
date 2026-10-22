@@ -307,17 +307,34 @@ function allocationsOf(profile, seconds) {
   return { mbPerSecond: Math.round(bytes / 1e5 / Math.max(seconds, 0.1)) / 10, top: [...own].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([at, b]) => ({ at, mb: Math.round(b / 1e5) / 10 })) };
 }
 
-/** The programs three holds now, by name and cache key (`renderer.info.programs`). */
+/** The programs three holds now, by name and whole cache key (`renderer.info.programs`). DO NOT cut the key: two programs alike in its first
+ *  characters and apart after them (a light's count, a morph's, a define) were one, and the programs built in play were undercounted. */
 function programNames() {
-  return page.evaluate(() => (window.__roadcraft.scene().gl.info.programs ?? []).map((p) => `${p.name} ${String(p.cacheKey).slice(0, 60)}`));
+  return page.evaluate(() => (window.__roadcraft.scene().gl.info.programs ?? []).map((p) => `${p.name}|${String(p.cacheKey)}`));
 }
 
-/** The programs in `after` not in `before`, by name with how many of each. */
+/** The programs in `after` not in `before`, each told by its name, its key's first fields and the fields where it differs from the program
+ *  already built that is most like it (what to build ahead: the variant three was not asked for), with how many of each. */
 function newPrograms(before, after) {
   const had = new Set(before);
+  const old = before.map((p) => p.split('|')[1]?.split(',') ?? []);
   const counts = new Map();
-  for (const p of after) if (!had.has(p)) { const name = p.slice(0, 70); counts.set(name, (counts.get(name) ?? 0) + 1); }
-  return [...counts].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ×${n}`);
+  for (const p of after) {
+    if (had.has(p)) continue;
+    const [name, key = ''] = p.split('|');
+    const tokens = key.split(',');
+    let best = null, same = -1;
+    for (const o of old) {
+      if (o.length !== tokens.length) continue;
+      let n = 0;
+      for (let i = 0; i < tokens.length; i++) if (o[i] === tokens[i]) n++;
+      if (n > same) { same = n; best = o; }
+    }
+    const differs = best ? tokens.flatMap((t, i) => (best[i] === t ? [] : [`#${i} ${String(best[i]).slice(0, 24)} -> ${t.slice(0, 24)}`])).slice(0, 6).join('; ') : 'no program like it';
+    const label = `${name} ${tokens.filter(Boolean).slice(0, 4).join(',').slice(0, 60)} | ${differs}`;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([label, n]) => `${label} ×${n}`);
 }
 
 async function phase(name) {
