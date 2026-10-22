@@ -3,7 +3,7 @@ import { hypot2 } from '@core/hypot';
 import clipping from 'polygon-clipping';
 import { Color } from 'three';
 import { resolveBlocks } from '@world/buildings/blocks';
-import { floorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
+import { floorHeight, frontFloorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
   type BuildingFrame, type LocalBay, bayLayout, bayWidth, buildingFrame, closedBlocks, frameX, frameY, coveredSpans, exposedParts, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
@@ -207,6 +207,12 @@ export function massColours(b: Building, tone?: Readonly<Record<Finish, readonly
 export function massFloor(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
   const resolved = resolveBlocks(b);
   return closedBlocks(resolved.volumes).length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+}
+
+/** A building's floor as its base stands it (`massBase.ts`, the top level, drawn from afar): its lots' front pavement, no bay laid out (`frontFloorHeight`); undefined with no closed block. Never handed to the finer levels: they stand on `massFloor`. */
+export function baseFloor(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
+  const resolved = resolveBlocks(b);
+  return closedBlocks(resolved.volumes).length > 0 ? frontFloorHeight(resolved, naturalAt, pavedAt) : undefined;
 }
 
 /** A building's mass from afar, on the ground it stands on (the floor worked out as the detailed building's, `floorHeight`) */

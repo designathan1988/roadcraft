@@ -34,4 +34,26 @@ describe('the painted ground grown', () => {
     expect((grown.image as { data: Uint8Array }).data.length).toBe(1024 * 1024 * 4 * 3);
     surface.dispose();
   });
+
+  it('holds a painted plate far from the view at the start side, full only near it (`paintDetail`)', () => {
+    const surface = createTerrainSurface(1, { x: 0, y: 0 }, 0);
+    surface.paintDetail!(false);
+    const doc = new RoadDoc();
+    doc.addPaintDab({ kind: 'sand', x: m(10), y: m(-20), radius: m(30), strength: 1 } as never);
+    surface.updatePaint(doc as never, false);
+    const far = surface.textures()[1] as DataArrayTexture;
+    expect(far.image.width).toBe(512);
+    // The dab laid at the far array's own side: sand under its centre (layer 0, channel 0: the first kind).
+    const texels = (far.image as { data: Uint8Array }).data;
+    expect(texels.length).toBe(512 * 512 * 4 * 3);
+    const cell = m(2048) / 512;
+    const x = Math.floor((m(10) + m(1024)) / cell), y = Math.floor((m(-20) + m(1024)) / cell);
+    expect(texels[(y * 512 + x) * 4]).toBeGreaterThan(200);
+    surface.paintDetail!(true);
+    const near = surface.textures()[1] as DataArrayTexture;
+    expect(near.image.width).toBe(1024);
+    surface.paintDetail!(false);
+    expect((surface.textures()[1] as DataArrayTexture).image.width).toBe(512);
+    surface.dispose();
+  });
 });

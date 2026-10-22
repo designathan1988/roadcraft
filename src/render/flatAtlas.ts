@@ -443,6 +443,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.mesh = null;
     const t1 = performance.now();
     p.surface = s;
+    // Its paint's side for the view before the first dab is laid (`PlateSurface.paintDetail`): DO NOT lay a far plate's at full size to let it go at the next refresh.
+    s.paintDetail?.(near.includes(p.key) || wantedNear.includes(p));
     if (lastDoc) {
       s.update(p.source, false);
       const t2 = performance.now();
@@ -510,6 +512,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const cached: Plate[] = [];
     for (const p of plates.values()) {
       if (!p.surface) continue;
+      // Its painted layers at full size only near the view (`PlateSurface.paintDetail`): the map's every plate with content is drawn, from afar.
+      p.surface.paintDetail?.(near.includes(p.key));
       // Wanted but its programs still being built: neither shown nor let go (the far patch stands in).
       if (wanted.has(p.key) && !p.ready) { show(p, false); continue; }
       const want = wanted.has(p.key);

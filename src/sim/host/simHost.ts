@@ -173,6 +173,12 @@ export class SimHost {
     this.governor.setMax(controls.maxShare);
     if (controls.startShare !== undefined) this.governor.start(controls.startShare);
     if (!this.net.isBuilt()) this.net.rebuild();
+    // A MAP OPENING BEHIND ITS CURTAIN: nothing of its traffic is prepared or stepped until it is shown. DO NOT build its junctions, conflict pairs and bays meanwhile: they run on the page's job workers (`jobPool.ts` jobChannel), and a city of 70,000 buildings kept two of its three for ~17 s each (junctions 12.7 s, bays 4.3 s) and this worker 22 s (its parking's bays, its walkways), while the road tiles and the masses the curtain waits for queued behind them (trace of step-70k, 2026-10-22).
+    if (controls.opening) {
+      impactCasualties(sim, wall);
+      this.publish(1);
+      return;
+    }
     const held = hold;
     // DO NOT stop the clock while a tile's topology is prepared (its lanes, turns and conflict pairs, on the workers): the city runs on the graph it has meanwhile, and takes the new one when it is ready.
     const catching = this.topology.step(sim, this.net.trafficToken(), false);

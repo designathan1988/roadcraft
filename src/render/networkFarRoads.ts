@@ -1,9 +1,10 @@
-import { BufferAttribute, BufferGeometry, Color, Group, Mesh, MeshStandardMaterial } from 'three';
+import { BufferAttribute, BufferGeometry, Color, Group, MeshStandardMaterial } from 'three';
 import type { SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
 import { Level, ROAD_TYPES } from '@world/roadTypes';
 import { ROAD_GROUND_CLEARANCE } from '@world/structures';
 import { jobPort } from '../jobs/jobPool';
+import { GpuBatchedMesh } from './buildings/gpuBatchedMesh';
 import { pullTowardEye } from './depthConvention';
 import { buildFarRoadCells, type FarRoadCell, type FarRoadInput } from './networkFarRoadsBuild';
 import { STREET_MEANS } from './roadStandIn';
@@ -89,6 +90,9 @@ const COLOUR_STEPS = 65535;
  * where no block draws it in detail - the opening's cells till the fill's blocks land (`hide`), and later the cells whose blocks' far
  * levels the far budget let go (`show`), hidden again once they are back. Its vertices are kept small (a position, a normal of three
  * bytes, a colour of three shorts: 21 bytes where floats took 36).
+ * ONE BATCH A LAYER (`GpuBatchedMesh`: a cell an instance, shown or hidden by `setVisibleAt`, culled by the frustum one by one, drawn in
+ * one multi-draw): DO NOT make a mesh a cell and layer - a city of 70,000 buildings drew 378 of them at its map view (189 cells), 27% of
+ * the view's 1,395 draw calls (step-70k, 2026-10-22).
  */
 export class NetworkFarRoads {
   readonly group = new Group();
@@ -100,8 +104,8 @@ export class NetworkFarRoads {
   private triangleCount = 0;
   /** Each cell's triangles, by its key (`x,y` on the cells' grid): what the probes count. */
   readonly cells = new Map<string, number>();
-  /** Each cell's meshes, by its key. */
-  private readonly meshesOf = new Map<string, Mesh[]>();
+  /** Each cell's instances in the layers' batches, by its key. */
+  private readonly meshesOf = new Map<string, { readonly batch: GpuBatchedMesh; readonly id: number }[]>();
   /** Whether a cell is hidden unless shown (`settle`: the blocks draw every cell) or shown unless hidden (the opening's, till the fill lands). */
   private settledLevel = false;
   /** The cells against the rule (`settledLevel`): shown ones once settled, hidden ones before. */
@@ -162,31 +166,41 @@ export class NetworkFarRoads {
 
   private place(cells: readonly FarRoadCell[]): void {
     this.clearMeshes();
-    for (const c of cells) {
-      const g = new BufferGeometry();
-      const count = c.positions.length / 3;
-      const normals = new Int8Array(count * 3);
-      for (let i = 1; i < normals.length; i += 3) normals[i] = 127;
-      const colours = new Uint16Array(c.colors.length);
-      for (let i = 0; i < colours.length; i++) colours[i] = Math.round(Math.min(1, Math.max(0, c.colors[i]!)) * COLOUR_STEPS);
-      g.setAttribute('position', new BufferAttribute(c.positions, 3));
-      g.setAttribute('normal', new BufferAttribute(normals, 3, true));
-      g.setAttribute('color', new BufferAttribute(colours, 3, true));
-      g.setIndex(new BufferAttribute(count > 0xffff ? c.indices : new Uint16Array(c.indices), 1));
-      g.computeBoundingSphere();
-      g.computeBoundingBox();
-      const mesh = new Mesh(g, this.materials[c.layer === 0 ? 0 : 1]);
-      mesh.name = 'road-far-network';
-      mesh.renderOrder = c.layer === 0 ? 1 : 2;
-      mesh.receiveShadow = true;
-      mesh.matrixAutoUpdate = false;
-      mesh.visible = this.shown(c.key);
-      this.group.add(mesh);
-      const n = c.indices.length / 3;
-      this.triangleCount += n;
-      this.cells.set(c.key, (this.cells.get(c.key) ?? 0) + n);
-      const list = this.meshesOf.get(c.key);
-      if (list) list.push(mesh); else this.meshesOf.set(c.key, [mesh]);
+    for (const layer of [0, 1] as const) {
+      const mine = cells.filter((c) => (c.layer === 0 ? 0 : 1) === layer && c.indices.length > 0);
+      if (!mine.length) continue;
+      let vertices = 0, indices = 0;
+      for (const c of mine) { vertices += c.positions.length / 3; indices += c.indices.length; }
+      const batch = new GpuBatchedMesh(mine.length, vertices, indices, this.materials[layer]);
+      batch.name = 'road-far-network';
+      batch.renderOrder = layer === 0 ? 1 : 2;
+      batch.receiveShadow = true;
+      batch.matrixAutoUpdate = false;
+      // Opaque, each layer pulled over the one under it (`pullTowardEye`): no order among its cells to keep.
+      batch.sortObjects = false;
+      for (const c of mine) {
+        const g = new BufferGeometry();
+        const count = c.positions.length / 3;
+        const normals = new Int8Array(count * 3);
+        for (let i = 1; i < normals.length; i += 3) normals[i] = 127;
+        const colours = new Uint16Array(c.colors.length);
+        for (let i = 0; i < colours.length; i++) colours[i] = Math.round(Math.min(1, Math.max(0, c.colors[i]!)) * COLOUR_STEPS);
+        g.setAttribute('position', new BufferAttribute(c.positions, 3));
+        g.setAttribute('normal', new BufferAttribute(normals, 3, true));
+        g.setAttribute('color', new BufferAttribute(colours, 3, true));
+        g.setIndex(new BufferAttribute(c.indices, 1));
+        const id = batch.addInstance(batch.addGeometry(g));
+        batch.setVisibleAt(id, this.shown(c.key));
+        g.dispose();
+        const n = c.indices.length / 3;
+        this.triangleCount += n;
+        this.cells.set(c.key, (this.cells.get(c.key) ?? 0) + n);
+        const list = this.meshesOf.get(c.key);
+        if (list) list.push({ batch, id }); else this.meshesOf.set(c.key, [{ batch, id }]);
+      }
+      batch.computeBoundingSphere();
+      batch.computeBoundingBox();
+      this.group.add(batch);
     }
   }
 
@@ -219,13 +233,13 @@ export class NetworkFarRoads {
   /** A cell hidden: the detailed blocks of its square stand (the opening's fill landed, or a cell made again, `roadResidency.ts`). */
   hide(key: string): void {
     if (this.settledLevel) this.against.delete(key); else this.against.add(key);
-    for (const mesh of this.meshesOf.get(key) ?? []) mesh.visible = false;
+    for (const { batch, id } of this.meshesOf.get(key) ?? []) batch.setVisibleAt(id, false);
   }
 
   /** A cell shown: its blocks' far levels let go (`roadResidency.ts` dropCell). */
   show(key: string): void {
     if (this.settledLevel) this.against.add(key); else this.against.delete(key);
-    for (const mesh of this.meshesOf.get(key) ?? []) mesh.visible = true;
+    for (const { batch, id } of this.meshesOf.get(key) ?? []) batch.setVisibleAt(id, true);
   }
 
   /** The blocks draw every cell now (the fill landed): the level hidden but where `shown` (the cells let go) asks. */
@@ -233,13 +247,13 @@ export class NetworkFarRoads {
     this.settledLevel = true;
     this.against.clear();
     for (const key of shown) this.against.add(key);
-    for (const [key, meshes] of this.meshesOf) for (const mesh of meshes) mesh.visible = this.shown(key);
+    for (const [key, instances] of this.meshesOf) for (const { batch, id } of instances) batch.setVisibleAt(id, this.shown(key));
   }
 
   private clearMeshes(): void {
     for (const child of [...this.group.children]) {
       this.group.remove(child);
-      (child as Mesh).geometry.dispose();
+      (child as GpuBatchedMesh).dispose();
     }
     this.cells.clear();
     this.meshesOf.clear();

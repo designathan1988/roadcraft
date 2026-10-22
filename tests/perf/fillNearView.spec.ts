@@ -1,11 +1,10 @@
-import { Box3, type Mesh, type Object3D } from 'three';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildLargeCityMap } from '@editor/smallCityMap';
 import { prepareCity } from '@editor/preparedCity';
 import { TILE, TILE_ORIGIN } from '@render/roadSurfaceInputs';
 import { m } from '@world/units';
 import { installNullPage, primeCookedSurfaces } from '../support/nullGpu';
-import { HEIGHT, WIDTH, openCityMap, setView, type City, type View } from '../support/sceneHarness';
+import { HEIGHT, WIDTH, drawnPieces, openCityMap, setView, type City, type View } from '../support/sceneHarness';
 
 /**
  * THE OPENING'S FILL BUILDS THE VIEW'S ROADS FIRST, WHEREVER THE CAMERA GOES (`renderer.ts` fillStep): the city of the 25,000-building
@@ -33,21 +32,13 @@ const cellOf = (x: number, y: number): string => `${Math.floor((x - TILE_ORIGIN)
 /** The triangles each kind of road mesh draws in a cell: the detailed blocks' carriageway (`asphalt...`), and the network's far level. */
 function drawnIn(city: City, key: string): { detailed: number; network: number } {
   const out = { detailed: 0, network: 0 };
-  const box = new Box3();
-  city.scene.scene.traverseVisible((o: Object3D) => {
-    const mesh = o as Mesh;
-    const network = mesh.name === 'road-far-network';
-    if (!mesh.isMesh || !(network || mesh.name.startsWith('asphalt'))) return;
-    const g = mesh.geometry;
-    const n = Math.floor((g.index ? g.index.count : g.getAttribute('position').count) / 3);
-    if (!n) return;
-    if (!g.boundingBox) g.computeBoundingBox();
-    mesh.updateWorldMatrix(true, false);
-    box.copy(g.boundingBox!).applyMatrix4(mesh.matrixWorld);
-    // The scene's z is the plan's -y; a block lies in one cell: its middle tells which.
-    if (cellOf((box.min.x + box.max.x) / 2, -(box.min.z + box.max.z) / 2) !== key) return;
-    if (network) out.network += n; else out.detailed += n;
-  });
+  for (const network of [true, false]) {
+    for (const { box, triangles } of drawnPieces(city.scene.scene, (name) => (network ? name === 'road-far-network' : name.startsWith('asphalt')))) {
+      // The scene's z is the plan's -y; a block (a cell of the far level) lies in one cell: its middle tells which.
+      if (cellOf((box.min.x + box.max.x) / 2, -(box.min.z + box.max.z) / 2) !== key) continue;
+      if (network) out.network += triangles; else out.detailed += triangles;
+    }
+  }
   return out;
 }
 

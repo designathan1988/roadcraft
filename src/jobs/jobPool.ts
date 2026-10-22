@@ -220,6 +220,8 @@ interface Host {
   failed: boolean;
   /** Messages its lanes posted and not yet answered (`JobPort`): a queued job sent there waits behind them. */
   laneWork: number;
+  /** Of `laneWork`, those of a lane that goes first (`laneFirst`): no queued job is given the worker while it has any. */
+  firstWork: number;
   /** Told when it fails: the lanes it serves for another thread (`jobChannel`), whose ports say nothing of it. */
   readonly channelLost: (() => void)[];
 }
@@ -230,6 +232,8 @@ class JobSystem {
   readonly ports = new Map<number, JobPort>();
   nextPort = 1;
   readonly queue = new JobQueue();
+  /** The services whose lanes go first (`laneFirst`): their workers are given no queued job while a message of theirs is in flight (`hostFor`). */
+  readonly firstLanes = new Set<JobService>();
   focusX = 0;
   focusY = 0;
   /** Where the waiting jobs were last ranked from (`setJobFocus`). */
@@ -295,7 +299,7 @@ function grow(long: boolean): Host | null {
   if (made === null && pageWorkers() >= pageRoomWorkers()) return null;
   const worker = made ?? new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
-  const host: Host = { worker, long, inPage: made === null, freeSince: NaN, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
+  const host: Host = { worker, long, inPage: made === null, freeSince: NaN, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, firstWork: 0, channelLost: [] };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);
     if (port) {
@@ -417,6 +421,8 @@ function hostFor(service: JobService, crosses: boolean): Host | null {
       continue;
     }
     const warm = host.queuePorts.has(service);
+    // A lane that goes first in flight there (`laneFirst`): DO NOT queue a job behind it - its next message would wait for the whole job.
+    if (host.firstWork > 0) continue;
     if (host.laneWork > 0) {
       // DO NOT queue a job behind a backlog of lane messages (`LANE_BACKLOG_MOST`): it waits for a free worker instead. The last mass of a new city stood 3 s behind a lane worker's 344 writes of road tiles while six workers were idle, the curtain waiting for it (2026-10-21).
       if (host.laneWork <= LANE_BACKLOG_MOST) { if (warm) warmBusy ??= host; else coldBusy ??= host; }
@@ -574,6 +580,15 @@ function place(service: JobService): Host {
   return best;
 }
 
+/**
+ * `service`'s lanes first, or no longer (`roadTilePool.ts`: behind the opening's curtain). A large city's opening asked the road tiles of
+ * its view on two workers while the queue gave them its cells' jobs between every share (a base, a cell's detail, ~0.2-2 s each): 5 s
+ * of tiles took 10-11 s, the road surfaces the curtain waits for last but for the masses (trace of step-70k, 2026-10-22).
+ */
+export function laneFirst(service: JobService, on: boolean): void {
+  if (on) system.firstLanes.add(service); else system.firstLanes.delete(service);
+}
+
 /** A kind of work's lane in the pool: answers as a `Worker` does (`onmessage`, `onerror`, `postMessage`, `terminate`). */
 export class JobPort {
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -584,6 +599,8 @@ export class JobPort {
   private readonly host: Host;
   /** Messages posted and not yet answered. */
   private inFlight = 0;
+  /** Of `inFlight`, those posted while the lane went first (`laneFirst`): answered first, in the order posted. */
+  private firstInFlight = 0;
 
   constructor(private readonly service: JobService) {
     // The least busy worker; a service's own state is per worker, so a lane stays on the one it was given.
@@ -599,6 +616,7 @@ export class JobPort {
     this.worker.postMessage(message, transfer);
     this.inFlight++;
     this.host.laneWork++;
+    if (system.firstLanes.has(this.service)) { this.firstInFlight++; this.host.firstWork++; }
   }
 
   /** A message that asks for no answer (a lane's setup: `terrainLightPool.ts` grid): never counted in flight, or its worker looked busy for good (JOB-01). */
@@ -612,6 +630,12 @@ export class JobPort {
     if (this.inFlight === 0) return false;
     this.inFlight--;
     this.host.laneWork--;
+    if (this.firstInFlight > 0) {
+      this.firstInFlight--;
+      this.host.firstWork--;
+      // Its worker given back to the queue once no lane that goes first has anything there.
+      if (this.host.firstWork === 0) return true;
+    }
     // Free, or back under the backlog a queued job may wait behind (`LANE_BACKLOG_MOST`): the queue is given out again.
     return this.host.laneWork === 0 || this.host.laneWork === LANE_BACKLOG_MOST;
   }
@@ -622,7 +646,9 @@ export class JobPort {
     this.worker.postMessage({ close: this.id } satisfies CloseLane);
     const freed = this.inFlight > 0 && this.host.laneWork === this.inFlight;
     this.host.laneWork -= this.inFlight;
+    this.host.firstWork -= this.firstInFlight;
     this.inFlight = 0;
+    this.firstInFlight = 0;
     this.host.ports--;
     const left = (this.host.services.get(this.service) ?? 1) - 1;
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);

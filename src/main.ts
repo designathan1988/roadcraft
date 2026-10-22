@@ -921,13 +921,23 @@ function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snap
 /** The game after the map was put in place whole. */
 /** A large city just opened: its session save waits for the fill after the curtain, instead of running on top of it (the 3.4 GB peak of the metropolis). */
 let deferSessionSave = false;
+/** Most the deferred save waits for the fill after the curtain once the town is shown. */
+const SAVE_AFTER_FILL_MOST_MS = 60_000;
+/** The large city's session save once its town is shown and its fill has landed (or `SAVE_AFTER_FILL_MOST_MS` after the reveal). DO NOT wait a fixed time from the map's arrival: a city of 70,000 buildings was still behind its curtain after 30 s, and its save (5.3 s of the page: the whole table encoded, `chunkedSave.ts`) ran on top of the opening (profile of step-70k, 2026-10-22). */
+async function saveOnceShown(): Promise<void> {
+  const wait = (): Promise<void> => new Promise((wake) => setTimeout(wake, 3000));
+  while (scene.opening) await wait();
+  const shown = performance.now();
+  while (scene.worldBusy && performance.now() - shown < SAVE_AFTER_FILL_MOST_MS) await wait();
+  persistence.saveSessionSoon(doc, sessionSettings);
+}
 function snapshotApplied(): void {
   buildings.restored();
   select(null, game.selectedSegmentS, null, 'another map');
   closeInspector();
   if (deferSessionSave) {
     deferSessionSave = false;
-    setTimeout(() => persistence.saveSessionSoon(doc, sessionSettings), 30_000);
+    void saveOnceShown();
   } else persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
   updateStatus();
@@ -2642,8 +2652,10 @@ function frame(now: number): void {
 
   // The town shown (`SceneHandle.opening`): DO NOT wait for the world's job, which the streamed world starts again at every tile put in.
   if (!worldShown && drawnOnce && !scene.opening) worldShown = true;
+  // A map opening behind its curtain holds the city too (`SimControls.opening`): a new city opens after the last one's world stood shown.
+  const simOpening = scene.opening;
   // Moving a node is an authoring preview.
-  let holdSim = mover.dragging || topologyAfterDraw || !worldShown || !effects.simulation;
+  let holdSim = mover.dragging || topologyAfterDraw || !worldShown || simOpening || !effects.simulation;
   // The pistol or the bomb chosen: their effects and the physics the bodies fall with loaded now, while the player aims
   if (!actionsWarm && game.tool === 'bulldoze' && strikeChoice.mode !== 'demolish') {
     actionsWarm = true;
@@ -2652,7 +2664,7 @@ function frame(now: number): void {
   frameTimer.mark('topology');
   // The simulation steps in its own thread (`sim/host/simHost.ts`): the page sends the wall time and draws the last frame it wrote.
   // DO NOT hold the city for the page's world job (the roads' meshes): the worker steps its own network, and the streamed world's job runs whenever a tile comes.
-  sim.frame(wall, holdSim, { traffic: !game.paused && effects.traffic, pedestrians: !game.paused && effects.pedestrians, maxShare: maxPopulationShare * effects.populationShare, startShare: startPopulationShare });
+  sim.frame(wall, holdSim, { traffic: !game.paused && effects.traffic, pedestrians: !game.paused && effects.pedestrians, maxShare: maxPopulationShare * effects.populationShare, startShare: startPopulationShare, opening: simOpening });
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;
@@ -4149,6 +4161,14 @@ ${JSON.stringify(counts)}`;
       // What holds the geometry on the GPU, by holder (digits taken out: one row a kind of block or cell), most first.
       gpuByName: [...[...c.bytesByName].reduce((rows, [name, bytes]) => rows.set(name.replace(/\d+/g, '#'), (rows.get(name.replace(/\d+/g, '#')) ?? 0) + bytes), new Map<string, number>())]
         .sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, bytes]) => `${name} ${mb(bytes)}`),
+      // What holds the textures, by holder and texture (digits taken out, the count of each kind kept), most first.
+      textureByName: [...[...c.textureBytesByName].reduce((rows, [name, bytes]) => {
+        const key = name.replace(/\d+/g, '#');
+        const row = rows.get(key) ?? [0, 0];
+        row[0] += bytes;
+        row[1]++;
+        return rows.set(key, row);
+      }, new Map<string, [number, number]>())].sort((a, b) => b[1][0] - a[1][0]).slice(0, 16).map(([name, [bytes, n]]) => `${name} x${n} ${mb(bytes)}`),
       buffers: c.buffers, releasedBuffers: c.releasedBuffers, textures: c.textures,
       glGeometries: scene.gl.info.memory.geometries, glTextures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,
       drawCalls: scene.stats.drawCalls, builtTriangles: scene.stats.builtTriangles, drawnTriangles: scene.stats.drawnTriangles,

@@ -1,4 +1,3 @@
-import { Box3, type Mesh, type Object3D } from 'three';
 import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildLargeCityMap } from '@editor/smallCityMap';
@@ -7,7 +6,7 @@ import { TILE, TILE_ORIGIN } from '@render/roadSurfaceEntries';
 import { ROAD_TYPES } from '@world/roadTypes';
 import type { SegmentId } from '@world/ids';
 import { installNullPage, primeCookedSurfaces } from '../support/nullGpu';
-import { HEIGHT, WIDTH, openCityMap, type City, type View } from '../support/sceneHarness';
+import { HEIGHT, WIDTH, drawnPieces, openCityMap, type City, type View } from '../support/sceneHarness';
 
 /**
  * A ROAD EDITED DURING THE OPENING'S FILL IS BUILT AT ONCE (`renderer.ts` takeEditedCells): the large city opened on the null GPU as
@@ -30,20 +29,8 @@ async function frame(city: City): Promise<void> {
 
 /** The world boxes (plan x0, y0, x1, y1) of the visible meshes whose name passes `named`. */
 function boxes(city: City, named: (name: string) => boolean): [number, number, number, number][] {
-  const out: [number, number, number, number][] = [];
-  const box = new Box3();
-  city.scene.scene.traverseVisible((o: Object3D) => {
-    const mesh = o as Mesh;
-    if (!mesh.isMesh || !named(mesh.name)) return;
-    const g = mesh.geometry;
-    if (!(g.index ? g.index.count : g.getAttribute('position')?.count ?? 0)) return;
-    if (!g.boundingBox) g.computeBoundingBox();
-    mesh.updateWorldMatrix(true, false);
-    box.copy(g.boundingBox!).applyMatrix4(mesh.matrixWorld);
-    // The scene's z is the plan's -y.
-    out.push([box.min.x, -box.max.z, box.max.x, -box.min.z]);
-  });
-  return out;
+  // The scene's z is the plan's -y.
+  return drawnPieces(city.scene.scene, named).map(({ box }) => [box.min.x, -box.max.z, box.max.x, -box.min.z]);
 }
 
 const covers = (list: readonly (readonly [number, number, number, number])[], x: number, y: number): boolean =>

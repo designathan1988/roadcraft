@@ -955,6 +955,15 @@ export function createSceneRenderer(
   /** DO NOT ask the next frame at once while the world's job waits on a worker: the unseen opening's frames come without the display's pace (`frameLoop.ts`), and it spun the page at 2,000 frames a second, starving the workers it waited on (2026-10-16); looked at again a display frame later. */
   const WAIT_LOOK_MS = 16;
   /** How long the unseen opening runs the world's job before letting the page take the workers' answers (`pumpWorld`). */
+  /** The frame's steps as marks on the DevTools timeline: in a development build only, and let go every `FRAME_MARKS_KEPT` frames. DO NOT mark them in every build and keep them all: the browser keeps every mark until it is cleared, thirteen a frame, and nothing reads them but a trace (~1 s of the page in the opening of the step-70k city, 2026-10-22). */
+  const FRAME_MARK_NAMES = new Set<string>();
+  const FRAME_MARKS_KEPT = 600;
+  let frameMarksDrawn = 0;
+  const frameMark = (name: string): void => {
+    if (!import.meta.env.DEV) return;
+    FRAME_MARK_NAMES.add(name);
+    performance.mark(name);
+  };
   const HIDDEN_RUN_MS = 50;
   let waitLook: ReturnType<typeof setTimeout> | null = null;
   const lookAgain = (): void => {
@@ -3016,7 +3025,8 @@ export function createSceneRenderer(
     resize,
     // Wall-clock time between drawn frames, for things that age as they are watched.
     draw(net, sim, alpha, delta, options) {
-      performance.mark('frame:draw-start');
+      if (import.meta.env.DEV && ++frameMarksDrawn % FRAME_MARKS_KEPT === 0) for (const name of FRAME_MARK_NAMES) performance.clearMarks(name);
+      frameMark('frame:draw-start');
       renderer.info.reset();
       groundDiary = net.doc.changes;
       // Planted trees and shrubs grow with the city's clock: resized once a city hour.
@@ -3037,7 +3047,7 @@ export function createSceneRenderer(
       const terrainStarted = performance.now();
       const stroking = !!options?.holdRoads && !!elevation && networkRevision === net.revision;
       const groundMoved = terrain.update(net.doc, stroking);
-      performance.mark('frame:terrain');
+      frameMark('frame:terrain');
       const landEntries = landRead.read(net.doc.changes);
       if (groundMoved) {
         landVersion++;
@@ -3055,27 +3065,27 @@ export function createSceneRenderer(
         }
       } else {
         const atRebuild = performance.now();
-        performance.mark('frame:rebuild-start');
+        frameMark('frame:rebuild-start');
         rebuildWorld(net);
-        performance.mark('frame:rebuild');
+        frameMark('frame:rebuild');
         measureHitch('hitch:draw/Rebuild', atRebuild);
         terrain.settle();
       }
       const atPump = performance.now();
       pumpWorld();
-      performance.mark('frame:pump');
+      frameMark('frame:pump');
       measureHitch('hitch:draw/Pump', atPump);
       // A building placed, moved or reshaped grades its own site. Level ground (a generated city's new map) moves under nothing: DO NOT follow 29 thousand floors or grade every pad again (3.7 s of the opening's frame).
       const levelLand = isLevelLand(net);
       landShapes();
       if (!levelLand) followFloors(net);
-      performance.mark('frame:follow');
+      frameMark('frame:follow');
       if (!levelLand && !(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
         if (changed) shapeGround(net, changed.map(terrainRegion), true);
       }
-      performance.mark('frame:graded');
+      frameMark('frame:graded');
       // What stands on the ground - the buildings, the walls, the transport, the gardens
       const groundSettled = !stroking && !worldJob;
       // The street furniture, the signs, the barriers and the transport on the world as it stands (the engine's 'draw' products)
@@ -3093,12 +3103,12 @@ export function createSceneRenderer(
       if (roads !== null && (reveal.opened || (groundIn && networkRevision === net.revision))) {
         buildings.hidden = !reveal.opened;
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
-        performance.mark('frame:buildings-start');
+        frameMark('frame:buildings-start');
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))), levelLand ? levelGroundDigest : landGroundDigest)) shadowMoved = true;
         // Another frame while they land, nothing more: what lands stirs the stores itself (childadded, the door, `update`'s answer).
         if (buildings.pending) askDraw();
-        performance.mark('frame:buildings-end');
+        frameMark('frame:buildings-end');
       }
       // The countryside's trees' kit (its models, its programs compiled ahead: `loadNatureTrees`) made while the first world is built, not after: it reads nothing of the world, and the opening waited for it once the world was in (`natureTreesPending`, the curtain's `whole`). The trees themselves are grown once the world stands (the nature's keeps, `!worldJob`).
       if (!natureTreesStarted && roads !== null) startNatureTrees();
@@ -3114,7 +3124,7 @@ export function createSceneRenderer(
       }
       gardens.source(net.doc.buildings, terrain.renderedHeightAt);
       if (groundSettled) gardens.follow(net.doc.changes);
-      performance.mark('frame:plants');
+      frameMark('frame:plants');
       // THE PLANTS AND STONES (`coverSweep.ts`/`coverKeeps`, `natureSweep`/`natureKeeps`, the planted trees)
       if (!stroking && !worldJob) {
         keepNet = net;
@@ -3219,14 +3229,15 @@ export function createSceneRenderer(
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
         if (natureTreeKit) {
           const planted = plantedRead.read(net.doc.changes);
-          if (planted === null || planted.some((e) => e.rects === null)) plantAll(net.doc);
+          const plantedWhole = planted === null || planted.some((e) => e.rects === null);
+          if (plantedWhole) plantAll(net.doc);
           else if (planted.length) {
             const cells = new Set<number>();
             for (const e of planted) for (const r of e.rects!) keepCellsOver(r, 0, cells);
             for (const key of cells) plantedKeeps.fill(key, plantedIn(net.doc, key), (a, b) => a === b);
           }
-          if (rects === null) plantedKeeps.refreshAll();
-          else if (rects.length) plantedKeeps.refresh(rects, KEEP_REACH);
+          // DO NOT test every tree again right after `plantAll` tested them on the same roads and buildings: a map just opened reads no rectangle (`rects` null), and every tree of a city of 70,000 buildings was tested twice in one frame, the buildings' cover cells made twice (the first ones let go for their budget): a page task of 3.8 s behind the curtain (trace of step-70k, 2026-10-22).
+          if (rects === null) { if (!plantedWhole) plantedKeeps.refreshAll(); } else if (rects.length) plantedKeeps.refresh(rects, KEEP_REACH);
           const cells = plantedKeeps.takeChangedCells();
           if (cells === null || cells.size || vegetationRedraw) {
             const forest = plantedForestOf()!;
@@ -3236,10 +3247,10 @@ export function createSceneRenderer(
         }
         vegetationRedraw = false;
       }
-      performance.mark('frame:vegetation');
+      frameMark('frame:vegetation');
       // The perspective camera kept out of the buildings (`IsoRig.setSolids`). Level ground moves under nothing: DO NOT follow every floor again.
       if (!levelLand) followFloors(net);
-      performance.mark('frame:follow2');
+      frameMark('frame:follow2');
       // Looking down from above, the eye crosses no building: the solids (boxes of 28,800 buildings, 2 s of the opening's first frame) are built only where the camera tilts low enough to enter one, as in a street.
       const solidsNeeded = rig.perspective && rig.viewport.elevation < 1.2;
       if (solidsNeeded) {
@@ -3251,7 +3262,7 @@ export function createSceneRenderer(
         rig.setSolids(null);
         townSolids = null;
       }
-      performance.mark('frame:solids');
+      frameMark('frame:solids');
       // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
       post.followTown(rig.target.x, -rig.target.z, townSolids, canyonChanges(net.doc.changes));
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;

@@ -1,4 +1,4 @@
-import type { BatchedMesh, InstancedMesh, Object3D } from 'three';
+import { Box3, Matrix4, type BatchedMesh, type InstancedMesh, type Mesh, type Object3D } from 'three';
 
 import { Engine } from '@core/engine';
 import { restoreInto } from '@editor/history';
@@ -143,4 +143,39 @@ export async function openCityMap(data: SerializedDoc, table: ArrayBufferLike | 
     options.onFrame?.({ frame: frames, ...scene.openingState() }, scene);
   }
   return { city, frames };
+}
+
+/** One thing a visible mesh draws: its box in the world (three's axes) and its triangles. */
+export interface DrawnPiece { readonly box: Box3; readonly triangles: number }
+
+/**
+ * What the visible meshes `named` draw, piece by piece: a plain mesh whole, a batch (`BatchedMesh`, the network's far level:
+ * `networkFarRoads.ts`) instance by instance, each its geometry's box placed by its matrix - DO NOT take a batch's box for one piece: it
+ * spans every cell it holds, shown or not.
+ */
+export function drawnPieces(root: Object3D, named: (name: string) => boolean): DrawnPiece[] {
+  const out: DrawnPiece[] = [];
+  const matrix = new Matrix4();
+  root.traverseVisible((o: Object3D) => {
+    const mesh = o as Mesh & { isBatchedMesh?: boolean };
+    if (!mesh.isMesh || !named(mesh.name)) return;
+    mesh.updateWorldMatrix(true, false);
+    if (mesh.isBatchedMesh) {
+      const batch = mesh as unknown as BatchedMesh & { _instanceInfo: readonly { active: boolean; visible: boolean; geometryIndex: number }[]; _geometryInfo: readonly { count: number }[] };
+      batch._instanceInfo.forEach((info, id) => {
+        if (!info.active || !info.visible) return;
+        const box = batch.getBoundingBoxAt(info.geometryIndex, new Box3());
+        if (!box) return;
+        batch.getMatrixAt(id, matrix);
+        out.push({ box: box.applyMatrix4(matrix).applyMatrix4(mesh.matrixWorld), triangles: Math.floor((batch._geometryInfo[info.geometryIndex]?.count ?? 0) / 3) });
+      });
+      return;
+    }
+    const g = mesh.geometry;
+    const n = Math.floor((g.index ? g.index.count : g.getAttribute('position')?.count ?? 0) / 3);
+    if (!n) return;
+    if (!g.boundingBox) g.computeBoundingBox();
+    out.push({ box: g.boundingBox!.clone().applyMatrix4(mesh.matrixWorld), triangles: n });
+  });
+  return out;
 }
