@@ -176,3 +176,10 @@ details.fine summary:hover { color: var(--ink); }
 @keyframes lab-loading { from { background-position: -50% 0; } to { background-position: 150% 0; } }
 .panel .chips + .bar { margin-top: 8px; }
 .toggle.wide { width: 100%; height: 40px; }
+.tip.pinned { pointer-events: auto; padding: 6px 8px 8px; }
+.tip.pinned .tip-axis { grid-template-columns: 92px 120px 34px; }
+.tip.pinned .tip-axis input { width: 100%; accent-color: var(--accent); cursor: pointer; }
+.tip.pinned .tip-axis output { text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.tip .tip-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.tip-close { border: 0; background: transparent; color: var(--ink-3); cursor: pointer; padding: 2px; display: grid; place-items: center; }
+.tip-close:hover { color: var(--ink); }

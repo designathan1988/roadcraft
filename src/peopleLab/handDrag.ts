@@ -1,6 +1,7 @@
 import { Vector2, type Camera } from 'three';
 import { REGION_IDS, type HandShaper, type Region } from './direct';
 import { el } from './widgets';
+import { icon } from './icons';
 
 /** SHAPING BY HAND ON THE MODEL, as Create-a-Sim and Character Creator do it: the part under the pointer lights up (a raycast against each vertex's region),
  *  and dragging it moves its two sliders at once - sideways one, up and down the other - drawn on the person every frame from the sliders' samples
@@ -29,8 +30,10 @@ const FINE = 4;
 
 export class HandDrag {
   private readonly tip = el('div', { cls: 'tip' });
-  private drag: { region: Region; x0: number; y0: number; fx: number; fy: number; pointer: number; fine: boolean } | null = null;
+  private drag: { region: Region; x0: number; y0: number; fx: number; fy: number; pointer: number; fine: boolean; moved: boolean } | null = null;
   private lastPick = 0;
+  /** The part clicked (not dragged): its box stays where it was clicked, with real sliders, until closed. */
+  private pinned: { region: Region; inputs: [HTMLInputElement, HTMLOutputElement][] } | null = null;
 
   constructor(private readonly host: HandHost) {
     host.stage.append(this.tip);
@@ -41,7 +44,7 @@ export class HandDrag {
     c.addEventListener('pointercancel', () => this.up());
     c.addEventListener('pointerleave', () => { if (!this.drag) this.hide(); });
     c.addEventListener('dblclick', (e) => this.reset(e));
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.drag) this.cancel(); });
+    window.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (this.drag) this.cancel(); else if (this.pinned) this.unpin(); });
   }
 
   /** True while a part is being dragged. */
@@ -58,6 +61,7 @@ export class HandDrag {
   }
 
   private hide(): void {
+    if (this.pinned) return;
     this.tip.classList.remove('on');
     this.host.glow.hover.value = 0;
     this.host.canvas.style.cursor = '';
@@ -65,6 +69,8 @@ export class HandDrag {
 
   /** The part's name and its two sliders, each as a bar from -1 to 1, by the pointer. */
   private show(e: MouseEvent, region: Region | null): void {
+    // A pinned box stays put; a drag on its own part moves its sliders.
+    if (this.pinned) { if (this.drag?.region === this.pinned.region) this.sync(); return; }
     this.host.glow.hover.value = region ? REGION_IDS.indexOf(region.id) + 1 : 0;
     if (!region) { this.hide(); return; }
     const r = this.host.stage.getBoundingClientRect();
@@ -80,8 +86,9 @@ export class HandDrag {
   private down(e: PointerEvent): void {
     if (e.button !== 0 || e.altKey) return;
     const region = this.pick(e);
-    if (!region) return;
-    this.drag = { region, x0: e.clientX, y0: e.clientY, fx: this.host.value(region.x.slider), fy: this.host.value(region.y.slider), pointer: e.pointerId, fine: false };
+    if (!region) { if (this.pinned) this.unpin(); return; }
+    if (this.pinned && this.pinned.region !== region) this.unpin();
+    this.drag = { region, x0: e.clientX, y0: e.clientY, fx: this.host.value(region.x.slider), fy: this.host.value(region.y.slider), pointer: e.pointerId, fine: false, moved: false };
     this.host.controls.enabled = false;
     this.host.canvas.setPointerCapture(e.pointerId);
     this.show(e, region);
@@ -104,6 +111,8 @@ export class HandDrag {
       d.x0 = e.clientX; d.y0 = e.clientY;
       d.fine = e.shiftKey;
     }
+    if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 4) return;
+    d.moved = true;
     const clamp = (x: number): number => Math.max(-1, Math.min(1, x));
     const vx = clamp(d.fx + (e.clientX - d.x0) / scale), vy = clamp(d.fy - (e.clientY - d.y0) / scale);
     this.host.set({ [d.region.x.slider]: vx, [d.region.y.slider]: vy }, [d.region.x.slider, d.region.y.slider]);
@@ -111,10 +120,57 @@ export class HandDrag {
   }
 
   private up(): void {
-    if (!this.drag) return;
+    const d = this.drag;
+    if (!d) return;
     this.drag = null;
     this.host.controls.enabled = true;
+    // A click without a drag: the part's box pinned with its sliders.
+    if (!d.moved) { this.pin(d.region); return; }
     this.host.rest();
+  }
+
+  /** The part's box as a small inspector where it stands: a real slider for each of its two sliders, and a close icon. */
+  private pin(region: Region): void {
+    this.unpin();
+    const names = [region.x.slider, region.y.slider];
+    const close = el('button', { cls: 'tip-close', title: 'Fechar (Esc)' }, icon('close', 12));
+    close.onclick = () => this.unpin();
+    const inputs: [HTMLInputElement, HTMLOutputElement][] = [];
+    const rows = ([['↔', region.x] as const, ['↕', region.y] as const]).map(([arrow, axis]) => {
+      const input = el('input', { type: 'range', min: '-1', max: '1', step: '0.01', value: String(this.host.value(axis.slider)) });
+      const out = el('output', { textContent: this.host.value(axis.slider).toFixed(2) });
+      input.addEventListener('input', () => {
+        out.textContent = (+input.value).toFixed(2);
+        this.host.set({ [axis.slider]: +input.value }, names);
+      });
+      input.addEventListener('change', () => this.host.rest());
+      // Double click: back to the middle.
+      input.addEventListener('dblclick', () => { input.value = '0'; out.textContent = '0.00'; this.host.set({ [axis.slider]: 0 }, names); this.host.rest(); });
+      inputs.push([input, out]);
+      return el('label', { cls: 'tip-axis' }, el('span', { textContent: `${arrow} ${axis.label}` }), input, out);
+    });
+    this.tip.replaceChildren(el('div', { cls: 'tip-head' }, el('b', { textContent: region.label }), close), ...rows);
+    this.tip.classList.add('on', 'pinned');
+    this.host.glow.hover.value = REGION_IDS.indexOf(region.id) + 1;
+    this.pinned = { region, inputs };
+  }
+
+  private unpin(): void {
+    if (!this.pinned) return;
+    this.pinned = null;
+    this.tip.classList.remove('pinned');
+    this.hide();
+  }
+
+  /** The pinned box's sliders as the person has them now. */
+  private sync(): void {
+    const p = this.pinned;
+    if (!p) return;
+    [p.region.x.slider, p.region.y.slider].forEach((name, i) => {
+      const v = this.host.value(name);
+      const [input, out] = p.inputs[i]!;
+      input.value = String(v); out.textContent = v.toFixed(2);
+    });
   }
 
   /** The part back as it was before the drag. */
@@ -132,6 +188,7 @@ export class HandDrag {
     if (!region) return;
     this.host.set({ [region.x.slider]: 0, [region.y.slider]: 0 }, [region.x.slider, region.y.slider]);
     this.host.rest();
+    this.sync();
     this.show(e, region);
   }
 }
