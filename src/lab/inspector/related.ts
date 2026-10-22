@@ -36,7 +36,7 @@ function buildingKindSwitch(name: string): (typeof BUILDING_SWITCHES)[number] | 
   if (/^building-(glass|glassDark|glassRail)$/.test(name)) return 'bGlass';
   if (/^building-(frame|door|shutter)$/.test(name)) return 'bFrames';
   if (/^building-(railing|roofRailing|awning|column|water|lamp|wash|fin|louvre|brise)$/.test(name)) return 'bFacadeDetails';
-  if (/^building-(lotBox|lotRail|lotSlab)$/.test(name)) return 'bLots';
+  if (/^building-(lotBox|lotRail|lotSlab|lotSides)$/.test(name)) return 'bLots';
   if (name.startsWith('building-furniture-')) return 'bFurniture';
   if (name.startsWith('building-')) return 'bProps';
   return null;

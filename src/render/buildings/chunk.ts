@@ -26,6 +26,7 @@ export type PartKind =
   | 'lotBox'
   | 'lotRail'
   | 'lotSlab'
+  | 'lotSides'
   | FacadePropKind;
 
 /** WHAT ONE BUILDING CONTRIBUTES TO THE BATCHES */

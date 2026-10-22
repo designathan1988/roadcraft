@@ -24,7 +24,14 @@ function check(geometry: BufferGeometry): { minY: number; maxY: number } {
   const position = geometry.getAttribute('position');
   const normal = geometry.getAttribute('normal');
   const color = geometry.getAttribute('color');
-  expect(position.count % 3).toBe(0);
+  // Indexed (a corner shared by the triangles round it), or a loose list of triangles.
+  const index = geometry.index;
+  if (index) {
+    expect(index.count % 3).toBe(0);
+    for (let i = 0; i < index.count; i++) expect(index.getX(i)).toBeLessThan(position.count);
+  } else {
+    expect(position.count % 3).toBe(0);
+  }
   expect(normal.count).toBe(position.count);
   expect(color.count).toBe(position.count);
   let minY = Infinity;

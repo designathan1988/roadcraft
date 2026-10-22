@@ -23,7 +23,7 @@ const KIND_SWITCH: Readonly<Record<string, BuildingSwitch>> = Object.freeze({
   ...Object.fromEntries(['glass', 'glassDark', 'glassRail'].map((k) => [`building-${k}`, 'bGlass'])),
   ...Object.fromEntries(['frame', 'door', 'shutter'].map((k) => [`building-${k}`, 'bFrames'])),
   ...Object.fromEntries(['railing', 'roofRailing', 'awning', 'column', 'water', 'lamp', 'wash', 'fin', 'louvre', 'brise'].map((k) => [`building-${k}`, 'bFacadeDetails'])),
-  ...Object.fromEntries(['lotBox', 'lotRail', 'lotSlab'].map((k) => [`building-${k}`, 'bLots'])),
+  ...Object.fromEntries(['lotBox', 'lotRail', 'lotSlab', 'lotSides'].map((k) => [`building-${k}`, 'bLots'])),
   ...Object.fromEntries(FACADE_PROP_KINDS.map((k) => [`building-${k}`, 'bProps'])),
 }) as Readonly<Record<string, BuildingSwitch>>;
 const kindOf = (name: string): BuildingSwitch | null =>

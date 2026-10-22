@@ -6,9 +6,10 @@ import type { PartKind } from './chunk';
 // ~1 KB), now one instance of a unit model (88 bytes) drawn by the shell's material (`finishes.ts`), which lays on it what
 // the shell laid on each vertex (`buildingMesh.ts` `Shell.face`): the planar uv of its finish, the tone and the grime.
 
-/** The kinds drawn by the shell's material: a box (sides and top), a fence's rail (sides, top and bottom), a paving (a box whose sides stand in). */
-export type ShellPartKind = 'lotBox' | 'lotRail' | 'lotSlab';
-export const SHELL_PART_KINDS: readonly ShellPartKind[] = Object.freeze(['lotBox', 'lotRail', 'lotSlab']);
+/** The kinds drawn by the shell's material: a box (sides and top), a fence's rail (sides, top and bottom), a paving (a box whose sides stand in),
+ *  a box whose top is covered (its four sides: a wall's body under its coping, a post under its head, a bar between a gate's rails). */
+export type ShellPartKind = 'lotBox' | 'lotRail' | 'lotSlab' | 'lotSides';
+export const SHELL_PART_KINDS: readonly ShellPartKind[] = Object.freeze(['lotBox', 'lotRail', 'lotSlab', 'lotSides']);
 export const SHELL_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(SHELL_PART_KINDS));
 
 /** Numbers an instance of a shell part carries besides its matrix and colour: its finish id, its wear and the ground its walls darken towards. */
@@ -112,6 +113,8 @@ export const SHELL_PART_FACES: Readonly<Record<ShellPartKind, readonly ShellPart
     { points: [[-H, H, -H], [H, H, -H], [H, -H, -H], [-H, -H, -H]], n: [0, 0, -1], inset: false },
   ],
   lotSlab: BOX.map((f) => ({ ...f, inset: f.n[2] === 0 })),
+  // DO NOT draw a top another part lies on: two triangles an instance no one sees, coplanar with the part over it.
+  lotSides: BOX.filter((f) => f.n[2] === 0).map((f) => ({ ...f, inset: false })),
 });
 
 /** A number as a GLSL float literal. */

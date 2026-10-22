@@ -18,6 +18,7 @@ import {
   SRGBColorSpace,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { dropHiddenFaces } from '../mesh/hiddenFaces';
 
 import { Rng } from '@core/rng';
 import { signatureKind } from '@world/buildings/towerKit';
@@ -374,7 +375,10 @@ class Parts {
       if (uv) for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / use.bay, uv.getY(i) / use.storey - use.base / use.storey);
       mat = facadeMaterialKey(use.kind);
     }
-    const geo = g.index ? g.toNonIndexed() : g;
+    // Kept indexed (a box 24 corners, not 36); a loose list indexed corner by corner, so every part of a material merges indexed.
+    // DO NOT `toNonIndexed` it: each corner was shaded once per triangle round it.
+    const geo = g;
+    if (!geo.index) geo.setIndex(Array.from({ length: geo.getAttribute('position').count }, (_, i) => i));
     const list = this.byMat.get(mat);
     if (list) list.push(geo);
     else this.byMat.set(mat, [geo]);
@@ -1762,7 +1766,16 @@ export function buildSignature(b: Building, floor: number): Group | null {
   design(parts, base.w / U, base.d / U, b.groundHeight / U, b.storeyHeight / U, Math.max(1, levels - 1));
   const group = new Group();
   group.name = `signature-${b.id}`;
+  // The faces another part covers, or that lie on the ground facing down, taken out before the parts are merged (`hiddenFaces.ts`): a step inside
+  // the next, a block's foot on the plinth, a cap's underside on its post.
+  // Only parts of an opaque material hide or are hidden: a railing's alpha-cut screen, a decal, a pane seen through cover nothing.
+  const solid = (mat: Mat): boolean => {
+    const look = materials![mat] ?? facades.get(mat);
+    return look !== undefined && !look.transparent && look.alphaTest === 0;
+  };
+  dropHiddenFaces([...parts.byMat].filter(([mat]) => solid(mat)).flatMap(([, list]) => list), true);
   for (const [mat, list] of parts.byMat) {
+    for (const g of list) g.clearGroups();
     const merged = mergeGeometries(list, false);
     for (const g of list) g.dispose();
     if (!merged) continue;

@@ -6,8 +6,8 @@ import { type BuildingChunk, emitChunk, kitBoxes } from '@render/buildings/build
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
-import { PartCell, type PartView } from '@render/buildings/partCells';
-import { SHELL_PART_KINDS } from '@render/buildings/shellParts';
+import { PART_ERROR_PX, PartCell, type PartView } from '@render/buildings/partCells';
+import { SHELL_PART_KINDS, shellPartError } from '@render/buildings/shellParts';
 import { growOnLot } from '@world/growth/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
@@ -212,7 +212,11 @@ describe("the shell's parts of a grown town's cells", () => {
                 const across = Math.hypot(extent[0] * e[o + 5]!, extent[1] * e[o + 6]!, extent[2] * e[o + 7]!);
                 const perMetre = eye.orthoPx ?? eye.pxAtMetre / Math.max(Math.hypot(e[o]! - eye.x, -e[o + 2]! - eye.y, e[o + 1]! - eye.z), 1);
                 const at = [0, 1, 2].map((k) => e[o + k]!.toFixed(4)).join(' ');
-                if (across * perMetre >= 1) expect(drawnAt.has(at), `${key} ${kind} ${at}`).toBe(true);
+                // A part with nothing left from afar (`lotSides`: its top lies under another part) is drawn while its sides are a level's error
+                // or more; past that, what covers it draws its top, as the box it was drew its top alone.
+                const topless = kit.screen[kind].levels[1]?.triangles === 0;
+                const shows = topless ? shellPartError(e, o + 5) * perMetre >= PART_ERROR_PX : across * perMetre >= 1;
+                if (shows) expect(drawnAt.has(at), `${key} ${kind} ${at}`).toBe(true);
                 else if (!drawnAt.has(at)) left++;
                 seen++;
               }

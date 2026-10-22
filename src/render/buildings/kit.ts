@@ -384,7 +384,8 @@ const BRISE_BLADE = 0.035;
 function briseGeometry(): BufferGeometry {
   const t = BRISE_BLADE;
   const parts: BufferGeometry[] = [];
-  for (let k = 0; k < BRISE_FINS; k++) parts.push(box(t, 1, 1, -0.5 + t / 2 + (k * (1 - t)) / (BRISE_FINS - 1), 0, 0));
+  // A blade's back end lies in the wall it stands out of (`emitBay`: the rack put from the wall's face out): left out, 60 triangles where 72 drew the same.
+  for (let k = 0; k < BRISE_FINS; k++) parts.push(boxWithout(t, 1, 1, -0.5 + t / 2 + (k * (1 - t)) / (BRISE_FINS - 1), 0, 0, ['-z']));
   return mergedParts(parts);
 }
 
@@ -565,7 +566,7 @@ export function createBuildingKit(anisotropy = 4): BuildingKit {
   const ruinShell = createShellMaterial({ carried: true }, anisotropy);
   const farShell = createFarShellMaterial();
   // The shell's parts are the shell drawn instanced (`shellParts.ts`): its own material, not pulled towards the eye, not renamed.
-  const material: Record<PartKind, Material> = { ...own, ...{ lotBox: shell, lotRail: shell, lotSlab: shell } satisfies Record<ShellPartKind, Material> };
+  const material: Record<PartKind, Material> = { ...own, ...{ lotBox: shell, lotRail: shell, lotSlab: shell, lotSides: shell } satisfies Record<ShellPartKind, Material> };
   const ghostShell = new MeshStandardMaterial({
     color: 0x65e5c3,
     emissive: new Color(0x1d5a4a),
@@ -630,9 +631,10 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   coarser('door', doorFarGeometry(), [0, 0, 1.6]);
   // A lot's box, rail or slab seen from afar: its sides are under a pixel there, so its top alone draws it (2 triangles
   // instead of 8–10). The sides give a silhouette half the part's height (model y), not its length: the error is that half.
-  for (const kind of SHELL_PART_KINDS) {
-    coarser(kind, shellPartGeometry(SHELL_PART_FACES[kind].filter((f) => f.n[2] > 0)), [0, 0.5, 0]);
-  }
+  // A part with no top (`lotSides`) has nothing left from afar: what lies on it draws its top (a wall's coping, a post's head). Its level of no
+  // triangles is not drawn (`partCells.ts` levelAt). DO NOT leave it a single level: its sides were drawn whole out to where its diagonal is a
+  // pixel, 8 triangles where the box it was drew 2 (district view 1,564k -> 1,600k triangles of lot parts).
+  for (const kind of SHELL_PART_KINDS) coarser(kind, shellPartGeometry(SHELL_PART_FACES[kind].filter((f) => f.n[2] > 0)), [0, 0.5, 0]);
   // A sill, a facade fin, a pool's water: a thin horizontal plate whose sides are centimetres high, under a pixel from afar.
   // Its top alone draws it (2 triangles, not 12); the error is half its height. A fin standing on edge (a storey tall) keeps
   // its box: that error is metres, well over a pixel.

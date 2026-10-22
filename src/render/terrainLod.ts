@@ -31,34 +31,42 @@ export interface LandGrid {
   readonly half: number;
 }
 
-/** The patch's cells, six corners each for two triangles along the diagonal the shader picks: (cell x, cell y, role 0-5). */
-function patchCells(): BufferAttribute {
-  const data = new Uint8Array(LOD_PATCH * LOD_PATCH * 6 * 3);
-  let o = 0;
-  for (let j = 0; j < LOD_PATCH; j++) for (let i = 0; i < LOD_PATCH; i++) for (let role = 0; role < 6; role++) { data[o++] = i; data[o++] = j; data[o++] = role; }
-  return new BufferAttribute(data, 3);
-}
-
-/** The patch's rim: on each side a strip hung from its edge corners, both ways round: (corner x, corner y, 6 + side * 2 + bottom). */
-function patchRim(): BufferAttribute {
-  const data = new Uint8Array(4 * LOD_PATCH * 12 * 3);
-  let o = 0;
-  const put = (x: number, y: number, role: number): void => { data[o++] = x; data[o++] = y; data[o++] = role; };
-  for (let side = 0; side < 4; side++) {
-    for (let k = 0; k < LOD_PATCH; k++) {
-      // West, east, north, south: x = 0, x = LOD_PATCH, y = 0, y = LOD_PATCH.
-      const at = (t: number): readonly [number, number] => side === 0 ? [0, t] : side === 1 ? [LOD_PATCH, t] : side === 2 ? [t, 0] : [t, LOD_PATCH];
-      const [ax, ay] = at(k), [bx, by] = at(k + 1);
-      const top = 6 + side * 2, bottom = top + 1;
-      put(ax, ay, top); put(ax, ay, bottom); put(bx, by, top);
-      put(bx, by, top); put(ax, ay, bottom); put(bx, by, bottom);
-      put(ax, ay, top); put(bx, by, top); put(ax, ay, bottom);
-      put(bx, by, top); put(bx, by, bottom); put(ax, ay, bottom);
+/** The patch's cells, four corners each (cell x, cell y, role 0-3), and their two triangles over roles (0, 1, 2) and (0, 2, 3): the shader turns
+ *  the roles round the cell by one where the cell splits along its other diagonal (`landVertex`), so the triangles are the ones six corners a cell
+ *  drew, from four ([meshoptimizer: vertex reuse](https://github.com/zeux/meshoptimizer); CDLOD's indexed grid,
+ *  [Strugar 2010](https://github.com/fstrugar/CDLOD/blob/master/cdlod_paper_latest.pdf)). DO NOT go back to six: a third more corners read the land. */
+function patchCells(): { position: BufferAttribute; index: BufferAttribute } {
+  const data = new Uint8Array(LOD_PATCH * LOD_PATCH * 4 * 3);
+  const index = new Uint16Array(LOD_PATCH * LOD_PATCH * 6);
+  let o = 0, k = 0, v = 0;
+  for (let j = 0; j < LOD_PATCH; j++) {
+    for (let i = 0; i < LOD_PATCH; i++) {
+      for (let role = 0; role < 4; role++) { data[o++] = i; data[o++] = j; data[o++] = role; }
+      for (const r of [0, 1, 2, 0, 2, 3]) index[k++] = v + r;
+      v += 4;
     }
   }
-  return new BufferAttribute(data, 3);
+  return { position: new BufferAttribute(data, 3), index: new BufferAttribute(index, 1) };
 }
 
+/** A rim's strip along ONE side, both ways round: (corner k along the side, 0, 6 + bottom); the side is the instance's (`aLodPatch.w` >> 4,
+ *  `LandLod.add`), one instance a side that hangs. DO NOT lay the four sides in one model: on a patch at the plate's edge three of them hung
+ *  nothing and were 120 of its 160 triangles. */
+function patchRim(): { position: BufferAttribute; index: BufferAttribute } {
+  const data = new Uint8Array((LOD_PATCH + 1) * 2 * 3);
+  let o = 0;
+  for (let k = 0; k <= LOD_PATCH; k++) for (const bottom of [0, 1]) { data[o++] = k; data[o++] = 0; data[o++] = 6 + bottom; }
+  const index = new Uint16Array(LOD_PATCH * 12);
+  let i = 0;
+  for (let k = 0; k < LOD_PATCH; k++) {
+    const top0 = k * 2, bottom0 = top0 + 1, top1 = top0 + 2, bottom1 = top0 + 3;
+    for (const v of [top0, bottom0, top1, top1, bottom0, bottom1, top0, top1, bottom0, top1, bottom1, bottom0]) index[i++] = v;
+  }
+  return { position: new BufferAttribute(data, 3), index: new BufferAttribute(index, 1) };
+}
+
+/** A patch's level in `aLodPatch.w`; a rim's side above it (`LandLod.add`). */
+const LEVEL_BITS = 15, SIDE_SHIFT = 4;
 
 /** The vertex shader's part: the patch placed, its corners read from the land's texels and morphed by their distance (`terrain.ts` sets `landP`, `landN`, `landUv`). */
 export function lodVertexGlsl(grid: LandGrid): string {
@@ -83,7 +91,7 @@ export function lodVertexGlsl(grid: LandGrid): string {
       vec4 t = landTexel(c);
       p = landPoint(c, t.w);
       n = landNormal(t);
-      vec2 morph = uLodMorph[int(aLodPatch.w)];
+      vec2 morph = uLodMorph[int(aLodPatch.w) & ${LEVEL_BITS}];
       float k = clamp((distance(p + uTileOrigin, cameraPosition) - morph.x) * morph.y, 0.0, 1.0);
       ivec2 odd = g & 1;
       if (k > 0.0 && odd != ivec2(0)) {
@@ -96,22 +104,21 @@ export function lodVertexGlsl(grid: LandGrid): string {
     }
     void landVertex() {
       ivec3 v = ivec3(position);
-      if (v.z < 6) {
+      if (v.z < 4) {
         vec3 pa, pb, pc, pd, na, nb, nc, nd;
         float k = landCorner(v.xy, pa, na) + landCorner(v.xy + ivec2(0, 1), pb, nb) + landCorner(v.xy + ivec2(1, 1), pc, nc) + landCorner(v.xy + ivec2(1, 0), pd, nd);
         // Level 0 unmorphed: the diagonal the page chose (\`cellDiagonal\`, what \`renderedHeightAt\` reads); else the same rule on the corners as they stand.
         bool flip = aLodPatch.w == 0.0 && k == 0.0 ? landTexel(ivec2(aLodPatch.xy) + v.xy).z > 0.5 : abs(pa.y - pc.y) + 0.5 < abs(pb.y - pd.y);
-        // (a, b, d) and (b, c, d), or (a, b, c) and (a, c, d) along the other diagonal.
-        int corner = v.z == 2 ? (flip ? 2 : 3) : v.z == 3 ? (flip ? 0 : 1) : v.z == 4 ? 2 : v.z == 5 ? 3 : v.z;
+        // Triangles over roles (0, 1, 2) and (0, 2, 3): (a, b, c) and (a, c, d); turned by one, (b, c, d) and (b, d, a) along the other diagonal.
+        int corner = flip ? v.z : (v.z + 1) & 3;
         landP = corner == 0 ? pa : corner == 1 ? pb : corner == 2 ? pc : pd;
         landN = corner == 0 ? na : corner == 1 ? nb : corner == 2 ? nc : nd;
       } else {
-        int side = (v.z - 6) >> 1;
-        landCorner(v.xy, landP, landN);
-        ivec2 at = ivec2(aLodPatch.xy);
-        int end = int(aLodPatch.z) * ${LOD_PATCH};
-        bool rim = side == 0 ? at.x == 0 : side == 1 ? at.x + end == ${grid.seg} : side == 2 ? at.y == 0 : at.y + end == ${grid.seg};
-        if (rim && ((v.z - 6) & 1) == 1) landP.y -= uLodSkirt[side];
+        int side = int(aLodPatch.w) >> ${SIDE_SHIFT};
+        // West, east, north, south: x = 0, x = LOD_PATCH, y = 0, y = LOD_PATCH.
+        ivec2 g = side < 2 ? ivec2(side == 0 ? 0 : ${LOD_PATCH}, v.x) : ivec2(v.x, side == 2 ? 0 : ${LOD_PATCH});
+        landCorner(g, landP, landN);
+        if (v.z == 7) landP.y -= uLodSkirt[side];
       }
       landUv = vec2((landP.x + ${f(grid.half)}) / ${f(2 * grid.half)}, 1.0 - (landP.z + ${f(grid.half)}) / ${f(2 * grid.half)});
     }
@@ -180,12 +187,15 @@ export class LandLod {
     rim: { readonly west: boolean; readonly east: boolean; readonly north: boolean; readonly south: boolean },
   ) {
     const most = (grid.seg / LOD_PATCH) ** 2;
+    const cells = patchCells(), rimStrip = patchRim();
     this.patches = new InstancedBufferAttribute(new Float32Array(most * 4), 4).setUsage(DynamicDrawUsage);
     this.rims = new InstancedBufferAttribute(new Float32Array((4 * grid.seg) / LOD_PATCH * 4), 4).setUsage(DynamicDrawUsage);
     // The patch's grid is a plate's own (1.8 kB, its rim 1.4 kB): no buffer shared between plates to outlive one.
-    this.geometry.setAttribute('position', patchCells());
+    this.geometry.setAttribute('position', cells.position);
+    this.geometry.setIndex(cells.index);
     this.geometry.setAttribute('aLodPatch', this.patches);
-    this.rimGeometry.setAttribute('position', patchRim());
+    this.rimGeometry.setAttribute('position', rimStrip.position);
+    this.rimGeometry.setIndex(rimStrip.index);
     this.rimGeometry.setAttribute('aLodPatch', this.rims);
     this.geometry.instanceCount = 0;
     this.rimGeometry.instanceCount = 0;
@@ -289,17 +299,20 @@ export class LandLod {
     const step = 1 << level;
     const x = cx * LOD_PATCH * step, y = cy * LOD_PATCH * step;
     /** Written only where it differs from what the buffer holds; the first such index kept (`select`). */
-    const write = (attribute: InstancedBufferAttribute, k: number): boolean => {
+    const write = (attribute: InstancedBufferAttribute, k: number, w: number): boolean => {
       const a = attribute.array as Float32Array;
-      if (a[k * 4] === x && a[k * 4 + 1] === y && a[k * 4 + 2] === step && a[k * 4 + 3] === level) return false;
-      a[k * 4] = x; a[k * 4 + 1] = y; a[k * 4 + 2] = step; a[k * 4 + 3] = level;
+      if (a[k * 4] === x && a[k * 4 + 1] === y && a[k * 4 + 2] === step && a[k * 4 + 3] === w) return false;
+      a[k * 4] = x; a[k * 4 + 1] = y; a[k * 4 + 2] = step; a[k * 4 + 3] = w;
       return true;
     };
-    if (write(this.patches, this.count) && this.count < this.patchesFrom) this.patchesFrom = this.count;
+    if (write(this.patches, this.count, level) && this.count < this.patchesFrom) this.patchesFrom = this.count;
     this.count++;
+    // A rim for each side of the plate this patch lies on that hangs a skirt: its side above its level.
     const end = LOD_PATCH * step, seg = this.grid.seg, s = this.skirt;
-    if ((x === 0 && s.x > 0) || (x + end === seg && s.y > 0) || (y === 0 && s.z > 0) || (y + end === seg && s.w > 0)) {
-      if (write(this.rims, this.rimCount) && this.rimCount < this.rimsFrom) this.rimsFrom = this.rimCount;
+    const hangs = [x === 0 && s.x > 0, x + end === seg && s.y > 0, y === 0 && s.z > 0, y + end === seg && s.w > 0];
+    for (let side = 0; side < 4; side++) {
+      if (!hangs[side]) continue;
+      if (write(this.rims, this.rimCount, level + (side << SIDE_SHIFT)) && this.rimCount < this.rimsFrom) this.rimsFrom = this.rimCount;
       this.rimCount++;
     }
   }

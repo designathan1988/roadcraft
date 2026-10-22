@@ -70,13 +70,15 @@ const ground: Twin = {
     const normalOf = (t: Node<'vec4'>): Node<'vec3'> => vec3(t.x, sqrt(max(0, float(1).sub(t.x.mul(t.x)).sub(t.y.mul(t.y)))), t.y);
     const point = (c: Node<'ivec2'>, h: Node<'float'>): Node<'vec3'> => vec3(float(c.x).mul(grid.cell).sub(grid.half), h, float(c.y).mul(grid.cell).sub(grid.half));
     const start = ivec2(patch.xy), step = int(patch.z);
+    // A patch's level, and a rim's side above it (`terrainLod.ts` `LandLod.add`).
+    const level = int(patch.w).bitAnd(int(15)), side = int(patch.w).shiftRight(int(4));
     /** A corner of the patch, moved towards the next level's by its own distance (`landCorner`). */
     const corner = (g: Node<'ivec2'>): { p: Node<'vec3'>; n: Node<'vec3'>; k: Node<'float'> } => {
       const c = start.add(g.mul(step));
       const t = texel(c);
       const p = point(c, t.w);
-      const level = int(patch.w).mul(2);
-      const k = clamp(distance(p.add(origin), cameraPosition).sub(morphs.element(level) as unknown as Node<'float'>).mul(morphs.element(level.add(1)) as unknown as Node<'float'>), 0, 1);
+      const slot = level.mul(2);
+      const k = clamp(distance(p.add(origin), cameraPosition).sub(morphs.element(slot) as unknown as Node<'float'>).mul(morphs.element(slot.add(1)) as unknown as Node<'float'>), 0, 1);
       const odd = integerAnd(g, ivec2(1, 1));
       const to = start.add(g.sub(odd).mul(step));
       const next = texel(to);
@@ -84,21 +86,19 @@ const ground: Twin = {
       return { p: mix(p, point(to, next.w), moved), n: mix(normalOf(t), normalOf(next), moved), k };
     };
     const role = v.z;
-    const a = corner(v.xy), b = corner(v.xy.add(ivec2(0, 1))), c = corner(v.xy.add(ivec2(1, 1))), d = corner(v.xy.add(ivec2(1, 0)));
+    const inPatch = role.lessThan(int(4));
+    // A rim's corner along its side: west, east, north, south (x = 0, x = LOD_PATCH, y = 0, y = LOD_PATCH).
+    const rimAt = select(side.lessThan(int(2)), ivec2(select(side.equal(int(0)), int(0), int(LOD_PATCH)), v.x), ivec2(v.x, select(side.equal(int(2)), int(0), int(LOD_PATCH))));
+    const at = select(inPatch, v.xy, rimAt) as unknown as Node<'ivec2'>;
+    const a = corner(at), b = corner(v.xy.add(ivec2(0, 1))), c = corner(v.xy.add(ivec2(1, 1))), d = corner(v.xy.add(ivec2(1, 0)));
     const unmorphed = patch.w.equal(0).and(a.k.add(b.k).add(c.k).add(d.k).equal(0));
     const flip = select(unmorphed, texel(start.add(v.xy)).z.greaterThan(0.5), abs(a.p.y.sub(c.p.y)).add(0.5).lessThan(abs(b.p.y.sub(d.p.y))));
-    const which = select(role.equal(int(2)), select(flip, int(2), int(3)), select(role.equal(int(3)), select(flip, int(0), int(1)),
-      select(role.equal(int(4)), int(2), select(role.equal(int(5)), int(3), role))));
+    // Triangles over roles (0, 1, 2) and (0, 2, 3); turned by one where the cell splits along its other diagonal (`landVertex`).
+    const which = select(flip, role, role.add(int(1)).bitAnd(int(3)));
     const pick = (x: Node<'vec3'>, y: Node<'vec3'>, z: Node<'vec3'>, w: Node<'vec3'>): Node<'vec3'> => select(which.equal(int(0)), x, select(which.equal(int(1)), y, select(which.equal(int(2)), z, w)));
-    // The rim's strips: hung from the edge corners, down by the skirt on a plate's own edge.
-    const side = role.sub(int(6)).shiftRight(int(1));
-    const end = step.mul(int(LOD_PATCH));
-    const onEdge = select(side.equal(int(0)), start.x.equal(int(0)), select(side.equal(int(1)), start.x.add(end).equal(int(grid.seg)),
-      select(side.equal(int(2)), start.y.equal(int(0)), start.y.add(end).equal(int(grid.seg)))));
+    // The rim's strip: hung from its side's edge corners, down by the skirt (a rim is drawn only on a side that hangs one).
     const hang = select(side.equal(int(0)), skirt.x, select(side.equal(int(1)), skirt.y, select(side.equal(int(2)), skirt.z, skirt.w)));
-    const bottom = role.sub(int(6)).bitAnd(int(1)).equal(int(1));
-    const rimP = a.p.sub(vec3(0, select(onEdge.and(bottom), hang, float(0)), 0));
-    const inPatch = role.lessThan(int(6));
+    const rimP = a.p.sub(vec3(0, select(role.equal(int(7)), hang, float(0)), 0));
     const twin = new MeshStandardNodeMaterial({ roughness: 1, metalness: 0, envMapIntensity: (material as Material & { envMapIntensity?: number }).envMapIntensity ?? 1 });
     twin.name = 'terrain (nodes, simple)';
     twin.positionNode = select(inPatch, pick(a.p, b.p, c.p, d.p), rimP);

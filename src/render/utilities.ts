@@ -44,6 +44,7 @@ import {
 } from '@world/utilities';
 import { angleOf } from '@core/vec2';
 import { WIRE_WIND_UNIFORMS_GLSL, windUniforms, wireWindGlsl } from './wind';
+import { cylinderWith } from './mesh/cylinder';
 
 /** Pin insulator on the cross-arm. */
 const INSULATOR_RADIUS = m(0.07);
@@ -459,7 +460,7 @@ interface UtilityParts {
   /** The mast, finest first (`mastShape`). */
   readonly mastLevels: readonly PartLevel[];
   readonly capGeometry: CylinderGeometry;
-  readonly insulatorGeometry: CylinderGeometry;
+  readonly insulatorGeometry: BufferGeometry;
   readonly canGeometry: CylinderGeometry;
   readonly boxGeometry: BoxGeometry;
   readonly lensGeometry: BufferGeometry;
@@ -498,7 +499,8 @@ function madeUtilityParts(): UtilityParts {
     steel: new MeshStandardMaterial({ color: 0x8c9590, roughness: 0.45, metalness: 0.55 }),
     mastLevels: [12, 6, 3].map(mastShape),
     capGeometry: new CylinderGeometry(POLE_TOP_RADIUS * 0.4, POLE_TOP_RADIUS * 1.15, m(0.08), 10),
-    insulatorGeometry: new CylinderGeometry(INSULATOR_RADIUS * 0.55, INSULATOR_RADIUS, INSULATOR_TALL, 10),
+    // Its foot stands on the arm.
+    insulatorGeometry: cylinderWith(INSULATOR_RADIUS * 0.55, INSULATOR_RADIUS, INSULATOR_TALL, 10, { top: true, bottom: false }),
     canGeometry: new CylinderGeometry(CAN_RADIUS, CAN_RADIUS, m(0.95), 14),
     boxGeometry: new BoxGeometry(1, 1, 1),
     // One face, looking down: a lens only shines down (see `lampLensGeometry`).
@@ -506,15 +508,12 @@ function madeUtilityParts(): UtilityParts {
   };
 }
 
-/** The mast with `sides` sides and no base (it stands in the ground); a coarse one as wide as the round one on average */
+/** The mast with `sides` sides and no ends: its base stands in the ground, its crown inside the cap (`placePole`: the cap's foot 1 cm below the
+ *  crown, 15 % wider); a coarse one as wide as the round one on average */
 function mastShape(sides: number): PartLevel {
   // A polygon's mean width is its perimeter over pi: 2 n R sin(pi / n) / pi = 2 r.
   const widen = sides >= 12 ? 1 : Math.PI / (sides * Math.sin(Math.PI / sides));
-  const geometry = new CylinderGeometry(POLE_TOP_RADIUS * widen, POLE_BASE_RADIUS * widen, POLE_HEIGHT, sides);
-  // three's groups: the side, the top, then the base (`CylinderGeometry.generateCap`).
-  const base = geometry.groups[2]!;
-  geometry.setIndex(new BufferAttribute((geometry.index!.array as Uint16Array).slice(0, base.start), 1));
-  geometry.clearGroups();
+  const geometry = cylinderWith(POLE_TOP_RADIUS * widen, POLE_BASE_RADIUS * widen, POLE_HEIGHT, sides, { top: false, bottom: false });
   // How far its outline strays from a round mast at the foot: outside at a corner, inside mid-face.
   const r = POLE_BASE_RADIUS, R = r * widen;
   const error = sides >= 12 ? 0 : Math.max(R - r, r - R * Math.cos(Math.PI / sides));

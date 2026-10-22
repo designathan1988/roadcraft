@@ -15,6 +15,9 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
+import { cylinderWith } from './mesh/cylinder';
+import { dropHiddenFaces } from './mesh/hiddenFaces';
+
 import { Rng } from '@core/rng';
 import { lowPolyTreeParts, type LowPolyKind, type LowPolyParts } from './lowPolyTrees';
 import { m } from '@world/units';
@@ -36,15 +39,22 @@ interface Placement {
   readonly scale?: readonly [number, number, number];
 }
 
-/** Normalises a primitive into the shared layout - non-indexed, position, normal and colour only */
+/** Normalises a primitive into the shared layout - indexed, position, normal and colour only. A colour read per face (it takes
+ *  `face`) keeps each triangle's own corners, so each triangle is speckled on its own as before; every other part keeps its shared corners
+ *  (a box 24 corners, not 36; a drum's side one ring a row): the same triangles, a third fewer vertices to shade
+ *  ([meshoptimizer: vertex reuse](https://github.com/zeux/meshoptimizer#vertex-cache-optimization)). */
 function part(
   geometry: BufferGeometry,
   /** A flat colour, or one per vertex given its position, normal and face centre. */
   color: Rgb | ((p: Vector3, n: Vector3, face: Vector3) => Rgb),
   placement: Placement = {},
 ): BufferGeometry {
-  const g = geometry.index ? geometry.toNonIndexed() : geometry;
-  if (g !== geometry) geometry.dispose();
+  const faceted = typeof color === 'function' && color.length >= 3;
+  let g = geometry;
+  if (faceted && g.index) {
+    g = geometry.toNonIndexed();
+    geometry.dispose();
+  }
   for (const name of Object.keys(g.attributes)) {
     if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
   }
@@ -64,7 +74,7 @@ function part(
   for (let i = 0; i < position.count; i++) {
     p.fromBufferAttribute(position, i);
     n.fromBufferAttribute(normal, i);
-    if (i % 3 === 0) {
+    if (faceted && i % 3 === 0) {
       face.set(0, 0, 0);
       for (let k = 0; k < 3 && i + k < position.count; k++) face.add(corner.fromBufferAttribute(position, i + k));
       face.multiplyScalar(1 / 3);
@@ -75,16 +85,52 @@ function part(
     colors[i * 3 + 2] = c[2];
   }
   g.setAttribute('color', new BufferAttribute(colors, 3));
+  // A part with no index of its own (a faceted one, an icosahedron) is indexed corner by corner: every part merged indexed.
+  if (!g.index) g.setIndex(Array.from({ length: position.count }, (_, i) => i));
   return g;
 }
 
-function merge(parts: BufferGeometry[]): BufferGeometry {
-  const merged = mergeGeometries(parts, false);
+/** The parts merged, the faces no one sees taken out first (`hiddenFaces.ts`): a leg's foot on the ground, a bar's underside in the soil,
+ *  a plate's back against its box. `floor`: the model stands on y = 0 (a drain lies below it, in the gutter). */
+function merge(parts: BufferGeometry[], floor = true): BufferGeometry {
+  dropHiddenFaces(parts, floor);
+  const merged = mergeGeometries(parts.map((g) => {
+    g.clearGroups();
+    return g;
+  }), false);
   for (const geometry of parts) geometry.dispose();
   if (!merged) throw new Error('prop parts could not be merged');
   merged.computeBoundingSphere();
   merged.computeBoundingBox();
   return merged;
+}
+
+/** A box with the faces of `drop` left out (three's BoxGeometry groups: +x, -x, +y, -y, +z, -z): its ends sunk in a housing, its top under a dome. */
+function boxWithout(w: number, h: number, d: number, drop: readonly ('px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz')[]): BufferGeometry {
+  const box = new BoxGeometry(w, h, d);
+  const order = ['px', 'nx', 'py', 'ny', 'pz', 'nz'] as const;
+  const index = box.index!;
+  const kept: number[] = [];
+  for (const group of box.groups) {
+    if (drop.includes(order[group.materialIndex ?? 0]!)) continue;
+    for (let i = group.start; i < group.start + group.count; i++) kept.push(index.getX(i));
+  }
+  const remap = new Int32Array(box.getAttribute('position').count).fill(-1);
+  let used = 0;
+  for (const v of kept) if (remap[v] === -1) remap[v] = used++;
+  const out = new BufferGeometry();
+  for (const name of ['position', 'normal'] as const) {
+    const attribute = box.getAttribute(name);
+    const array = new Float32Array(used * 3);
+    for (let v = 0; v < remap.length; v++) {
+      const to = remap[v]!;
+      if (to >= 0) for (let k = 0; k < 3; k++) array[to * 3 + k] = attribute.array[v * 3 + k]!;
+    }
+    out.setAttribute(name, new BufferAttribute(array, 3));
+  }
+  out.setIndex(kept.map((v) => remap[v]!));
+  box.dispose();
+  return out;
 }
 
 /** Per-face hash, so a crown is speckled leaf by leaf rather than smooth. */
@@ -121,6 +167,7 @@ export function grassTuftGeometry(): BufferGeometry {
   const rng = new Rng(0x6a55);
   const positions: number[] = [];
   const colors: number[] = [];
+  const index: number[] = [];
   const root = rgb(0x39591f);
   const tip = rgb(0xa9c25e);
   const blades = 7;
@@ -147,21 +194,16 @@ export function grassTuftGeometry(): BufferGeometry {
       root[1] + (tip[1] - root[1]) * t,
       root[2] + (tip[2] - root[2]) * t,
     ];
-    const quad = (t0: number, t1: number): void => {
-      const a = point(t0, -1);
-      const b = point(t0, 1);
-      const c = point(t1, 1);
-      const d = point(t1, -1);
-      positions.push(...a, ...b, ...c, ...a, ...c, ...d);
-      for (const t of [t0, t0, t1, t0, t1, t1]) colors.push(...tint(t));
-    };
-    quad(0, 0.45);
-    quad(0.45, 0.8);
-    const a = point(0.8, -1);
-    const c = point(0.8, 1);
-    const e = point(1, 0);
-    positions.push(...a, ...c, ...e);
-    for (const t of [0.8, 0.8, 1]) colors.push(...tint(t));
+    // The blade's edges at 0, 0.45 and 0.8 of its height and its tip: seven corners shared by its five triangles, not fifteen.
+    const base = positions.length / 3;
+    for (const t of [0, 0.45, 0.8]) {
+      positions.push(...point(t, -1), ...point(t, 1));
+      colors.push(...tint(t), ...tint(t));
+    }
+    positions.push(...point(1, 0));
+    colors.push(...tint(1));
+    for (const k of [0, 2]) index.push(base + k, base + k + 1, base + k + 3, base + k, base + k + 3, base + k + 2);
+    index.push(base + 4, base + 5, base + 6);
   }
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(positions, 3));
@@ -170,6 +212,7 @@ export function grassTuftGeometry(): BufferGeometry {
   for (let i = 1; i < normals.length; i += 3) normals[i] = 1;
   g.setAttribute('normal', new BufferAttribute(normals, 3));
   g.setAttribute('color', new Float32BufferAttribute(colors, 3));
+  g.setIndex(index);
   g.computeBoundingSphere();
   return g;
 }
@@ -199,13 +242,15 @@ export function lampGeometry(): BufferGeometry {
   const armY = LAMP_HEIGHT - m(0.12);
   const rise = 0.1;
   return merge([
-    part(new CylinderGeometry(m(0.15), m(0.19), plinth, 10), LAMP_PLINTH, { at: [0, plinth / 2, 0] }),
+    // The plinth's top under the collar, its foot in the ground: its side alone.
+    part(cylinderWith(m(0.15), m(0.19), plinth, 10, { top: false, bottom: false }), LAMP_PLINTH, { at: [0, plinth / 2, 0] }),
     part(new CylinderGeometry(m(0.2), m(0.2), m(0.05), 10), LAMP_PLINTH, { at: [0, plinth, 0] }),
     part(new CylinderGeometry(m(0.07), m(0.12), LAMP_HEIGHT - plinth, 10, 1, true), LAMP_METAL, {
       at: [0, plinth + (LAMP_HEIGHT - plinth) / 2, 0],
     }),
     part(new CylinderGeometry(m(0.09), m(0.09), m(0.2), 8), LAMP_PLINTH, { at: [0, LAMP_HEIGHT - m(0.1), 0] }),
-    part(new BoxGeometry(LAMP_OUTREACH, m(0.08), m(0.08)), LAMP_METAL, {
+    // The arm's ends are sunk in the column's cap and in the housing.
+    part(boxWithout(LAMP_OUTREACH, m(0.08), m(0.08), ['px', 'nx']), LAMP_METAL, {
       at: [LAMP_OUTREACH / 2, armY + Math.sin(rise) * (LAMP_OUTREACH / 2), 0],
       rotate: [0, 0, rise],
     }),
@@ -266,16 +311,18 @@ export function binGeometry(): BufferGeometry {
   const body = rgb(0x2f4a3a);
   const steel = rgb(0x8b9496);
   return merge([
-    part(new CylinderGeometry(m(0.2), m(0.22), m(0.06), 14), rgb(0x232826), { at: [0, m(0.03), 0] }),
+    // The foot's top inside the closed drum, its bottom on the ground.
+    part(cylinderWith(m(0.2), m(0.22), m(0.06), 14, { top: false, bottom: false }), rgb(0x232826), { at: [0, m(0.03), 0] }),
     part(new CylinderGeometry(m(0.23), m(0.2), m(0.8), 14, 1, true), (p) => {
       // Vertical ribs, as pressed steel panels have.
       const a = Math.atan2(p.z, p.x);
       const s = 0.9 + 0.1 * Math.cos(a * 14);
       return [body[0] * s, body[1] * s, body[2] * s];
     }, { at: [0, m(0.46), 0] }),
-    part(new CylinderGeometry(m(0.245), m(0.245), m(0.05), 14), steel, { at: [0, m(0.88), 0] }),
-    part(new CylinderGeometry(m(0.236), m(0.236), m(0.04), 14), rgb(0x0e100f), { at: [0, m(0.84), 0] }),
-    part(new CylinderGeometry(m(0.1), m(0.245), m(0.13), 14), body, { at: [0, m(0.97), 0] }),
+    // The rim's top under the lid; the dark band's top inside the rim; the lid's underside on the rim.
+    part(cylinderWith(m(0.245), m(0.245), m(0.05), 14, { top: false, bottom: true }), steel, { at: [0, m(0.88), 0] }),
+    part(cylinderWith(m(0.236), m(0.236), m(0.04), 14, { top: false, bottom: true }), rgb(0x0e100f), { at: [0, m(0.84), 0] }),
+    part(cylinderWith(m(0.1), m(0.245), m(0.13), 14, { top: true, bottom: false }), body, { at: [0, m(0.97), 0] }),
   ]);
 }
 
@@ -285,11 +332,13 @@ export function hydrantGeometry(): BufferGeometry {
   const dark = rgb(0x8f2820);
   return merge([
     part(new CylinderGeometry(m(0.16), m(0.18), m(0.07), 10), dark, { at: [0, m(0.035), 0] }),
-    part(new CylinderGeometry(m(0.12), m(0.13), m(0.52), 10), red, { at: [0, m(0.33), 0] }),
+    // The barrel's ends: on the foot and under the bonnet.
+    part(cylinderWith(m(0.12), m(0.13), m(0.52), 10, { top: false, bottom: false }), red, { at: [0, m(0.33), 0] }),
     part(new CylinderGeometry(m(0.08), m(0.14), m(0.12), 10), red, { at: [0, m(0.65), 0] }),
-    part(new CylinderGeometry(m(0.035), m(0.04), m(0.07), 6), dark, { at: [0, m(0.74), 0] }),
+    part(cylinderWith(m(0.035), m(0.04), m(0.07), 6, { top: true, bottom: false }), dark, { at: [0, m(0.74), 0] }),
     part(new CylinderGeometry(m(0.045), m(0.05), m(0.36), 8), dark, { at: [0, m(0.46), 0], rotate: [0, 0, Math.PI / 2] }),
-    part(new CylinderGeometry(m(0.06), m(0.065), m(0.12), 8), dark, { at: [0, m(0.44), m(0.13)], rotate: [Math.PI / 2, 0, 0] }),
+    // The nozzle's back end inside the barrel (its -y end, turned to -z).
+    part(cylinderWith(m(0.06), m(0.065), m(0.12), 8, { top: true, bottom: false }), dark, { at: [0, m(0.44), m(0.13)], rotate: [Math.PI / 2, 0, 0] }),
   ]);
 }
 
@@ -299,7 +348,8 @@ export function postboxGeometry(): BufferGeometry {
   const dark = rgb(0x12304f);
   return merge([
     part(new BoxGeometry(m(0.3), m(0.25), m(0.24)), dark, { at: [0, m(0.125), 0] }),
-    part(new BoxGeometry(m(0.44), m(0.72), m(0.34)), blue, { at: [0, m(0.61), 0] }),
+    // The body's top under the dome.
+    part(boxWithout(m(0.44), m(0.72), m(0.34), ['py']), blue, { at: [0, m(0.61), 0] }),
     // A half cylinder, axis across the box, dome up.
     part(new CylinderGeometry(m(0.17), m(0.17), m(0.44), 12, 1, false, 0, Math.PI), blue, {
       at: [0, m(0.97), 0],
@@ -317,7 +367,8 @@ export function phoneGeometry(): BufferGeometry {
   const post = rgb(0x5d6366);
   const dark = rgb(0x1d2124);
   return merge([
-    part(new CylinderGeometry(m(0.05), m(0.06), m(1.55), 8), post, { at: [0, m(0.775), -m(0.18)] }),
+    // The post's foot in the ground; its head is seen inside the open hood.
+    part(cylinderWith(m(0.05), m(0.06), m(1.55), 8, { top: true, bottom: false }), post, { at: [0, m(0.775), -m(0.18)] }),
     // The shell: a stretched half-sphere, open toward +Z.
     part(new SphereGeometry(m(0.5), 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), shell, {
       at: [0, m(1.62), 0], scale: [0.9, 1.25, 0.82], rotate: [-Math.PI / 2 + 0.25, 0, 0],
@@ -349,7 +400,7 @@ export function drainGeometry(): BufferGeometry {
     parts.push(part(new BoxGeometry(m(0.035), m(0.022), m(0.4)), iron, { at: [-m(0.39) + i * m(0.13), -rise + m(0.012), -kerb - m(0.3)] }));
   }
   parts.push(part(new BoxGeometry(m(0.84), m(0.016), m(0.4)), slot, { at: [0, -rise + m(0.004), -kerb - m(0.3)] }));
-  return merge(parts);
+  return merge(parts, false);
 }
 
 /** A tree pit in the footway: a square of dark soil behind a steel grate, root at the footway surface. */

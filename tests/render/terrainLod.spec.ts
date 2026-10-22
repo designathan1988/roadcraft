@@ -189,7 +189,8 @@ describe('the patches chosen for a camera', () => {
 
   it('hang a rim only on the plate\'s own edges', () => {
     const { patches } = look([-700, 260, 500], [-700, 0, 500], 170);
-    const onEdge = patches.filter((p) => p.x === 0 || p.y === 0 || p.x + LOD_PATCH * p.step === seg || p.y + LOD_PATCH * p.step === seg).length;
+    // One rim a side of the plate a patch lies on (a corner patch two).
+    const onEdge = patches.reduce((n, p) => n + [p.x === 0, p.y === 0, p.x + LOD_PATCH * p.step === seg, p.y + LOD_PATCH * p.step === seg].filter(Boolean).length, 0);
     expect(lod.rimGeometry.instanceCount).toBe(onEdge);
   });
 });

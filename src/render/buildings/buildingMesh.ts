@@ -904,10 +904,19 @@ class Emitter {
   }
 
   box(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, c: Paint, top: Paint = c): void {
+    this.boxOf(x0, y0, x1, y1, z0, z1, c, top, false);
+  }
+
+  /** A box whose top another part lies on (a wall's body under its coping, a post under its head, a gate's bar between its rails): its four sides. */
+  sides(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, c: Paint): void {
+    this.boxOf(x0, y0, x1, y1, z0, z1, c, c, true);
+  }
+
+  private boxOf(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, c: Paint, top: Paint, covered: boolean): void {
     if (z1 - z0 < 1e-4) return;
     // An element's box of one paint: an instance of the shell's box, its look laid as these faces' (`shellParts.ts`).
     if (this.apart && top === c && x1 - x0 > 1e-6 && y1 - y0 > 1e-6) {
-      this.shellPart('lotBox', (x0 + x1) / 2, (y0 + y1) / 2, z0, z1, x1 - x0, y1 - y0, 0, c);
+      this.shellPart(covered ? 'lotSides' : 'lotBox', (x0 + x1) / 2, (y0 + y1) / 2, z0, z1, x1 - x0, y1 - y0, 0, c);
       return;
     }
     const sh = this.shell;
@@ -915,7 +924,7 @@ class Emitter {
     sh.face([this.L(x1, y1, z0), this.L(x0, y1, z0), this.L(x0, y1, z1), this.L(x1, y1, z1)], this.N(0, 1), c);
     sh.face([this.L(x1, y0, z0), this.L(x1, y1, z0), this.L(x1, y1, z1), this.L(x1, y0, z1)], this.N(1, 0), c);
     sh.face([this.L(x0, y1, z0), this.L(x0, y0, z0), this.L(x0, y0, z1), this.L(x0, y1, z1)], this.N(-1, 0), c);
-    sh.face([this.L(x0, y0, z1), this.L(x1, y0, z1), this.L(x1, y1, z1), this.L(x0, y1, z1)], UP, top);
+    if (!covered) sh.face([this.L(x0, y0, z1), this.L(x1, y0, z1), this.L(x1, y1, z1), this.L(x0, y1, z1)], UP, top);
   }
 
   /** A box whose sides stand `inset` in from the edges of its top. */
@@ -2500,7 +2509,8 @@ function layElement(e: Emitter, el: BuildingElement, floor: number, bottom: numb
     e.box(back[0], back[1], back[2], back[3], z0 + m(0.45), z0 + m(0.95), c);
     for (const u of [0.15, 0.85]) {
       const leg = sub2(el, [x0, y0, x1, y1], u - 0.06, u + 0.06);
-      e.box(leg[0], leg[1], leg[2], leg[3], zb, z0 + m(0.35), shaded(c, 0.85));
+      // Its top under the seat.
+      e.sides(leg[0], leg[1], leg[2], leg[3], zb, z0 + m(0.35), shaded(c, 0.85));
     }
     return;
   }
@@ -2555,7 +2565,8 @@ function layElement(e: Emitter, el: BuildingElement, floor: number, bottom: numb
     // Past the ends by `PART_INSET`; the plinth and the coping proud of both faces by `lip`.
     const ex = along ? PART_INSET : 0, ey = along ? 0 : PART_INSET;
     const gx = along ? PART_INSET : lip, gy = along ? lip : PART_INSET;
-    e.box(x0 - ex, y0 - ey, x1 + ex, y1 + ey, foot, z1 - cap, c);
+    // The body's top lies under the coping.
+    e.sides(x0 - ex, y0 - ey, x1 + ex, y1 + ey, foot, z1 - cap, c);
     e.box(x0 - gx, y0 - gy, x1 + gx, y1 + gy, zb, foot, shaded(c, 0.78));
     e.box(x0 - gx, y0 - gy, x1 + gx, y1 + gy, z1 - cap, z1, COPING, COPING);
     return;
@@ -3013,9 +3024,11 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
   const z1 = z0 + el.h;
   const alongX = el.facing === 0 || el.facing === 2;
   // A box spanning `u0..u1` along the part and `v0..v1` across it (fractions), at heights h0..h1.
-  const part = (u0: number, u1: number, v0: number, v1: number, h0: number, h1: number, look: Paint): void => {
-    if (alongX) e.box(x0 + (x1 - x0) * u0, y0 + (y1 - y0) * v0, x0 + (x1 - x0) * u1, y0 + (y1 - y0) * v1, h0, h1, look);
-    else e.box(x0 + (x1 - x0) * v0, y0 + (y1 - y0) * u0, x0 + (x1 - x0) * v1, y0 + (y1 - y0) * u1, h0, h1, look);
+  // `covered`: its top lies under another part (`Emitter.sides`).
+  const part = (u0: number, u1: number, v0: number, v1: number, h0: number, h1: number, look: Paint, covered = false): void => {
+    const lay = covered ? e.sides.bind(e) : e.box.bind(e);
+    if (alongX) lay(x0 + (x1 - x0) * u0, y0 + (y1 - y0) * v0, x0 + (x1 - x0) * u1, y0 + (y1 - y0) * v1, h0, h1, look);
+    else lay(x0 + (x1 - x0) * v0, y0 + (y1 - y0) * u0, x0 + (x1 - x0) * v1, y0 + (y1 - y0) * u1, h0, h1, look);
   };
   const length = alongX ? x1 - x0 : y1 - y0;
   switch (el.kind) {
@@ -3048,7 +3061,10 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
           for (let k = 0; k <= bars; k++) {
             const v = v0 + ((v1 - v0) * k) / bars;
             const bw = m(0.035) / depth;
-            part(u, u + thin, v - bw / 2, v + bw / 2, z0 + m(0.08), z1, look);
+            // An inner bar between the rails: the length inside them was coplanar with their faces (it flickered) and drawn for nothing; its top
+            // under the top rail. The end bars stand half past the rails' ends and keep their full height.
+            if (k > 0 && k < bars) part(u, u + thin, v - bw / 2, v + bw / 2, z0 + m(0.16), z1 - m(0.1), look, true);
+            else part(u, u + thin, v - bw / 2, v + bw / 2, z0 + m(0.08), z1, look);
           }
         }
         return;
@@ -3067,21 +3083,23 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
         for (let k = 0; k <= bars; k++) {
           const v = v0 + ((v1 - v0) * k) / bars;
           const bw = m(0.035) / depth;
-          part(u, u + thin, v - bw / 2, v + bw / 2, z0 + m(0.08), z1, look);
+          if (k > 0 && k < bars) part(u, u + thin, v - bw / 2, v + bw / 2, z0 + m(0.16), z1 - m(0.1), look, true);
+          else part(u, u + thin, v - bw / 2, v + bw / 2, z0 + m(0.08), z1, look);
         }
       }
       return;
     }
     case 'bin': {
       for (const [u0, u1] of [[0.02, 0.48], [0.52, 0.98]] as const) {
-        part(u0, u1, 0.05, 0.95, zb, z1 - m(0.06), BIN_BODY);
+        part(u0, u1, 0.05, 0.95, zb, z1 - m(0.06), BIN_BODY, true);
         part(u0 - 0.01, u1 + 0.01, 0, 1, z1 - m(0.06), z1, BIN_LID);
       }
       return;
     }
     case 'lamp': {
       const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = m(0.06);
-      e.box(cx - r, cy - r, cx + r, cy + r, zb, z1, LAMP_POST);
+      // The post's top under the head.
+      e.sides(cx - r, cy - r, cx + r, cy + r, zb, z1, LAMP_POST);
       e.box(cx - m(0.22), cy - m(0.22), cx + m(0.22), cy + m(0.22), z1, z1 + m(0.12), LAMP_POST);
       // The glass under the head: a lamp, lit after dark (`kit.ts`), not a pale box.
       e.putAt('lamp', cx, cy, z1 - m(0.04), m(0.36), m(0.08), m(0.36));

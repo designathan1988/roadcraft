@@ -97,7 +97,7 @@ export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKi
   const pictures = held.set;
   // Drawn from the trees' poses (`plantCells.ts`): the sample compiled ahead (`buildNatureForest`) builds the programs drawn.
   for (const made of [material, depth, cardKit.material, cardKit.depth, pictures.material, pictures.depth]) posedMaterial(made, TREE_POSE);
-  console.info('[nature] trees (triangles, body + cards):', variants.map((v, i) => `${TREE_MODELS[i]} ${v.levels[0].getAttribute('position').count / 3} + ${(v.cards?.getAttribute('position').count ?? 0) / 3}`).join(', '));
+  console.info('[nature] trees (triangles, body + cards):', variants.map((v, i) => `${TREE_MODELS[i]} ${v.levels[0].getAttribute('position').count / 3} + ${(v.cards ? v.cards.index?.count ?? v.cards.getAttribute('position').count : 0) / 3}`).join(', '));
   return {
     variants,
     material,

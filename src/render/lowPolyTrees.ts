@@ -120,8 +120,8 @@ class Builder {
   private readonly e = new Vector3();
   private readonly centre = new Vector3();
   readonly leaves: LeafPoint[] = [];
-  /** Frond strips (`frond`), laid flat: each corner's position, normal, colour and atlas uv. */
-  private readonly strip = { pos: [] as number[], nrm: [] as number[], col: [] as number[], uv: [] as number[] };
+  /** Frond strips (`frond`): each corner's position, normal, colour and atlas uv once, and the triangles over them. */
+  private readonly strip = { pos: [] as number[], nrm: [] as number[], col: [] as number[], uv: [] as number[], idx: [] as number[] };
 
   constructor(readonly rng: () => number) {}
 
@@ -145,18 +145,21 @@ class Builder {
       const tip = (sign: number): Vector3 => n.copy(up).addScaledVector(side, sign * 0.45).normalize().clone();
       rows.push({ p: [left, p.clone(), right], n: [tip(-1), up.clone(), tip(1)], c });
     }
-    const corner = (row: number, col: number): void => {
-      const r = rows[row]!;
-      const p = r.p[col]!, q = r.n[col]!;
-      this.strip.pos.push(p.x, p.y, p.z);
-      this.strip.nrm.push(q.x, q.y, q.z);
-      this.strip.col.push(...r.c);
-      this.strip.uv.push((2 + col * 0.5) * THIRD, row / (rows.length - 1));
-    };
+    // Each corner of the strip once (a row's three: left, spine, right), shared by the triangles round it: 3 a row, not 12.
+    const first = this.strip.pos.length / 3;
+    rows.forEach((r, row) => {
+      for (let col = 0; col < 3; col++) {
+        const p = r.p[col]!, q = r.n[col]!;
+        this.strip.pos.push(p.x, p.y, p.z);
+        this.strip.nrm.push(q.x, q.y, q.z);
+        this.strip.col.push(...r.c);
+        this.strip.uv.push((2 + col * 0.5) * THIRD, row / (rows.length - 1));
+      }
+    });
+    const at = (row: number, col: number): number => first + row * 3 + col;
     for (let i = 0; i + 1 < rows.length; i++) {
       for (const col of [0, 1]) {
-        corner(i, col); corner(i, col + 1); corner(i + 1, col + 1);
-        corner(i, col); corner(i + 1, col + 1); corner(i + 1, col);
+        this.strip.idx.push(at(i, col), at(i, col + 1), at(i + 1, col + 1), at(i, col), at(i + 1, col + 1), at(i + 1, col));
       }
     }
   }
@@ -253,6 +256,8 @@ class Builder {
     if (placed.length === 0 && strip.pos.length === 0) return { body, cards: null };
 
     const positions: number[] = [], normals: number[] = [], colours: number[] = [], uvs: number[] = [], corners: number[] = [];
+    // Indexed: a card's four corners once, its two triangles over them (6 corners a card were shaded, now 4).
+    const index: number[] = [...strip.idx];
     // The frond strips as they lie: no offset in the view's plane.
     for (let i = 0; i < strip.pos.length; i += 3) {
       positions.push(strip.pos[i]! * scale, (strip.pos[i + 1]! + lift) * scale, strip.pos[i + 2]! * scale);
@@ -272,6 +277,7 @@ class Builder {
       // The normal out of the crown, lifted a little: the canopy's top takes the sky.
       const nx = leaf.n.x, ny = leaf.n.y * 0.8 + 0.2, nz = leaf.n.z;
       const nl = Math.hypot(nx, ny, nz) || 1;
+      const base = positions.length / 3;
       const corner = (u: number, w: number): void => {
         // Every corner at the card's centre
         positions.push(c.x, c.y, c.z);
@@ -282,8 +288,10 @@ class Builder {
         // The leaf cluster: the atlas' first third (the shader moves near cards to the second).
         uvs.push(u * THIRD, w);
       };
-      corner(0, 0); corner(1, 0); corner(1, 1);
-      corner(0, 0); corner(1, 1); corner(0, 1);
+      // DO NOT trim it to an octagon: six triangles for a fifth fewer fragments loses on a card a few pixels wide, as most are (the woods'
+      // budget, `groundCover.spec.ts`; Humus: little gain below a few hundred pixels, https://www.humus.name/index.php?page=Comments&ID=266).
+      corner(0, 0); corner(1, 0); corner(1, 1); corner(0, 1);
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
     const cards = new BufferGeometry();
     cards.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
@@ -291,6 +299,7 @@ class Builder {
     cards.setAttribute('color', new BufferAttribute(new Float32Array(colours), 3));
     cards.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
     cards.setAttribute('aCorner', new BufferAttribute(new Float32Array(corners), 2));
+    cards.setIndex(index);
     cards.computeBoundingBox();
     cards.computeBoundingSphere();
     // The cards reach past their centres by up to their size.
