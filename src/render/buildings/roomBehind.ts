@@ -4,7 +4,11 @@ import type { Building, Volume } from '@world/buildings/types';
 import { m } from '@world/units';
 
 /** THE ROOM BEHIND A WINDOW, as the building's own interior has it (`interiorAt`, the rooms the cut-open view draws) */
-export const ROOM_FLOATS = 12;
+export const ROOM_FLOATS = 16;
+/** The room's own numbers (`roomsOfStorey`): the first twelve of a pane's ROOM_FLOATS. */
+export const ROOM_OWN = 12;
+/** Where a pane's frame is written among its ROOM_FLOATS (`PartRows.paneFrame`): its trim's r, g, b and the frame's thickness (0: no frame). */
+export const PANE_FRAME_AT = 12;
 
 /** The farthest a wall is looked for: past it the room is closed at this depth. */
 const MOST_DEEP = m(12);

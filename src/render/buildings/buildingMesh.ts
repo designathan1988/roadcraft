@@ -9,7 +9,7 @@ import { deriveSpaces } from '@world/buildings/spaces';
 import { spaceSeed } from './lightSlots';
 import { buildingFrame, frameX, frameY, letGoLayout, localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, letGoInterior, levelFlights } from '@world/buildings/interior';
-import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
+import { PANE_FRAME_AT, ROOM_FLOATS, ROOM_OWN, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
   BufferAttribute,
@@ -448,7 +448,14 @@ class PartRows {
   pane(i: number, slot: number, room: readonly number[] | null): void {
     if (!this.slots || !this.rooms) return;
     this.slots.array[i] = slot;
-    if (room) for (let k = 0; k < ROOM_FLOATS; k++) this.rooms.array[i * ROOM_FLOATS + k] = DataUtils.toHalfFloat(room[k]!);
+    if (room) for (let k = 0; k < ROOM_OWN; k++) this.rooms.array[i * ROOM_FLOATS + k] = DataUtils.toHalfFloat(room[k]!);
+  }
+
+  /** A pane's frame, drawn by the pane's own material (`glassRoom.ts` PANE_FRAME_GLSL): its trim colour and its thickness from front to back. */
+  paneFrame(i: number, r: number, g: number, b: number, thickness: number): void {
+    if (!this.rooms) return;
+    const o = i * ROOM_FLOATS + PANE_FRAME_AT, a = this.rooms.array;
+    a[o] = DataUtils.toHalfFloat(r); a[o + 1] = DataUtils.toHalfFloat(g); a[o + 2] = DataUtils.toHalfFloat(b); a[o + 3] = DataUtils.toHalfFloat(thickness);
   }
 
   /** The batch of what was placed, in arrays of its own (the rows are written again for the next building). */
@@ -961,6 +968,16 @@ class Emitter {
     const i = rows.add(p[0], p[1], p[2], Math.atan2(nx, -ny) + turn, sx, sy, sz);
     if (colour) rows.colour(i, colour.r, colour.g, colour.b);
     if (rows.glassy) rows.pane(i, this.slot, this.room ? this.room(a, h) : null);
+  }
+
+  /** A pane and its frame over it, the frame `thickness` deep and 3 cm proud of the glass as the kit's frame was put: the frame drawn by the pane's
+   *  own material (`glassRoom.ts`), its bars exact boxes, no frame instance. DO NOT put the frame part over a pane: 56 triangles of bars a few
+   *  centimetres wide, under a pixel past ~47 m, ~9 M triangles in a large city (reports/geometry-replacement-research.md, F1). */
+  glazed(kind: 'glass' | 'glassDark', f: BayFace, a: number, h: number, depth: number, w: number, hh: number, thickness: number, trim: Color): void {
+    if (this.flat && depth > 0) return;
+    this.put(kind, f, a, h, depth, w, hh, 1);
+    const rows = this.parts[kind];
+    rows.paneFrame(rows.count - 1, trim.r, trim.g, trim.b, thickness);
   }
 
   /** An element being emitted (`emitElement`): its boxes are the shell's parts where the shell lets them be (`Shell.apart`). */
@@ -1635,25 +1652,22 @@ function emitBay(
     case 'sashWindow': {
       // No two rows alike: some rooms darker, some with the roller shutter part way down - picked from the bay, so stable.
       const pick = bay.component === 'sashWindow' ? 13 : bayHash(bay) % 20;
-      e.put(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
+      e.glazed(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
       // The shutter a little inside the frame's edges: as wide as it, its sides lay in the frame's own and fought it for depth.
       if (pick >= 9 && pick < 13) {
         const down = h * (0.25 + (pick - 9) * 0.15) - PART_INSET;
         e.put('shutter', f, am, o.h1 - PART_INSET - down / 2, o.depth - m(0.05), w - 2 * PART_INSET, down, m(0.04));
       }
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.06), tc);
       // The sill: out past the wall, with a drip.
       e.put('concrete', f, am, o.h0 - m(0.03), (o.depth - m(0.07)) / 2, w + m(0.14), m(0.06), o.depth + m(0.07));
       emitStreak(e, f, bay, am, w, o.h0 - m(0.06), wall);
       break;
     }
     case 'wideWindow':
-      e.put('glass', f, am, hm, o.depth, w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.05), tc);
+      e.glazed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
       break;
     case 'balcony':
-      e.put('glass', f, am, hm, o.depth, w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.06), tc);
+      e.glazed('glass', f, am, hm, o.depth, w, h, m(0.06), tc);
       e.put('concrete', f, W / 2, -m(0.09), -m(0.65), W - m(0.3), m(0.18), m(1.3));
       e.put('railing', f, W / 2, 0, 0, W - m(0.3), m(1.05), m(1.3), tc);
       break;
@@ -1670,8 +1684,7 @@ function emitBay(
       }
       break;
     case 'shopfront':
-      e.put('glass', f, am, hm, o.depth, w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.05), tc);
+      e.glazed('glass', f, am, hm, o.depth, w, h, m(0.05), tc);
       e.put('awning', f, W / 2, o.h1 + m(0.45), 0, W - m(0.2), m(0.75), m(1.3), awning);
       break;
     case 'loadingDoor':
@@ -1689,8 +1702,7 @@ function emitBay(
       }
       if (h > leafTop + m(0.4)) {
         const fan = h - leafTop - m(0.12);
-        e.put('glass', f, am, o.h0 + leafTop + m(0.12) + fan / 2, o.depth, w, fan, 1);
-        e.put('frame', f, am, o.h0 + leafTop + m(0.12) + fan / 2, o.depth - m(0.03), w, fan, m(0.05), tc);
+        e.glazed('glass', f, am, o.h0 + leafTop + m(0.12) + fan / 2, o.depth, w, fan, m(0.05), tc);
         e.put('frame', f, am, o.h0 + leafTop + m(0.06), o.depth - m(0.03), w, m(0.12), m(0.08), tc);
       }
       if (bay.level === 0) {
@@ -1703,23 +1715,20 @@ function emitBay(
     }
     case 'loggia': {
       // The glazed wall at the back of the loggia, and a glass parapet on the facade line.
-      e.put(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth - m(0.02), w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.05), w, h, m(0.06), tc);
+      e.glazed(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth - m(0.02), w, h, m(0.06), tc);
       e.put('glassRail', f, am, o.h0, -m(0.02), w, m(1.05), 1);
       e.put('fin', f, am, o.h0 + m(1.06), -m(0.02), w, m(0.05), m(0.06), tc);
       break;
     }
     case 'brise': {
-      e.put(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.05), tc);
+      e.glazed(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.05), tc);
       // Vertical fins the storey's height, standing out of the wall: the brise-soleil of the Brazilian modern block
       const fd = m(0.6);
       e.put('brise', f, W / 2, H / 2, -fd / 2, W, H, fd, tc);
       break;
     }
     case 'shutteredWindow': {
-      e.put(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.06), tc);
+      e.glazed(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
       // A moulded surround in the trim, then the louvred leaves folded back on the wall either side, in the shutter paint
       const band = m(0.14);
       e.put('fin', f, am, o.h1 + band / 2, -m(0.03), w + band * 2, band, m(0.06), tc);
@@ -1731,8 +1740,7 @@ function emitBay(
     }
     case 'gourmet': {
       // Sliding glass the bay's width, and the deep balcony: its slab, a glass parapet along its front edge.
-      e.put(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.05), tc);
+      e.glazed(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.05), tc);
       const slab = slabColour(wall);
       // Where the run of balconies ends, the side wall that carries the slabs storey on storey and closes the balcony
       const closedLeft = left !== 'gourmet', closedRight = right !== 'gourmet';
@@ -1753,8 +1761,7 @@ function emitBay(
     case 'frenchWindow':
     case 'bayWindow':
     case 'ribbon': {
-      e.put(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
-      e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.06), tc);
+      e.glazed(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, m(0.06), tc);
       // A transom across a tall pane, and a sill under the raised ones.
       if (h > m(2.2)) e.put('frame', f, am, o.h0 + h * 0.72, o.depth - m(0.03), w, m(0.08), m(0.07), tc);
       if (o.h0 > m(0.3)) {
@@ -3966,6 +3973,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, 0));
       geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
       geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));
+      // And its frame (`glazed`): trim and thickness, drawn by the pane's material.
+      geometry.setAttribute('roomD', new InterleavedBufferAttribute(roomBuffer, 4, PANE_FRAME_AT));
     }
     const lookBuffer = looked ? new InstancedInterleavedBuffer(part.looks!, LOOK_FLOATS) : null;
     if (lookBuffer) {

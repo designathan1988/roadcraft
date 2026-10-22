@@ -2,6 +2,64 @@ import { Color, type MeshStandardMaterial } from 'three';
 import { FURNITURE_KINDS } from '@world/buildings/interior';
 import { ROOM_LAMP_GLSL, TV_SHARE } from './roomLamps';
 
+/** The kit's window frame (\`kit.ts\` frameGeometry, its material): its bars in the unit square (border \`t\`, a mullion and a transom 0.8 t wide,
+ *  the transom 0.18 up), and how it is lit. */
+const FRAME_T = 0.045;
+export const PANE_FRAME_LOOK = { roughness: 0.55, metalness: 0.05 } as const;
+/** How far in front of its pane a frame's middle stands (\`buildingMesh.ts\` \`glazed\`: the frame put 3 cm out of the glass). */
+const FRAME_OUT = 0.03;
+
+/** GLSL: the share of the pixel a pane's frame covers and the normal of the face of it seen (view space), drawn on the pane itself.
+ *  Near, each bar is an exact box hit by the eye's ray (a slab test each: front, sides, the bar's depth in front of the glass); its bars
+ *  under ~2 pixels, their area box-filtered over the pixel instead (Quilez, "filterable procedurals"), so they neither shimmer nor vanish. */
+const PANE_FRAME_GLSL = /* glsl */ `
+// The overlap of [a, b] with a pixel's footprint k round x, as a share of k.
+float paneSpan(float x, float k, float a, float b) { return clamp((min(x + 0.5 * k, b) - max(x - 0.5 * k, a)) / k, 0.0, 1.0); }
+float paneFrameCover(vec2 p, vec3 ray, vec2 size, float thick, inout vec3 nOut) {
+  vec2 hs = 0.5 * size;
+  vec2 t = ${FRAME_T.toFixed(4)} * size;
+  // The bars: x0, x1, y0, y1 each (the borders, the mullion, the transom).
+  vec4 bars[6];
+  bars[0] = vec4(-hs.x, hs.x, hs.y - t.y, hs.y);
+  bars[1] = vec4(-hs.x, hs.x, -hs.y, -hs.y + t.y);
+  bars[2] = vec4(hs.x - t.x, hs.x, -hs.y, hs.y);
+  bars[3] = vec4(-hs.x, -hs.x + t.x, -hs.y, hs.y);
+  bars[4] = vec4(-0.4 * t.x, 0.4 * t.x, -hs.y, hs.y);
+  bars[5] = vec4(-hs.x, hs.x, 0.18 * size.y - 0.4 * t.y, 0.18 * size.y + 0.4 * t.y);
+  vec2 foot = max(fwidth(p), vec2(1e-5));
+  float thin = min(0.8 * t.x / foot.x, 0.8 * t.y / foot.y);
+  // Far: the bars' area over the pixel (their faces in front of the glass seen square on).
+  float coverX = 0.0, coverY = 0.0;
+  for (int i = 0; i < 6; i++) {
+    vec4 b = bars[i];
+    if (b.y - b.x < size.x * 0.99) coverX += paneSpan(p.x, 1.5 * foot.x, b.x, b.y);
+    else coverY += paneSpan(p.y, 1.5 * foot.y, b.z, b.w);
+  }
+  float filtered = 1.0 - (1.0 - clamp(coverX, 0.0, 1.0)) * (1.0 - clamp(coverY, 0.0, 1.0));
+  if (thin < 1.0) return filtered;
+  // Near: the eye's ray back from the glass (s from 0 at the glass towards the eye) through each bar's box, the frame's depth in front of the glass.
+  vec3 d = vec3(abs(ray.x) < 1e-5 ? 1e-5 : ray.x, abs(ray.y) < 1e-5 ? 1e-5 : ray.y, max(ray.z, 1e-5));
+  float zNear = ${FRAME_OUT.toFixed(3)} + 0.5 * thick, zFar = ${FRAME_OUT.toFixed(3)} - 0.5 * thick;
+  float sz0 = max(zFar, 0.0) / d.z, sz1 = zNear / d.z;
+  float best = -1.0;
+  vec3 face = vec3(0.0, 0.0, 1.0);
+  for (int i = 0; i < 6; i++) {
+    vec4 b = bars[i];
+    float sx0 = (p.x - b.y) / d.x, sx1 = (p.x - b.x) / d.x;
+    float sy0 = (p.y - b.w) / d.y, sy1 = (p.y - b.z) / d.y;
+    vec2 sx = vec2(min(sx0, sx1), max(sx0, sx1)), sy = vec2(min(sy0, sy1), max(sy0, sy1));
+    float lo = max(max(sx.x, sy.x), sz0), hi = min(min(sx.y, sy.y), sz1);
+    if (lo <= hi && hi > best) {
+      best = hi;
+      // The face the ray comes in by, from the eye's side: the bound that closes the interval first.
+      face = hi == sz1 ? vec3(0.0, 0.0, 1.0) : hi == sx.y ? vec3(-sign(d.x), 0.0, 0.0) : vec3(0.0, -sign(d.y), 0.0);
+    }
+  }
+  float exact = best >= 0.0 ? 1.0 : 0.0;
+  if (exact > 0.5) nOut = normalize(vPaneXv * face.x + vPaneYv * face.y + vPaneZv * face.z);
+  return mix(filtered, exact, smoothstep(1.0, 2.0, thin));
+}`;
+
 /** The window panes' material: the room behind each pane drawn by interior mapping */
 export function roomBehindGlass(
   material: MeshStandardMaterial,
@@ -33,6 +91,11 @@ uniform float roomsAwake;
 attribute vec4 roomA;
 attribute vec4 roomB;
 attribute vec4 roomC;
+attribute vec4 roomD;
+varying vec4 vRoomD;
+varying vec3 vPaneXv;
+varying vec3 vPaneYv;
+varying vec3 vPaneZv;
 varying vec4 vRoomA;
 varying vec4 vRoomB;
 varying vec4 vRoomC;
@@ -54,6 +117,11 @@ vec3 sight = (paneToWorld * vec4(position, 1.0)).xyz - cameraPosition;
 vRoomEye = vec3(position.x * paneW, position.y * paneH, 0.0);
 vPaneSize = vec2(paneW, paneH);
 vRoomRay = vec3(dot(sight, paneX), dot(sight, paneY), -dot(sight, paneZ));
+// The pane's frame (\`PANE_FRAME_GLSL\`): its trim and thickness, and the pane's axes in view space for its bars' faces.
+vRoomD = roomD;
+vPaneXv = (viewMatrix * vec4(paneX, 0.0)).xyz;
+vPaneYv = (viewMatrix * vec4(paneY, 0.0)).xyz;
+vPaneZv = (viewMatrix * vec4(paneZ, 0.0)).xyz;
 #ifdef USE_INSTANCING
 vec3 roomAt = instanceMatrix[3].xyz;
 #else
@@ -75,9 +143,14 @@ uniform float tvClock;
 varying vec4 vRoomA;
 varying vec4 vRoomB;
 varying vec4 vRoomC;
+varying vec4 vRoomD;
+varying vec3 vPaneXv;
+varying vec3 vPaneYv;
+varying vec3 vPaneZv;
 varying vec3 vRoomEye;
 varying vec3 vRoomRay;
 varying vec2 vPaneSize;
+${PANE_FRAME_GLSL}
 uniform vec3 furnitureTone[${FURNITURE_KINDS.length}];
 float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }
 ${ROOM_LAMP_GLSL}`)
@@ -86,7 +159,11 @@ ${ROOM_LAMP_GLSL}`)
 // Faded from ~20 px a pane down to ~3: past that the room's furniture, blinds and frames are under a pixel each and only shimmer (the town's towers read as noise, the player, 2026-10-20), and a pane faded skips the room's trace.
 float paneTiny = smoothstep(0.05, 0.3, max(fwidth(vPane.x), fwidth(vPane.y)));
 vec3 roomSeen = vec3(0.42, 0.45, 0.47);
-if (paneTiny < 1.0) {
+// The frame over the pane: how much of the pixel it covers, and the face of it seen.
+float paneFrame = 0.0;
+vec3 paneFrameNormal = vPaneZv;
+if (vRoomD.w > 0.0) paneFrame = paneFrameCover(vRoomEye.xy, vRoomRay, vPaneSize, vRoomD.w, paneFrameNormal);
+if (paneTiny < 1.0 && paneFrame < 1.0) {
 if (vRoomA.z > 0.05) {
   vec3 o = vRoomEye;
   vec3 d = vRoomRay;
@@ -230,10 +307,19 @@ roomSeen = mix(roomSeen, vec3(0.42, 0.45, 0.47), paneTiny);
 }
 // The glass itself scatters next to nothing: what a pane shows is the
 // room through it (sent out below, \`roomDaylight\`) and its Fresnel
-// reflection.
-diffuseColor.rgb *= 0.06;`)
+// reflection. The frame is its trim, lit as the frames' own material is.
+diffuseColor.rgb = mix(diffuseColor.rgb * 0.06, vRoomD.rgb, paneFrame);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-roughnessFactor = mix(roughnessFactor, 0.55, paneTiny);`)
+roughnessFactor = mix(mix(roughnessFactor, 0.55, paneTiny), ${PANE_FRAME_LOOK.roughness.toFixed(2)}, paneFrame);`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+metalnessFactor = mix(metalnessFactor, ${PANE_FRAME_LOOK.metalness.toFixed(2)}, paneFrame);`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+normal = normalize(mix(normal, paneFrameNormal, step(0.5, paneFrame)));`)
+      .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
+#if defined( RE_IndirectSpecular ) && defined( USE_ENVMAP )
+  // The frame reflects the sky as the frames' material did (its own envMapIntensity, 1), not the glass's.
+  radiance *= mix(1.0, 1.0 / max(envMapIntensity, 1e-3), paneFrame);
+#endif`)
       .replace('#include <envmap_physical_pars_fragment>', `#include <envmap_physical_pars_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 // Not every occupied room shows its light (blinds, a lamp in the next room); by day the lamp's emissive is 0 (a uniform: one branch for every pixel) and none is worked out.
@@ -249,8 +335,10 @@ roomTint = mix(roomTint, tvLight(tvClock, vRoomLot), (1.0 - office) * step(1.0 -
 // At night the lamp lights the room: its walls, floor and furniture seen, not a sheet of light.
 totalEmissiveRadiance *= roomLit * roomTint * (0.35 + 1.3 * clamp(roomSeen / 0.55, 0.0, 1.6));
 }
-totalEmissiveRadiance += roomSeen * roomDaylight;`);
+totalEmissiveRadiance += roomSeen * roomDaylight;
+// The frame shows no room and no lamp.
+totalEmissiveRadiance *= 1.0 - paneFrame;`);
   };
   // One key for the clear and the dark panes: their source is the same (no number of the kind in it), so one program (r186 `WebGLRenderer.getProgram`: each material its own uniforms, the program shared by key).
-  glassy.customProgramCacheKey = () => 'room-lights-awake-interior-v12';
+  glassy.customProgramCacheKey = () => 'room-lights-awake-interior-v13-frame';
 }
