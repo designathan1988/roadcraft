@@ -195,7 +195,15 @@ export class PartCell {
         const mesh = band.meshes.get(key);
         if (!mesh || band.drawn.has(key)) continue;
         band.meshes.delete(key);
-        for (const [level, copy] of mesh.userData['posed'] as Map<number, BufferGeometry>) letGoPosed(copy, band.screen.levels[level]!.geometry);
+        // DO NOT free the band's buffers with one run: its poses, looks and colours are shared by every run of the band, their arrays let go once
+        // uploaded (`gpuOnlyAttributes`), and the runs still drawn found no buffer and three made one of a null array - every frame, the game frozen
+        // (the player, 2026-10-22: "navego um pouco e trava"). Every attribute of a copy is the model's or the band's: all taken off, nothing freed.
+        for (const copy of (mesh.userData['posed'] as Map<number, BufferGeometry>).values()) {
+          for (const name of Object.keys(copy.attributes)) copy.deleteAttribute(name);
+          copy.setIndex(null);
+          copy.dispose();
+        }
+        mesh.instanceColor = null;
         mesh.dispose();
         this.group.remove(mesh);
       }
