@@ -9,6 +9,8 @@ const TURNS = Number(arg('--turns', '3'));
 const { browser, page } = await openCity();
 const rows = await page.evaluate(async ({ shadows, TURNS }) => {
   const { QUALITY } = await import('/src/render/quality.ts');
+  // Triangles as three submits them (`describe.ts` trianglesUnder): the draw range, the instances, a BatchedMesh's own lists.
+  const { trianglesUnder } = await import('/src/lab/inspector/describe.ts');
   const handle = window.__roadcraft.scene(), scene = handle.scene;
   handle.setQuality('ultra', { ...QUALITY.ultra, shadows, postProcessing: false, ambientOcclusion: false, smaa: false });
   const layer = scene.children.find((c) => c.name === 'buildings-layer');
@@ -17,9 +19,9 @@ const rows = await page.evaluate(async ({ shadows, TURNS }) => {
   const kinds = new Map();
   layer.traverse((m) => {
     if (!m.isMesh || !m.visible || !m.geometry) return;
-    const g = m.geometry, n = g.index ? g.index.count : (g.attributes.position?.count || 0), inst = m.isInstancedMesh ? m.count : 1;
+    const g = m.geometry, tris = trianglesUnder(m), inst = m.isInstancedMesh ? m.count : 1;
     const k = kinds.get(kindOf(m)) ?? { meshes: [], tris: 0, inst: 0, casting: 0, verts: 0 };
-    k.meshes.push(m); k.tris += (n / 3) * inst; k.inst += inst; k.verts = Math.max(k.verts, g.attributes.position?.count || 0); if (m.castShadow) k.casting += (n / 3) * inst;
+    k.meshes.push(m); k.tris += tris; k.inst += inst; k.verts = Math.max(k.verts, g.attributes.position?.count || 0); if (m.castShadow) k.casting += tris;
     kinds.set(kindOf(m), k);
   });
   await sleep(3000);
@@ -46,7 +48,7 @@ const rows = await page.evaluate(async ({ shadows, TURNS }) => {
 }, { shadows: SHADOWS, TURNS });
 console.log(sameScene(rows.windows).line);
 console.log(`GPU p50 with everything: ${rows.base} ms (shadows ${SHADOWS ? 'on' : 'off'}, post off)`);
-console.log('part'.padEnd(34), 'saves ms', ' tri(k)', 'meshes', 'instances', 'verts/part', 'casts shadow(k)');
+console.log('part'.padEnd(34), 'saves ms', ' tri(k)', 'meshes', 'instances', 'verts/part', 'casts shadow(k, each cascade)');
 for (const r of rows.out.sort((a, b) => b.saveMs - a.saveMs)) console.log(r.name.padEnd(34), String(r.saveMs).padStart(9), String(r.trisK).padStart(7), String(r.meshes).padStart(6), String(r.instances).padStart(10), String(r.vertsMax).padStart(9), String(r.castsK).padStart(10));
 writeFileSync(`test-results/buildingParts${SHADOWS ? '-shadows' : ''}.json`, JSON.stringify(rows, null, 2));
 await browser.close();

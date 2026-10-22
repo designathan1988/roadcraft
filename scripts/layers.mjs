@@ -45,7 +45,9 @@ for (const view of [{ name: 'whole city', zoom: 1 }, { name: 'district', zoom: 4
     handle.setQuality('ultra', quality);
     for (const g of all) g.visible = false;
     const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-    const visibleTris = () => { let t = 0, meshes = 0; scene.traverseVisible((m) => { if (!m.isMesh || !m.geometry) return; meshes++; const g = m.geometry; const n = g.index ? g.index.count : (g.attributes.position?.count || 0); t += (n / 3) * (m.isInstancedMesh ? m.count : 1); }); return { tris: t, meshes }; };
+    // Triangles as three submits them (`describe.ts` trianglesUnder): the draw range, the instances, a BatchedMesh's own lists.
+    const { trianglesUnder } = await import('/src/lab/inspector/describe.ts');
+    const visibleTris = () => { let meshes = 0; scene.traverseVisible((m) => { if (m.isMesh && m.geometry) meshes++; }); return { tris: trianglesUnder(scene), meshes }; };
     const out = [];
     for (const layer of LAYERS) {
       for (const g of (layer.groups ?? []).flatMap(pick)) g.visible = was.get(g) ?? true;
