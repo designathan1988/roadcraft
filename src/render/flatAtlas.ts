@@ -29,7 +29,6 @@ import {
   type TerrainSurface,
 } from './terrain';
 import { m } from '@world/units';
-import { Digest } from '@core/digest';
 import type { Aabb } from '@core/aabb';
 import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
@@ -91,9 +90,8 @@ interface Plate {
   readonly cy: number;
   readonly source: PlateSource;
   /** The document's stamps and dabs that reach it, moved to its map (about its centre). */
-  /** The copies, moved to the plate's map, of the stamps and dabs that reach it (`copyOn`): none for the others. */
-  readonly stampCopies: WeakMap<TerrainStamp, TerrainStamp>;
-  readonly dabCopies: WeakMap<PaintDab, PaintDab>;
+  readonly stampCopies: WeakMap<TerrainStamp, TerrainStamp | null>;
+  readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
   surface: PlateSurface | null;
   shown: boolean;
   /** Its surface's programs built (`uploads.ts` programsReady): not shown before, the far patch standing in. */
@@ -376,13 +374,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     for (const p of shownList) if (p.top > highest) highest = p.top;
   };
 
-  /** DO NOT remember a null for every stamp and dab that misses a plate (each plate's weak map held an entry for every dab of the map: plates x dabs, 59 MB in the city of 70,000 buildings, 2026-10-21): only the copies of those that reach it, the test (`reaches`) asked again for the others. */
-  const copyOn = <T extends { readonly x: number; readonly y: number; readonly radius: number; readonly ox?: number; readonly oy?: number }>(copies: WeakMap<T, T>, p: Plate, item: T): T | null => {
-    const known = copies.get(item);
-    if (known !== undefined) return known;
-    if (!reaches(p, item.x, item.y, item.radius)) return null;
-    const local = { ...item, x: item.x - p.cx, y: item.y - p.cy, ...(item.ox !== undefined && item.oy !== undefined ? { ox: item.ox - p.cx, oy: item.oy - p.cy } : {}) };
-    copies.set(item, local);
+  const copyOn = <T extends { readonly x: number; readonly y: number; readonly radius: number; readonly ox?: number; readonly oy?: number }>(copies: WeakMap<T, T | null>, p: Plate, item: T): T | null => {
+    let local = copies.get(item);
+    if (local === undefined) {
+      copies.set(item, local = reaches(p, item.x, item.y, item.radius)
+        ? { ...item, x: item.x - p.cx, y: item.y - p.cy, ...(item.ox !== undefined && item.oy !== undefined ? { ox: item.ox - p.cx, oy: item.oy - p.cy } : {}) }
+        : null);
+    }
     return local;
   };
   /** A plate's stamps from the document: those that reach it, moved to its map; true when they changed. */
@@ -443,8 +441,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.mesh = null;
     const t1 = performance.now();
     p.surface = s;
-    // Its paint's side for the view before the first dab is laid (`PlateSurface.paintDetail`): DO NOT lay a far plate's at full size to let it go at the next refresh.
-    s.paintDetail?.(near.includes(p.key) || wantedNear.includes(p));
     if (lastDoc) {
       s.update(p.source, false);
       const t2 = performance.now();
@@ -512,8 +508,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const cached: Plate[] = [];
     for (const p of plates.values()) {
       if (!p.surface) continue;
-      // Its painted layers at full size only near the view (`PlateSurface.paintDetail`): the map's every plate with content is drawn, from afar.
-      p.surface.paintDetail?.(near.includes(p.key));
       // Wanted but its programs still being built: neither shown nor let go (the far patch stands in).
       if (wanted.has(p.key) && !p.ready) { show(p, false); continue; }
       const want = wanted.has(p.key);
@@ -817,21 +811,11 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     // With the shared plates it reads, for a worker to read the same ground (`cellPool.ts`).
     renderedHeightAt: Object.assign((x: number, y: number): number => ask(x, y, (s, lx, ly) => s.renderedHeightAt(lx, ly), bareAt), { share }) satisfies SharedGroundAt,
     wetAt: (x, y) => ask(x, y, (s, lx, ly) => s.wetAt(lx, ly), () => false),
-    // Every plate the box reaches, each read over its own part (a box across a plate's edge read one plate before: the other's ground was left out).
     digest(minX, minY, maxX, maxY) {
-      const one = (key: number, x0: number, y0: number, x1: number, y1: number): number => {
-        const p = plates.get(key);
-        if (!p?.surface) return key * 7919 + (seenRelief ?? 0) * 31 + 1;
-        return p.surface.digest(x0 - p.cx, y0 - p.cy, x1 - p.cx, y1 - p.cy) + p.key;
-      };
-      const keys = platesOver([minX, minY, maxX, maxY]);
-      if (keys.length === 1) return one(keys[0]!, minX, minY, maxX, maxY);
-      const out = new Digest();
-      for (const key of keys) {
-        const r = plateRegion(key);
-        out.add(one(key, Math.max(minX, r.cx - r.half), Math.max(minY, r.cy - r.half), Math.min(maxX, r.cx + r.half), Math.min(maxY, r.cy + r.half)));
-      }
-      return out.value();
+      const key = plateOf((minX + maxX) / 2, (minY + maxY) / 2);
+      const p = plates.get(key);
+      if (!p?.surface) return key * 7919 + (seenRelief ?? 0) * 31 + 1;
+      return p.surface.digest(minX - p.cx, minY - p.cy, maxX - p.cx, maxY - p.cy) + p.key;
     },
     update(doc, stroking) {
       sync(doc);

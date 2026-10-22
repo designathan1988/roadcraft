@@ -1,7 +1,6 @@
-import { MeshoptSimplifier } from 'meshoptimizer';
-import { jobLanes, jobPort, laneFirst } from '../jobs/jobPool';
+import { jobLanes, jobPort } from '../jobs/jobPool';
 import type { Tile } from './mesh/tileMesh';
-import { type BlockArrays, blockBuffers, coarseArrays } from './mesh/roadLodPure';
+import { type BlockArrays, blockBuffers } from './mesh/roadLodPure';
 import type { TileRect } from './mesh/tileShape';
 import type { SurfaceData, TileMeshes } from './roadTileMesh';
 import type { PassDesc } from './roadSurfaceReads';
@@ -53,28 +52,14 @@ export class RoadTilePool implements RoadTiler {
   /** The far levels' lanes (`coarsen`), on the page's own workers. DO NOT make them on the tiles' (`jobPool.ts` PROCESS_LANES, the desktop's job processes): a block's arrays were copied on the page both ways (`processWorker.ts` send), 270 ms of the page's every 5 s in a large city's close view (2026-10-21); a worker of the page takes them moved. */
   private coarseLanes: Lane[] | null = null;
   /** No frame is seen (the opening's curtain, `renderer.ts`): the far levels go to the tiles' lanes, the page's copies paid behind it. DO NOT put them on the page's lane then: it is the worker the building cells of the view queue on (`jobPool.ts` hostFor), and the opening's buildings in view waited for it (7.9 s or 10.7 s, by where the lane fell, 2026-10-21). */
-  get unseen(): boolean {
-    return this.hidden;
-  }
-  /** Behind the curtain the tiles' lanes go first in the job pool (`laneFirst`): the view's road surfaces are what the reveal waits for longest. Once it is shown the queue's cells near the camera share the workers with the fill's tiles again. */
-  set unseen(on: boolean) {
-    if (on === this.hidden) return;
-    this.hidden = on;
-    laneFirst('roadTiles', on);
-  }
-  private hidden = false;
+  unseen = true;
   private broken = false;
-
-  constructor() {
-    this.unseen = true;
-  }
   private nextId = 1;
   private nextLane = 0;
 
   coarsen(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null> {
     const lanes = (this.unseen ? this.start() : null) ?? this.startCoarse();
-    // Where no worker can be made (Node, the specs that open a city: `tests/census/sceneCensus.spec.ts`), made here as the worker makes it, once the simplifier's WebAssembly is in (`roadTile.worker.ts` serve).
-    if (!lanes) return MeshoptSimplifier.ready.then(() => coarseArrays(arrays, lock));
+    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
     const lane = lanes[this.nextLane++ % lanes.length]!;
     const id = this.nextId++;
     return new Promise((resolve, reject) => {

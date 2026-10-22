@@ -22,13 +22,13 @@ export function button(glyph: string, text: string, title: string, onClick: () =
 }
 
 export function bytes(n: number): string {
-  if (n >= 1048576) return `${(n / 1048576).toLocaleString('en-US', { maximumFractionDigits: 2 })} MB`;
-  if (n >= 1024) return `${(n / 1024).toLocaleString('en-US', { maximumFractionDigits: 1 })} KB`;
+  if (n >= 1048576) return `${(n / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB`;
+  if (n >= 1024) return `${(n / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`;
   return `${n} B`;
 }
 
 export const num = (v: number, digits = 3): string =>
-  Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { maximumFractionDigits: digits });
+  Number.isInteger(v) ? v.toLocaleString('pt-BR') : v.toLocaleString('pt-BR', { maximumFractionDigits: digits });
 
 /** A section heading. */
 export function heading(text: string, glyph = ''): HTMLElement {
@@ -66,7 +66,7 @@ export function preview(value: unknown, depth = 0): string {
   if (value === undefined) return 'undefined';
   if (typeof value === 'string') return depth ? JSON.stringify(value.length > 80 ? `${value.slice(0, 80)}…` : value) : value;
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  if (typeof value === 'function') return `ƒ ${(value as { name?: string }).name || 'anonymous'}()`;
+  if (typeof value === 'function') return `ƒ ${(value as { name?: string }).name || 'anônima'}()`;
   if (typeof value === 'symbol') return value.toString();
   if (Array.isArray(value)) return depth > 1 ? `Array(${value.length})` : `[${value.slice(0, 6).map((v) => preview(v, depth + 1)).join(', ')}${value.length > 6 ? ', …' : ''}] (${value.length})`;
   if (ArrayBuffer.isView(value)) return `${value.constructor.name}(${(value as unknown as { length?: number }).length ?? value.byteLength})`;
@@ -121,7 +121,7 @@ export function valueTree(value: unknown, label = ''): HTMLElement {
     const entries = entriesOf(value, 300);
     for (const [k, v] of entries) body.appendChild(valueTree(v, k));
     const total = value instanceof Map || value instanceof Set ? value.size : ArrayBuffer.isView(value) ? (value as unknown as { length: number }).length : Object.keys(value as object).length;
-    if (total > entries.length) body.appendChild(el('div', 'lab-muted', `… ${total - entries.length} more`));
+    if (total > entries.length) body.appendChild(el('div', 'lab-muted', `… mais ${total - entries.length}`));
     if (typeof value === 'object' && value && !Array.isArray(value)) {
       const proto = Object.getPrototypeOf(value) as object | null;
       if (proto && proto !== Object.prototype) body.appendChild(el('div', 'lab-muted', `[[Prototype]] ${proto.constructor?.name ?? ''}`));
@@ -138,7 +138,7 @@ export function safeJson(value: unknown, space = 1): string {
     if (typeof v === 'bigint') return String(v);
     if (typeof v === 'function') return undefined;
     if (v && typeof v === 'object') {
-      if (seen.has(v)) return '[cycle]';
+      if (seen.has(v)) return '[ciclo]';
       seen.add(v);
       if (v instanceof Map) return Object.fromEntries([...v.entries()].map(([k, x]) => [String(k), x]));
       if (v instanceof Set) return [...v];

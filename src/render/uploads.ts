@@ -578,11 +578,11 @@ LOOSE.camera.layers.enableAll();
 
 /** Whether a geometry's arrays were let go once on the GPU (`gpuOnly`): its attributes' arrays are null. */
 function released(geometry: BufferGeometry): boolean {
-  // DO NOT read it as `array ?? data?.array`: a plain attribute let go has no `data`, the null array read as undefined, and the warm drew it (three's createBuffer on a null array, 72 warnings a large city's tour, 2026-10-21).
-  const gone = (buffer: (BufferAttribute & { data?: { array: ArrayLike<number> | null } }) | null): boolean =>
-    buffer !== null && (buffer.data ? buffer.data.array : buffer.array) === null;
-  for (const attribute of Object.values(geometry.attributes)) if (gone(attribute as BufferAttribute)) return true;
-  return gone(geometry.index);
+  for (const attribute of Object.values(geometry.attributes)) {
+    const buffer = attribute as BufferAttribute & { data?: { array: ArrayLike<number> | null } };
+    if ((buffer.array ?? buffer.data?.array) === null) return true;
+  }
+  return false;
 }
 
 /** DO NOT draw the whole scene for it (on a layer of its own) */

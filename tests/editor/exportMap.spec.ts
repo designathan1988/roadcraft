@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type SavedSettings, readMapFile } from '@editor/persistence';
+import type { SavedSettings } from '@editor/persistence';
 import { exportToFile } from '@editor/mapExport';
 import { RoadDoc } from '@world/doc';
 
@@ -44,16 +44,14 @@ function limitStrings(limit: number): void {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('Save map (the export to a file)', () => {
-  it('writes the session as a binary map file that opens as the same map and settings', async () => {
+  it('writes the same session as one JSON text would, without indentation', async () => {
     const seen = captureDownloads();
     const doc = town();
     exportToFile(doc, settings);
     expect(seen.blobs).toHaveLength(1);
-    const bytes = await seen.blobs[0]!.arrayBuffer();
-    expect(new TextDecoder().decode(new Uint8Array(bytes, 0, 4))).toBe('RCMF');
-    const session = readMapFile(bytes);
-    expect(session?.document).toEqual(JSON.parse(JSON.stringify(doc.toJSON())));
-    expect(session?.settings.camera).toEqual(settings.camera);
+    const text = await seen.blobs[0]!.text();
+    expect(text).not.toContain('\n');
+    expect(JSON.parse(text)).toEqual(JSON.parse(JSON.stringify({ version: 2, document: doc.toJSON(), settings: { ...settings, unit: JSON.parse(text).settings.unit } })));
     expect(seen.clicks).toBe(1);
   });
 
@@ -61,13 +59,13 @@ describe('Save map (the export to a file)', () => {
     const seen = captureDownloads();
     const doc = town();
     const whole = JSON.stringify({ version: 2, document: doc.toJSON(), settings });
-    // Every part of the map fits in a string; the whole map does not.
-    const limit = whole.length - 1;
-    limitStrings(limit);
+    // Every node or segment fits in a string; the whole map does not.
+    limitStrings(400);
+    expect(whole.length).toBeGreaterThan(400);
     exportToFile(doc, settings);
     vi.restoreAllMocks();
     expect(seen.blobs).toHaveLength(1);
-    expect(readMapFile(await seen.blobs[0]!.arrayBuffer())?.document).toEqual(JSON.parse(JSON.stringify(doc.toJSON())));
+    expect(JSON.parse(await seen.blobs[0]!.text()).document).toEqual(JSON.parse(JSON.stringify(doc.toJSON())));
   });
 
   it('tells the player when the file cannot be made, and offers nothing', () => {

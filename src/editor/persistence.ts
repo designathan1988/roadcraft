@@ -10,7 +10,6 @@ import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
 import { type SavedLayout, TiledSaves } from './chunkedSave';
 import { type PartStore, SAVES_STORE, indexedDbParts, openSaves, portWriter } from './saveStore';
-import { FILE_DOC, FILE_MAGIC, FILE_SETTINGS, jsonOf, magicOf, readFrame } from './saveBinary';
 import { jobPort } from '../jobs/jobPool';
 
 /** Where the map is kept. */
@@ -67,6 +66,9 @@ export class Persistence {
   /** Called when a write fails (storage full or refused). */
   onSaveFailed: (() => void) | null = null;
 
+  /** A streamed world is open (CLAUDE.md, "Streaming world"): its tiles are its save (`editor/tileStore.ts`), the document (the tiles on the page) is not written whole. */
+  paused = false;
+
   /** The map by tiles (`chunkedSave.ts`): what the diary says changed, written off the page; null without IndexedDB (the whole text). */
   private readonly parted: TiledSaves | null;
   /** How the map the opening read was stored (`loadSessionAsync`), for `adoptLoaded`. */
@@ -108,6 +110,7 @@ export class Persistence {
   private lastWrite: Promise<unknown> = Promise.resolve();
   written(): Promise<void> { return this.lastWrite.then(() => undefined, () => undefined); }
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
+    if (this.paused) { this.writeSettings(settings); return true; }
     const generation = ++this.generation;
     // DO NOT choose by the count of buildings: below it a map of any size of roads, lots and trees was one text an edit.
     if (this.parted) {
@@ -437,8 +440,7 @@ export async function importFromFile(): Promise<ImportResult> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    // The binary map file (`mapExport.ts`) and the JSON files before it.
-    input.accept = '.roadcraft,application/octet-stream,application/json,.json';
+    input.accept = 'application/json,.json';
     let settled = false;
     const finish = (value: ImportResult): void => {
       if (settled) return;
@@ -452,7 +454,8 @@ export async function importFromFile(): Promise<ImportResult> {
         return;
       }
       try {
-        const session = readMapFile(await file.arrayBuffer());
+        const parsed: unknown = JSON.parse(await file.text());
+        const session = readImportedSession(parsed);
         finish(session ? { status: 'ok', session } : { status: 'invalid' });
       } catch {
         finish({ status: 'invalid' });
@@ -465,27 +468,6 @@ export async function importFromFile(): Promise<ImportResult> {
     }, { once: true });
     input.click();
   });
-}
-
-/** A map file's session, known by its first bytes: the binary file (magic 'RCMF', `mapExport.ts` mapFileBlob), or a JSON file of the builds before it (a session, or a map alone); null when it is neither. */
-export function readMapFile(bytes: ArrayBuffer): SavedSession | null {
-  if (magicOf(bytes) !== FILE_MAGIC) {
-    try { return readImportedSession(JSON.parse(new TextDecoder().decode(bytes))); } catch { return null; }
-  }
-  const frame = readFrame(bytes, FILE_MAGIC);
-  const map = frame?.get(FILE_DOC);
-  if (!frame || !map) return null;
-  try {
-    // The map's sections in a buffer of their own: their directory is read from offset 0 (`docBinary.ts` unpackImage).
-    const document = RoadDoc.fromBinary(map.slice().buffer).toJSON();
-    if (!isSerializedDoc(document)) return null;
-    const stored = frame.get(FILE_SETTINGS);
-    const settings: unknown = stored ? jsonOf(stored) : null;
-    return { document, settings: isSavedSettings(settings) ? normalizeSettings(settings) : defaultSettings() };
-  } catch (error) {
-    console.error('[import] the map file could not be read', error);
-    return null;
-  }
 }
 
 /** Accepts legacy geometry-only files while preserving complete session files. */
@@ -630,7 +612,7 @@ export interface LargeStore {
 const indexedDbStore: LargeStore = { get: (key) => storeGet(key), put: (key, text) => storePut(key, text), delete: (key) => storeDelete(key) };
 /** The map's tiles in IndexedDB where the browser has it and gzip streams (MDN, `CompressionStream`), written by the job system's `save` lane; none elsewhere. */
 function defaultParts(): PartStore | null {
-  // The regions are binary frames, kept uncompressed when the browser has no CompressionStream (`saveBinary.ts` `gzipBytes`): never the whole map in one text.
+  // The tiles are plain JSON when the browser has no CompressionStream (`saveStore.ts` `gzip`): never the whole map in one text for it.
   if (typeof indexedDB === 'undefined') return null;
   // DO NOT encode and write the save on the page: the page hands the worker the changed squares' records, the worker does the rest.
   const writer = typeof Worker !== 'undefined' ? portWriter(() => jobPort('save')) : undefined;

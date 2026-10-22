@@ -139,6 +139,26 @@ describe('the buildings layer, a change at a time', () => {
   });
 });
 
+describe('a tile handed to the cells', () => {
+  it('is not said drawn before the town was put together from the document as it stood when the tile came in', () => {
+    const doc = new RoadDoc();
+    const layer = createBuildingLayer();
+    settle(layer, doc);
+    // The tile comes in, its roads and its buildings (`RoadDoc.loadTile`): the town has not taken them in yet, no cell of it exists.
+    doc.addNode({ x: m(50), y: m(50) });
+    for (let i = 0; i < 4; i++) doc.buildings.add(body(i, m(100) + i * SPACING, m(100)));
+    const came = doc.revision;
+    const rect = [0, 0, m(1024), m(1024)] as const;
+    // No cell over it yet: "every cell drawn" held for none.
+    expect(layer.drawnOver(rect)).toBe(true);
+    expect(layer.drawnOver(rect, came)).toBe(false);
+    settle(layer, doc);
+    // Put together: its cells say for it, the tile's revision no longer holds it back.
+    expect(layer.drawnOver(rect, came)).toBe(layer.drawnOver(rect));
+  });
+});
+
+
 describe('the far sun cascades', () => {
   it('take the cells in detail by their masses only, never leave one without a caster, and every caster is back as it was after the passes', () => {
     const doc = new RoadDoc();
@@ -218,11 +238,9 @@ describe('a cell waiting for its level', () => {
     const { readFileSync } = await import('node:fs');
     const layer = readFileSync('src/render/buildings/layer.ts', 'utf8');
     const land = layer.slice(layer.indexOf('const landCells'), layer.indexOf('const landCells') + 3000);
-    expect(land).toMatch(/const entries = entriesFor\(cell, list\)/);
+    expect(land).toMatch(/const entries = entriesFor\(cell, list, groundAt, groundKey, pavedAt\)/);
     const keep = layer.slice(layer.indexOf('const entriesFor'), layer.indexOf('const entriesFor') + 600);
-    // Its ground by the cell's digest; its records by the diary: a cell whose buildings changed has its entries let go (`update`).
-    expect(keep).toMatch(/known\.digest === digest && known\.cut === cut/);
-    expect(layer).toMatch(/for \(const cell of dirty\) \{ cellEntries\.delete\(cell\); askMass\(cell, groundAt\); pendingCells\.add\(cell\); \}/);
+    expect(keep).toMatch(/known\.groundKey === groundKey && known\.cut === cut && known\.list\.length === list\.length && known\.list\.every/);
     // The cut-open view by every number its entries read, not by identity (a new spec every frame from the wiring, PRD-12).
     const cutOf = layer.slice(layer.indexOf('const cutOf'), layer.indexOf('const cutOf') + 300);
     for (const field of ['c.only', 'c.level', 'c.x', 'c.y', 'c.radius', 'c.view.y, c.view.x']) expect(cutOf).toContain(field);
@@ -321,5 +339,46 @@ describe('the cells the budget of triangles held back', () => {
     expect(moved).toBeGreaterThan(1);
     expect(still).toEqual(still.map(() => 1));
     layer.dispose();
+  });
+});
+
+describe('what the layer keeps while the camera walks the town', () => {
+  /** A row of the same building, one a cell, along 23 tiles; the active region the three tiles round the eye; the eye walked a tile at a time. */
+  const walk = (tiles: number): Record<string, number> => {
+    const doc = new RoadDoc();
+    const CELL = m(256), TILE = m(1024);
+    for (let i = 0; i < 23 * 4; i++) doc.buildings.add(body(0, i * CELL + CELL / 2, CELL / 2));
+    const layer = createBuildingLayer();
+    // A budget the view passes: cells held back by it (`capTriangles`).
+    layer.frame.budget = 40_000;
+    let region: [number, number] | null = null;
+    for (let step = 0; step <= tiles; step++) {
+      const eyeX = TILE * 1.5 + step * TILE;
+      const lo = eyeX - TILE * 1.5, hi = eyeX + TILE * 1.5;
+      const rects: [number, number, number, number][] = [[Math.min(lo, region?.[0] ?? lo), -TILE, Math.max(hi, region?.[1] ?? hi), TILE]];
+      region = [lo, hi];
+      layer.setActive((x) => x >= lo && x < hi, rects);
+      for (let frame = 0; frame < 600; frame++) {
+        layer.update(doc, flat, 'g');
+        layer.levelOfDetail(eyeX, CELL / 2, m(60), 1000, null);
+        layer.cullDetails(eyeX, CELL / 2, m(60), 1000, null, m(1));
+        if (!layer.pending && frame > 2) break;
+      }
+    }
+    const books = { ...layer.books() };
+    layer.dispose();
+    return books;
+  };
+
+  it('keeps as much after 20 tiles walked as after 2: its books bounded by the active region, never by the road walked', () => {
+    const near = walk(2), far = walk(20);
+    // The masses' books and the cells held back (`massCells.ts`, `capTriangles`): the same, region for region.
+    for (const book of ['massCells', 'massTiles', 'massPlates', 'massEntries', 'massAsked', 'townCells', 'heldFar', 'heldCoarse']) {
+      expect([book, far[book]]).toEqual([book, near[book]]);
+    }
+    // The levels measured (`LandedMeasure`): the town's cells' only, two levels a cell at most, whatever was walked (DO NOT keep every cell passed).
+    for (const book of ['landedTriangles', 'landedBytes']) {
+      for (const books of [near, far]) expect(books[book]!).toBeLessThanOrEqual(2 * books['townCells']!);
+    }
   });
 });

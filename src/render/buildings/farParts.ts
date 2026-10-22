@@ -1,12 +1,10 @@
 import { type BufferGeometry, Group, InstancedBufferAttribute, InstancedInterleavedBuffer, InstancedMesh, type Material } from 'three';
 
-import { CELL } from '@world/cells';
-
 import { COLOURED_PARTS } from './cellArrays';
 import { partLook } from './fade';
 import { PART_KINDS, type BuildingKit, type PartKind } from './kit';
 import { BAR_PIXELS, type PartCell, widestBar } from './partCells';
-import type { PartFiling } from './partFiling';
+import { DETAIL_CELL, type PartFiling } from './partFiling';
 import { POSE_FLOATS, letGoPosed, partPoseDepth, posedCopy } from './partPose';
 import { SHELL_PARTS } from './shellParts';
 
@@ -103,10 +101,9 @@ export class FarPartBatch {
       for (const run of batch.runs) {
         const comma = run.cell.indexOf(',');
         const i = Number(run.cell.slice(0, comma)), j = Number(run.cell.slice(comma + 1));
-        // A run's key is its facade cell's (the world grid's CELL, 256 m), not a 64 m sub-cell's: read on the sub-cell's side, each run stood a quarter of the way to the origin.
-        const x0 = i * CELL, y0 = j * CELL;
-        const dx = Math.max(x0 - eyeX, 0, eyeX - (x0 + CELL));
-        const dy = Math.max(y0 - eyeY, 0, eyeY - (y0 + CELL));
+        const x0 = i * DETAIL_CELL, y0 = j * DETAIL_CELL;
+        const dx = Math.max(x0 - eyeX, 0, eyeX - (x0 + DETAIL_CELL));
+        const dy = Math.max(y0 - eyeY, 0, eyeY - (y0 + DETAIL_CELL));
         // Three's world: the plan's y is -z; the eye's height over the cell's ground is the third term.
         const dz = Math.max(0, eyeZ);
         const distance = Math.hypot(dx, dy, dz);

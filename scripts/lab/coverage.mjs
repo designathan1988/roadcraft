@@ -169,7 +169,7 @@ function mapScript(script, source, map, files) {
     const f = fileOf(at.file.slice(1));
     const key = `${at.line}:${fn.functionName}`;
     const was = f.functions.get(key);
-    f.functions.set(key, { name: fn.functionName || '(anonymous)', line: at.line, count: (was?.count ?? 0) + whole.count });
+    f.functions.set(key, { name: fn.functionName || '(anônima)', line: at.line, count: (was?.count ?? 0) + whole.count });
   }
   // Lines: each segment spans to the next on its generated line; a TS line ran if any of its segments ran.
   map.lines.forEach((row, genLine) => {
@@ -245,33 +245,33 @@ function knip() {
 function markdown(r) {
   const s = r.summary;
   const lines = [
-    `# Code coverage — ${r.date}`,
+    `# Cobertura do código — ${r.date}`,
     '',
-    `Session of ${r.seconds} s at ${r.url}${r.city ? ', with a generated city' : ''}${r.views ? ', visiting views' : ''}. V8 precise coverage (main thread only: the workers' code is not in it).`,
+    `Sessão de ${r.seconds} s em ${r.url}${r.city ? ', com cidade gerada' : ''}${r.views ? ', visitando vistas' : ''}. Cobertura precisa do V8 (só a thread principal: o código dos workers não entra).`,
     '',
-    `- Functions: ${s.functions}, never run: **${s.functionsNeverRun}**`,
-    `- Mapped lines run: **${s.linePct}%** (${s.linesRun} of ${s.lines})`,
-    `- Files of src/ never loaded in the page: **${s.filesNeverLoaded}** (workers, desktop, tests or dead code)`,
-    ...(r.pageErrors.length ? ['', `Page errors: ${r.pageErrors.length}`] : []),
+    `- Funções: ${s.functions}, nunca executadas: **${s.functionsNeverRun}**`,
+    `- Linhas mapeadas executadas: **${s.linePct}%** (${s.linesRun} de ${s.lines})`,
+    `- Arquivos de src/ nunca carregados na página: **${s.filesNeverLoaded}** (workers, desktop, testes ou código morto)`,
+    ...(r.pageErrors.length ? ['', `Erros da página: ${r.pageErrors.length}`] : []),
     '',
-    '## Files (least run first)',
+    '## Arquivos (do menos executado)',
     '',
-    '| File | Lines run | Functions run | Never run |',
+    '| Arquivo | Linhas executadas | Funções executadas | Nunca executadas |',
     '|---|---:|---:|---|',
     ...r.files.map((f) => `| ${f.file} | ${f.linePct}% | ${f.functionsRun}/${f.functions} | ${f.neverRun.slice(0, 12).map((x) => `${x.name}:${x.line}`).join(', ')}${f.neverRun.length > 12 ? ` (+${f.neverRun.length - 12})` : ''} |`),
     '',
-    '## Files never loaded',
+    '## Arquivos nunca carregados',
     '',
     ...r.filesNeverLoaded.map((f) => `- ${f}`),
   ];
   if (r.knip) {
-    lines.push('', '## knip (static analysis)', '');
-    if (r.knip.error) lines.push(`knip failed: ${r.knip.error}`);
+    lines.push('', '## knip (análise estática)', '');
+    if (r.knip.error) lines.push(`knip falhou: ${r.knip.error}`);
     else {
-      lines.push(`- Unused files: ${r.knip.files.length}`, ...r.knip.files.map((f) => `  - ${f}`));
-      lines.push(`- Unused exports: ${r.knip.exports.length}`, ...r.knip.exports.map((x) => `  - ${x.file}:${x.line} ${x.name}`));
-      lines.push(`- Unused types: ${r.knip.types.length}`, ...r.knip.types.map((x) => `  - ${x.file}:${x.line} ${x.name}`));
-      if (r.knip.unresolved.length) lines.push(`- Unresolved imports: ${r.knip.unresolved.length}`, ...r.knip.unresolved.map((x) => `  - ${x.file}:${x.line} ${x.name}`));
+      lines.push(`- Arquivos não usados: ${r.knip.files.length}`, ...r.knip.files.map((f) => `  - ${f}`));
+      lines.push(`- Exports não usados: ${r.knip.exports.length}`, ...r.knip.exports.map((x) => `  - ${x.file}:${x.line} ${x.name}`));
+      lines.push(`- Tipos não usados: ${r.knip.types.length}`, ...r.knip.types.map((x) => `  - ${x.file}:${x.line} ${x.name}`));
+      if (r.knip.unresolved.length) lines.push(`- Imports não resolvidos: ${r.knip.unresolved.length}`, ...r.knip.unresolved.map((x) => `  - ${x.file}:${x.line} ${x.name}`));
     }
   }
   return `${lines.join('\n')}\n`;

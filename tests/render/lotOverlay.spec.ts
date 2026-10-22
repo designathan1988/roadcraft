@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { ActiveTiles } from '@render/activeTiles';
 import { MeshStandardMaterial } from 'three';
 import { applyLotOverlay, createLotOverlay, frameHalfFor, type LotOverlayGroup, type LotOverlayInput } from '@render/lotOverlay';
 import { PLATE_SIZE } from '@world/bounds';
 import { ChangeJournal } from '@world/changes';
+import { TILE, tileKey, tileKeyAt, tileRect } from '@world/tiles';
 import { sampleLattice } from './support/latticeSampler';
 
 /** THE LOTS COLOURED INTO THE GROUND (`render/lotOverlay.ts`). */
@@ -195,6 +197,37 @@ describe('lot overlay', () => {
     // Drawn again with nothing moved: the frame stays.
     overlay.set({ groups, changedFor: () => [] });
     expect(overlay.lattice).toBe(lattice);
+    overlay.dispose();
+  });
+
+  it('lays the lots of the streamed world\'s active tiles only, a lot astride their edge whole, as tiles come and go', () => {
+    const square = (x: number, y: number): LotOverlayGroup => ({
+      rank: 0,
+      polygons: [{ corners: [{ x, y }, { x: x + 20, y }, { x: x + 20, y: y + 20 }, { x, y: y + 20 }], fill: 0x56bb73, fillAlpha: 0.5, line: 0xffffff, lineAlpha: 1, width: 0.4 }],
+      lines: [], points: [],
+    });
+    // One lot on tile (0, 0), one on tile (1, 0), one astride their edge.
+    const groups = new Map<string, LotOverlayGroup>([['a', square(100, 100)], ['b', square(TILE + 476, 100)], ['c', square(TILE - 10, 300)]]);
+    const input: LotOverlayInput = { groups, changedFor: () => [] };
+    const shown = new Set([tileKey(0, 0)]);
+    const at = (x: number, y: number): boolean => shown.has(tileKeyAt(x, y));
+    const active = new ActiveTiles();
+    active.set(at, []);
+    const overlay = createLotOverlay(() => 0, active);
+    const filled = (x: number, y: number): boolean => sampleLattice(overlay.lattice, x, y)?.records.some((r) => r.fill && r.inside) ?? false;
+    const picture = (): boolean[] => [filled(110, 110), filled(TILE + 486, 110), filled(TILE - 5, 310), filled(TILE + 5, 310)];
+    overlay.set(input);
+    expect(picture()).toEqual([true, false, true, true]);
+    // Tile (1, 0) comes in and (0, 0) leaves, the input the same: the lots of those tiles laid again alone.
+    shown.add(tileKey(1, 0));
+    shown.delete(tileKey(0, 0));
+    active.set(at, [tileRect(1, 0), tileRect(0, 0)]);
+    overlay.set(input);
+    expect(picture()).toEqual([false, true, true, true]);
+    // The world closed: every lot.
+    active.set(null, []);
+    overlay.set(input);
+    expect(picture()).toEqual([true, true, true, true]);
     overlay.dispose();
   });
 

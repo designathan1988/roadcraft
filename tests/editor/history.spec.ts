@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { History, followNetwork } from '@editor/history';
 import { RoadDoc } from '@world/doc';
-import { imageBytes } from '@world/docBinary';
 import { Network } from '@world/network';
 import { generateBody } from '@world/buildings/blueprints';
 import { BuildingStore } from '@world/buildings/store';
@@ -255,40 +254,35 @@ describe('a step that replaced the whole map', () => {
     }
   });
 
-  it('keeps the maps as their images (each part apart, the buildings as buffers), never one text of the map, never the buildings as JSON, never compared record by record', () => {
+  it('keeps the maps as their text, its bytes their lengths, and never copies the map as objects nor writes a list only to compare it', () => {
     const doc = fullMap(1);
     const history = new History();
-    const before = imageBytes(doc.image());
+    const before = doc.toText();
     const opened = fullMap(2).toJSON();
     const toJSON = vi.spyOn(RoadDoc.prototype, 'toJSON');
-    const toText = vi.spyOn(RoadDoc.prototype, 'toText');
-    const buildingsText = vi.spyOn(BuildingStore.prototype, 'toText');
-    const compared = vi.spyOn(BuildingStore.prototype, 'replaceWith');
     const stringify = vi.spyOn(JSON, 'stringify');
+    const buildingsText = vi.spyOn(BuildingStore.prototype, 'toText');
     try {
       history.begin(doc);
-      doc.replaceFromJSON(opened, { whole: true });
+      doc.replaceFromJSON(opened);
       history.end(doc);
-      expect(history.bytes).toBe(before);
-      const after = imageBytes(doc.image());
+      expect(history.bytes).toBe(2 * before.length);
+      const after = doc.toText();
       stringify.mockClear();
+      buildingsText.mockClear();
       history.undo(doc);
-      expect(history.bytes).toBe(before + after);
+      expect(history.bytes).toBe(2 * (before.length + after.length));
       history.redo(doc);
       expect(toJSON).not.toHaveBeenCalled();
-      expect(toText).not.toHaveBeenCalled();
-      expect(buildingsText).not.toHaveBeenCalled();
-      expect(compared).not.toHaveBeenCalled();
-      // The buildings travel as their tables (`BuildingSections`): no list of buildings is ever written as JSON.
+      // `toText` writes the map's head and tail objects and the buildings' records in one pass (`BuildingStore.toText`); no other list (trees, elements, clouds...) is written to be compared.
       const building = (item: unknown): boolean => typeof item === 'object' && item !== null && 'volumes' in item && 'storeyHeight' in item;
       const lists = stringify.mock.calls.filter(([value]) => Array.isArray(value)).map(([value]) => value as unknown[]);
-      expect(lists.filter((list) => list.some(building))).toEqual([]);
+      expect(lists.filter((list) => !list.every(building))).toEqual([]);
+      expect(lists).toHaveLength(buildingsText.mock.calls.length);
     } finally {
       toJSON.mockRestore();
-      toText.mockRestore();
-      buildingsText.mockRestore();
-      compared.mockRestore();
       stringify.mockRestore();
+      buildingsText.mockRestore();
     }
   });
 

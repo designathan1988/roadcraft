@@ -4,7 +4,7 @@ export interface DeclaredFunction {
   readonly name: string;
   /** 1-based. */
   readonly line: number;
-  readonly kind: 'function' | 'arrow' | 'method';
+  readonly kind: 'função' | 'arrow' | 'método';
 }
 
 const IDENT = '[A-Za-z_$][\\w$]*';
@@ -49,13 +49,13 @@ export function declaredFunctions(text: string): DeclaredFunction[] {
       return;
     }
     let m = DECL.exec(code);
-    if (m) { out.push({ name: m[1]!, line: i + 1, kind: 'function' }); return; }
+    if (m) { out.push({ name: m[1]!, line: i + 1, kind: 'função' }); return; }
     m = ARROW.exec(code);
     if (m) { out.push({ name: m[1]!, line: i + 1, kind: 'arrow' }); return; }
     m = PROP_ARROW.exec(code) ?? CLASS_FIELD.exec(code);
     if (m && !KEYWORD.test(m[1]!)) { out.push({ name: m[1]!, line: i + 1, kind: 'arrow' }); return; }
     m = METHOD.exec(code);
-    if (m && !KEYWORD.test(m[1]!) && startDepth > 0) out.push({ name: m[1]!, line: i + 1, kind: 'method' });
+    if (m && !KEYWORD.test(m[1]!) && startDepth > 0) out.push({ name: m[1]!, line: i + 1, kind: 'método' });
   });
   return out;
 }

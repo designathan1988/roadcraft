@@ -66,9 +66,9 @@ export function tabIcon(id: string): string {
     inspector: 'crosshair', console: 'terminal', tweaks: 'sliders', scene: 'tree', memory: 'memory',
   };
   if (exact[id]) return exact[id];
-  if (/rec/.test(id)) return 'record';
+  if (/rec|grav/.test(id)) return 'record';
   if (/test|bench|sweep/.test(id)) return 'flask';
-  if (/probe/.test(id)) return 'search';
+  if (/probe|sond/.test(id)) return 'search';
   if (/diag/.test(id)) return 'pulse';
   return 'info';
 }

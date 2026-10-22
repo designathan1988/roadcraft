@@ -40,7 +40,7 @@ export function stepBudget(name: string): { readonly key: string; readonly budge
 export type CityView = 'street' | 'district' | 'map';
 
 /** Per view: triangles and draw calls (colour + shadow) of one frame, GPU ms (p95), fps (a floor).
- *  DO NOT set the triangles under what the view draws at full facade level on a dedicated GPU (district 13 M, street 5.4 M, map 4.9 M measured 2026-10-16): the levels' error scale rises until they fit (`buildings/frameBudget.ts`), and at 8 M the district view fell to masses - the picture lost for a number. `gpuMs` is a gate: a view over it is `over` (the frame's time is the quality governor's, `render/quality.ts`). */
+ *  DO NOT set the triangles under what the view draws at full facade level on a dedicated GPU (district 13 M, street 5.4 M, map 4.9 M measured 2026-10-16): the levels' error scale rises until they fit (`buildings/frameBudget.ts`), and at 8 M the district view fell to masses - the picture lost for a number. `gpuMs` is a gate: a view over it is `over` (`TimeGovernor` in `buildings/frameBudget.ts` is wired to nothing: no governor paces the detail by the GPU's time, report JOB-15). */
 export const VIEW_BUDGETS: Readonly<Record<CityView, { readonly triangles: number; readonly drawCalls: number; readonly gpuMs: number; readonly fps: number }>> = {
   street: { triangles: 16_000_000, drawCalls: 700 + 300, gpuMs: 12, fps: 60 },
   district: { triangles: 16_000_000, drawCalls: 800 + 300, gpuMs: 12, fps: 60 },

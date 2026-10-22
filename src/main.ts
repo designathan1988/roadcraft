@@ -4,7 +4,7 @@ import { measureHitch } from '@core/hitch';
 import { watchDesktopShown } from './desktopShown';
 import { canQueueJobs, jobChannel, jobLanes, jobPoolStats, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
 import type { CityGenAsk, CityGenReply } from './cityGen.worker';
-import { type OpenedCity, openedBuildings, prepareCity, preparedCity } from './editor/preparedCity';
+import { type OpenedCity, prepareCity, preparedCity } from './editor/preparedCity';
 import { COOKED_CITY_SEEDS, readCookedCity } from './editor/cookedCities';
 import { tableBytes, tableIn } from '@world/buildings/recordTable';
 import { desktopJobWorkers } from './desktopJobs';
@@ -30,12 +30,12 @@ import { METERS_PER_UNIT } from '@world/units';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
-import { RoadDoc, type JunctionControl, type SerializedDoc } from '@world/doc';
+import { RoadDoc, type JunctionControl } from '@world/doc';
 import { cutLotsByRoads } from '@world/lots';
 import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
-import { Network, type NetworkBake } from '@world/network';
+import { Network } from '@world/network';
 import { buildLargeCityMap, buildSmallCityMap } from '@editor/smallCityMap';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
@@ -100,11 +100,8 @@ import { carryStreetKit } from '@editor/roads/streetKit';
 import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
-import { History, followNetwork, openedGenerated, restoreInto, restoreSnapshot, serialize } from '@editor/history';
-import type { NetworkBakeAsk, NetworkBakeReply } from './networkBake.worker';
+import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
 import { SampleRing, STUTTER_MS } from '@core/sampleRing';
-import { problems } from '@core/assert';
-import { SessionSummary, fieldReport, problemBridge, shaderErrorHook, watchContext, wireFieldReport } from './fieldReport';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { exportToFile } from '@editor/mapExport';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
@@ -128,7 +125,7 @@ import {
 } from '@ui/labels';
 import { QUALITY_LEVELS, isQualityLevel } from '@render/quality';
 import { createBuildingWiring } from './buildingsWiring';
-import { createGraphicsWiring, isQualityPreset } from './graphicsWiring';
+import { createGraphicsWiring } from './graphicsWiring';
 import { createEffectsWiring } from './effectsWiring';
 import { createLab } from './lab/lab';
 import { createSteamAchievements } from './steamAchievements';
@@ -158,12 +155,6 @@ type Alignment = 'straight' | 'curve' | 'free';
 // The interface language is resolved and applied BEFORE anything reads a label
 setGlobalParams(roadKeyParams);
 initLanguage();
-
-// FIELD PROBLEMS (`fieldReport.ts`) wired before anything can fail: to the desktop shell's local log when it runs in one, the console in a browser.
-const problemShell = problemBridge(window);
-wireFieldReport({ page: window, bridge: problemShell, problems });
-/** The JS heap now, where the browser tells it (Chromium's `performance.memory`). */
-const heapBytes = (): number | undefined => (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 
@@ -266,9 +257,9 @@ if (saved) {
     performance.mark('boot:restore');
     // A large map's buildings made one table, as a generated city's are (`prepareCity`), and filed from it: DO NOT load them one object at a time - each was migrated and interned again (0.83 s of the large city's boot), and each written to a row of its own for the traffic's worker after (`refOf`, 0.5 s more).
     const asTable = (saved.buildings?.length ?? 0) >= TABLE_RESTORE_BUILDINGS ? (() => { const made = prepareCity(saved); return preparedCity(made.data, made.buildings); })() : null;
-    restoreInto(doc, asTable?.data ?? saved, net, asTable?.table ?? null);
+    restoreInto(doc, asTable?.data ?? saved, net, asTable !== null);
     performance.mark('boot:restored');
-    doc.changes.causeNext('game');
+    doc.changes.causeNext('jogo');
     // Opened from the map's parts: those parts are this document, the next save writes only what changes.
     persistence.adoptLoaded(doc);
   } catch (error) {
@@ -635,11 +626,7 @@ canvas3d.setAttribute('aria-hidden', 'true');
 canvas3d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
 canvas.parentElement?.insertBefore(canvas3d, canvas);
 /** The graphics options (`graphicsWiring.ts`): the tier the player chose, or the one this GPU holds at the first start, and their settings on it. */
-/** The session's summary told to the field log as the page closes (`fieldReport.ts`): the GPU, the tiers, the frames' times, the heap's peak. */
-const fieldSession = new SessionSummary(() => performance.now(), () => frameTimes, () => scene.gpu.label);
-const graphics = createGraphicsWiring((preset) => gameState.set('quality', preset, 'quality menu'), (level, by) => fieldSession.level(level, by));
-fieldSession.level(graphics.level, 'start');
-window.addEventListener('pagehide', () => fieldSession.send(fieldReport, heapBytes()));
+const graphics = createGraphicsWiring((level) => gameState.set('quality', level, 'quality menu'));
 /** The effects panel (F7, `effectsWiring.ts`): every effect and heavy system switched live, to measure what each costs. */
 const effects = createEffectsWiring();
 /** The city's milestones told to Steam when the desktop shell runs under it (`steamAchievements.ts`). */
@@ -682,9 +669,6 @@ function comesBackFromLostContext(canvas: HTMLCanvasElement): void {
   canvas.addEventListener('webglcontextrestored', () => { clearTimeout(reload); reload = undefined; });
 }
 comesBackFromLostContext(canvas3d);
-// The context lost and back, and a shader that failed (reported while three checks them: `debug.checkShaderErrors`, development builds), told to the field log.
-watchContext(canvas3d);
-scene.gl.debug.onShaderError = shaderErrorHook();
 // The surgical profiler (`core/profiler.ts`)
 // Decision 5.4: the profiler, the F9 monitor and the console's hooks in a development build only (`scripts/look.mjs` runs on the dev server).
 const profileFrameEnd = import.meta.env.DEV ? wireProfiler() : (): void => {};
@@ -886,7 +870,7 @@ function mutateBuilt(fn: () => boolean): boolean {
     // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
     clearBulbs(doc, net);
   }
-  doc.changes.causeNext('game');
+  doc.changes.causeNext('jogo');
   // An edit that reports success without changing anything
   const recorded = history.end(doc);
   if (!changed || !recorded) return false;
@@ -903,12 +887,12 @@ function mutateBuilt(fn: () => boolean): boolean {
 }
 
 /** `snapshot`: the model's own undo/redo state, restored exactly. */
-/** `table`: an imported map's buildings' table, prepared by the city's worker (`editor/preparedCity.ts`). */
-function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot', table: ArrayBufferLike | null = null): void {
+/** `prepared`: an imported map's buildings prepared by the city's worker (`editor/preparedCity.ts`). */
+function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot', prepared = false): void {
   if (!data) return;
   roadTool.cancel();
   if (source === 'import') {
-    caused('map opened', () => restoreInto(doc, data, net, table));
+    caused('map opened', () => restoreInto(doc, data, net, prepared));
     // A different map: nothing of the old simulation may carry over.
     sim.load();
   } else {
@@ -921,23 +905,13 @@ function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snap
 /** The game after the map was put in place whole. */
 /** A large city just opened: its session save waits for the fill after the curtain, instead of running on top of it (the 3.4 GB peak of the metropolis). */
 let deferSessionSave = false;
-/** Most the deferred save waits for the fill after the curtain once the town is shown. */
-const SAVE_AFTER_FILL_MOST_MS = 60_000;
-/** The large city's session save once its town is shown and its fill has landed (or `SAVE_AFTER_FILL_MOST_MS` after the reveal). DO NOT wait a fixed time from the map's arrival: a city of 70,000 buildings was still behind its curtain after 30 s, and its save (5.3 s of the page: the whole table encoded, `chunkedSave.ts`) ran on top of the opening (profile of step-70k, 2026-10-22). */
-async function saveOnceShown(): Promise<void> {
-  const wait = (): Promise<void> => new Promise((wake) => setTimeout(wake, 3000));
-  while (scene.opening) await wait();
-  const shown = performance.now();
-  while (scene.worldBusy && performance.now() - shown < SAVE_AFTER_FILL_MOST_MS) await wait();
-  persistence.saveSessionSoon(doc, sessionSettings);
-}
 function snapshotApplied(): void {
   buildings.restored();
   select(null, game.selectedSegmentS, null, 'another map');
   closeInspector();
   if (deferSessionSave) {
     deferSessionSave = false;
-    void saveOnceShown();
+    setTimeout(() => persistence.saveSessionSoon(doc, sessionSettings), 30_000);
   } else persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
   updateStatus();
@@ -1074,7 +1048,7 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 
   window.addEventListener(type, syncGestureSoon, { capture: true, passive: true });
 }
 /** What the diary says a change came from (`world/changes.ts` `causeNext`) */
-const NO_CAUSE = 'game';
+const NO_CAUSE = 'jogo';
 for (const type of ['pointerdown', 'pointerup', 'click', 'dblclick', 'keydown'] as const) {
   window.addEventListener(type, () => {
     if (!booted) return;
@@ -1866,7 +1840,7 @@ function mountInterface(): void {
     openMap: () => void openMap(),
     saveMap,
     about: openAbout,
-    qualityLevels: ['auto', ...QUALITY_LEVELS],
+    qualityLevels: QUALITY_LEVELS,
     setQuality,
     graphicsOptions: () => graphics.openPanel(),
     effectsPanel: () => lab.open('switches'),
@@ -2047,17 +2021,17 @@ interface KeptCity { readonly data: OpenedCity['data']; readonly buildings: Arra
 /** The city's document made by the worker (the game's own generator), or read as an earlier session kept it (`CITY_PREFIX`); without a job queue (a test) it is made on the page, as before. */
 async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
   if (!canQueueJobs()) {
-    return { data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7, ask.radius) : buildSmallCityMap(ask.seed ?? 7), table: null };
+    return { data: ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7), prepared: false };
   }
   // DO NOT grow the city again each time it is opened: the large city's generation was 6.4 s of the desktop's 7.4 s opening (2026-10-21), for a city the same seed and the same code make byte for byte.
-  const key = CITY_PREFIX ? `${CITY_PREFIX}${ask.kind}:${ask.seed ?? 7}${ask.radius !== undefined ? `:r${Math.round(ask.radius)}` : ''}` : null;
+  const key = CITY_PREFIX ? `${CITY_PREFIX}${ask.kind}:${ask.seed ?? 7}` : null;
   // Being made ahead (`cityAhead`): that job's answer, never a second one for the same city.
   const making = key ? citiesAhead.get(key) : undefined;
   if (making) { performance.mark('city:ahead'); return openedOf(await making); }
   const kept = key ? await readDerived<KeptCity>(key).catch(() => undefined) : undefined;
   if (kept?.data && kept.buildings instanceof ArrayBuffer) { performance.mark('city:kept'); return preparedCity(kept.data, tableIn(kept.buildings)); }
   // Shipped with the game (the first new city of its size, `cookedCities.ts`): read, and kept as one grown here would be.
-  const cooked = (ask.kind === 'large' || ask.kind === 'small') && ask.radius === undefined ? await readCookedCity(import.meta.env.BASE_URL, CITY_HASH, ask.kind, ask.seed ?? 7) : null;
+  const cooked = (ask.kind === 'large' || ask.kind === 'small') ? await readCookedCity(import.meta.env.BASE_URL, CITY_HASH, ask.kind, ask.seed ?? 7) : null;
   if (cooked) {
     performance.mark('city:cooked');
     if (key) void keepDerivedDurably(key, { data: cooked.data, buildings: cooked.buildings } satisfies KeptCity);
@@ -2071,30 +2045,7 @@ async function cityData(ask: CityGenAsk): Promise<OpenedCity> {
 function openedOf(reply: CityGenReply): OpenedCity {
   if (!reply.data) throw new Error(reply.error ?? 'the city was not made');
   // Made in a job process (the desktop's), its table came as a plain copy: back in shared memory, as the page's workers read it (`tableIn`).
-  return reply.buildings ? preparedCity(reply.data, reply.buildings instanceof ArrayBuffer ? tableIn(reply.buildings) : reply.buildings) : { data: reply.data, table: null };
-}
-
-/**
- * A document's network solved by a job worker (`networkBake.worker.ts`), as the page will restore it (`restoreInto`); null without a job
- * queue (a test) or when the worker failed: the page then solves it itself. DO NOT solve a large city's every junction on the page
- * behind the curtain: the page stood blocked 1.6 s in the network's rebuild for the city of 70,000 buildings (2026-10-22).
- */
-function networkBakeOf(data: SerializedDoc, table: ArrayBufferLike | null): Promise<NetworkBake | null> {
-  if (!canQueueJobs()) return Promise.resolve(null);
-  return new Promise((done) => {
-    submitJob({
-      service: 'networkBake', key: 'networkBake', priority: 0,
-      // The document and its buildings' table are all it reads: fit for a desktop job process (the table copied there).
-      crosses: true,
-      write: () => ({ data: { id: cityAskId++, data, table, generated: openedGenerated(data, table) } satisfies NetworkBakeAsk, transfer: [] }),
-      done: (answer) => {
-        const reply = answer as NetworkBakeReply;
-        if (!reply.bake) console.warn('[city] the network was not solved off the page', reply.error);
-        done(reply.bake ?? null);
-      },
-      failed: (message) => { console.warn('[city] the network was not solved off the page', message); done(null); },
-    });
-  });
+  return reply.buildings ? preparedCity(reply.data, reply.buildings instanceof ArrayBuffer ? tableIn(reply.buildings) : reply.buildings) : { data: reply.data, prepared: false };
 }
 
 /** The city's worker asked for a city (`priority`: the queue's, 0 first), its answer kept under `key` for the next opening of this seed. */
@@ -2170,14 +2121,10 @@ async function openCityNow(ask: CityGenAsk): Promise<void> {
   requestDraw();
   performance.mark('city:asked');
   try {
-    const city = await cityData(ask);
+    const { data, prepared } = await cityData(ask);
     performance.mark('city:data');
-    // Its network solved off the page while the curtain stays (`networkBake.worker.ts`): the page's build takes it.
-    const bake = await networkBakeOf({ ...city.data, relief: NEW_RELIEF, markingStyle: 'br' }, city.table);
-    performance.mark('city:baked');
     generatingCity = false;
-    // Its ecosystem laid by the city's own seed: the same city opens with the same woods every time (a random one moved them at each opening, 0.6-1.2 % of a district's pixels).
-    openCity({ ...city.data, nature: city.data.nature ?? { region: DEFAULT_REGION, seed: ask.seed ?? 7 } }, openedBuildings(city) > 5_000, city.table, bake);
+    openCity(data, (data.buildings?.length ?? 0) > 5_000, prepared);
     performance.mark('city:applied');
   } catch (error) {
     console.error('The city could not be made.', error);
@@ -2197,21 +2144,17 @@ function openSmallCity(seed: number): Promise<void> {
 }
 
 /** The large city of a seed put in place of the map (the menu's, and the probes'). */
-function openLargeCity(seed: number, radius?: number): Promise<void> {
-  return openCityOffPage({ id: cityAskId++, kind: 'large', seed, ...(radius !== undefined ? { radius } : {}) });
+function openLargeCity(seed: number): Promise<void> {
+  return openCityOffPage({ id: cityAskId++, kind: 'large', seed });
 }
 
-/** `table`: its buildings' table, prepared by the city's worker (`editor/preparedCity.ts`). */
-function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, table: ArrayBufferLike | null = null, bake: NetworkBake | null = null): void {
+/** `prepared`: its buildings prepared by the city's worker (`editor/preparedCity.ts`). */
+function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false, prepared = false): void {
   history.begin(doc);
   // A large city opens at a district, its first world covering the view alone (`renderer.ts` openingBuild): the whole map's roads took tens of seconds the curtain showed nothing of.
   deferSessionSave = large;
   if (large) scene.scopeOpening(true);
-  // Taken by the rebuild of the map put in place (`restoreInto`): offered right before it, so no rebuild of the map before takes it.
-  if (bake) net.offerBake(bake);
-  // A new map's ecosystem as well as its relief (`newNature`): the generator's document has none, and taken whole it set `nature` to null - no tree of the
-  // ecosystem on a city made by the worker; the cooked city showed them only from the boot map's ecology its plates had not refreshed yet (2026-10-22).
-  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br', nature: data.nature ?? newNature() }, 'import', table);
+  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import', prepared);
   // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).
   history.end(doc);
   roadTool.reset();
@@ -2327,18 +2270,18 @@ function cameraCommand(command: string): void {
 function undo(): void {
   // A drag or stroke in progress ends first
   cancelGestures();
-  doc.changes.causeNext('undo');
+  doc.changes.causeNext('desfazer');
   const done = history.undo(doc);
   if (done) afterRestore();
-  doc.changes.causeNext('game');
+  doc.changes.causeNext('jogo');
   if (done) flashHint('hint.undone');
 }
 function redo(): void {
   cancelGestures();
-  doc.changes.causeNext('redo');
+  doc.changes.causeNext('refazer');
   const done = history.redo(doc);
   if (done) afterRestore();
-  doc.changes.causeNext('game');
+  doc.changes.causeNext('jogo');
   if (done) flashHint('hint.redone');
 }
 /** The game after an undo or a redo put records back (`editor/history.ts`): the network rebuilt only when the roads moved */
@@ -2655,10 +2598,8 @@ function frame(now: number): void {
 
   // The town shown (`SceneHandle.opening`): DO NOT wait for the world's job, which the streamed world starts again at every tile put in.
   if (!worldShown && drawnOnce && !scene.opening) worldShown = true;
-  // A map opening behind its curtain holds the city too (`SimControls.opening`): a new city opens after the last one's world stood shown.
-  const simOpening = scene.opening;
   // Moving a node is an authoring preview.
-  let holdSim = mover.dragging || topologyAfterDraw || !worldShown || simOpening || !effects.simulation;
+  let holdSim = mover.dragging || topologyAfterDraw || !worldShown || !effects.simulation;
   // The pistol or the bomb chosen: their effects and the physics the bodies fall with loaded now, while the player aims
   if (!actionsWarm && game.tool === 'bulldoze' && strikeChoice.mode !== 'demolish') {
     actionsWarm = true;
@@ -2667,7 +2608,7 @@ function frame(now: number): void {
   frameTimer.mark('topology');
   // The simulation steps in its own thread (`sim/host/simHost.ts`): the page sends the wall time and draws the last frame it wrote.
   // DO NOT hold the city for the page's world job (the roads' meshes): the worker steps its own network, and the streamed world's job runs whenever a tile comes.
-  sim.frame(wall, holdSim, { traffic: !game.paused && effects.traffic, pedestrians: !game.paused && effects.pedestrians, maxShare: maxPopulationShare * effects.populationShare, startShare: startPopulationShare, opening: simOpening });
+  sim.frame(wall, holdSim, { traffic: !game.paused && effects.traffic, pedestrians: !game.paused && effects.pedestrians, maxShare: maxPopulationShare * effects.populationShare, startShare: startPopulationShare });
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;
@@ -2695,8 +2636,7 @@ function frame(now: number): void {
     : null);
   frameTimer.mark('poles');
   scene.draw(net, sim, alpha, wall, { holdRoads: terrainBrush.stroking });
-  // DO NOT let the automatic tier or the dynamic resolution move under a measure (`__roadcraft.measure`): its pictures and times are of one tier; nor while a map opens behind the curtain: its uploads and builds are not the frame rate.
-  if (!measure.on && loadingCurtain.style.display === 'none') graphics.frame();
+  graphics.frame();
   frameTimer.mark('drawing');
   drawnOnce = true;
   drawOverlayScreen();
@@ -2721,8 +2661,6 @@ function frame(now: number): void {
   frameTimer.mark('panels');
   const timed = frameTimer.end();
   frameTimes.push(timed.end - timed.start);
-  // The heap's peak and the worst 40 s of frames for the session's summary, looked at every 15 s.
-  fieldSession.tick(heapBytes);
   healthWatch.frameEnded(timed.start, timed.end);
   effects.frameEnded(timed.end - timed.start);
   lab.frameEnded(timed);
@@ -3932,9 +3870,9 @@ function setMarkingStyle(value: string): void {
   requestDraw();
 }
 
-gameState.set('quality', graphics.preset, 'saved preference');
+gameState.set('quality', graphics.level, 'saved preference');
 function setQuality(value: string): void {
-  if (isQualityPreset(value)) graphics.setPreset(value);
+  if (isQualityLevel(value)) graphics.setPreset(value);
 }
 /** The game's state in the console (`core/gameState.ts`): `__state()` its values now and the last changes */
 if (PROBES) (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
@@ -4038,8 +3976,6 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   compare: (options?: Parameters<SceneHandle['compare']>[0]) => scene.compare(options),
   /** What the WebGPU renderer left out of its frames so far, by reason. */
   webgpuLeftOut: () => scene.webgpuLeftOut(),
-  /** The buildings' occlusion culling (`render/occlusion.ts`): `enabled` switches it, `stats` the last frame's walls laid, boxes hidden and ms. */
-  occlusion: scene.occlusion,
   doc,
   net,
   sim,
@@ -4070,8 +4006,7 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
     requestDraw();
   },
   /** A generated city: the small city of Roadcraft 2.0 as one map (`smallCity`). DO NOT open the world by tiles: the player, 2026-10-18, wants no city by tiles. */
-  /** `radiusMetres`: the large city over another radius, its density kept (the scale steps). */
-  generateCity: (options: { seed?: number; size?: 'small' | 'large'; radiusMetres?: number } = {}) => (options.size === 'large' ? openLargeCity(options.seed ?? 7, options.radiusMetres !== undefined ? m(options.radiusMetres) : undefined) : openSmallCity(options.seed ?? 7)),
+  generateCity: (options: { seed?: number; size?: 'small' | 'large' } = {}) => (options.size === 'large' ? openLargeCity(options.seed ?? 7) : openSmallCity(options.seed ?? 7)),
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   /** Probe: one building grown as the game grows them - asked of the growth's worker, written when its answer comes - and the ms from the ask to the building written. DO NOT time the page's own grower: the game never grows there (report UI-15 g). */
   growTimed: (): Promise<{ grown: readonly number[]; ms: number } | { grown: null; why: string }> => {
@@ -4096,7 +4031,7 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
     requestDraw();
   },
   /** The camera put at a centre, zoom, bearing and tilt (radians) exactly, as `view()` reads them (`scripts/look.mjs`) */
-  /** The small city of Roadcraft 2.0 of a seed, as the menu's "New city" opens it, with no question asked (`scripts/probe.mjs`, `scripts/lib/measureCity.mjs`). */
+  /** The small city of Roadcraft 2.0 of a seed, as the menu's "New city" opens it, with no question asked (`scripts/sonda.mjs`, `scripts/lib/measureCity.mjs`). */
   smallCity: (seed = 7) => openSmallCity(seed),
   /** Probe: the effects, the buildings' choices and the optimisations as the game holds them, each patch over its default (none: the default itself, the very object the game compares by). */
   variant: (fx?: Partial<EffectSwitches> | null, b?: Partial<BuildingChoices> | null, opt?: Partial<Optimizations> | null) => {
@@ -4161,17 +4096,6 @@ ${JSON.stringify(counts)}`;
       buildingDetailMB: mb(scene.buildingDetailBytes()),
       heapMB: heap === undefined ? null : mb(heap),
       cpuByName: c.cpuByName.map(([name, bytes]) => `${name} ${mb(bytes)}`),
-      // What holds the geometry on the GPU, by holder (digits taken out: one row a kind of block or cell), most first.
-      gpuByName: [...[...c.bytesByName].reduce((rows, [name, bytes]) => rows.set(name.replace(/\d+/g, '#'), (rows.get(name.replace(/\d+/g, '#')) ?? 0) + bytes), new Map<string, number>())]
-        .sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, bytes]) => `${name} ${mb(bytes)}`),
-      // What holds the textures, by holder and texture (digits taken out, the count of each kind kept), most first.
-      textureByName: [...[...c.textureBytesByName].reduce((rows, [name, bytes]) => {
-        const key = name.replace(/\d+/g, '#');
-        const row = rows.get(key) ?? [0, 0];
-        row[0] += bytes;
-        row[1]++;
-        return rows.set(key, row);
-      }, new Map<string, [number, number]>())].sort((a, b) => b[1][0] - a[1][0]).slice(0, 16).map(([name, [bytes, n]]) => `${name} x${n} ${mb(bytes)}`),
       buffers: c.buffers, releasedBuffers: c.releasedBuffers, textures: c.textures,
       glGeometries: scene.gl.info.memory.geometries, glTextures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,
       drawCalls: scene.stats.drawCalls, builtTriangles: scene.stats.builtTriangles, drawnTriangles: scene.stats.drawnTriangles,

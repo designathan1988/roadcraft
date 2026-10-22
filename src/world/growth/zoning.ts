@@ -405,7 +405,7 @@ const densitiesOf = (lot: Lot): ZoneDensity[] => (lot.density === 'high' ? ['hig
 /** The building grown on a lot (`pickLot`), checked on its site, or null when nothing fits it. Writes nothing: it reads the site (`GrowthSite`) - the document's on the page, the growth's worker's off it (`editor/growthReplica.ts`) - and the same site and stream make the same record on either side. `choice`, when given, is filled with what makes it again (`replayOnLot`). @perItem Runs once a building grown: nothing it reaches may walk the map. */
 export function designOnLot(site: GrowthSite, lot: Lot, rng: Rng, choice?: { value?: GrownChoice }): Omit<Building, 'id'> | null {
   const frame = frameOf(lot);
-  // Every zoned lot gets a building, whatever its size or shape (the player, 2026-10-05: "it always has to appear"). The building first made for the whole lot; refused (its front over a corner's curved footway, a side over a neighbour, a slope), it is made again set back from the front and the sides, then narrower and shallower, then a density lower - until one fits.
+  // Every zoned lot gets a building, whatever its size or shape (the player, 2026-10-05: "tem que aparecer sempre"). The building first made for the whole lot; refused (its front over a corner's curved footway, a side over a neighbour, a slope), it is made again set back from the front and the sides, then narrower and shallower, then a density lower - until one fits.
   const { u, n } = frame;
   // A corner lot: a street along one of its sides too (the building then looks onto it, `planLot`).
   const corner = cornerOf(site.net, frame.anchor, u, n, frame.width, frame.depth);
@@ -548,7 +548,7 @@ function meets(a: Vec2, b: Vec2, cx: number, cy: number, dx: number, dy: number)
   return true;
 }
 
-/** A grown building made to its lot's own shape (the player, 2026-10-05: "buildings must follow the shape of the lots"). The plan was laid on the lot's front rectangle; on a lot of another shape - a polygon, a curved side, a lot narrowing or widening at the back: - the ground of the whole lot is laid as a lawn (an open block with the lot's own outline), the plan's surfaces clipped to the lot over it; - the boundary (walls, fences, hedges) is taken off the rectangle and run along the lot's own sides, all but the front; - whatever of the plan falls outside the lot (a tree, a shed, a bench, a surface) is left out. A rectangular lot is left as planned. */
+/** A grown building made to its lot's own shape (the player, 2026-10-05: "as construções devem seguir o formato dos lotes"). The plan was laid on the lot's front rectangle; on a lot of another shape - a polygon, a curved side, a lot narrowing or widening at the back: - the ground of the whole lot is laid as a lawn (an open block with the lot's own outline), the plan's surfaces clipped to the lot over it; - the boundary (walls, fences, hedges) is taken off the rectangle and run along the lot's own sides, all but the front; - whatever of the plan falls outside the lot (a tree, a shed, a bench, a surface) is left out. A rectangular lot is left as planned. */
 function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, ring: readonly Vec2[]): void {
   // Its box and area in one walk, no list of its coordinates (most lots are rectangles and stop here).
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, area = 0;

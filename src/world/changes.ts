@@ -250,7 +250,7 @@ export class ChangeJournal {
     return Math.max(0, this.serial - this.count);
   }
 
-  /** What the next edits of the document come from (a tool and gesture: "tool road: draw"). */
+  /** What the next edits of the document come from (a tool and gesture: "estrada: desenhar"). */
   causeNext(cause: string): void {
     this.pendingCause = cause;
   }

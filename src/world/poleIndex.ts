@@ -11,22 +11,10 @@ const CELL = m(64);
 const keyOf = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
 const cellOf = (x: number, y: number): number => keyOf(Math.floor(x / CELL), Math.floor(y / CELL));
 
-/** `id` put last in a list unless it is there (a set's add, in a list: a few ids each, no set's table). */
-function addTo(list: number[], id: number): void {
-  if (!list.includes(id)) list.push(id);
-}
-
-/** `id` taken out of a list, the rest kept in their order (a set's delete). */
-function takeFrom(list: number[], id: number): void {
-  const at = list.indexOf(id);
-  if (at >= 0) list.splice(at, 1);
-}
-
 export class PoleIndex {
-  /** Each cell's poles and each pole's spans in the order put (lists, not sets: DO NOT keep a set's table a pole, 2026-10-21). */
-  private cells: Map<number, PoleId[]> = new Map();
+  private cells: Map<number, Set<PoleId>> = new Map();
   private cellOfPole: Map<PoleId, number> = new Map();
-  private spansOfPole: Map<PoleId, SpanId[]> = new Map();
+  private spansOfPole: Map<PoleId, Set<SpanId>> = new Map();
 
   /** DO NOT copy every pole for an edit's working copy: an index over this one keeping only what it files (`RoadDoc.ownIndex`). */
   over(): PoleIndex {
@@ -37,9 +25,9 @@ export class PoleIndex {
     return out;
   }
 
-  /** A list of the index to change in place: in a working copy, the one below copied first. */
-  private own<K, V extends number>(map: Map<K, V[]>, key: K): V[] | undefined {
-    return map instanceof ForkMap ? map.writable(key, (list) => list.slice()) : map.get(key);
+  /** A set of the index to change in place: in a working copy, the one below copied first. */
+  private own<K>(map: Map<K, Set<number>>, key: K): Set<number> | undefined {
+    return map instanceof ForkMap ? map.writable(key, (set) => new Set(set)) : map.get(key);
   }
 
   clear(): void {
@@ -56,8 +44,8 @@ export class PoleIndex {
     if (was !== undefined) this.unfile(pole.id, was);
     this.cellOfPole.set(pole.id, key);
     const cell = this.own(this.cells, key);
-    if (cell) addTo(cell, pole.id);
-    else this.cells.set(key, [pole.id]);
+    if (cell) cell.add(pole.id);
+    else this.cells.set(key, new Set([pole.id]));
   }
 
   deletePole(id: PoleId): void {
@@ -70,15 +58,15 @@ export class PoleIndex {
   private unfile(id: PoleId, key: number): void {
     const cell = this.own(this.cells, key);
     if (!cell) return;
-    takeFrom(cell, id);
-    if (cell.length === 0) this.cells.delete(key);
+    cell.delete(id);
+    if (cell.size === 0) this.cells.delete(key);
   }
 
   putSpan(span: UtilitySpan): void {
     for (const end of [span.a, span.b]) {
       const at = this.own(this.spansOfPole, end);
-      if (at) addTo(at, span.id);
-      else this.spansOfPole.set(end, [span.id]);
+      if (at) at.add(span.id);
+      else this.spansOfPole.set(end, new Set([span.id]));
     }
   }
 
@@ -86,12 +74,12 @@ export class PoleIndex {
     for (const end of [span.a, span.b]) {
       const at = this.own(this.spansOfPole, end);
       if (!at) continue;
-      takeFrom(at, span.id);
-      if (at.length === 0) this.spansOfPole.delete(end);
+      at.delete(span.id);
+      if (at.size === 0) this.spansOfPole.delete(end);
     }
   }
 
-  /** The spans reaching a pole, in the order they were strung. */
+  /** The spans reaching a pole, in the order they were strung (`Set` keeps it). */
   spansAt(id: PoleId): Iterable<SpanId> {
     return this.spansOfPole.get(id) ?? [];
   }

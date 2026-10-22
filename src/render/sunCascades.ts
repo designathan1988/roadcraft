@@ -100,8 +100,8 @@ export interface SunCascades {
   /** Towards the sun the cascades are cast by (unit; zero before the first `follow`): the held sun itself, never a light's position less its target (those move with every fit, and their difference by the last bits). */
   readonly toSun: Vector3;
   setMovers(movers: readonly Movers[]): void;
-  /** What chooses its casters by size, told each cascade's texel and half side (m) before that cascade is drawn (a piece narrower than it is a smudge PCF spreads away), and null once the passes are done. */
-  setCasters(casters: ((texel: number | null, cascade: number, half: number) => void) | null): void;
+  /** What chooses its casters by size, told each cascade's texel (m) before that cascade is drawn (a piece narrower than it is a smudge PCF spreads away), and null once the passes are done. */
+  setCasters(casters: ((texel: number | null, cascade: number) => void) | null): void;
   /** Fits the cascades to what the camera sees of the ground and what stands on it */
   follow(camera: Camera, sunDirection: Vector3, groundAt: (x: number, y: number) => number, target: Vector3, top: number): boolean;
   /** Marks the cascades that must be drawn this frame; true when any is (the renderer's `shadowMap.needsUpdate`). */
@@ -191,7 +191,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const hold = new SunHold();
   let sunStepped = true;
   let movers: readonly Movers[] = [];
-  let casters: ((texel: number | null, cascade: number, half: number) => void) | null = null;
+  let casters: ((texel: number | null, cascade: number) => void) | null = null;
   let enabled = true;
   /** The far cascades drawn every this many passes (`setFarEvery`), and whether each had a change or effects asked while it waited. */
   let farEvery = 1;
@@ -327,7 +327,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           hidden.push(root);
         }
       }
-      casters?.(texelOf(i), i, fits[i]!.half);
+      casters?.(texelOf(i), i);
       castersChosen = casters !== null;
     };
   });
@@ -424,7 +424,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   function restore(settled = true): void {
     for (const root of hidden) root.visible = true;
     hidden.length = 0;
-    if (settled && castersChosen) { castersChosen = false; casters?.(null, -1, 0); }
+    if (settled && castersChosen) { castersChosen = false; casters?.(null, -1); }
   }
 
   /** Writes a fit into its light: the light stands at the top of the depth range, looking down the sun. */

@@ -1,9 +1,9 @@
 import { Box3, BufferGeometry, Sphere, type Material, type Mesh } from 'three';
-import { type GeometryArrays, gpuOnly } from './gpuOnly';
+import { gpuOnly } from './gpuOnly';
 import { type BlockArrays, type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry } from './roadLod';
 import { readsRoadSection } from './roadEdges';
 import { makeFar } from './roadResidency';
-import { finish, type SurfaceMeshOptions, type Tile, type TileRect } from './surfaceMesh';
+import { finish, type SurfaceMeshOptions, type Tile } from './surfaceMesh';
 
 /** The attributes a surface's material reads besides position, normal and uv: no other is sent to the GPU. */
 interface SurfaceReads {
@@ -57,9 +57,7 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
   far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean; readonly start?: (mesh: Mesh, arrays: BlockArrays) => void;
     /** The other surfaces' blocks' boxes, for a block of several (`BlockLevels.also`). */
-    readonly also?: readonly (readonly [number, number, number, number])[];
-    /** The road block's cell (`BlockLevels.cell`). */
-    readonly cell?: string }): Mesh | null {
+    readonly also?: readonly (readonly [number, number, number, number])[] }): Mesh | null {
   const arrays = tileArrays(parts, readsOf(options.material));
   if (!arrays) return null;
   const geometry = coarseGeometry(arrays);
@@ -82,7 +80,6 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
     mesh.userData[LOD_KEY] = {
       coarse: null, x: (far.lock[0] + far.lock[2]) / 2, z: -(far.lock[1] + far.lock[3]) / 2, full: true,
       ...(far.also?.length ? { also: far.also.map((b): [number, number] => [(b[0] + b[2]) / 2, -(b[1] + b[3]) / 2]) } : {}),
-      ...(far.cell !== undefined ? { cell: far.cell } : {}),
     } satisfies BlockLevels;
     far.start?.(mesh, arrays);
   }
@@ -166,12 +163,10 @@ export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<Su
   const level = finish(coarseGeometry(coarse), { ...options, name: `${options.name}-far` });
   // Made again from the block's tiles when a lost context asks, like the block's own. DO NOT fall back on `coarse`: the closure held the worker's arrays on the page for the block's life, after they were on the GPU.
   const reads = readsOf(options.material);
-  const again: () => GeometryArrays = members.length === 1
+  gpuOnly(level, members.length === 1
     ? () => coarseArrays(tileArrays(members[0]!.source(), reads)!, members[0]!.lock) ?? emptyLike(level)
     // A surface too small to simplify is drawn whole in the far level, as its own block was.
-    : () => joinBlocks(members.flatMap(({ source, lock }) => { const full = tileArrays(source(), reads); return full ? [coarseArrays(full, lock) ?? full] : []; }));
-  level.userData[FAR_AGAIN] = again;
-  gpuOnly(level, again);
+    : () => joinBlocks(members.flatMap(({ source, lock }) => { const full = tileArrays(source(), reads); return full ? [coarseArrays(full, lock) ?? full] : []; })));
   const levels = mesh.userData[LOD_KEY] as BlockLevels;
   (levels as { coarse: Mesh | null }).coarse = level;
   level.renderOrder = mesh.renderOrder;
@@ -179,27 +174,6 @@ export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<Su
   mesh.parent?.add(level);
   if (!near) makeFar(mesh);
   return level;
-}
-
-/** Where a far level keeps how its arrays are made again from its tiles on the page (`attachFarLevel`, `restoreFarLevel`). */
-const FAR_AGAIN = 'farAgain';
-
-/**
- * A far level let go (`roadResidency.ts` dropCell) made again: its geometry replaced by one of `arrays` (made off the page, `BlockLevels.remake`),
- * or, none given, of its tiles cut again here. A new geometry, not the old one refilled: the arrays made again need not be as many as the
- * first (another simplification's count), and three draws an attribute by the count it was made with (`BufferAttribute.count`).
- */
-export function restoreFarLevel(level: Mesh, arrays: BlockArrays | null): void {
-  const again = level.userData[FAR_AGAIN] as (() => GeometryArrays) | undefined;
-  const made = arrays ?? (again?.() as BlockArrays | undefined);
-  if (!made) return;
-  const old = level.geometry;
-  const geometry = coarseGeometry(made);
-  if (old.boundingBox) geometry.boundingBox = old.boundingBox.clone();
-  if (old.boundingSphere) geometry.boundingSphere = old.boundingSphere.clone();
-  old.dispose();
-  level.geometry = geometry;
-  if (again) gpuOnly(level, again);
 }
 
 /** A mesh's arrays at their sizes, all zero (every triangle of no area): what a far level the tiles no longer simplify to is given back, never the arrays it was made with. */
@@ -221,22 +195,4 @@ export function blockArraysOf(tiles: readonly Tile[], material: Material): Block
 export function tilesOnGpu(mesh: Mesh, source: () => readonly Tile[]): void {
   const reads = readsOf(mesh.material);
   gpuOnly(mesh as Mesh & { geometry: BufferGeometry }, () => tileArrays(source(), reads)!);
-}
-
-/** The box round a block's tiles' rectangles, [minX, minY, maxX, maxY]. */
-export function blockBox(rects: readonly TileRect[]): [number, number, number, number] {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const r of rects) { minX = Math.min(minX, r[0]); minY = Math.min(minY, r[1]); maxX = Math.max(maxX, r[2]); maxY = Math.max(maxY, r[3]); }
-  return [minX, minY, maxX, maxY];
-}
-
-/** Arrays end to end, with where each ends: one buffer to hand over instead of one an array. */
-export function concat(parts: readonly ArrayLike<number>[]): { lineEnds: Uint32Array; lines: Float64Array } {
-  let length = 0;
-  for (const part of parts) length += part.length;
-  const lines = new Float64Array(length);
-  const lineEnds = new Uint32Array(parts.length);
-  let at = 0;
-  parts.forEach((part, i) => { lines.set(part, at); at += part.length; lineEnds[i] = at; });
-  return { lineEnds, lines };
 }

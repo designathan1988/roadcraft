@@ -12,14 +12,14 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // The page cross-origin isolated: the same headers the desktop's `app://` sends (`desktop/isolation.cjs`; Vite replaces `import.meta.url` in its config with the file's own).
 const ISOLATED = createRequire(import.meta.url)('./desktop/isolation.cjs') as Record<string, string>;
 
-/** The map's tiles each way (`wholeMap.ts` MAP_TILES): 18 (~18.4 km a side: a city of ~200 000 buildings at today's density spans a radius of ~8.85 km, 0.85 of it each way from the centre; the edge must fall on the 2 km terrain plates' edges, so 10, 14, 18... tiles) unless a run asks another (ROADCRAFT_MAP_TILES, even, 2-64). */
-const MAP_TILES = Number(process.env['ROADCRAFT_MAP_TILES'] ?? 18);
+/** The map's tiles each way (`wholeMap.ts` MAP_TILES): 10 unless a run asks a larger map to prove the scale (ROADCRAFT_MAP_TILES, even, 2-64). */
+const MAP_TILES = Number(process.env['ROADCRAFT_MAP_TILES'] ?? 10);
 if (!Number.isInteger(MAP_TILES) || MAP_TILES < 2 || MAP_TILES > 64 || MAP_TILES % 2 !== 0) throw new Error(`ROADCRAFT_MAP_TILES must be an even number of tiles from 2 to 64, not ${process.env['ROADCRAFT_MAP_TILES']}`);
 
 export default defineConfig({
   root: '.',
   // The map's size and a weaker machine played on this one (`core/weakMachine.ts`), the page and every worker the same.
-  define: { __MAP_TILES__: String(MAP_TILES), __WEAK_MACHINE__: JSON.stringify(process.env['ROADCRAFT_WEAK'] ?? ''), __SLOW_CHECKS__: JSON.stringify(process.env['ROADCRAFT_SLOW_CHECKS'] === '1') },
+  define: { __MAP_TILES__: String(MAP_TILES), __WEAK_MACHINE__: JSON.stringify(process.env['ROADCRAFT_WEAK'] ?? '') },
   // `modelUrlsPlugin`: the model files' URLs, a module per folder, never inlined (`model-urls-plugin.ts`).
   // `surfaceBakePlugin`: the procedural surfaces baked at build time into KTX2 (`surface-bake-plugin.ts`); before `cookPlugin`, whose middleware serves them once baked.
   // `labReportsPlugin`: the lab recorder's reports written into `lab-reports/` (dev server only, `labReports.ts`).

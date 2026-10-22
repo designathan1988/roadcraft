@@ -39,15 +39,15 @@ const result = await page.evaluate(async (TURNS) => {
   let Standard = null;
   scene.traverse((o) => { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!Standard && m?.isMeshStandardMaterial) Standard = m.constructor; });
   const variants = {
-    'own': own,
-    'no weathering': posePart(createShellMaterial({ plain: true }, 8)),
-    'no weathering, no table': cut('look', [LOOK]),
-    'no weathering, no 3 maps': cut('maps', [COLOUR, ROUGH, NORMAL]),
-    'no weathering/table/maps': cut('bare', [LOOK, COLOUR, ROUGH, NORMAL]),
-    'nothing in fragment, no vertex uv': cut('bare-uv', [LOOK, COLOUR, ROUGH, NORMAL, UV, PART_UV]),
-    'nothing in fragment, no tone noise': cut('bare-tone', [LOOK, COLOUR, ROUGH, NORMAL, TONE]),
-    'nothing in fragment or vertex': cut('bare-all', [LOOK, COLOUR, ROUGH, NORMAL, UV, PART_UV, TONE]),
-    'standard, colour only': posePart(new Standard({ vertexColors: true, roughness: 0.9, metalness: 0 })),
+    'próprio': own,
+    'sem desgaste': posePart(createShellMaterial({ plain: true }, 8)),
+    'sem desgaste, sem tabela': cut('look', [LOOK]),
+    'sem desgaste, sem 3 mapas': cut('maps', [COLOUR, ROUGH, NORMAL]),
+    'sem desgaste/tabela/mapas': cut('bare', [LOOK, COLOUR, ROUGH, NORMAL]),
+    'nada no fragment, sem uv no vértice': cut('bare-uv', [LOOK, COLOUR, ROUGH, NORMAL, UV, PART_UV]),
+    'nada no fragment, sem ruído de tom': cut('bare-tone', [LOOK, COLOUR, ROUGH, NORMAL, TONE]),
+    'nada no fragment nem no vértice': cut('bare-all', [LOOK, COLOUR, ROUGH, NORMAL, UV, PART_UV, TONE]),
+    'standard só cor': posePart(new Standard({ vertexColors: true, roughness: 0.9, metalness: 0 })),
   };
   const ours = new Set(Object.values(variants));
   const put = (m) => { let n = 0; layer.traverse((o) => { if (o.isMesh && ours.has(o.material)) { o.material = m; n++; } }); return n; };
@@ -62,8 +62,8 @@ const result = await page.evaluate(async (TURNS) => {
 const same = sameScene(result.windows);
 console.log(same.line);
 result.rows = Object.entries(result.times).map(([name, a]) => ({ name, median: median(a), all: a }));
-console.log(`meshes with the shell's material: ${result.meshes}`);
+console.log(`malhas com o material da casca: ${result.meshes}`);
 const base = result.rows[0].median;
-for (const r of result.rows) console.log(r.name.padEnd(36), `GPU p50 median ${String(r.median).padStart(6)} ms  (turns ${r.all.join(', ')})  ${r === result.rows[0] ? '' : `${base - r.median >= 0 ? 'saves' : 'costs extra'} ${Math.abs(base - r.median).toFixed(2)} ms`}`);
+for (const r of result.rows) console.log(r.name.padEnd(36), `GPU p50 mediana ${String(r.median).padStart(6)} ms  (voltas ${r.all.join(', ')})  ${r === result.rows[0] ? '' : `${base - r.median >= 0 ? 'economiza' : 'custa a mais'} ${Math.abs(base - r.median).toFixed(2)} ms`}`);
 writeFileSync('test-results/shellMaps.json', JSON.stringify(result, null, 2));
 await browser.close();

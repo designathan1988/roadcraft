@@ -12,7 +12,7 @@ import type { Network } from '../network';
 import { Level, type RoadType, type SurfaceLevel, halfWidth } from '../roadTypes';
 import type { RoadStructure } from '../structures';
 import { m } from '../units';
-import { MAX_ELEMENT, MIN_ELEMENT, elementClash, groundElements, massSpans } from './elements';
+import { MAX_ELEMENT, MIN_ELEMENT, elementClash, groundElements } from './elements';
 import { MAX_PLINTH, type GroundAt, sampleFootprint } from './foundation';
 import {
   MIN_SIZE,
@@ -128,18 +128,16 @@ const TOUCH = m(0.02);
 export function structuralProblem(b: Building): BuildingProblem | null {
   if (!(b.module >= MIN_MODULE - 1e-9 && b.module <= MAX_MODULE + 1e-9)) return 'size';
   if (!(b.groundHeight >= MIN_STOREY_HEIGHT - 1e-9 && b.groundHeight <= MAX_GROUND_HEIGHT + 1e-9)) return 'size';
-  // The storey height, then each level's own past the ground floor (a list read in place: no list made a building checked).
-  const storeyOk = (h: number): boolean => h >= MIN_STOREY_HEIGHT - 1e-9 && h <= MAX_STOREY_HEIGHT + 1e-9;
-  if (!storeyOk(b.storeyHeight)) return 'size';
-  const levels = b.levels;
-  if (levels) for (let i = 1; i < levels.length; i++) { const h = levels[i]; if (typeof h === 'number' && !storeyOk(h)) return 'size'; }
+  for (const h of [b.storeyHeight, ...(b.levels ?? []).slice(1).filter((x): x is number => typeof x === 'number')]) {
+    if (!(h >= MIN_STOREY_HEIGHT - 1e-9 && h <= MAX_STOREY_HEIGHT + 1e-9)) return 'size';
+  }
   const first = b.levels?.[0];
   if (typeof first === 'number' && !(first >= MIN_STOREY_HEIGHT - 1e-9 && first <= MAX_GROUND_HEIGHT + 1e-9)) return 'size';
   if (b.volumes.length === 0 || b.volumes.length > MAX_VOLUMES) return 'size';
   for (const v of b.volumes) {
     if (v.outline && !validOutline(v.outline)) return 'outline';
     if ((v.roofDetails?.length ?? 0) > 32 || v.roofDetails?.some((detail) => !roofPartFits(v, detail))) return 'size';
-    if (!(Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.w) && Number.isFinite(v.d))) return 'size';
+    if (![v.x, v.y, v.w, v.d].every(Number.isFinite)) return 'size';
     if (v.w < MIN_SIZE - 1e-6 || v.d < MIN_SIZE - 1e-6 || v.w > MAX_SIZE + 1e-6 || v.d > MAX_SIZE + 1e-6) return 'size';
     if (!Number.isInteger(v.base) || v.base < 0) return 'size';
     if (v.storeys.length < 1 || v.base + v.storeys.length > MAX_STOREYS) return 'size';
@@ -155,7 +153,7 @@ export function structuralProblem(b: Building): BuildingProblem | null {
       const across = sideLength(v, r.side === 0 || r.side === 2 ? 1 : 0);
       if (r.depth < 0 && -r.depth > across - MIN_SIZE / 2) return 'size';
     }
-    if (v.facadeGeometry) for (const [faceKey, geometry] of Object.entries(v.facadeGeometry)) {
+    for (const [faceKey, geometry] of Object.entries(v.facadeGeometry ?? {})) {
       if (!geometry) return 'size';
       const face = Number(faceKey);
       if (!Number.isInteger(face) || face < 0 || face >= (v.outline?.length ?? 4)) return 'size';
@@ -172,14 +170,12 @@ export function structuralProblem(b: Building): BuildingProblem | null {
   for (const v of b.volumes) if (!isSupported(b, v)) return 'support';
   const elements = b.elements ?? [];
   if (elements.length > MAX_ELEMENTS) return 'size';
-  // Each block's heights worked out once for all the parts (`massSpans`), not again for each.
-  const spans = elements.length ? massSpans(b) : undefined;
   for (const e of elements) {
     // Below the floor only as far as a terrace of the lot goes (a flight down to a lower yard).
-    if (!(Number.isFinite(e.x) && Number.isFinite(e.y) && Number.isFinite(e.w) && Number.isFinite(e.d) && Number.isFinite(e.z) && Number.isFinite(e.h)) || e.z < -MAX_TERRACE - 1e-6) return 'size';
+    if (![e.x, e.y, e.w, e.d, e.z, e.h].every(Number.isFinite) || e.z < -MAX_TERRACE - 1e-6) return 'size';
     if (Math.min(e.w, e.d, e.h) < MIN_ELEMENT - 1e-6 || Math.max(e.w, e.d, e.h) > MAX_ELEMENT + 1e-6) return 'size';
     // Parts meet the volumes; they never stand inside them.
-    if (elementClash(b, e, spans)) return 'overlap';
+    if (elementClash(b, e)) return 'overlap';
   }
   return null;
 }

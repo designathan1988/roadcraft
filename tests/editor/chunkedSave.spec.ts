@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_TILE, TiledSaves } from '@editor/chunkedSave';
-import { readSquareFrame } from '@editor/regionFrames';
 import { type PartStore, type SaveBatch, gzip, writeBatch } from '@editor/saveStore';
 import { type LargeStore, Persistence, normalizeSettings } from '@editor/persistence';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
@@ -34,7 +33,10 @@ function memoryStore(): MemoryStore {
 }
 
 /** The records a batch handed to the writer: what the page copied and the worker made text. */
-const recordsIn = (batch: SaveBatch): number => batch.put.reduce((n, entry) => n + (readSquareFrame(new Uint8Array(entry.bytes))?.r.length ?? 0), 0);
+const recordsIn = (batch: SaveBatch): number => batch.put.reduce((n, entry) => {
+  const value = entry.value as { r?: unknown };
+  return n + (Array.isArray(value?.r) ? value.r.length : 0);
+}, 0);
 
 const town = (): RoadDoc => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
 
@@ -68,25 +70,25 @@ describe('a map saved by tiles', () => {
     const store = memoryStore();
     const saves = new TiledSaves(store, 'map');
     await saves.save(doc, {});
-    expect(store.writes[0]!.filter((k) => k.includes(':R:buildings:')).length).toBeGreaterThan(1);
-    expect(store.writes[0]).toContain('map:RG:values');
+    expect(store.writes[0]!.filter((k) => k.includes(':L:buildings:')).length).toBeGreaterThan(1);
+    expect(store.writes[0]).toContain('map:G:values');
     // Nothing changed: the manifest alone.
     await saves.save(doc, {});
-    expect(store.writes[1]).toEqual(['map:regions']);
+    expect(store.writes[1]).toEqual(['map:tiles']);
     // One building changed: its square alone (records and wears), nothing else.
     const one = [...doc.buildings.all()][3]!;
     doc.buildings.put({ ...one, decay: 0.5 });
     await saves.save(doc, {});
     const at = square(one.x, one.y, CELL);
-    expect(store.writes[2]).toEqual([`map:R:buildings:${at}`, `map:RW:${at}`, 'map:regions']);
+    expect(store.writes[2]).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:tiles']);
     // A road changed: road squares alone, no building and nothing kept outside the tiles.
     const node = [...doc.nodes.values()][0]!;
     doc.setNodeHeightOffset(node.id, node.heightOffset + 1);
     await saves.save(doc, {});
-    const written = store.writes[3]!.filter((k) => k !== 'map:regions');
+    const written = store.writes[3]!.filter((k) => k !== 'map:tiles');
     expect(written.length).toBeGreaterThan(0);
-    expect(written.every((k) => k.startsWith('map:R:nodes:') || k.startsWith('map:R:segments:'))).toBe(true);
-    expect(written).toContain(`map:R:nodes:${square(node.x, node.y, SAVE_TILE)}`);
+    expect(written.every((k) => k.startsWith('map:L:nodes:') || k.startsWith('map:L:segments:'))).toBe(true);
+    expect(written).toContain(`map:L:nodes:${square(node.x, node.y, SAVE_TILE)}`);
     same(await saves.read(), doc);
   });
 
@@ -100,11 +102,11 @@ describe('a map saved by tiles', () => {
     for (const b of aged) doc.buildings.wear(b.id, 0.6);
     await saves.save(doc, {});
     const written = store.writes.at(-1)!;
-    expect(written.filter((k) => k.includes(':R:'))).toEqual([]);
-    expect(written.filter((k) => k.includes(':RW:')).length).toBe(new Set(aged.map((b) => square(b.x, b.y, CELL))).size);
+    expect(written.filter((k) => k.includes(':L:'))).toEqual([]);
+    expect(written.filter((k) => k.includes(':W:')).length).toBe(new Set(aged.map((b) => square(b.x, b.y, CELL))).size);
     same(await saves.read(), doc);
     // Without the wears (a square written before them), the records read as they are.
-    for (const key of [...store.blobs.keys()]) if (key.includes(':RW:')) store.blobs.delete(key);
+    for (const key of [...store.blobs.keys()]) if (key.includes(':W:')) store.blobs.delete(key);
     expect((await saves.read())!.document.buildings!.length).toBe(doc.buildings.size);
   });
 
@@ -119,7 +121,7 @@ describe('a map saved by tiles', () => {
     expect(await saves.save(doc, {})).toBe(false);
     await saves.save(doc, {});
     const at = square(one.x, one.y, CELL);
-    expect(store.writes.at(-1)).toEqual([`map:R:buildings:${at}`, `map:RW:${at}`, 'map:regions']);
+    expect(store.writes.at(-1)).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:tiles']);
     same(await saves.read(), doc);
   });
 
@@ -134,7 +136,7 @@ describe('a map saved by tiles', () => {
     doc.buildings.put({ ...one, decay: 0.75 });
     await reader.save(doc, {});
     const at = square(one.x, one.y, CELL);
-    expect(store.writes.at(-1)).toEqual([`map:R:buildings:${at}`, `map:RW:${at}`, 'map:regions']);
+    expect(store.writes.at(-1)).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:tiles']);
     same(await reader.read(), doc);
   });
 
@@ -147,8 +149,8 @@ describe('a map saved by tiles', () => {
     const at = square(one.x, one.y, CELL);
     for (const b of [...doc.buildings.all()]) if (square(b.x, b.y, CELL) === at) doc.buildings.remove(b.id);
     await saves.save(doc, {});
-    expect(store.blobs.has(`map:R:buildings:${at}`)).toBe(false);
-    expect(store.blobs.has(`map:RW:${at}`)).toBe(false);
+    expect(store.blobs.has(`map:L:buildings:${at}`)).toBe(false);
+    expect(store.blobs.has(`map:W:${at}`)).toBe(false);
     same(await saves.read(), doc);
   });
 
@@ -190,7 +192,7 @@ describe('an edit in one tile writes that tile, whatever the size of the map', (
     expect(small.records).toBe(22);
     expect(big.records).toBe(small.records);
     const origin = square(0, 0, SAVE_TILE);
-    expect(big.keys).toEqual([`map:R:poles:${origin}`, `map:R:trees:${origin}`, 'map:regions']);
+    expect(big.keys).toEqual([`map:L:poles:${origin}`, `map:L:trees:${origin}`, 'map:tiles']);
   });
 
   it('keeps the order of a list spread over tiles through cuts and plantings', async () => {
@@ -212,7 +214,7 @@ describe('an edit in one tile writes that tile, whatever the size of the map', (
     reader.adopt(opened, read!.layout);
     opened.cutTrees(2_000 + 7 * 10, 100, 5);
     await reader.save(opened, {});
-    expect(store.writes.at(-1)!.filter((k) => k.includes(':R:trees:'))).toEqual([`map:R:trees:${square(2_070, 100, SAVE_TILE)}`]);
+    expect(store.writes.at(-1)!.filter((k) => k.includes(':L:trees:'))).toEqual([`map:L:trees:${square(2_070, 100, SAVE_TILE)}`]);
     expect(RoadDoc.fromJSON((await reader.read())!.document).toJSON().trees).toEqual(opened.toJSON().trees);
   });
 });
@@ -249,7 +251,7 @@ describe('a map saved before the tiles', () => {
     const before = new Map(store.blobs);
     await saves.save(doc, { camera: 3 }, 66);
     for (const k of ['map:head', 'map:manifest', ...[...before.keys()].filter((k) => k.startsWith('map:part:'))]) expect(store.blobs.get(k)).toBe(before.get(k));
-    expect([...store.blobs.keys()].some((k) => k.startsWith('map:R:buildings:'))).toBe(true);
+    expect([...store.blobs.keys()].some((k) => k.startsWith('map:L:buildings:'))).toBe(true);
     const again = await new TiledSaves(store, 'map').read();
     expect(again?.layout.old).toBeNull();
     expect(again?.savedAt).toBe(66);
@@ -298,7 +300,7 @@ describe('a map by tiles among the other copies', () => {
     const parts = memoryStore();
     const large = largeStore();
     new Persistence(undefined, large, parts).saveSession(small(), settings);
-    await vi.waitFor(() => expect(parts.blobs.has(`${KEY}:regions`)).toBe(true));
+    await vi.waitFor(() => expect(parts.blobs.has(`${KEY}:tiles`)).toBe(true));
     expect(large.items.size).toBe(0);
     expect(localStorage.getItem(KEY)).toContain('"stored":"parts"');
     expect((await new Persistence(undefined, large, parts).loadSessionAsync())?.document.nodes?.length).toBe(2);

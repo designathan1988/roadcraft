@@ -26,7 +26,7 @@ export function readCapabilities(renderer: WebGLRenderer): CapRow[] {
   for (const name of LIMITS) {
     const id = glNames[name];
     if (id === undefined) continue;
-    rows.push({ group: 'limit', name, value: show(gl.getParameter(id)) });
+    rows.push({ group: 'limite', name, value: show(gl.getParameter(id)) });
   }
   const debug = gl.getExtension('WEBGL_debug_renderer_info');
   if (debug) {
@@ -34,14 +34,14 @@ export function readCapabilities(renderer: WebGLRenderer): CapRow[] {
     rows.push({ group: 'driver', name: 'UNMASKED_RENDERER', value: show(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) });
   }
   const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
-  if (aniso) rows.push({ group: 'limit', name: 'MAX_TEXTURE_MAX_ANISOTROPY', value: show(gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) });
+  if (aniso) rows.push({ group: 'limite', name: 'MAX_TEXTURE_MAX_ANISOTROPY', value: show(gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) });
   const timer = gl.getExtension('EXT_disjoint_timer_query_webgl2') as { TIME_ELAPSED_EXT: number; TIMESTAMP_EXT: number; QUERY_COUNTER_BITS_EXT: number } | null;
   if (timer) {
-    rows.push({ group: 'limit', name: 'QUERY_COUNTER_BITS (TIME_ELAPSED)', value: show(gl.getQuery(timer.TIME_ELAPSED_EXT, timer.QUERY_COUNTER_BITS_EXT)) });
-    rows.push({ group: 'limit', name: 'QUERY_COUNTER_BITS (TIMESTAMP)', value: show(gl.getQuery(timer.TIMESTAMP_EXT, timer.QUERY_COUNTER_BITS_EXT)) });
+    rows.push({ group: 'limite', name: 'QUERY_COUNTER_BITS (TIME_ELAPSED)', value: show(gl.getQuery(timer.TIME_ELAPSED_EXT, timer.QUERY_COUNTER_BITS_EXT)) });
+    rows.push({ group: 'limite', name: 'QUERY_COUNTER_BITS (TIMESTAMP)', value: show(gl.getQuery(timer.TIMESTAMP_EXT, timer.QUERY_COUNTER_BITS_EXT)) });
   }
-  for (const [name, value] of Object.entries(gl.getContextAttributes() ?? {})) rows.push({ group: 'attribute', name, value: show(value) });
-  for (const name of (gl.getSupportedExtensions() ?? []).sort()) rows.push({ group: 'extension', name, value: 'yes' });
+  for (const [name, value] of Object.entries(gl.getContextAttributes() ?? {})) rows.push({ group: 'atributo', name, value: show(value) });
+  for (const name of (gl.getSupportedExtensions() ?? []).sort()) rows.push({ group: 'extensão', name, value: 'sim' });
   const caps = renderer.capabilities as unknown as Record<string, unknown>;
   for (const [name, value] of Object.entries(caps)) if (typeof value !== 'function') rows.push({ group: 'three', name, value: show(value) });
   rows.push({ group: 'three', name: 'pixelRatio', value: show(renderer.getPixelRatio()) });

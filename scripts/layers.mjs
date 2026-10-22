@@ -13,21 +13,21 @@ const OUT = arg('--out', 'test-results/layers.json');
 
 /** The layers in the order they are put in: the groups of the scene each brings (top-level names, or `world/<child>`), and the quality it turns on. */
 const LAYERS = [
-  { name: 'empty (the sky alone)', groups: [] },
-  { name: '+ terrain', groups: ['flat-world-ground'] },
-  { name: '+ roads', groups: ['world/road-network', 'world/roads-far-tiles', 'world/road-stand-ins', 'world/road-structure-details'] },
-  { name: '+ furniture, poles, signs, traffic lights', groups: ['world/street-furniture', 'world/utilities', 'world/signs', 'world/barriers', 'world/transit', 'world/elements', 'traffic-signals'] },
-  { name: '+ vegetation', groups: ['world/*garden*', 'world/*forest*', 'world/grass', 'world/ground-cover', 'world/nature-cards'] },
-  { name: '+ buildings', groups: ['buildings-layer'] },
-  { name: '+ vehicles and people', groups: ['agent-parts', 'densityCars'] },
-  { name: '+ shadows', quality: { shadows: true } },
-  { name: '+ post-processing (AO, SMAA, bloom)', quality: { postProcessing: true, ambientOcclusion: true, smaa: true } },
+  { name: 'vazio (só o céu)', groups: [] },
+  { name: '+ terreno', groups: ['flat-world-ground'] },
+  { name: '+ vias', groups: ['world/road-network', 'world/roads-far-tiles', 'world/road-stand-ins', 'world/road-structure-details'] },
+  { name: '+ mobiliário, postes, placas, semáforos', groups: ['world/street-furniture', 'world/utilities', 'world/signs', 'world/barriers', 'world/transit', 'world/elements', 'traffic-signals'] },
+  { name: '+ vegetação', groups: ['world/*garden*', 'world/*forest*', 'world/grass', 'world/ground-cover', 'world/nature-cards'] },
+  { name: '+ prédios', groups: ['buildings-layer'] },
+  { name: '+ veículos e pessoas', groups: ['agent-parts', 'densityCars'] },
+  { name: '+ sombras', quality: { shadows: true } },
+  { name: '+ pós-processamento (AO, SMAA, bloom)', quality: { postProcessing: true, ambientOcclusion: true, smaa: true } },
 ];
 
 const { browser, page, fit } = await openCity({ zoom: 1 });
 
 const results = { seed: Number(arg('--seed', '7')), views: [] };
-for (const view of [{ name: 'whole city', zoom: 1 }, { name: 'district', zoom: 4 }, { name: 'downtown street', zoom: 14 }]) {
+for (const view of [{ name: 'cidade inteira', zoom: 1 }, { name: 'bairro', zoom: 4 }, { name: 'rua no centro', zoom: 14 }]) {
   await lookAt(page, fit, view.zoom);
   const rows = await page.evaluate(async ({ LAYERS, SETTLE, HOLD }) => {
     const { QUALITY } = await import('/src/render/quality.ts');
@@ -65,7 +65,7 @@ for (const view of [{ name: 'whole city', zoom: 1 }, { name: 'district', zoom: 4
   console.log(sameScene(rows).line);
   for (const row of rows) {
     const add = before === null ? '' : `  (+${(row.gpuP50 - before.gpuP50).toFixed(2)} ms GPU, +${(row.trisM - before.trisM).toFixed(2)} M tri)`;
-    console.log(`${row.layer.padEnd(42)} GPU p50 ${String(row.gpuP50).padStart(6)} ms  p95 ${String(row.gpuP95).padStart(6)}  CPU p50 ${String(row.cpuP50).padStart(5)} ms  ${String(row.trisM).padStart(6)} M tri  ${String(row.meshes).padStart(5)} meshes  heap ${row.heapMB} MB  detail ${row.detailMB} MB${add}`);
+    console.log(`${row.layer.padEnd(42)} GPU p50 ${String(row.gpuP50).padStart(6)} ms  p95 ${String(row.gpuP95).padStart(6)}  CPU p50 ${String(row.cpuP50).padStart(5)} ms  ${String(row.trisM).padStart(6)} M tri  ${String(row.meshes).padStart(5)} malhas  heap ${row.heapMB} MB  detalhe ${row.detailMB} MB${add}`);
     before = row;
   }
   results.views.push({ view: view.name, rows });

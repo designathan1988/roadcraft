@@ -93,7 +93,7 @@ describe('the far level of a building', () => {
       // The detailed shells are many small faces, their samples dense; the far level is sampled finer to measure against.
       const farOff = strays(far, bucket(near), FAR_ERROR + SLACK), nearOff = strays(near, bucket(fineFar), FAR_ERROR + SLACK);
       checked++;
-      if (farOff > MOST_OFF || nearOff > MOST_OFF) off.push(`${b.id}: far ${(100 * farOff).toFixed(1)} %, detail ${(100 * nearOff).toFixed(1)} %`);
+      if (farOff > MOST_OFF || nearOff > MOST_OFF) off.push(`${b.id}: longe ${(100 * farOff).toFixed(1)} %, detalhe ${(100 * nearOff).toFixed(1)} %`);
     }
     expect(checked).toBeGreaterThan(30);
     expect(off).toEqual([]);

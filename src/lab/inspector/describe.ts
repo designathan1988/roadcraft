@@ -81,7 +81,7 @@ export function attributeRows(geometry: BufferGeometry): AttributeRow[] {
     const array = (inter.isInterleavedBufferAttribute ? inter.data?.array : a.array) as (ArrayLike<number> & { byteLength?: number; constructor: { name: string } }) | null;
     const kept = (a as unknown as { keptBytes?: number }).keptBytes;
     rows.push({
-      name, itemSize: a.itemSize, count: a.count, type: array ? array.constructor.name : 'released', normalized: a.normalized,
+      name, itemSize: a.itemSize, count: a.count, type: array ? array.constructor.name : 'liberado', normalized: a.normalized,
       bytes: array?.byteLength ?? kept ?? 0, onCpu: !!array, interleaved: !!inter.isInterleavedBufferAttribute, usage: inter.isInterleavedBufferAttribute ? inter.data?.usage ?? 0 : a.usage,
     });
   };
@@ -94,11 +94,11 @@ export function attributeRows(geometry: BufferGeometry): AttributeRow[] {
 export function geometrySummary(geometry: BufferGeometry): Record<string, unknown> {
   const cost = geometryCost(geometry);
   return {
-    type: geometry.type, name: geometry.name || '—', uuid: geometry.uuid, triangles: cost.triangles, bytes: cost.bytes,
-    index: geometry.index ? `${geometry.index.count} (${(geometry.index.array as unknown as { constructor: { name: string } } | null)?.constructor.name ?? 'released'})` : 'not indexed',
-    drawRange: `${geometry.drawRange.start} + ${geometry.drawRange.count}`, groups: geometry.groups.length,
-    boundingSphere: geometry.boundingSphere ? `center ${v3(geometry.boundingSphere.center)}, radius ${geometry.boundingSphere.radius.toFixed(3)}` : 'not computed',
-    boundingBox: geometry.boundingBox ? `${v3(geometry.boundingBox.min)} → ${v3(geometry.boundingBox.max)}` : 'not computed',
+    tipo: geometry.type, nome: geometry.name || '—', uuid: geometry.uuid, triângulos: cost.triangles, bytes: cost.bytes,
+    índice: geometry.index ? `${geometry.index.count} (${(geometry.index.array as unknown as { constructor: { name: string } } | null)?.constructor.name ?? 'liberado'})` : 'não indexada',
+    drawRange: `${geometry.drawRange.start} + ${geometry.drawRange.count}`, grupos: geometry.groups.length,
+    esferaLimite: geometry.boundingSphere ? `centro ${v3(geometry.boundingSphere.center)}, raio ${geometry.boundingSphere.radius.toFixed(3)}` : 'não calculada',
+    caixaLimite: geometry.boundingBox ? `${v3(geometry.boundingBox.min)} → ${v3(geometry.boundingBox.max)}` : 'não calculada',
   };
 }
 
@@ -120,15 +120,15 @@ export function textureInfo(slot: string, t: Texture): TextureInfo {
   const w = image?.width ?? level0?.width ?? 0;
   const h = image?.height ?? level0?.height ?? 0;
   const flags = t as Texture & { isCompressedTexture?: boolean; isDataTexture?: boolean; isRenderTargetTexture?: boolean; isDataArrayTexture?: boolean; isCanvasTexture?: boolean };
-  const kind = flags.isRenderTargetTexture ? 'render target' : flags.isCompressedTexture ? 'compressed' : flags.isDataArrayTexture ? 'array' : flags.isDataTexture ? 'data' : flags.isCanvasTexture ? 'canvas' : 'image';
+  const kind = flags.isRenderTargetTexture ? 'render target' : flags.isCompressedTexture ? 'comprimida' : flags.isDataArrayTexture ? 'array' : flags.isDataTexture ? 'dados' : flags.isCanvasTexture ? 'canvas' : 'imagem';
   const reuploadable = !flags.isRenderTargetTexture && (!!image && (image.width ?? 0) > 0 || !!level0);
   return {
     slot, texture: t, size: `${w}×${h}${image?.depth ? `×${image.depth}` : ''}`, reuploadable,
     rows: {
-      name: t.name || '—', uuid: t.uuid, type: kind, size: `${w}×${h}${image?.depth ? `×${image.depth}` : ''}`, format: named(FORMATS, t.format as number),
-      dataType: named(TYPES, t.type), colorSpace: t.colorSpace || '—', anisotropy: t.anisotropy, minFilter: named(FILTERS, t.minFilter), magFilter: named(FILTERS, t.magFilter),
-      wrap: `${named(WRAPS, t.wrapS)} / ${named(WRAPS, t.wrapT)}`, mipmaps: t.mipmaps?.length ?? 0, generateMipmaps: t.generateMipmaps, flipY: t.flipY,
-      repeat: `${t.repeat.x}, ${t.repeat.y}`, offset: `${t.offset.x}, ${t.offset.y}`, version: t.version, gpuBytes: textureGpuBytes(t), imageOnCpu: reuploadable,
+      nome: t.name || '—', uuid: t.uuid, tipo: kind, tamanho: `${w}×${h}${image?.depth ? `×${image.depth}` : ''}`, formato: named(FORMATS, t.format as number),
+      tipoDeDado: named(TYPES, t.type), espaçoDeCor: t.colorSpace || '—', anisotropia: t.anisotropy, minFilter: named(FILTERS, t.minFilter), magFilter: named(FILTERS, t.magFilter),
+      wrap: `${named(WRAPS, t.wrapS)} / ${named(WRAPS, t.wrapT)}`, mipmaps: t.mipmaps?.length ?? 0, gerarMipmaps: t.generateMipmaps, flipY: t.flipY,
+      repetir: `${t.repeat.x}, ${t.repeat.y}`, deslocar: `${t.offset.x}, ${t.offset.y}`, versão: t.version, bytesGpu: textureGpuBytes(t), imagemNaCpu: reuploadable,
     },
   };
 }

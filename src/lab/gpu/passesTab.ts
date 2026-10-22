@@ -12,19 +12,19 @@ export function createPassesTab(lab: GpuLab): LabTab {
   const root = el('div');
   /** What this tab switched on when shown, switched off again when left. */
   let startedTiming = false, startedLayers = false;
-  const timing = button('Time per pass', 'Times each pass with GPU timer queries, one after another; the whole-frame timer is paused and the game redraws nonstop while on', () => {
+  const timing = button('Medir por passe', 'Mede cada passe com consultas de tempo da GPU, uma após a outra; o cronômetro do quadro inteiro fica pausado e o jogo redesenha sem parar enquanto ligado', () => {
     lab.setPassTiming(!lab.passTiming);
     draw();
   });
   const status = el('span', 'lab-muted');
   const table = createLabTable<PassRow>({
     columns: [
-      { key: 'label', label: 'Pass', value: (r) => r.label },
-      { key: 'avg', label: 'avg ms', value: (r) => r.avg, format: ms, bar: true },
+      { key: 'label', label: 'Passe', value: (r) => r.label },
+      { key: 'avg', label: 'média ms', value: (r) => r.avg, format: ms, bar: true },
       { key: 'p95', label: 'p95 ms', value: (r) => r.p95, format: ms, bar: true },
-      { key: 'max', label: 'max ms', value: (r) => r.max, format: ms },
-      { key: 'share', label: '%', value: (r) => r.share, format: (v) => v.toFixed(1), title: 'Share of the summed averages' },
-      { key: 'frames', label: 'frames', value: (r) => r.frames, title: 'Frames in which the pass was drawn' },
+      { key: 'max', label: 'máx ms', value: (r) => r.max, format: ms },
+      { key: 'share', label: '%', value: (r) => r.share, format: (v) => v.toFixed(1), title: 'Parte da soma das médias' },
+      { key: 'frames', label: 'quadros', value: (r) => r.frames, title: 'Quadros em que o passe foi desenhado' },
     ],
     rows: () => lab.passRows(),
     sort: { key: 'avg', desc: true },
@@ -46,30 +46,30 @@ export function createPassesTab(lab: GpuLab): LabTab {
     return b;
   });
 
-  const live = button('Count by layer', 'Counts the draws and triangles of each frame by the top-level group of the scene', () => {
+  const live = button('Contar por camada', 'Conta os desenhos e triângulos de cada quadro pelo grupo de topo da cena', () => {
     lab.setLiveLayers(!lab.liveLayers);
     draw();
   });
   const layers = createLabTable<{ layer: string; calls: number; triangles: number }>({
     columns: [
-      { key: 'layer', label: 'Layer', value: (r) => r.layer },
-      { key: 'calls', label: 'draws', value: (r) => r.calls },
-      { key: 'triangles', label: 'triangles', value: (r) => r.triangles, bar: true },
+      { key: 'layer', label: 'Camada', value: (r) => r.layer },
+      { key: 'calls', label: 'desenhos', value: (r) => r.calls },
+      { key: 'triangles', label: 'triângulos', value: (r) => r.triangles, bar: true },
     ],
     rows: () => lab.layerRows(),
     sort: { key: 'triangles', desc: true },
   });
 
   root.append(
-    el('h3', '', 'GPU time per pass'),
+    el('h3', '', 'Tempo de GPU por passe'),
     wrapRow(timing, status),
     table.element,
     legend,
     canvas,
-    el('h3', '', 'Debug views'),
+    el('h3', '', 'Vistas de depuração'),
     wrapRow(...viewButtons),
-    el('div', 'lab-muted', 'Overdraw, wireframe and normals change the material of each object in the scene pass (the object vertex code kept); UV and mips put one material over the whole scene. Shadows and the chain passes keep running.'),
-    el('h3', '', 'Draws by layer (live)'),
+    el('div', 'lab-muted', 'Sobreposição, arame e normais mudam o material de cada objeto no passe da cena (o vértice do objeto mantido); UV e mips põem um material sobre a cena toda. Sombras e passes da cadeia continuam.'),
+    el('h3', '', 'Desenhos por camada (ao vivo)'),
     wrapRow(live),
     layers.element,
   );
@@ -114,8 +114,8 @@ export function createPassesTab(lab: GpuLab): LabTab {
     live.classList.toggle('on', lab.liveLayers);
     for (const b of viewButtons) b.classList.toggle('on', b.dataset['view'] === lab.views.current);
     const t = lab.timer;
-    if (!lab.ctx.scene.gpu.supported) { status.textContent = 'no EXT_disjoint_timer_query_webgl2: cannot measure'; timing.disabled = true; }
-    else status.textContent = t ? `${lab.ctx.scene.opening ? 'the game is still opening (the chain does not draw) · ' : ''}${t.frames.length} frames measured · ${t.skipped} segments without a query · ${t.disjoint} frames dropped (disjoint)` : 'off (the whole-frame timer measures)';
+    if (!lab.ctx.scene.gpu.supported) { status.textContent = 'sem EXT_disjoint_timer_query_webgl2: não dá para medir'; timing.disabled = true; }
+    else status.textContent = t ? `${lab.ctx.scene.opening ? 'o jogo ainda está abrindo (a cadeia não desenha) · ' : ''}${t.frames.length} quadros medidos · ${t.skipped} segmentos sem consulta · ${t.disjoint} quadros descartados (disjunto)` : 'desligado (o cronômetro do quadro inteiro mede)';
     table.refresh();
     layers.refresh();
     drawBars();

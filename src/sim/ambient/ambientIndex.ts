@@ -2,11 +2,8 @@ import type { ChangeJournal } from '@world/changes';
 import { NetworkLength } from '@world/networkLength';
 import type { Network, SegmentRibbon } from '@world/network';
 import { m, stepsIn } from '@world/units';
-import { IdSlots, grown } from '@core/idSlots';
-import { RunPool } from '@core/runPool';
-import type { BuildingId } from '@world/buildings/types';
-import type { TrafficBuildings, TrafficFacts } from '../agents/trafficBuildings';
-import type { Mix } from './demand';
+import type { TrafficBuilding, TrafficBuildings } from '../agents/trafficBuildings';
+import { kindOf, type Mix } from './demand';
 
 /** DO NOT key any of these by `doc.buildings.revision` */
 
@@ -36,36 +33,25 @@ export const spotKey = (x: number, y: number): number => Math.round(stepsIn(x, 0
 
 // ------------------------------------------------------------ the walls
 
+/** A solid ring of a building, with its box; `mark` is the last query that read it. */
+interface Wall {
+  readonly ring: readonly { readonly x: number; readonly y: number }[];
+  readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number;
+  mark: number;
+}
+
 /** The side of a wall cell: a few buildings each, a sight line of 300 m reads some twenty. */
 const WALL_CELL = m(32);
 /** Walls are filed over their box grown by this */
 const WALL_SLACK = m(0.01);
 
-/**
- * The buildings' solid rings in a fixed grid, kept by the diary: a sight line asks only the cells it crosses.
- * DO NOT hold a wall an object, nor a building's rings as its traffic record's arrays: each wall is a number (its box, its query mark,
- * the next wall of its building in columns, its ring's points in one typed array: `RunPool`), each building its first wall at its
- * slot (`IdSlots`), each cell its walls' numbers in the order they were filed.
- */
+/** The buildings' solid rings in a fixed grid, kept by the diary: a sight line asks only the cells it crosses. */
 export class SightWalls {
   /** DO NOT follow the diary from here (`JournalCursor`): a reader that stops reading (no view to look through) keeps every entry after it for ever. One entry a tile (`TrafficBuildingTable.apply`) keeps it within what the diary holds. */
   private serial = -1;
-  /** Each building's first wall, its walls linked by `next`. */
-  private readonly buildings = new IdSlots(256);
-  private first = new Int32Array(16);
-  /** Each wall's box (x0, y0, x1, y1), the last query that read it, the next wall of its building (-1: none); its ring's x, y in `rings`. */
-  private boxes = new Float64Array(64);
-  private marks = new Float64Array(16);
-  private next = new Int32Array(16);
-  private readonly rings = new RunPool();
-  private wallCount = 0;
-  private freeWalls: number[] = [];
-  private readonly cells = new Map<number, number[]>();
+  private readonly byBuilding = new Map<number, Wall[]>();
+  private readonly cells = new Map<number, Set<Wall>>();
   private query = 0;
-
-  constructor() {
-    this.buildings.onGrow = (n) => { this.first = grown(this.first, n); };
-  }
 
   /** Takes in what the diary says changed since the last call. */
   sync(store: TrafficBuildings, journal: ChangeJournal): void {
@@ -74,84 +60,58 @@ export class SightWalls {
     if (changed === null) { this.fileAll(store); return; }
     for (const id of changed) {
       this.unfile(id);
-      this.file(id, store.footprints(id as BuildingId));
+      const b = store.get(id as never);
+      if (b) this.file(b);
     }
   }
 
   /** @rebuild The whole store read again: a load, a clear, or a diary that forgot. */
   private fileAll(store: TrafficBuildings): void {
     ambientIndexWork.full++;
-    this.buildings.clear();
+    this.byBuilding.clear();
     this.cells.clear();
-    this.rings.clear();
-    this.wallCount = 0;
-    this.freeWalls = [];
-    store.eachFootprints((id, rings) => this.file(id, rings));
+    for (const b of store.all()) this.file(b);
   }
 
-  /** A building's walls filed (none for a building not in the store), by its footprints alone (`TrafficBuildings.footprints`). */
-  private file(id: number, rings: readonly (readonly { readonly x: number; readonly y: number }[])[]): void {
-    let head = -1, tail = -1;
-    for (const ring of rings) {
+  private file(b: TrafficBuilding): void {
+    const walls: Wall[] = [];
+    for (const ring of b.footprints) {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const p of ring) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
       if (!(x0 <= x1 && y0 <= y1)) continue;
-      const wall = this.newWall();
-      const box = this.boxes, at = wall * 4;
-      box[at] = x0; box[at + 1] = y0; box[at + 2] = x1; box[at + 3] = y1;
-      this.marks[wall] = 0;
-      this.next[wall] = -1;
-      let k = this.rings.put(wall, ring.length * 2);
-      const d = this.rings.data;
-      for (const p of ring) { d[k++] = p.x; d[k++] = p.y; }
-      if (tail < 0) head = wall; else this.next[tail] = wall;
-      tail = wall;
+      const wall: Wall = { ring, x0, y0, x1, y1, mark: 0 };
+      walls.push(wall);
       ambientIndexWork.filed++;
       const cx0 = Math.floor((x0 - WALL_SLACK) / WALL_CELL), cx1 = Math.floor((x1 + WALL_SLACK) / WALL_CELL);
       const cy0 = Math.floor((y0 - WALL_SLACK) / WALL_CELL), cy1 = Math.floor((y1 + WALL_SLACK) / WALL_CELL);
       for (let cx = cx0; cx <= cx1; cx++) {
         for (let cy = cy0; cy <= cy1; cy++) {
-          const key = cellKey(cx, cy);
-          const list = this.cells.get(key);
-          if (list) list.push(wall); else this.cells.set(key, [wall]);
+          const k = cellKey(cx, cy);
+          let set = this.cells.get(k);
+          if (!set) this.cells.set(k, set = new Set());
+          set.add(wall);
         }
       }
     }
-    if (head < 0) return;
-    // The slot taken first: taking it may grow the column (`onGrow`).
-    const slot = this.buildings.take(id);
-    this.first[slot] = head;
-  }
-
-  private newWall(): number {
-    const wall = this.freeWalls.length ? this.freeWalls.pop()! : this.wallCount++;
-    if (wall >= this.next.length) {
-      const n = Math.ceil(this.next.length * 1.5);
-      this.boxes = grown(this.boxes, n * 4); this.marks = grown(this.marks, n); this.next = grown(this.next, n);
-    }
-    return wall;
+    if (walls.length) this.byBuilding.set(b.id, walls);
   }
 
   private unfile(id: number): void {
-    const slot = this.buildings.get(id);
-    if (slot < 0) return;
-    this.buildings.delete(id);
-    for (let wall = this.first[slot]!; wall >= 0; wall = this.next[wall]!) {
-      const box = this.boxes, at = wall * 4;
-      const cx0 = Math.floor((box[at]! - WALL_SLACK) / WALL_CELL), cx1 = Math.floor((box[at + 2]! + WALL_SLACK) / WALL_CELL);
-      const cy0 = Math.floor((box[at + 1]! - WALL_SLACK) / WALL_CELL), cy1 = Math.floor((box[at + 3]! + WALL_SLACK) / WALL_CELL);
+    const walls = this.byBuilding.get(id);
+    if (!walls) return;
+    this.byBuilding.delete(id);
+    for (const wall of walls) {
+      const cx0 = Math.floor((wall.x0 - WALL_SLACK) / WALL_CELL), cx1 = Math.floor((wall.x1 + WALL_SLACK) / WALL_CELL);
+      const cy0 = Math.floor((wall.y0 - WALL_SLACK) / WALL_CELL), cy1 = Math.floor((wall.y1 + WALL_SLACK) / WALL_CELL);
       for (let cx = cx0; cx <= cx1; cx++) {
         for (let cy = cy0; cy <= cy1; cy++) {
-          const key = cellKey(cx, cy);
-          const list = this.cells.get(key);
-          if (!list) continue;
-          const i = list.indexOf(wall);
-          if (i >= 0) list.splice(i, 1);
-          if (!list.length) this.cells.delete(key);
+          const k = cellKey(cx, cy);
+          const set = this.cells.get(k);
+          if (!set) continue;
+          set.delete(wall);
+          if (!set.size) this.cells.delete(k);
         }
       }
-      this.rings.drop(wall);
-      this.freeWalls.push(wall);
     }
   }
 
@@ -166,20 +126,18 @@ export class SightWalls {
     const deltaX = stepX ? WALL_CELL / Math.abs(dx) : Infinity, deltaY = stepY ? WALL_CELL / Math.abs(dy) : Infinity;
     let maxX = stepX > 0 ? ((cx + 1) * WALL_CELL - ax) / dx : stepX < 0 ? (cx * WALL_CELL - ax) / dx : Infinity;
     let maxY = stepY > 0 ? ((cy + 1) * WALL_CELL - ay) / dy : stepY < 0 ? (cy * WALL_CELL - ay) / dy : Infinity;
-    const box = this.boxes, marks = this.marks;
     for (;;) {
       ambientIndexWork.cells++;
-      const list = this.cells.get(cellKey(cx, cy));
-      if (list) {
-        for (const wall of list) {
-          if (marks[wall] === mark) continue;
-          marks[wall] = mark;
-          const at = wall * 4;
-          if (box[at + 2]! < lx || box[at]! > hx || box[at + 3]! < ly || box[at + 1]! > hy) continue;
+      const set = this.cells.get(cellKey(cx, cy));
+      if (set) {
+        for (const wl of set) {
+          if (wl.mark === mark) continue;
+          wl.mark = mark;
+          if (wl.x1 < lx || wl.x0 > hx || wl.y1 < ly || wl.y0 > hy) continue;
           ambientIndexWork.rings++;
-          const r = this.rings.data, start = this.rings.start(wall), n = this.rings.length(wall) / 2;
-          for (let i = 0, j = n - 1; i < n; j = i++) {
-            if (crosses(ax, ay, bx, by, r[start + j * 2]!, r[start + j * 2 + 1]!, r[start + i * 2]!, r[start + i * 2 + 1]!)) return true;
+          const r = wl.ring;
+          for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+            if (crosses(ax, ay, bx, by, r[j]!.x, r[j]!.y, r[i]!.x, r[i]!.y)) return true;
           }
         }
       }
@@ -204,35 +162,22 @@ export function crosses(ax: number, ay: number, bx: number, by: number, cx: numb
 export type Kind = keyof Mix;
 interface Counts { home: number; shop: number; work: number; civic: number; total: number }
 const noCounts = (): Counts => ({ home: 0, shop: 0, work: 0, civic: 0, total: 0 });
-const MIX_KINDS: readonly Kind[] = ['home', 'shop', 'work', 'civic'];
+interface Filed { readonly x: number; readonly y: number; readonly kind: Kind; readonly cell: number | null }
 
 /** The side of a mix cell. */
 const MIX_CELL = m(128);
 /** Rounding room in the test of a whole cell inside or outside the circle: the cells near the edge are counted building by building. */
 const MIX_SLACK = m(0.001);
 
-/** How many buildings of each kind (`demand.ts` kindOf) stand where. DO NOT hold a building an object: its place, kind, cell and place in its cell's list in columns at its slot (`IdSlots`), each cell's members their slots. */
+/** How many buildings of each kind (`demand.ts` kindOf) stand where */
 export class BuildingMix {
   /** DO NOT follow the diary from here (`JournalCursor`): a reader that stops reading (no view to look through) keeps every entry after it for ever. One entry a tile (`TrafficBuildingTable.apply`) keeps it within what the diary holds. */
   private serial = -1;
-  private readonly slots = new IdSlots(256);
-  private xs = new Float64Array(16);
-  private ys = new Float64Array(16);
-  private kinds = new Uint8Array(16);
-  /** Its cell's key; NaN: its place is not a number. */
-  private cellOf = new Float64Array(16);
-  private memberAt = new Int32Array(16);
-  private readonly cells = new Map<number, { counts: Counts; members: number[] }>();
+  private readonly byBuilding = new Map<number, Filed>();
+  private readonly cells = new Map<number, { counts: Counts; members: Set<Filed> }>();
   /** Buildings whose place is not a number: within every circle, as `hypot(NaN) > r` is false. */
-  private readonly nowhere = noCounts();
+  private readonly nowhere = new Set<Filed>();
   private readonly all = noCounts();
-
-  constructor() {
-    this.slots.onGrow = (n) => {
-      this.xs = grown(this.xs, n); this.ys = grown(this.ys, n); this.kinds = grown(this.kinds, n);
-      this.cellOf = grown(this.cellOf, n); this.memberAt = grown(this.memberAt, n);
-    };
-  }
 
   /** Takes in what the diary says changed since the last call. */
   sync(store: TrafficBuildings, journal: ChangeJournal): void {
@@ -241,7 +186,7 @@ export class BuildingMix {
     if (changed === null) { this.fileAll(store); return; }
     for (const id of changed) {
       this.unfile(id);
-      const b = store.facts(id as never);
+      const b = store.get(id as never);
       if (b) this.file(b);
     }
   }
@@ -249,42 +194,37 @@ export class BuildingMix {
   /** @rebuild The whole store read again: a load, a clear, or a diary that forgot. */
   private fileAll(store: TrafficBuildings): void {
     ambientIndexWork.full++;
-    this.slots.clear();
+    this.byBuilding.clear();
     this.cells.clear();
-    Object.assign(this.nowhere, noCounts());
+    this.nowhere.clear();
     Object.assign(this.all, noCounts());
-    store.eachFacts((b) => this.file(b));
+    for (const b of store.all()) this.file(b);
   }
 
-  private file(b: TrafficFacts): void {
+  private file(b: TrafficBuilding): void {
     ambientIndexWork.filed++;
     const placed = Number.isFinite(b.x) && Number.isFinite(b.y);
-    const kind = b.kind;
-    const slot = this.slots.take(b.id);
-    this.xs[slot] = b.x; this.ys[slot] = b.y; this.kinds[slot] = MIX_KINDS.indexOf(kind);
-    this.all[kind]++; this.all.total++;
-    if (!placed) { this.cellOf[slot] = Number.NaN; this.nowhere[kind]++; this.nowhere.total++; return; }
-    const cell = cellKey(Math.floor(b.x / MIX_CELL), Math.floor(b.y / MIX_CELL));
-    this.cellOf[slot] = cell;
+    const cell = placed ? cellKey(Math.floor(b.x / MIX_CELL), Math.floor(b.y / MIX_CELL)) : null;
+    const f: Filed = { x: b.x, y: b.y, kind: kindOf(b), cell };
+    this.byBuilding.set(b.id, f);
+    this.all[f.kind]++; this.all.total++;
+    if (cell === null) { this.nowhere.add(f); return; }
     let c = this.cells.get(cell);
-    if (!c) this.cells.set(cell, c = { counts: noCounts(), members: [] });
-    c.counts[kind]++; c.counts.total++;
-    this.memberAt[slot] = c.members.length;
-    c.members.push(slot);
+    if (!c) this.cells.set(cell, c = { counts: noCounts(), members: new Set() });
+    c.counts[f.kind]++; c.counts.total++;
+    c.members.add(f);
   }
 
   private unfile(id: number): void {
-    const slot = this.slots.get(id);
-    if (slot < 0) return;
-    this.slots.delete(id);
-    const kind = MIX_KINDS[this.kinds[slot]!]!, cell = this.cellOf[slot]!;
-    this.all[kind]--; this.all.total--;
-    if (Number.isNaN(cell)) { this.nowhere[kind]--; this.nowhere.total--; return; }
-    const c = this.cells.get(cell)!;
-    c.counts[kind]--; c.counts.total--;
-    const last = c.members.pop()!;
-    if (last !== slot) { c.members[this.memberAt[slot]!] = last; this.memberAt[last] = this.memberAt[slot]!; }
-    if (!c.counts.total) this.cells.delete(cell);
+    const f = this.byBuilding.get(id);
+    if (!f) return;
+    this.byBuilding.delete(id);
+    this.all[f.kind]--; this.all.total--;
+    if (f.cell === null) { this.nowhere.delete(f); return; }
+    const c = this.cells.get(f.cell)!;
+    c.counts[f.kind]--; c.counts.total--;
+    c.members.delete(f);
+    if (!c.counts.total) this.cells.delete(f.cell);
   }
 
   /** The share of each kind among the buildings within `r * 1.2` of (x, y); r = Infinity, the whole map. */
@@ -301,12 +241,10 @@ export class BuildingMix {
 
   private inCircle(x: number, y: number, reach: number): Counts {
     const out = noCounts();
-    out.home += this.nowhere.home; out.shop += this.nowhere.shop; out.work += this.nowhere.work; out.civic += this.nowhere.civic;
-    out.total += this.nowhere.total;
+    for (const f of this.nowhere) { out[f.kind]++; out.total++; }
     const cx0 = Math.floor((x - reach) / MIX_CELL), cx1 = Math.floor((x + reach) / MIX_CELL);
     const cy0 = Math.floor((y - reach) / MIX_CELL), cy1 = Math.floor((y + reach) / MIX_CELL);
-    const xs = this.xs, ys = this.ys, kinds = this.kinds;
-    const visit = (cell: number, c: { counts: Counts; members: number[] }): void => {
+    const visit = (cell: number, c: { counts: Counts; members: Set<Filed> }): void => {
       ambientIndexWork.cells++;
       const gx = Math.floor(cell / 65536) - 32768, gy = (cell % 65536) - 32768;
       const x0 = gx * MIX_CELL - x, x1 = (gx + 1) * MIX_CELL - x, y0 = gy * MIX_CELL - y, y1 = (gy + 1) * MIX_CELL - y;
@@ -319,9 +257,9 @@ export class BuildingMix {
       const near = Math.hypot(Math.max(0, x0, -x1), Math.max(0, y0, -y1));
       if (near - MIX_SLACK > reach) return;
       // The edge of the circle: each building by the walk's own test.
-      for (const slot of c.members) {
-        if (Math.hypot(xs[slot]! - x, ys[slot]! - y) > reach) continue;
-        out[MIX_KINDS[kinds[slot]!]!]++; out.total++;
+      for (const f of c.members) {
+        if (Math.hypot(f.x - x, f.y - y) > reach) continue;
+        out[f.kind]++; out.total++;
       }
     };
     if ((cx1 - cx0 + 1) * (cy1 - cy0 + 1) > this.cells.size) {

@@ -29,8 +29,6 @@ export interface PostChain {
   readonly enabled: boolean;
   /** What the scene is drawn into (null: the screen): shaders are compiled ahead for it. */
   readonly target: WebGLRenderTarget | null;
-  /** Settles once the chain's own programs (its passes') are built: a quality change holds the last picture until then (`renderer.ts` compileChanged). */
-  readonly ready: Promise<void>;
   /** Every render target the chain holds (the scene's, the composer's two, the masks, the clouds', the occlusion's), for the video memory count (`targetBytes.ts`). */
   targets(): readonly WebGLRenderTarget[];
   render(delta: number): void;
@@ -85,7 +83,6 @@ export function createPostChain(
     return {
       enabled: false,
       target: plain?.target ?? null,
-      ready: Promise.resolve(),
       targets: () => (plain ? [plain.target] : []),
       render() {
         if (plain) plain.render();
@@ -132,9 +129,6 @@ export function createPostChain(
     depthTexture: new DepthTexture(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), FloatType),
     // Multisampled, its depth resolved into the texture the occlusion reads (three's `resolveDepthBuffer`).
     samples: Math.min(quality.msaa, renderer.capabilities.maxSamples),
-    // DO NOT keep the multisampled buffers once resolved: nothing reads them after the scene pass (the passes read the resolved colour and depth), and the driver may drop them instead of storing them (three's `invalidateFramebuffer` after the resolve).
-    storeMultisampledColorBuffer: false,
-    storeMultisampledDepthBuffer: false,
   });
   /** DO NOT hand the composer the scene's multisampled target again: it clones it */
   const target = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), { type: HalfFloatType, depthBuffer: false });
@@ -421,8 +415,6 @@ export function createPostChain(
   output.uniforms['uTexel'] = { value: new Vector2(1 / Math.max(1, size.x * ratio), 1 / Math.max(1, size.y * ratio)) };
   output.material.needsUpdate = true;
   composer.addPass(output);
-  // DO NOT build the passes' programs ahead here, nor set the OutputPass's state and defines before its first draw: with that warm-up the whole picture
-  // came out washed out (18 % of the district's pixels changed against the approved look; bisected to 80074433, and the picture back with it removed, 2026-10-22).
   // Each pass told to the lab's observer when one is set (`PostPassHook`).
   for (const [pass, name] of [[scenePass, 'scene'], [gtao, 'gtao'], [canyon?.pass, 'canyon'], [bloom, 'bloom'], [clouds, 'clouds'], [smaa, 'smaa'], [output, 'output']] as [Pass | null | undefined, string][]) {
     if (!pass) continue;
@@ -445,7 +437,6 @@ export function createPostChain(
   return {
     enabled: true,
     target: sceneTarget,
-    ready: Promise.allSettled(warming).then(() => undefined),
     // The occlusion's two targets too (its `normalRenderTarget` is never bound once `setGBuffer` is handed the scene's depth: no GPU memory)
     // The bloom's bright pass and its five mips each way (made at construction, on or off) and SMAA's edges and weights (r186 `_edgesRT`, `_weightsRT`)
     targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...bodiesTargets, shadowMapTarget, ...(gtao ? [gtao.gtaoRenderTarget, gtao.pdRenderTarget] : []),

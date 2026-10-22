@@ -49,7 +49,7 @@ const result = await page.evaluate(async () => {
   return { out, windows };
 });
 console.log(sameScene(result.windows).line);
-console.log('material'.padEnd(46), 'saves ms  (two turns)     meshes  part kinds');
+console.log('material'.padEnd(46), 'devolve ms  (duas voltas)  malhas  tipos de peça');
 for (const r of result.out.sort((a, b) => b.saveMs - a.saveMs)) console.log(r.material.slice(0, 45).padEnd(46), String(r.saveMs).padStart(8), `  (${r.saves.join(', ')})`.padEnd(16), String(r.meshes).padStart(6), ' ', r.kinds);
 writeFileSync('test-results/materialEach.json', JSON.stringify(result, null, 2));
 await browser.close();

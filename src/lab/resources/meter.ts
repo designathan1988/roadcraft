@@ -1,7 +1,7 @@
 /** A METER OF THE LAB'S CONSUMERS: the samples of one thing that costs (a system's ms, a measure, a pool's queue, the bytes a class holds), timed, read over a window or the whole session */
 
 /** What a consumer spends: the main thread, a worker's, the GPU's time, video memory, the page's memory, the disk, the network. */
-export type ResourceCategory = 'CPU-main' | 'CPU-worker' | 'GPU' | 'VRAM' | 'RAM' | 'Disk' | 'Network';
+export type ResourceCategory = 'CPU-main' | 'CPU-worker' | 'GPU' | 'VRAM' | 'RAM' | 'Disco' | 'Rede';
 
 /** `event`: each sample a cost that happened (a measure, a frame's system) - its total means something; `gauge`: each sample a reading of a level (bytes held, jobs waiting) - its last is what stands now. */
 export type MeterKind = 'event' | 'gauge';

@@ -57,15 +57,15 @@ const LEAST_FREE_BYTES = 3 * 2 ** 30;
 export async function openCity({ base = arg('--base', 'http://127.0.0.1:5300/'), seed = Number(arg('--seed', '7')), zoom = Number(arg('--zoom', '4')), width = 1600, height = 900, init = null, free = true, headless = true, settle = true, city = true } = {}) {
   const busy = gpuNeighbours();
   if (free && busy.length && !process.argv.includes('--shared-gpu')) {
-    console.error(`MEASUREMENT REFUSED: another process is using the GPU: ${busy.map((b) => `${b.name} (pid ${b.pid}) ${b.percent}%`).join(', ')}. Close it (a game open in the browser pane, another tab) or pass --shared-gpu.`);
+    console.error(`MEDIÇÃO RECUSADA: outro processo está usando a GPU: ${busy.map((b) => `${b.name} (pid ${b.pid}) ${b.percent}%`).join(', ')}. Feche-o (um jogo aberto no painel do navegador, outra aba) ou passe --shared-gpu.`);
     process.exit(2);
   }
   // The CPU and the memory too: a build, a test run or another game paces the page's frames and the GPU process's submissions.
   const machine = cpuNeighbours();
   const shortOfMemory = machine.freeBytes < LEAST_FREE_BYTES;
   if (free && (machine.busy.length || shortOfMemory) && !process.argv.includes('--shared-machine')) {
-    const why = [...machine.busy.map((b) => `${b.name} ${b.cores} core(s)`), ...(shortOfMemory ? [`only ${(machine.freeBytes / 2 ** 30).toFixed(1)} GB of free memory`] : [])];
-    console.error(`MEASUREMENT REFUSED: the machine is busy: ${why.join(', ')}. Close what is yours (tests, builds, another Chrome) or pass --shared-machine.`);
+    const why = [...machine.busy.map((b) => `${b.name} ${b.cores} núcleo(s)`), ...(shortOfMemory ? [`só ${(machine.freeBytes / 2 ** 30).toFixed(1)} GB de memória livre`] : [])];
+    console.error(`MEDIÇÃO RECUSADA: a máquina está ocupada: ${why.join(', ')}. Feche o que for seu (testes, builds, outro Chrome) ou passe --shared-machine.`);
     process.exit(2);
   }
   const browser = await chromium.launch({ channel: 'chrome', headless, args: headless ? CHROME_ARGS : [...CHROME_ARGS, '--start-maximized'] });
@@ -84,7 +84,7 @@ export async function openCity({ base = arg('--base', 'http://127.0.0.1:5300/'),
   // The real GPU: DO NOT measure a WebGL that fell back to SwiftShader (Playwright always passes --enable-unsafe-swiftshader: the "GPU" would be the CPU), nor one without the timer queries.
   const gpu = await page.evaluate(() => ({ label: window.__gpu().label, supported: window.__gpu().supported }));
   if (!gpu.supported || /swiftshader|llvmpipe|software|basic render/i.test(gpu.label)) {
-    console.error(`MEASUREMENT REFUSED: the page's GPU is no good for measuring: ${gpu.label || 'unnamed'} (timer ${gpu.supported ? 'present' : 'MISSING'}).`);
+    console.error(`MEDIÇÃO RECUSADA: a GPU da página não serve para medir: ${gpu.label || 'sem nome'} (timer ${gpu.supported ? 'presente' : 'AUSENTE'}).`);
     await browser.close();
     process.exit(2);
   }
@@ -101,7 +101,7 @@ export async function openCity({ base = arg('--base', 'http://127.0.0.1:5300/'),
 export async function lookAt(page, fit, zoom) {
   await page.evaluate(({ x, y, zoom }) => window.__roadcraft.lookAt(x, y, zoom), { x: fit.x, y: fit.y, zoom: fit.zoom * zoom });
   const settled = await page.evaluate(() => window.__measure.settle());
-  if (settled.unsettled) console.warn(`WARNING: the scene did not settle in ${settled.seconds} s (${settled.scene})`);
+  if (settled.unsettled) console.warn(`AVISO: a cena não assentou em ${settled.seconds} s (${settled.scene})`);
   return settled;
 }
 
@@ -152,8 +152,8 @@ function installHelpers() {
 export function sameScene(windows) {
   const scenes = [...new Set(windows.map((w) => w.scene))];
   return scenes.length === 1
-    ? { ok: true, line: `same scene in all ${windows.length} windows (triangles|detail|facade|vehicles|people|programs = ${scenes[0]})` }
-    : { ok: false, line: `SCENE CHANGED between the windows - MEASUREMENT INVALID: ${scenes.join(' ; ')}` };
+    ? { ok: true, line: `cena igual em todas as ${windows.length} janelas (triângulos|detalhe|fachada|veículos|pessoas|programas = ${scenes[0]})` }
+    : { ok: false, line: `CENA MUDOU entre as janelas - MEDIÇÃO INVÁLIDA: ${scenes.join(' ; ')}` };
 }
 
 export const median = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];

@@ -26,8 +26,6 @@ export class SearchScratch {
   private heapCost = new Float64Array(64);
   private heapF = new Float64Array(64);
   size = 0;
-  /** The searches of the world this tick, and since it began (`searchBudget`). */
-  readonly budget: SearchBudget = { tick: -1, used: 0, cap: SEARCH_EXPANSIONS, capped: 0, deferred: 0 };
   /** The state whose key is its lane but that may not change lanes (the start of a search that may not begin with one). */
   private plainNoChange = -1;
 
@@ -173,53 +171,6 @@ export class SearchScratch {
     this.heapCost[to] = this.heapCost[from]!;
     this.heapF[to] = this.heapF[from]!;
   }
-}
-
-/**
- * Most states one trip search may expand (`planTrip`, `routeToDestination`): a search that would walk past it gives up and answers
- * "no route" - the car drives on by its bounded lookahead and is handed to the meso at the window's edge, or leaves at a road's end;
- * never a stall. Inside a micro window a route takes a few hundred; the cap only stops a search from walking a whole map (a goal
- * reached only round the far side of the city).
- */
-export const SEARCH_EXPANSIONS = 6000;
-/** Trip searches a tick may start for requests that can wait (a car to make, a driver reconsidering): the rest wait for the next tick, as Cities: Skylines 2's pending path queue taught (pending queries dominate a big city's tick). */
-export const SEARCHES_PER_TICK = 16;
-
-/** The searches started this tick, and how many gave up at the cap or waited, since the world began. */
-export interface SearchBudget {
-  tick: number;
-  used: number;
-  /** States one search may expand (`SEARCH_EXPANSIONS`; a test may lower it). */
-  cap: number;
-  capped: number;
-  deferred: number;
-}
-
-/** The world's search budget (kept with its search memory), brought to `tick` (a new tick starts with none used). */
-export function searchBudget(w: object, tick: number): SearchBudget {
-  const b = searchScratch(w).budget;
-  if (b.tick !== tick) { b.tick = tick; b.used = 0; }
-  return b;
-}
-
-/** Whether a request that can wait may search now; a request refused is counted as deferred and asks again next tick. */
-export function mayRequestSearch(w: { readonly clock: { readonly tick: number } }): boolean {
-  const b = searchBudget(w, w.clock.tick);
-  if (b.used < SEARCHES_PER_TICK) return true;
-  b.deferred++;
-  return false;
-}
-
-/** A search started this tick (every search counts, those that cannot wait too); the states it may expand. */
-export function noteSearch(w: { readonly clock: { readonly tick: number } }): number {
-  const b = searchBudget(w, w.clock.tick);
-  b.used++;
-  return b.cap;
-}
-
-/** A search that hit `SEARCH_EXPANSIONS`. */
-export function noteCapped(w: { readonly clock: { readonly tick: number } }): void {
-  searchBudget(w, w.clock.tick).capped++;
 }
 
 const scratches = new WeakMap<object, SearchScratch>();

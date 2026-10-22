@@ -1,4 +1,4 @@
-/* THE LAB'S INSPECTOR (`lab/inspector/`): the picker's tooltip, the Inspector's grids and editors, the scene's tree, the console. */
+/* THE LAB'S INSPECTOR (`lab/inspector/`): the picker's tooltip, the Inspetor's grids and editors, the scene's tree, the console. */
 .insp-tip { position: fixed; z-index: 90; pointer-events: none; display: flex; flex-direction: column; gap: 2px; max-width: 320px; padding: 5px 8px;
   background: rgb(15 22 26 / 0.94); color: #e3eaee; border: 1px solid #ffc35a; border-radius: 6px; font: 12px/1.35 Inter, ui-sans-serif, "Segoe UI", sans-serif; box-shadow: 0 6px 18px rgb(0 0 0 / 0.45); }
 .insp-tip strong { color: #ffc35a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

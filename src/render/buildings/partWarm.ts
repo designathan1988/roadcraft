@@ -4,7 +4,7 @@ import { COLOURED_PARTS } from './buildingMesh';
 import { type BuildingKit, PART_KINDS } from './kit';
 import { partPoseDepth } from './partPose';
 
-/** One instance of every part and piece of furniture as the buildings' layer draws them, each caster with its posed shadow (`partPose.ts` `partPoseDepth`: the renderer's stand-in takes a mesh's own depth material) */
+/** One instance of every part and piece of furniture as the buildings' layer draws them, each caster with its posed shadow (`partPose.ts` `partPoseDepth`: the renderer's stand-in takes a mesh's own depth material), and a box of the box levels (`massBoxes.ts`) */
 export function partWarmMeshes(kit: BuildingKit): Mesh[] {
   const out: Mesh[] = [];
   for (const kind of PART_KINDS) {
@@ -25,6 +25,11 @@ export function partWarmMeshes(kit: BuildingKit): Mesh[] {
     mesh.customDepthMaterial = partPoseDepth(furniture.material);
     out.push(mesh);
   }
+  // The box levels' boxes and their shadow: their own programs (`massingMaterial.ts` boxes, `createMassBoxDepth`).
+  const boxes = new Mesh(kit.massBox, kit.massingBoxes);
+  boxes.castShadow = true;
+  boxes.customDepthMaterial = kit.massBoxDepth;
+  out.push(boxes);
   for (const mesh of out) { mesh.receiveShadow = true; mesh.frustumCulled = false; }
   return out;
 }

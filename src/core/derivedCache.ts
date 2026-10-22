@@ -287,23 +287,6 @@ export async function keepDerivedMany(prefix: string, values: ReadonlyMap<string
   }
 }
 
-/** Forgets every entry of these kinds (`kind:` + anything), without waiting: one readwrite transaction, a ranged `delete` a kind (the bakes of a product no longer made, left in an old player's store) */
-export function forgetDerivedKinds(kinds: readonly string[]): void {
-  void database().then((db) => {
-    if (!db) return;
-    try {
-      const store = db.transaction(STORE, 'readwrite', RELAXED).objectStore(STORE);
-      for (const kind of kinds) {
-        const request = store.delete(prefixRange(`${kind}:`));
-        request.onerror = (event) => event.preventDefault();
-      }
-    } catch (error) {
-      // Left for another time: the next start tries again.
-      console.warn('[derived] old bakes not let go', error);
-    }
-  });
-}
-
 /** Forgets these entries (each `prefix` + key), without waiting: one readwrite transaction, a `delete` per key */
 export function forgetDerivedKeys(prefix: string, keys: Iterable<string>): void {
   const list = [...keys];

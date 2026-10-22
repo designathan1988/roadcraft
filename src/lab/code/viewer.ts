@@ -25,15 +25,15 @@ export function createCodeViewer(store: SourceStore): CodeViewer {
   bar.className = 'lab-row';
   const label = document.createElement('span');
   label.className = 'lab-muted';
-  label.textContent = 'Select a function to see its code.';
+  label.textContent = 'Selecione uma função para ver o código.';
   const open = document.createElement('button');
   open.type = 'button';
-  open.textContent = 'Open in editor';
-  open.title = 'Opens the file at this line in the editor (Vite /__open-in-editor)';
+  open.textContent = 'Abrir no editor';
+  open.title = 'Abre o arquivo nesta linha no editor (Vite /__open-in-editor)';
   open.hidden = true;
   const more = document.createElement('button');
   more.type = 'button';
-  more.textContent = 'More lines';
+  more.textContent = 'Mais linhas';
   more.hidden = true;
   bar.append(label, open, more);
   const pre = document.createElement('pre');
@@ -75,17 +75,17 @@ export function createCodeViewer(store: SourceStore): CodeViewer {
       const now = store.textNow(file);
       if (now !== null) { draw(now, line); return; }
       pre.hidden = false;
-      pre.textContent = 'loading…';
+      pre.textContent = 'carregando…';
       void store.text(file).then((text) => {
         if (mine !== token) return;
-        if (text === null) pre.textContent = `code of ${file} unavailable`;
+        if (text === null) pre.textContent = `código de ${file} indisponível`;
         else draw(text, line);
       });
     },
     clear() {
       token++;
       at = null;
-      label.textContent = 'Select a function to see its code.';
+      label.textContent = 'Selecione uma função para ver o código.';
       open.hidden = more.hidden = pre.hidden = true;
     },
   };

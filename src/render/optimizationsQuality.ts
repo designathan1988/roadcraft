@@ -1,7 +1,7 @@
 import { QUALITY, QUALITY_LEVELS, type QualitySettings } from './quality';
 import type { OptChoice, OptSystem, OptValue } from './optimizationTypes';
 
-/** EVERY FIELD OF THE TIER'S SETTINGS (`QualitySettings`, `quality.ts`) set by hand from the lab (`optimizations.ts`, ids `q.<field>`): "tier" (the tier's own, the default) or a value of its own, over the tier and over the other optimisations. A field nothing reads today says so: setting it changes nothing. */
+/** EVERY FIELD OF THE TIER'S SETTINGS (`QualitySettings`, `quality.ts`) set by hand from the lab (`optimizations.ts`, ids `q.<field>`): "do nível" (the tier's own, the default) or a value of its own, over the tier and over the other optimisations. A field nothing reads today says so: setting it changes nothing. */
 
 type Field = keyof QualitySettings;
 type Kind = 'bool' | 'number' | 'choice';
@@ -19,36 +19,34 @@ interface FieldSpec {
 }
 
 const FIELDS: Readonly<Record<Field, FieldSpec>> = {
-  pixelRatio: { system: 'renderer', kind: 'number', title: 'Pixel ratio cap', what: "The most device pixel ratio drawn (renderer.setPixelRatio). The switches' \"Resolution\" and dynamic resolution reset it when they change.", affects: ['all'] },
-  shadows: { system: 'shadows', kind: 'bool', title: 'Sun shadows', what: "The sun's cascades on (renderer.shadowMap.enabled and the maps).", affects: ['shadows'] },
-  shadowMapSize: { system: 'shadows', kind: 'choice', values: [512, 1024, 2048, 4096], title: 'Shadow map side', what: 'The side of each cascade map.', affects: ['shadows'] },
-  postProcessing: { system: 'post', kind: 'bool', title: 'Post chain', what: 'The post chain built (without it, the scene goes straight to the multisampled target).', affects: ['post'] },
-  ambientOcclusion: { system: 'post', kind: 'bool', title: 'Ambient occlusion (GTAO) and street light', what: 'GTAO and the street light built into the chain.', affects: ['post', 'pass:ambientOcclusion', 'pass:canyonLight'] },
-  smaa: { system: 'post', kind: 'bool', title: 'SMAA', what: 'The SMAA pass built.', affects: ['post', 'pass:smaa'] },
-  msaa: { system: 'post', kind: 'choice', values: [0, 2, 4, 8], title: 'MSAA samples', what: 'Samples of the scene target.', affects: ['post', 'all'] },
-  aoFull: { system: 'post', kind: 'bool', title: 'Full-resolution GTAO', what: "Occlusion at the scene's resolution (on) or at half.", affects: ['post', 'pass:ambientOcclusion'] },
-  sharpen: { system: 'post', kind: 'number', title: 'Sharpen (CAS)', what: 'The strength of AMD CAS on the final image, 0 to 1.', affects: ['post', 'pass:sharpen'] },
-  anisotropy: { system: 'textures', kind: 'choice', values: [1, 2, 4, 8, 16], title: 'Anisotropy (exact)', what: "Every texture in the scene with exactly this anisotropy, set straight on the uploaded texture (the tier's field is read only when the renderer is created).", affects: ['textures', 'all'] },
-  detailProps: { system: 'vegetation', kind: 'bool', title: 'Street furniture', what: 'Benches, props and footway details drawn.', affects: ['layer:furniture'] },
-  vegetation: { system: 'vegetation', kind: 'number', title: 'Vegetation (amount)', what: 'The amount of vegetation: distant forests and wild trees.', affects: ['layer:vegetation', 'name:far-forest*'] },
-  grassBlades: { system: 'vegetation', kind: 'number', unread: true, title: 'Grass blades', what: 'Blades in the GPU grass field.', affects: ['layer:vegetation'] },
-  surfaceDetail: { system: 'textures', kind: 'bool', title: 'Surface detail layer', what: 'The close-up detail texture on asphalt and footways (materials.setDetail).', affects: ['layer:roads', 'textures'] },
-  detailCutoffZoom: { system: 'people', kind: 'number', title: 'Detail minimum zoom', what: 'The zoom below which markings, furniture and agents stop being drawn.', affects: ['layer:people', 'layer:furniture', 'layer:roads', 'layer:signals'] },
-  pedestrianDetail: { system: 'people', kind: 'choice', values: [0, 1, 2], title: 'People detail', what: '0 silhouette, 1 clothes, 2 animated face.', affects: ['layer:people', 'name:procedural-people', 'name:person'] },
-  occupantZoom: { system: 'vehicles', kind: 'number', title: 'Occupant zoom', what: 'The zoom from which the people inside vehicles are drawn.', affects: ['layer:people', 'name:person'] },
-  vehicleErrorPixels: { system: 'vehicles', kind: 'number', title: 'Vehicle part screen error', what: 'Pixels of error the level of each part accepts.', affects: ['layer:people'] },
-  vehicleWholeCap: { system: 'vehicles', kind: 'number', title: 'Whole vehicles', what: 'How many vehicles are drawn whole, at most.', affects: ['layer:people'] },
-  hairStrandPeople: { system: 'people', kind: 'number', title: 'People with hair strands', what: 'How many of the nearest get strands.', affects: ['layer:people', 'name:procedural-people'] },
-  cloudShadows: { system: 'post', kind: 'bool', title: 'Cloud shadows', what: 'Builds the cloud pass (together with "Sky clouds").', affects: ['post', 'pass:clouds'] },
-  vegetationDistance: { system: 'vegetation', kind: 'number', unread: true, title: 'Vegetation range', what: "Distance of the ecosystem's vegetation.", affects: ['layer:vegetation'] },
-  impostors: { system: 'vegetation', kind: 'bool', unread: true, title: 'Plant impostors', what: 'Distant plants as impostors.', affects: ['layer:vegetation'] },
-  birds: { system: 'particles', kind: 'number', unread: true, title: 'Birds', what: 'Birds in the air at once.', affects: ['layer:particles'] },
-  rain: { system: 'particles', kind: 'bool', unread: true, title: 'Raindrops', what: 'The drops in the air.', affects: ['layer:weather', 'name:rain'] },
-  skyClouds: { system: 'post', kind: 'bool', title: 'Sky clouds', what: 'Builds the cloud pass (together with "Cloud shadows").', affects: ['post', 'pass:clouds'] },
-  mist: { system: 'post', kind: 'bool', unread: true, title: 'Morning mist', what: 'Mist in the valleys and over the water.', affects: ['post'] },
-  triangleScale: { system: 'buildings', kind: 'number', title: 'Triangle budget share', what: "The share of the view's triangle budget the building levels may add up to (above it the error scale rises).", affects: ['layer:buildings'] },
-  detailMemoryMB: { system: 'buildings', kind: 'number', title: 'Building detail memory (MB)', what: "The most the building cells' detail keeps on the GPU.", affects: ['layer:buildings'] },
-  waterfalls: { system: 'water', kind: 'bool', unread: true, title: 'Waterfall spray', what: 'Spray and mist at the foot of the waterfalls.', affects: ['layer:water'] },
+  pixelRatio: { system: 'renderer', kind: 'number', title: 'Teto da razão de pixels', what: 'O máximo da razão de pixels do dispositivo desenhada (renderer.setPixelRatio). A "Resolução" dos interruptores e a resolução dinâmica a redefinem quando mudam.', affects: ['all'] },
+  shadows: { system: 'shadows', kind: 'bool', title: 'Sombras do sol', what: 'As cascatas do sol ligadas (renderer.shadowMap.enabled e os mapas).', affects: ['shadows'] },
+  shadowMapSize: { system: 'shadows', kind: 'choice', values: [512, 1024, 2048, 4096], title: 'Lado do mapa de sombra', what: 'O lado de cada mapa das cascatas.', affects: ['shadows'] },
+  postProcessing: { system: 'post', kind: 'bool', title: 'Cadeia de pós', what: 'A cadeia de pós montada (sem ela, a cena vai direto ao alvo multiamostrado).', affects: ['post'] },
+  ambientOcclusion: { system: 'post', kind: 'bool', title: 'Oclusão ambiente (GTAO) e luz das ruas', what: 'O GTAO e a luz das ruas montados na cadeia.', affects: ['post', 'pass:ambientOcclusion', 'pass:canyonLight'] },
+  smaa: { system: 'post', kind: 'bool', title: 'SMAA', what: 'O passe SMAA montado.', affects: ['post', 'pass:smaa'] },
+  msaa: { system: 'post', kind: 'choice', values: [0, 2, 4, 8], title: 'Amostras MSAA', what: 'Amostras do alvo da cena.', affects: ['post', 'all'] },
+  aoFull: { system: 'post', kind: 'bool', title: 'GTAO na resolução inteira', what: 'A oclusão na resolução da cena (ligado) ou na metade.', affects: ['post', 'pass:ambientOcclusion'] },
+  sharpen: { system: 'post', kind: 'number', title: 'Nitidez (CAS)', what: 'A força do AMD CAS na imagem final, 0 a 1.', affects: ['post', 'pass:sharpen'] },
+  anisotropy: { system: 'textures', kind: 'choice', values: [1, 2, 4, 8, 16], title: 'Anisotropia (exata)', what: 'Todas as texturas da cena com exatamente esta anisotropia, aplicada direto na textura enviada (o campo do nível só é lido quando o renderizador nasce).', affects: ['textures', 'all'] },
+  detailProps: { system: 'vegetation', kind: 'bool', title: 'Mobiliário urbano', what: 'Bancos, adereços e detalhes das calçadas desenhados.', affects: ['layer:furniture'] },
+  vegetation: { system: 'vegetation', kind: 'number', title: 'Vegetação (quantidade)', what: 'A quantidade de vegetação: matas distantes e árvores da natureza.', affects: ['layer:vegetation', 'name:far-forest*'] },
+  grassBlades: { system: 'vegetation', kind: 'number', unread: true, title: 'Folhas de grama', what: 'Folhas no campo de grama da GPU.', affects: ['layer:vegetation'] },
+  surfaceDetail: { system: 'textures', kind: 'bool', title: 'Camada de detalhe das superfícies', what: 'A textura de detalhe de perto no asfalto e nas calçadas (materials.setDetail).', affects: ['layer:roads', 'textures'] },
+  detailCutoffZoom: { system: 'people', kind: 'number', title: 'Zoom mínimo do detalhe', what: 'O zoom abaixo do qual marcações, mobiliário e agentes deixam de ser desenhados.', affects: ['layer:people', 'layer:furniture', 'layer:roads', 'layer:signals'] },
+  pedestrianDetail: { system: 'people', kind: 'choice', values: [0, 1, 2], title: 'Detalhe das pessoas', what: '0 silhueta, 1 roupas, 2 rosto animado.', affects: ['layer:people', 'name:procedural-people', 'name:person'] },
+  occupantZoom: { system: 'vehicles', kind: 'number', title: 'Zoom dos ocupantes', what: 'O zoom a partir do qual as pessoas dentro dos veículos são desenhadas.', affects: ['layer:people', 'name:person'] },
+  vehicleErrorPixels: { system: 'vehicles', kind: 'number', title: 'Erro de tela das peças dos veículos', what: 'Pixels de erro que o nível de cada peça aceita.', affects: ['layer:people'] },
+  vehicleWholeCap: { system: 'vehicles', kind: 'number', title: 'Veículos inteiros', what: 'Quantos veículos são desenhados inteiros, no máximo.', affects: ['layer:people'] },
+  hairStrandPeople: { system: 'people', kind: 'number', title: 'Pessoas com fios de cabelo', what: 'Quantas das mais próximas ganham os fios.', affects: ['layer:people', 'name:procedural-people'] },
+  cloudShadows: { system: 'post', kind: 'bool', title: 'Sombras das nuvens', what: 'Monta o passe das nuvens (junto com "Nuvens do céu").', affects: ['post', 'pass:clouds'] },
+  vegetationDistance: { system: 'vegetation', kind: 'number', unread: true, title: 'Alcance da vegetação', what: 'Distância da vegetação do ecossistema.', affects: ['layer:vegetation'] },
+  impostors: { system: 'vegetation', kind: 'bool', unread: true, title: 'Impostores das plantas', what: 'Plantas distantes como impostores.', affects: ['layer:vegetation'] },
+  birds: { system: 'particles', kind: 'number', unread: true, title: 'Pássaros', what: 'Pássaros no ar ao mesmo tempo.', affects: ['layer:particles'] },
+  rain: { system: 'particles', kind: 'bool', unread: true, title: 'Gotas de chuva', what: 'As gotas no ar.', affects: ['layer:weather', 'name:rain'] },
+  skyClouds: { system: 'post', kind: 'bool', title: 'Nuvens do céu', what: 'Monta o passe das nuvens (junto com "Sombras das nuvens").', affects: ['post', 'pass:clouds'] },
+  mist: { system: 'post', kind: 'bool', unread: true, title: 'Névoa matinal', what: 'Névoa nos vales e sobre a água.', affects: ['post'] },
+  waterfalls: { system: 'water', kind: 'bool', unread: true, title: 'Spray das cachoeiras', what: 'Spray e névoa ao pé das cachoeiras.', affects: ['layer:water'] },
 };
 
 export type QualityOptId = `q.${Field}`;
@@ -76,16 +74,16 @@ export interface QualityOptionSpec {
 
 export const QUALITY_FIELD_OPTIONS: readonly QualityOptionSpec[] = (Object.keys(FIELDS) as Field[]).map((field) => {
   const f = FIELDS[field];
-  const tier: OptChoice = { value: 'tier', label: 'tier' };
-  const choices: OptChoice[] = f.kind === 'bool' ? [tier, { value: 'on', label: 'on' }, { value: 'off', label: 'off' }]
+  const tier: OptChoice = { value: 'tier', label: 'do nível' };
+  const choices: OptChoice[] = f.kind === 'bool' ? [tier, { value: 'on', label: 'ligado' }, { value: 'off', label: 'desligado' }]
     : f.kind === 'choice' ? [tier, ...f.values!.map((v) => ({ value: v, label: String(v) }))] : [tier];
   return {
     id: `q.${field}` as QualityOptId,
     field,
     system: f.system,
-    title: `Tier: ${f.title}`,
+    title: `Nível: ${f.title}`,
     what: `${f.what} (QualitySettings.${field})`,
-    tradeoff: f.unread ? 'A field defined but read by no code today: changing it has no effect.' : "The tier's value replaced by this one, over the other optimisations.",
+    tradeoff: f.unread ? 'Campo definido mas que nenhum código lê hoje: mudar não tem efeito.' : 'O valor do nível trocado por este, por cima das outras otimizações.',
     choices,
     ...(f.kind === 'number' ? { range: rangeOf(field) } : {}),
     affects: f.affects,

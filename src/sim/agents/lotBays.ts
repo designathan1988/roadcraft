@@ -238,12 +238,6 @@ export function carGates<E extends LotPart = BuildingElement>(b: { readonly elem
   return (b.elements ?? []).filter((el) => el.kind === 'gate' && el.w >= CAR_GATE);
 }
 
-/** A building's people's gates: the `gate` elements narrower than a car's (`carGates`). */
-export function personGates<E extends LotPart = BuildingElement>(b: { readonly elements?: readonly E[] }): E[] {
-  const cars = new Set(carGates(b));
-  return (b.elements ?? []).filter((el) => el.kind === 'gate' && !cars.has(el));
-}
-
 /** The property of a lot closed by a boundary with car gates: the box of all its open blocks */
 export function gatedProperty(b: Pick<LotRecord, 'volumes' | 'elements'>): { x: number; y: number; w: number; d: number } | null {
   if (!carGates(b).length) return null;

@@ -61,7 +61,7 @@ export interface Segment {
   readonly systems: readonly { readonly name: string; readonly meanMs: number }[];
 }
 
-export type Verdict = 'improved' | 'worse' | 'within noise';
+export type Verdict = 'melhorou' | 'piorou' | 'dentro do ruído';
 
 export interface Delta {
   readonly metric: string;
@@ -125,18 +125,18 @@ export function boundaries(events: readonly RecEvent[]): { readonly t: number; r
   return out;
 }
 
-/** A change said as a person would: "turn off bShadows", "bTriangles = 0.5". */
+/** A change said as a person would: "desligar bShadows", "bTriangles = 0.5". */
 export function describeChange(e: RecEvent): string {
   if (e.kind.startsWith('switch.')) {
     const data = e.data as { key?: string; value?: unknown } | undefined;
     const key = data?.key ?? e.kind.slice(7);
     const value = data?.value;
-    if (typeof value === 'boolean') return `${value ? 'turn on' : 'turn off'} ${key}`;
+    if (typeof value === 'boolean') return `${value ? 'ligar' : 'desligar'} ${key}`;
     return `${key} = ${String(value)}`;
   }
-  if (e.kind.startsWith('edit.')) return `Inspector edit: ${e.detail || e.kind.slice(5)}`;
-  if (e.kind === 'rec.marker') return `marker "${e.detail}"`;
-  if (e.kind === 'rec.resume') return 'resumed after pause';
+  if (e.kind.startsWith('edit.')) return `edição no Inspector: ${e.detail || e.kind.slice(5)}`;
+  if (e.kind === 'rec.marker') return `marcador "${e.detail}"`;
+  if (e.kind === 'rec.resume') return 'retomada após pausa';
   return e.detail || e.kind;
 }
 
@@ -204,7 +204,7 @@ export function segment(frames: FrameColumns, events: readonly RecEvent[], endMs
       startMs: start.t,
       endMs: end,
       causes: start.causes,
-      label: s === 0 ? 'baseline' : start.causes.map(describeChange).join(' + '),
+      label: s === 0 ? 'linha de base' : start.causes.map(describeChange).join(' + '),
       interval: distribution(interval),
       cpu: distribution(cpu),
       gpu: distribution(gpu),
@@ -234,19 +234,19 @@ const METRICS: readonly { name: string; pick: (s: Segment) => Dist | null; which
   { name: 'GPU p95', pick: (s) => s.gpu, which: 'p95', floor: () => NOISE_FLOOR_MS },
   { name: 'CPU p50', pick: (s) => s.cpu, which: 'p50', floor: () => NOISE_FLOOR_MS },
   { name: 'CPU p95', pick: (s) => s.cpu, which: 'p95', floor: () => NOISE_FLOOR_MS },
-  { name: 'Interval p50', pick: (s) => s.interval, which: 'p50', floor: () => NOISE_FLOOR_MS },
-  { name: 'Interval p95', pick: (s) => s.interval, which: 'p95', floor: () => NOISE_FLOOR_MS },
+  { name: 'Intervalo p50', pick: (s) => s.interval, which: 'p50', floor: () => NOISE_FLOOR_MS },
+  { name: 'Intervalo p95', pick: (s) => s.interval, which: 'p95', floor: () => NOISE_FLOOR_MS },
   { name: 'Draw calls', pick: (s) => s.drawCalls, which: 'mean', floor: (v) => Math.max(0.5, v * 0.005) },
-  { name: 'Triangles', pick: (s) => s.triangles, which: 'mean', floor: (v) => Math.max(1, v * 0.005) },
+  { name: 'Triângulos', pick: (s) => s.triangles, which: 'mean', floor: (v) => Math.max(1, v * 0.005) },
 ];
 
-export const fmtNum = (v: number, digits = 1): string => v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }).replace('-', '−');
+export const fmtNum = (v: number, digits = 1): string => v.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits }).replace('-', '−');
 const signed = (v: number, digits = 1): string => (v > 0 ? '+' : '') + fmtNum(v, digits);
 const unit = (metric: string): string => (metric.startsWith('Draw') || metric.startsWith('Tri') ? '' : ' ms');
 
 export function describeDelta(d: Delta): string {
   const digits = unit(d.metric) ? 1 : 0;
-  return `${d.metric} ${signed(d.delta, digits)}${unit(d.metric)}${d.pct === null ? '' : ` (${signed(d.pct, 0)}%)`}${d.verdict === 'within noise' ? ' — within noise' : ''}`;
+  return `${d.metric} ${signed(d.delta, digits)}${unit(d.metric)}${d.pct === null ? '' : ` (${signed(d.pct, 0)}%)`}${d.verdict === 'dentro do ruído' ? ' — dentro do ruído' : ''}`;
 }
 
 export function compare(a: Segment, b: Segment, kind: 'previous' | 'baseline'): Comparison {
@@ -258,10 +258,10 @@ export function compare(a: Segment, b: Segment, kind: 'previous' | 'baseline'): 
     const to = m.which === 'mean' ? db.mean : db[m.which];
     const delta = to - from;
     const noise = noiseOf(da, db, m.which, m.floor(Math.max(from, to)));
-    deltas.push({ metric: m.name, from, to, delta, pct: from > 1e-9 ? (delta / from) * 100 : null, noise, verdict: Math.abs(delta) <= noise ? 'within noise' : delta < 0 ? 'improved' : 'worse' });
+    deltas.push({ metric: m.name, from, to, delta, pct: from > 1e-9 ? (delta / from) * 100 : null, noise, verdict: Math.abs(delta) <= noise ? 'dentro do ruído' : delta < 0 ? 'melhorou' : 'piorou' });
   }
   // The headline: the largest real move in ms, else the largest in count, else "nothing".
-  const real = deltas.filter((d) => d.verdict !== 'within noise');
+  const real = deltas.filter((d) => d.verdict !== 'dentro do ruído');
   // The GPU's and the CPU's own times first (the interval waits on vsync and, on demand, on nothing happening), the largest first; then the interval; then the counts.
   const rank = (d: Delta): number => (d.metric.startsWith('GPU') || d.metric.startsWith('CPU') ? 0 : unit(d.metric) ? 1 : 2);
   const ordered = [...real].sort((x, y) => rank(x) - rank(y) || Math.abs(y.delta) - Math.abs(x.delta));
@@ -269,8 +269,8 @@ export function compare(a: Segment, b: Segment, kind: 'previous' | 'baseline'): 
   const few = (d: Dist | null): number => d?.n ?? 0;
   const said = ordered.length ? ordered.slice(0, 2).map(describeDelta).join('; ')
     : gpu50 ? describeDelta(gpu50)
-      : `not enough measurements (${few(a.cpu)} → ${few(b.cpu)} settled frames; minimum 10)`;
-  const effect = kind === 'previous' && a.index !== b.index - 1 ? `${said} (against segment ${a.index}: the ones between have no settled frames)` : said;
+      : `sem medidas bastantes (${few(a.cpu)} → ${few(b.cpu)} quadros assentados; mínimo 10)`;
+  const effect = kind === 'previous' && a.index !== b.index - 1 ? `${said} (contra o segmento ${a.index}: os do meio sem quadros assentados)` : said;
   return { segment: b.index, against: a.index, kind, deltas, effect, summary: `${b.label}: ${effect}` };
 }
 

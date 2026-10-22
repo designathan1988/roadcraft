@@ -13,9 +13,6 @@ import { idmAccel } from './idm';
 import { createVehicle, snapshot, type Vehicle } from './state';
 import { planFrom } from '../routing/router';
 import { chooseVehicleDestination } from '../routing/destination';
-import { mayRequestSearch } from '../routing/searchScratch';
-import type { LaneletId } from '@world/lanelets';
-import type { BodyClass } from '@world/conflictPoints';
 import { assignOccupancy } from './kerbStops';
 import { curveSpeedCap } from './curvature';
 
@@ -150,8 +147,6 @@ export function stepDispatch(w: SimWorld, enabled: boolean): void {
       }
     }
     if (best === null) break;
-    // A new car's trip search can wait: the arrival keeps its place in the queue for the next tick (`SEARCHES_PER_TICK`).
-    if (!mayRequestSearch(w)) break;
     if (spawnAt(w, best)) w.entryDemand.get(best)?.waiting.shift();
     else blocked.add(best);
   }
@@ -225,11 +220,8 @@ function spawnAt(w: SimWorld, id: string): boolean {
   return true;
 }
 
-/** Where a new car's trip ends, from its first lane: a map exit by default (`chooseVehicleDestination`), the micro window's edge for the meso's cars (`Meso.handoffDestination`). */
-export type DestinationPicker = (w: SimWorld, start: LaneletId, body: BodyClass) => LaneletId | null;
-
 /** Puts one vehicle of `arch` on lane `id` with its front at arc `s` */
-export function spawnVehicleAt(w: SimWorld, id: string, s: number, arch: Archetype, pick: DestinationPicker = chooseVehicleDestination): number | null {
+export function spawnVehicleAt(w: SimWorld, id: string, s: number, arch: Archetype): number | null {
   const lane = w.lanelet(id);
   if (!lane || lane.kind !== 'link' || !w.graph.laneUsable(id, arch.shape)) return null;
   if (s < arch.length + m(0.4) || s > lane.length - m(0.4)) return null;
@@ -267,7 +259,7 @@ export function spawnVehicleAt(w: SimWorld, id: string, s: number, arch: Archety
   assignOccupancy(w, vehicle);
   w.vehicles.set(vehicle.id, vehicle);
   w.enterLanelet(vehicle, id);
-  vehicle.destination = pick(w, id, bodyClassOfArchetype(vehicle.archetype));
+  vehicle.destination = chooseVehicleDestination(w, id, bodyClassOfArchetype(vehicle.archetype));
   // Nowhere this body can go from here - every way on too tight for it - and it is not at a road's end: not inserted
   if (planFrom(w, vehicle) === null && w.graph.exitsOf(id).length > 0) {
     w.removeVehicle(vehicle);

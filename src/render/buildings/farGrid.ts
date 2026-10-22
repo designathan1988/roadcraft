@@ -1,0 +1,62 @@
+import { storedTileReader } from '@core/storedTiles';
+import type { TileRecords } from '@world/doc';
+import type { NetworkBake } from '@world/network';
+import { TILE } from '@world/tiles';
+
+/** THE FAR LEVELS' QUADTREE OVER THE TILES (`farTiles.ts`, `../farRoadTiles.ts`, `../farTree.ts`): its nodes' keys and sides and a tile as a bake reads it, read by the buildings' and the roads' bakes without either importing the other */
+
+/** The version of a node no tile is stored under yet: the generator's plan alone (`farPlan.ts`, `../farRoadTiles.ts` bakePlanRoads), the same for ever in one world - drawn there until its tiles are made (`../farTree.ts`, refinement by replacement), never a hole. */
+export const PLAN_SIG = 'plan';
+/** Where a node's plan bake is kept, apart from its tiles' bake under the node's own key: a node with a tile made stands in its plan until its tiles' bake comes (`farTreePlan.ts` standsInPlan), and DO NOT let either overwrite the other (a reopening would bake its tiles again). */
+export const planKey = (node: string): string => `${node}#plan`;
+
+/** The coarsest level: 2^7 tiles a side (131 km); a bigger world has more roots. */
+export const TOP_LEVEL = 7;
+/** Squares a side a box level merges its small boxes in: its error is one square's diagonal (`levelDrop`). */
+export const AGGREGATE = 128;
+
+/** A node's key: its level and its column and row at that level ("f2:-1,3"). */
+export const farKey = (k: number, i: number, j: number): string => `f${k}:${i},${j}`;
+/** What a level-1 node keeps besides its boxes (`farTiles.ts`): its tiles' plate masses merged, under its key and this. */
+export const LEVEL_MASS_KEY = '#mass';
+/** What a tile keeps besides its masses: its plate's masses, under its key and this (`farTiles.ts`). */
+export const TILE_PLATE_KEY = '#plate';
+/** What every node keeps for its parent: its boxes, under its key and this (`farTiles.ts`). */
+export const NODE_BOX_KEY = '#boxes';
+/** Every key a node's bake is kept under (`farTiles.ts` `runFarJob`): what is forgotten with it. */
+export const bakeKeysOf = (key: string, k: number): string[] =>
+  [key, `${key}${NODE_BOX_KEY}`, ...(k === 0 ? [`${key}${TILE_PLATE_KEY}`] : k === 1 ? [`${key}${LEVEL_MASS_KEY}`] : [])];
+
+/** A node's level, column and row from its key. */
+export function farNode(key: string): { readonly k: number; readonly i: number; readonly j: number } {
+  const colon = key.indexOf(':'), comma = key.indexOf(',');
+  return { k: Number(key.slice(1, colon)), i: Number(key.slice(colon + 1, comma)), j: Number(key.slice(comma + 1)) };
+}
+
+/** A node's side, m: a tile's at level 0, doubled each level up. */
+export const nodeSide = (k: number): number => TILE * 2 ** k;
+
+/** A tile's records with nothing in them (a tile the store no longer has): baked as empty, so its parents are not held waiting. */
+export function emptyRecords(key: number, version: number): TileRecords {
+  return {
+    key, version, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
+    landscape: [], barriers: [], paint: [], trees: [], elements: [],
+    next: { node: 0, segment: 0, pole: 0, span: 0, building: 0, lot: 0, landscape: 0, barrier: 0 },
+  };
+}
+
+/** DO NOT read a whole tile for a bake that reads one part of it: the part alone (its roads, its buildings), the other lists left empty
+ *  - read from the store by this worker (`core/storedTiles.ts`); undefined where it cannot read it (the page asked for it), empty when the store no longer has it. */
+/** A stored tile's junctions and ribbons as baked with it (`sim/tileSections.ts` NETWORK_SECTION): null where the store has none (a tile made ahead of the region) or this thread cannot read it. */
+export async function readStoredNetwork(store: string | undefined, key: number): Promise<NetworkBake | null> {
+  const read = store === undefined ? null : storedTileReader();
+  if (!read || store === undefined) return null;
+  return (await read(store, key, 'network') as NetworkBake | null) ?? null;
+}
+
+export async function readStored(store: string | undefined, key: number, part: 'roads' | 'buildings'): Promise<TileRecords | undefined> {
+  const read = store === undefined ? null : storedTileReader();
+  if (!read || store === undefined) return undefined;
+  const fields = await read(store, key, part) as Partial<TileRecords> | null;
+  return { ...emptyRecords(key, 0), ...(fields ?? {}) };
+}

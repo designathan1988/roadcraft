@@ -114,24 +114,24 @@ export function objectEditor(state: InspectorState, object: Object3D, instanceId
   box.appendChild(vectorField(state, object, 'position', opts));
   box.appendChild(vectorField(state, object, 'scale', opts));
   const actions = el('div', 'lab-row');
-  const hide = el('button', '', 'Hide');
+  const hide = el('button', '', 'Ocultar');
   hide.type = 'button';
-  hide.title = 'Hides the object (visible = false); undo it from the edit list';
+  hide.title = 'Esconde o objeto (visible = false); desfaça pela lista de edições';
   hide.onclick = () => state.edits.set(object, 'visible', false, opts);
-  const isolate = el('button', '', 'Isolate');
+  const isolate = el('button', '', 'Isolar');
   isolate.type = 'button';
-  isolate.title = 'Hides everything else in the scene (lights stay): the object alone';
+  isolate.title = 'Esconde tudo o mais na cena (as luzes ficam): o objeto sozinho';
   isolate.onclick = () => isolateObject(state, object);
-  const focus = el('button', '', 'Focus camera');
+  const focus = el('button', '', 'Focar a câmera');
   focus.type = 'button';
-  focus.title = 'Centres the game camera on the object (__roadcraft.lookAt)';
+  focus.title = 'Centra a câmera do jogo no objeto (__roadcraft.lookAt)';
   const game = gameProbe();
   focus.disabled = !game?.lookAt;
   focus.onclick = () => {
     const m4 = instanceMatrix(object, instanceId, batchId) ?? object.matrixWorld;
     const p = toMap(new Vector3().setFromMatrixPosition(m4));
     game?.lookAt?.(p.x, p.y);
-    state.ctx.emit('inspector.focus', `camera at (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
+    state.ctx.emit('inspector.focus', `câmera em (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
   };
   actions.append(hide, isolate, focus);
   box.appendChild(actions);
@@ -149,9 +149,9 @@ export function isolateObject(state: InspectorState, object: Object3D): void {
     }
   }
   if (!object.visible) { object.visible = true; }
-  state.edits.record('object', objectLabel(object), 'isolate', `${hidden.length} objects hidden`, () => {
+  state.edits.record('object', objectLabel(object), 'isolar', `${hidden.length} objetos ocultos`, () => {
     for (const o of hidden) o.visible = true;
-    state.ctx.emit('edit.undo', `isolate ${objectLabel(object)} undone`);
+    state.ctx.emit('edit.undo', `isolar ${objectLabel(object)} desfeito`);
   });
 }
 
@@ -194,7 +194,7 @@ export function materialEditor(state: InspectorState, material: Material, textur
     label.append(input, el('span', '', `${slot} (${original.name || original.uuid.slice(0, 8)})`));
     slots.appendChild(label);
   }
-  if (slots.childElementCount) box.append(el('div', 'insp-sub', 'Maps (turn off and on)'), slots);
+  if (slots.childElementCount) box.append(el('div', 'insp-sub', 'Mapas (desligar e religar)'), slots);
   for (const info of textures) box.appendChild(textureEditor(state, info));
 
   const uniforms = editableUniforms(material, compiled);
@@ -206,7 +206,7 @@ export function materialEditor(state: InspectorState, material: Material, textur
       const field = uniformField(state, u, name, { kind: 'uniform', target: `${target} uniform ${name}` });
       if (field) list.appendChild(field);
     }
-    box.appendChild(fold(`Editable uniforms (${names.length})`, names.length <= 24, list));
+    box.appendChild(fold(`Uniforms editáveis (${names.length})`, names.length <= 24, list));
   }
   return box;
 }
@@ -224,17 +224,17 @@ function uniformField(state: InspectorState, u: { value: unknown }, name: string
   if (v && typeof v === 'object' && v.isColor) return wrap(colourField(state, u, 'value', options));
   if (v && typeof v === 'object' && (v.isVector2 || v.isVector3 || v.isVector4)) return wrap(vectorField(state, u, 'value', options));
   const row = el('div', 'insp-field');
-  row.append(el('span', 'insp-field-name', name), el('span', 'lab-muted', v && typeof v === 'object' && v.isTexture ? 'texture (see Textures)' : Array.isArray(v) ? `array(${v.length})` : String(v)));
+  row.append(el('span', 'insp-field-name', name), el('span', 'lab-muted', v && typeof v === 'object' && v.isTexture ? 'textura (veja Texturas)' : Array.isArray(v) ? `array(${v.length})` : String(v)));
   return row;
 }
 
 /** A texture's anisotropy and filters, sent again with the texture (`needsUpdate`) where its image is still on the CPU. */
 function textureEditor(state: InspectorState, info: TextureInfo): HTMLElement {
   const t = info.texture;
-  const target = `texture ${info.slot} "${t.name || t.uuid.slice(0, 8)}"`;
+  const target = `textura ${info.slot} "${t.name || t.uuid.slice(0, 8)}"`;
   const opts: SetOptions = { kind: 'texture', target, after: () => { if (info.reuploadable) t.needsUpdate = true; } };
   const box = el('div', 'insp-fields insp-texture');
-  box.appendChild(el('div', 'insp-sub', `${info.slot}: ${info.size}${info.reuploadable ? '' : ' (image released from the CPU: filters cannot be re-sent)'}`));
+  box.appendChild(el('div', 'insp-sub', `${info.slot}: ${info.size}${info.reuploadable ? '' : ' (imagem liberada da CPU: filtros não reenviáveis)'}`));
   const max = state.ctx.scene.gl.capabilities.getMaxAnisotropy();
   const aniso = numberField(state, t, 'anisotropy', opts, [1, Math.max(1, max), 1]);
   const filters = [selectField(state, t, 'minFilter', FILTERS, opts), selectField(state, t, 'magFilter', FILTERS, opts)];
@@ -247,7 +247,7 @@ function textureEditor(state: InspectorState, info: TextureInfo): HTMLElement {
 
 /** The geometry's draw range: how much of it is drawn. */
 export function geometryEditor(state: InspectorState, geometry: BufferGeometry): HTMLElement {
-  const opts: SetOptions = { kind: 'geometry', target: `geometry "${geometry.name || geometry.uuid.slice(0, 8)}"` };
+  const opts: SetOptions = { kind: 'geometry', target: `geometria "${geometry.name || geometry.uuid.slice(0, 8)}"` };
   const box = el('div', 'insp-fields');
   const total = geometry.index ? geometry.index.count : geometry.getAttribute('position')?.count ?? 0;
   box.appendChild(numberField(state, geometry.drawRange, 'start', opts, [0, Math.max(1, total), 3]));
@@ -255,6 +255,6 @@ export function geometryEditor(state: InspectorState, geometry: BufferGeometry):
   const field = numberField(state, geometry.drawRange, 'count', opts, [0, Math.max(1, total), 3]);
   for (const input of field.querySelectorAll('input')) input.value = String(count);
   box.appendChild(field);
-  box.appendChild(kv([['vertices/indices', total]]));
+  box.appendChild(kv([['vértices/índices', total]]));
   return box;
 }

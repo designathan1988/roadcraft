@@ -41,7 +41,7 @@ const window1 = () => page.evaluate(async ({ SETTLE, HOLD }) => {
   };
 }, { SETTLE, HOLD });
 
-const line = (r) => ({ cpuP50: r.frames.total?.p50, cpuP95: r.frames.total?.p95, cpuMax: r.frames.total?.max, frames: r.frames.frames, long: r.frames.long, gpuP50: r.gpu?.p50, gpuP95: r.gpu?.p95, disjoint: r.gpu?.disjoint, heapMB: r.heapMB, scene: r.scene, shown: `${r.vehicles} vehicles · ${r.people} people`, systems: Object.entries(r.frames.systems ?? {}).filter(([, s]) => s.p50 >= 0.5 || s.p95 >= 2).sort((a, b) => b[1].p50 - a[1].p50).map(([k, s]) => `${k} ${s.p50}/${s.p95}`) });
+const line = (r) => ({ cpuP50: r.frames.total?.p50, cpuP95: r.frames.total?.p95, cpuMax: r.frames.total?.max, frames: r.frames.frames, long: r.frames.long, gpuP50: r.gpu?.p50, gpuP95: r.gpu?.p95, disjoint: r.gpu?.disjoint, heapMB: r.heapMB, scene: r.scene, shown: `${r.vehicles} veículos · ${r.people} pessoas`, systems: Object.entries(r.frames.systems ?? {}).filter(([, s]) => s.p50 >= 0.5 || s.p95 >= 2).sort((a, b) => b[1].p50 - a[1].p50).map(([k, s]) => `${k} ${s.p50}/${s.p95}`) });
 
 for (const v of VIEWS) {
   if (crashed) break;

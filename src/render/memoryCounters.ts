@@ -18,8 +18,6 @@ export interface MemoryCounters {
   readonly textures: number;
   /** Their bytes on the GPU, every level of the mip chain: a data texture's array (what is uploaded), a compressed chain's levels, an image at 4 bytes a texel (uploaded as RGBA8). */
   readonly textureBytes: number;
-  /** `textureBytes` by holder: the first object reaching each texture and the texture's own name (`holder :: texture`), digits kept. */
-  readonly textureBytesByName: ReadonlyMap<string, number>;
 }
 
 type Attribute = BufferAttribute & { readonly isInterleavedBufferAttribute?: boolean; readonly data?: InterleavedBuffer };
@@ -33,8 +31,6 @@ export interface CountOptions {
 export function countMemory(root: Object3D, options: CountOptions = {}): MemoryCounters {
   const buffers = new Set<object>();
   const textures = new Set<Texture>();
-  /** The holder each texture was first reached from. */
-  const textureHolder = new Map<Texture, string>();
   let geometryBytes = 0;
   let geometryCpuBytes = 0;
   let releasedBuffers = 0;
@@ -70,10 +66,7 @@ export function countMemory(root: Object3D, options: CountOptions = {}): MemoryC
   };
   const addTexture = (value: unknown): void => {
     // DO NOT count a render target's texture here: it is in the targets' bytes (`targetBytes.ts`), and the post chain's uniforms counted 68 MB of them twice.
-    if ((value as Texture | null)?.isTexture && !(value as Texture & { isRenderTargetTexture?: boolean }).isRenderTargetTexture && !textures.has(value as Texture)) {
-      textures.add(value as Texture);
-      textureHolder.set(value as Texture, holder);
-    }
+    if ((value as Texture | null)?.isTexture && !(value as Texture & { isRenderTargetTexture?: boolean }).isRenderTargetTexture) textures.add(value as Texture);
   };
   /** Textures a material or an object holds as its own fields (maps, a BatchedMesh's matrices). */
   const scanFields = (holder: object): void => {
@@ -103,15 +96,9 @@ export function countMemory(root: Object3D, options: CountOptions = {}): MemoryC
   });
 
   let textureBytes = 0;
-  const textureBytesByName = new Map<string, number>();
-  for (const t of textures) {
-    const bytes = textureGpuBytes(t);
-    textureBytes += bytes;
-    const key = `${textureHolder.get(t) ?? ''} :: ${t.name || t.type}`;
-    textureBytesByName.set(key, (textureBytesByName.get(key) ?? 0) + bytes);
-  }
+  for (const t of textures) textureBytes += textureGpuBytes(t);
   const top = [...cpuByName].sort((a, b) => b[1] - a[1]).slice(0, TOP);
-  return { buffers: buffers.size, geometryBytes, geometryCpuBytes, releasedBuffers, cpuByName: top, bytesByName, textures: textures.size, textureBytes, textureBytesByName };
+  return { buffers: buffers.size, geometryBytes, geometryCpuBytes, releasedBuffers, cpuByName: top, bytesByName, textures: textures.size, textureBytes };
 }
 
 const TOP = 10;

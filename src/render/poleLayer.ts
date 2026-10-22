@@ -1,8 +1,6 @@
 import {
-  type BufferAttribute,
   type Camera,
   type InstancedBufferGeometry,
-  type InterleavedBuffer,
   InstancedInterleavedBuffer,
   InstancedMesh,
   LOD,
@@ -20,11 +18,16 @@ import type { RoadDoc } from '@world/doc';
 import type { PoleId, SpanId } from '@world/ids';
 import type { Network } from '@world/network';
 import { PoleIndex } from '@world/poleIndex';
+import { cellRect } from '@world/cells';
 import { m } from '@world/units';
 import type { PoleArms, UtilityPole, UtilitySpan } from '@world/utilities';
+import type { ActiveTiles } from './activeTiles';
 import {
+  type BakedPart,
+  type BakedWires,
   type PartBounds,
   type PartShape,
+  type PoleBake,
   type PoleSource,
   WIRE_BLOCK,
   type WireBounds,
@@ -61,11 +64,20 @@ export type { PoleSource } from './poleBake';
 /** DO NOT build the whole layer again for a change; DO NOT pace or hold it. */
 
 
-/** The document's poles as a layer's source. */
-export const docPoles = (doc: RoadDoc): PoleSource => ({ poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) });
+/** The document's poles as a layer's source; `active`, the streamed world's active tiles (`activeTiles.ts`): a wire is strung when a pole of it stands on one, a pole placed when it stands on one or such a wire ties it, so the active tiles keep every wire and pole they had and the kept ring beyond is the far levels'. */
+export const docPoles = (doc: RoadDoc, active?: ActiveTiles): PoleSource => {
+  const source: PoleSource = { poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) };
+  if (!active) return source;
+  const on = (id: PoleId): boolean => { const p = doc.poles.get(id); return !!p && active.has(p.x, p.y); };
+  return {
+    ...source,
+    stands: (pole) => active.has(pole.x, pole.y) || doc.spansAt(pole.id).some((s) => on(s.a === pole.id ? s.b : s.a)),
+    strings: (span) => on(span.a) || on(span.b),
+  };
+};
 
 /** How far from a pole a change of the roads or the ground can move it: its kerb (`kerbward`), its lamp's pool. */
-export const POLE_REACH = m(12);
+const POLE_REACH = m(12);
 
 
 interface PoleState {
@@ -81,7 +93,7 @@ interface PoleState {
 }
 
 /** The screen the layers were last drawn on and the sun's shadow map: what a pixel and a shadow texel measure. */
-export const screen = {
+const screen = {
   /** Half the drawing buffer's height, pixels; until first drawn, a tall screen's (more detail, never less). */
   halfHeight: 1080,
   /** The shadow camera and its map's width, from the shadow pass (`noteShadow`); null until a piece is cast. */
@@ -104,7 +116,7 @@ function noteShadow(renderer: WebGLRenderer, _object: Object3D, _camera: Camera,
 }
 
 /** What a world unit measures on the screen where a bounding sphere comes nearest the eye, and a texel of the sun's shadow. */
-export class ScreenScale {
+class ScreenScale {
   private readonly eye = new Vector3();
   private readonly ahead = new Vector3();
   private pixels = 0;
@@ -149,7 +161,7 @@ export class ScreenScale {
 }
 
 /** A part's instances over a block of the layer (`BLOCK`): a mesh with room for `capacity`, the first `count` drawn, and which pole holds each slot. */
-export class PartStore {
+class PartStore {
   private mesh: InstancedMesh | null = null;
   private capacity = 0;
   count = 0;
@@ -179,6 +191,21 @@ export class PartStore {
     mesh.onBeforeRender = noteScreen;
     mesh.onBeforeShadow = noteShadow;
     return mesh;
+  }
+
+  /** A bake's pieces (`bakePoles`) appended: drawn as they came (a baked layer is never edited). */
+  load(baked: BakedPart): void {
+    this.reserve(this.count + baked.count);
+    (this.mesh!.instanceMatrix.array as Float32Array).set(baked.matrices, this.count * 16);
+    this.count += baked.count;
+    this.whole = true;
+    for (let i = 0; i < 6; i++) {
+      this.bounds.box[i] = Math.min(this.bounds.box[i]!, baked.box[i]!);
+      this.bounds.box[i + 3] = Math.max(this.bounds.box[i + 3]!, baked.box[i + 3]!);
+    }
+    this.bounds.scale = Math.max(this.bounds.scale, baked.scale);
+    this.bounds.cover = Math.max(this.bounds.cover, baked.cover);
+    this.boundsMoved = true;
   }
 
   /** Room for `needed` instances: a mesh at least twice as large when it is full, the drawn ones copied over. */
@@ -252,7 +279,7 @@ export class PartStore {
     }
   }
 
-  /** Its pieces' box (three's axes): where its block is nearest the eye with no pole of its own to say so (wires only). */
+  /** Its pieces' box (three's axes): where its block is nearest the eye with no pole of the page to say so (a bake's). */
   get box(): ArrayLike<number> {
     return this.bounds.box;
   }
@@ -273,23 +300,6 @@ export class PartStore {
     }
   }
 
-  /** Its instances made for good (a block of the view's, `PoleCells`): no pole's slot kept, the matrices to be let go once on the GPU. The buffer, none when empty. */
-  seal(): BufferAttribute | null {
-    this.owner.length = 0;
-    this.written.length = 0;
-    return this.mesh && this.count > 0 ? this.mesh.instanceMatrix : null;
-  }
-
-  /** Its mesh, none while it holds nothing. */
-  get drawn(): InstancedMesh | null {
-    return this.mesh;
-  }
-
-  /** The matrices' array as made (`seal`): what the GPU is given again after a lost context. */
-  get matrices(): Float32Array | null {
-    return (this.mesh?.instanceMatrix.array as Float32Array | undefined) ?? null;
-  }
-
   dispose(): void {
     if (!this.mesh) return;
     this.group.remove(this.mesh);
@@ -298,7 +308,7 @@ export class PartStore {
 }
 
 /** One block's spans' wires: `SPAN_WIRES` instances a span in a block of their own, drawn with the template the view asks for. */
-export class WireStore {
+class WireStore {
   private mesh: Mesh | null = null;
   private data = new Float32Array(0);
   private buffer: InstancedInterleavedBuffer | null = null;
@@ -332,6 +342,20 @@ export class WireStore {
       return;
     }
     this.makeMesh();
+  }
+
+  /** A bake's wires (`bakePoles`) appended: drawn as they came (a baked layer is never edited). */
+  load(baked: BakedWires): void {
+    this.reserve(this.count + baked.count);
+    this.data.set(baked.data, this.count * WireStore.BLOCK);
+    this.count += baked.count;
+    this.whole = true;
+    for (let i = 0; i < 6; i++) {
+      this.bounds.box[i] = Math.min(this.bounds.box[i]!, baked.box[i]!);
+      this.bounds.box[i + 3] = Math.max(this.bounds.box[i + 3]!, baked.box[i + 3]!);
+    }
+    this.bounds.sag = Math.max(this.bounds.sag, baked.sag);
+    this.boundsMoved = true;
   }
 
   private makeMesh(): void {
@@ -430,26 +454,6 @@ export class WireStore {
     }
   }
 
-  /** Its wires made for good (`PoleCells`): no span's block kept, the instances to be let go once on the GPU. The buffer, none when empty. */
-  seal(): InterleavedBuffer | null {
-    this.owner.length = 0;
-    this.written.length = 0;
-    const buffer = this.count > 0 ? this.buffer : null;
-    // The buffer holds the array until it is uploaded: not this store as well.
-    this.data = new Float32Array(0);
-    return buffer;
-  }
-
-  /** The wires' array as made (before `seal`). */
-  get instances(): Float32Array {
-    return this.data;
-  }
-
-  /** Its mesh, none while it holds nothing. */
-  get drawn(): Mesh | null {
-    return this.mesh;
-  }
-
   dispose(): void {
     this.dropLevels();
     if (this.mesh) this.group.remove(this.mesh);
@@ -457,7 +461,7 @@ export class WireStore {
 }
 
 /** The layer's root: three calls an LOD's `update` with the camera before it draws its children, each time it draws (`WebGLRenderer.projectObject`). */
-export class ViewedRoot extends LOD {
+class ViewedRoot extends LOD {
   constructor(private readonly onView: (camera: Camera) => void) {
     super();
   }
@@ -468,13 +472,13 @@ export class ViewedRoot extends LOD {
 }
 
 /** THE LAYER IN BLOCKS OF THE PLANE: a store a part and one for the wires in each, so a block out of the view is culled by three and each is drawn at the detail its own nearest pole asks. DO NOT keep one store a part for the whole layer: its bounds were the city's, never culled, and its levels chosen by the pole nearest the eye, every wire, insulator and lamp of a large city drawn at that detail at every frame (26,145 wires of 64 triangles, 3 M triangles at a close view, 2026-10-20). DO NOT make them a world cell (256 m) either: forty meshes a part over a city, drawn. */
-export const BLOCK = m(768);
+const BLOCK = m(768);
 const blockKey = (x: number, y: number): string => `${Math.floor(x / BLOCK)},${Math.floor(y / BLOCK)}`;
 
-export interface Block {
+interface Block {
   readonly parts: PartStore[];
   readonly wires: WireStore;
-  /** The poles placed in it here (none for a block of wires only): where it is nearest the eye. */
+  /** The poles placed in it here (none for a bake's): where it is nearest the eye. */
   readonly poles: Set<PoleId>;
 }
 
@@ -527,8 +531,8 @@ export class PoleLayer implements Utilities {
 
   /** Every pole and span of the source, on an empty layer, in the source's order: the layer a full build makes */
   fill(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource): void {
-    for (const pole of source.poles.values()) this.place(net, groundAt, source, pole, undefined);
-    for (const span of source.spans.values()) this.string(span);
+    for (const pole of source.poles.values()) if (source.stands?.(pole) ?? true) this.place(net, groundAt, source, pole, undefined);
+    for (const span of source.spans.values()) if (source.strings?.(span) ?? true) this.string(span);
     this.flush();
   }
 
@@ -546,14 +550,14 @@ export class PoleLayer implements Utilities {
     const wanted = new Map<SpanId, UtilitySpan>();
     for (const id of dirty) {
       for (const sid of this.index.spansAt(id)) strung.add(sid);
-      if (source.poles.has(id)) for (const s of source.spansAt(id)) wanted.set(s.id, s);
+      if (source.poles.has(id)) for (const s of source.spansAt(id)) if (source.strings?.(s) ?? true) wanted.set(s.id, s);
     }
     for (const sid of strung) this.unstring(sid);
     for (const id of dirty) {
       const was = this.poles.get(id);
       if (was) this.unplace(id, was);
       const pole = source.poles.get(id);
-      if (pole) this.place(net, groundAt, source, pole, fresh.has(id) || !was || was.x !== pole.x || was.y !== pole.y ? undefined : was.kerb);
+      if (pole && (source.stands?.(pole) ?? true)) this.place(net, groundAt, source, pole, fresh.has(id) || !was || was.x !== pole.x || was.y !== pole.y ? undefined : was.kerb);
     }
     for (const span of wanted.values()) this.string(span);
     this.flush();
@@ -653,7 +657,7 @@ export class PoleLayer implements Utilities {
           nearest = Math.max(nearest, this.scale.atPoint(pole.x, pole.top / 2, -pole.y, pole.top / 2));
         }
       } else {
-        // A block of wires only: the nearest corner of what it holds.
+        // A bake's block: the nearest corner of what it holds.
         for (const part of block.parts) if (part.count > 0) nearest = Math.max(nearest, this.scale.atBox(part.box));
         if (block.wires.count > 0) nearest = Math.max(nearest, this.scale.atBox(block.wires.box));
       }
@@ -672,6 +676,19 @@ export class PoleLayer implements Utilities {
     this.group.clear();
   }
 
+  /** A TILE'S POLES AS A BAKE HANDS THEM (`bakePoles`, in a worker): its parts and wires appended to the layer's stores, drawn as they came, viewed as a layer filled on the page is (the same levels and shadows); never edited, a new bake replaces it whole */
+  static fromBake(kit: SceneryKit, bake: PoleBake, name = 'utilities'): PoleLayer {
+    const layer = new PoleLayer(kit, name);
+    for (const baked of bake.cells) {
+      // The block holding the cell's middle (a tile's own cell key falls in one too: its pieces kept together).
+      const r = cellRect(baked.key);
+      const block = layer.block(blockKey((r[0] + r[2]) / 2, (r[1] + r[3]) / 2));
+      baked.parts.forEach((part, k) => { if (part) block.parts[k]!.load(part); });
+      if (baked.wires) block.wires.load(baked.wires);
+    }
+    layer.flush();
+    return layer;
+  }
 }
 
 

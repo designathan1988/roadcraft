@@ -195,15 +195,7 @@ export class PartCell {
         const mesh = band.meshes.get(key);
         if (!mesh || band.drawn.has(key)) continue;
         band.meshes.delete(key);
-        // DO NOT free the band's buffers with one run: its poses, looks and colours are shared by every run of the band, their arrays let go once
-        // uploaded (`gpuOnlyAttributes`), and the runs still drawn found no buffer and three made one of a null array - every frame, the game frozen
-        // (the player, 2026-10-22: "navego um pouco e trava"). Every attribute of a copy is the model's or the band's: all taken off, nothing freed.
-        for (const copy of (mesh.userData['posed'] as Map<number, BufferGeometry>).values()) {
-          for (const name of Object.keys(copy.attributes)) copy.deleteAttribute(name);
-          copy.setIndex(null);
-          copy.dispose();
-        }
-        mesh.instanceColor = null;
+        for (const [level, copy] of mesh.userData['posed'] as Map<number, BufferGeometry>) letGoPosed(copy, band.screen.levels[level]!.geometry);
         mesh.dispose();
         this.group.remove(mesh);
       }
@@ -280,22 +272,6 @@ export class PartCell {
         mesh.visible = band.drawn.has(key) && look.visible;
       }
     }
-  }
-
-  private box: Box3 | null = null;
-  /** Every piece the cell may draw, in three's world: its bands' sub-cell boxes that hold any instance (what the occlusion tests, `layer.ts` hideOccluded). */
-  get bounds(): Box3 {
-    if (this.box) return this.box;
-    const box = new Box3();
-    for (const band of this.bands) {
-      for (let m = 0; m < LEAVES; m++) {
-        if (band.start[m + 1] === band.start[m]) continue;
-        const o = m * 6, b = band.box;
-        box.expandByPoint(new Vector3(b[o], b[o + 1], b[o + 2]));
-        box.expandByPoint(new Vector3(b[o + 3], b[o + 4], b[o + 5]));
-      }
-    }
-    return (this.box = box);
   }
 
   /** What the cell draws now. */

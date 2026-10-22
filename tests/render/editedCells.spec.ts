@@ -27,9 +27,9 @@ describe('a cell the player edited', () => {
   it('tells the player\'s causes from the growth\'s', () => {
     expect(playerCause('tool roads')).toBe(true);
     expect(playerCause('tool bulldozer: drag')).toBe(true);
-    expect(playerCause('undo')).toBe(true);
+    expect(playerCause('desfazer')).toBe(true);
     expect(playerCause('zone growth')).toBe(false);
-    expect(playerCause('game')).toBe(false);
+    expect(playerCause('jogo')).toBe(false);
   });
 
   it('asks a demolition\'s cells and levels first, a building grown in its band', () => {
@@ -49,7 +49,7 @@ describe('a cell the player edited', () => {
     // The road's edit demolishes a building of the next group.
     doc.changes.causeNext('tool roads');
     doc.buildings.remove(far[1]!);
-    doc.changes.causeNext('game');
+    doc.changes.causeNext('jogo');
     settle(layer, doc);
     expect(runs.length).toBeGreaterThan(0);
     expect(runs.every((r) => r.edited)).toBe(true);
@@ -57,7 +57,7 @@ describe('a cell the player edited', () => {
     runs.length = 0;
     doc.changes.causeNext('zone growth');
     doc.buildings.remove(near[2]!);
-    doc.changes.causeNext('game');
+    doc.changes.causeNext('jogo');
     settle(layer, doc);
     expect(runs.length).toBeGreaterThan(0);
     expect(runs.some((r) => r.edited)).toBe(false);

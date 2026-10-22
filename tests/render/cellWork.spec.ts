@@ -149,27 +149,22 @@ describe('a cell put together off the page', () => {
     const entries = buildings.map(entryOf);
     const fresh = new CellPool(() => boxes, (e) => () => texts.get(e.key)!, false);
     reads = 0;
-    const alone = masses(fresh, 'mass', cell, entries);
+    const alone = masses(fresh, 'massTile', tileOf(ci, cj), entries);
     expect(reads).toBeGreaterThan(0);
-    // Its cell's masses once: the floors measured there, handed to its next job.
+    // Its cell's masses first: the floors measured there, handed to its tile's job.
     const pool = new CellPool(() => boxes, (e) => () => texts.get(e.key)!, false);
     masses(pool, 'mass', cell, entries);
     for (const e of entries) expect(pool.floorKnown(e, true)).not.toBeUndefined();
     reads = 0;
-    const after = masses(pool, 'mass', cell, entries);
+    const after = masses(pool, 'massTile', tileOf(ci, cj), entries);
     expect(reads).toBe(0);
     expect(difference(after.mass as never, alone.mass as never)).toBe('');
     expect(after.floors).toEqual(alone.floors);
-    // Its tile's masses stand on the floors handed, and hand none of their own (seen from afar: `cellWork.ts` baseFloor).
-    const far = new CellPool(() => boxes, (e) => () => texts.get(e.key)!, false);
-    const tile = masses(far, 'massTile', tileOf(ci, cj), entries);
-    expect(tile.floors!.every((f) => f === undefined)).toBe(true);
-    for (const e of entries) expect(far.floorKnown(e, true)).toBeUndefined();
     // Other ground under the buildings (their digest changed): measured again, never the old floor handed.
     const moved = entries.map((e) => ({ ...e, digest: e.digest + 1 }));
     for (const e of moved) expect(pool.floorKnown(e, true)).toBeUndefined();
     reads = 0;
-    masses(pool, 'mass', cell, moved);
+    masses(pool, 'massTile', tileOf(ci, cj), moved);
     expect(reads).toBeGreaterThan(0);
     // Without the paving, a floor measured on it is not handed.
     for (const e of entries) expect(pool.floorKnown(e, false)).toBeUndefined();

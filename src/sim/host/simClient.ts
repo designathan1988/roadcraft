@@ -13,15 +13,11 @@ import type { SignalState } from '../signals/query';
 import type { JunctionAnswer, TrafficCount } from './simAnswers';
 import type { Casualty } from '../people/casualties';
 import { type FleetCell, FleetGrid, type GroundBox } from './fleetGrid';
-import type { MesoDelta } from '../meso/memory';
 import {
   C, H, P, PARKED_STRIDE, PED_STRIDE, PK, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
   type FromSim, type ParkedChanges, type SignalLayout, type SimAct, type SimAsk, type SimControls, type SimStats, type ToSim, type TrainState, type Wound,
 } from './protocol';
 
-
-/** Meso deltas kept for the page before they are let go and every link asked for again (`SimClient.keepMeso`): ten seconds of frames. */
-const MESO_KEPT = 600;
 /** THE PAGE'S SIDE OF THE SIMULATION'S WORKER (`simHost.ts`): the map's changes sent, the frame read, the panels' questions asked */
 
 /** A vehicle as the page draws it: its numbers of the last tick and what it carries (`VehicleRich`). */
@@ -277,7 +273,7 @@ export class SimClient implements JournalReader {
       worker.onmessageerror = () => lost('a message from the worker could not be read');
     });
     this.markSent();
-    this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), seed, zones, zonesPrefix, ambient, bake: this.bake() });
+    this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], seed, zones, zonesPrefix, ambient, bake: this.bake() });
     return ready;
   }
 
@@ -289,14 +285,14 @@ export class SimClient implements JournalReader {
   /** Another map (opened, generated, new): the worker's copy made whole again (only what traffic reads), the simulation started over. */
   load(): void {
     this.markSent();
-    this.send({ type: 'load', map: trafficMapOf(this.doc), bake: this.bake() });
+    this.send({ type: 'load', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], bake: this.bake() });
     this.clearViews();
   }
 
   /** The same map whole again, when the diary cannot say what changed: the worker's copy brought up to it, its traffic and the views kept (SIM-18). */
   private resync(): void {
     this.markSent();
-    this.send({ type: 'resync', map: trafficMapOf(this.doc) });
+    this.send({ type: 'resync', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles] });
   }
 
   /** The simulation started over on the same map. */
@@ -304,36 +300,13 @@ export class SimClient implements JournalReader {
     this.send({ type: 'reset' });
   }
 
-  /** The micro window round (x, y); `whole`: the page's copy of the meso links is new, every link to be sent (`render/densityCars.ts`). */
-  window(x: number, y: number, r: number, whole = false): void {
-    this.windowAt = { x, y, r };
-    this.send({ type: 'window', x, y, r, whole });
-  }
-
-  /** The meso deltas come since the last take, oldest first (`render/densityCars.ts` applies them). */
-  takeMeso(): readonly MesoDelta[] {
-    if (!this.mesoDeltas.length) return this.noDeltas;
-    const out = this.mesoDeltas;
-    this.mesoDeltas = [];
-    return out;
-  }
-  private readonly noDeltas: readonly MesoDelta[] = [];
-
-  /** The meso deltas not taken yet, and the window last told (asked again whole when the deltas were let go). */
-  private mesoDeltas: MesoDelta[] = [];
-  private windowAt: { x: number; y: number; r: number } | null = null;
-
-  /** A tick's meso delta kept for the page: a whole one lets go of those before it; DO NOT keep them without bound when nobody takes them (the far cars not drawn) - let go, and every link asked for again. */
-  private keepMeso(d: MesoDelta): void {
-    if (d.whole) this.mesoDeltas.length = 0;
-    this.mesoDeltas.push(d);
-    if (this.mesoDeltas.length <= MESO_KEPT) return;
-    this.mesoDeltas.length = 0;
-    if (this.windowAt) this.window(this.windowAt.x, this.windowAt.y, this.windowAt.r, true);
+  /** The micro window round (x, y), and the buffer the worker writes the meso traffic into (`render/densityCars.ts`). */
+  window(x: number, y: number, r: number, meso: SharedArrayBuffer): void {
+    this.send({ type: 'window', x, y, r, meso });
   }
 
   /** A frame of the page: the map's changes since the last sent, then the wall time and the controls (one frame asked at a time). */
-  frame(wall: number, hold: boolean, run: { readonly traffic: boolean; readonly pedestrians: boolean; readonly maxShare: number; readonly startShare?: number; readonly opening?: boolean }): void {
+  frame(wall: number, hold: boolean, run: { readonly traffic: boolean; readonly pedestrians: boolean; readonly maxShare: number; readonly startShare?: number }): void {
     this.sendChanges();
     this.wallOwed += wall;
     this.askClock += wall;
@@ -349,7 +322,6 @@ export class SimClient implements JournalReader {
       trafficIntensity: this.trafficIntensity, pedestrianIntensity: this.pedestrianIntensity, demandMultiplier: this.demandMultiplier,
       maxShare: run.maxShare, ...(run.startShare !== undefined ? { startShare: run.startShare } : {}), focus: this.focus,
       ...(this.clockAsked !== null ? { clock: this.clockAsked } : {}),
-      ...(run.opening ? { opening: true } : {}),
     };
     this.clockAsked = null;
     this.send({ type: 'frame', wall: this.wallOwed, hold, controls });
@@ -561,7 +533,6 @@ export class SimClient implements JournalReader {
     // This tick's stamp (`tick` once read): a view not stamped by it was not in it (DO NOT gather the tick's ids in a set to find them).
     const stamp = this.tick + 1;
     // The cars parked in bays, as told: come, gone, or every one standing, each applied by its id (DO NOT clear them all and make every view again).
-    if (message.meso) this.keepMeso(message.meso);
     if (message.parked) this.applyParked(message.parked, stamp);
     else {
       // The parked cars that moved last tick and not this one stand where they stopped: DO NOT walk every parked car for them.

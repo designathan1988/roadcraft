@@ -8,7 +8,7 @@ export interface UsageReading {
   readonly label: string;
   /** 0..100, null when it cannot be read here. */
   readonly percent: number | null;
-  /** The value as shown under the share ("12.4 ms", "812 MB / 4 GB"). */
+  /** The value as shown under the share ("12,4 ms", "812 MB / 4 GB"). */
   readonly detail: string;
   /** What the share is a share of. */
   readonly title: string;
@@ -82,19 +82,19 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
     const clamp = (v: number): number => Math.max(0, Math.min(100, v));
     return [
       { id: 'cpu', label: 'CPU', percent: n ? clamp((cpu / span) * 100) : null,
-        detail: n ? `${(cpu / n).toFixed(1)} ms/frame` : 'stopped', title: 'Main thread: the frames\' time over the time elapsed (last second). Click: what consumes the CPU.' },
+        detail: n ? `${(cpu / n).toFixed(1)} ms/quadro` : 'parado', title: 'Thread principal: o tempo dos quadros sobre o tempo passado (último segundo). Clique: o que consome a CPU.' },
       { id: 'gpu', label: 'GPU', percent: gpuAvg === null ? null : clamp(((gpuAvg * n) / span) * 100),
-        detail: gpuAvg === null ? 'no timer' : `${gpuAvg.toFixed(1)} ms/frame`, title: 'The GPU time per frame times the frames, over the time elapsed. Click: the GPU passes.' },
+        detail: gpuAvg === null ? 'sem medidor' : `${gpuAvg.toFixed(1)} ms/quadro`, title: 'O tempo da GPU por quadro vezes os quadros, sobre o tempo passado. Clique: os passes da GPU.' },
       { id: 'ram', label: 'RAM', percent: heap ? clamp((heap.usedJSHeapSize / heap.jsHeapSizeLimit) * 100) : null,
-        detail: heap ? `${mb(heap.usedJSHeapSize)} / ${mb(heap.jsHeapSizeLimit)}` : 'unavailable', title: 'The page\'s JS heap over the heap limit. Click: what holds the memory.' },
+        detail: heap ? `${mb(heap.usedJSHeapSize)} / ${mb(heap.jsHeapSizeLimit)}` : 'indisponível', title: 'Heap JS da página sobre o limite do heap. Clique: o que ocupa a memória.' },
       { id: 'vram', label: 'VRAM', percent: Number.isFinite(cap) && cap > 0 ? clamp((vram / cap) * 100) : null,
-        detail: `${mb(vram)}${Number.isFinite(cap) ? ` / ${mb(cap)}` : ''} (the game counts ${mb(counted)})`, title: 'Video memory found on the GPU (textures + geometries + targets and shadows) over the device cap; in parentheses what the game\'s gpuLedger counts. Click: the GPU objects.' },
-      { id: 'disk', label: 'Disk', percent: storage && storage.quota > 0 ? clamp((storage.usage / storage.quota) * 100) : null,
-        detail: storage ? `${mb(storage.usage)} / ${mb(storage.quota)}` : 'unavailable', title: 'The site\'s storage (IndexedDB, OPFS, cache) over the quota. Click: what uses the disk.' },
+        detail: `${mb(vram)}${Number.isFinite(cap) ? ` / ${mb(cap)}` : ''} (o jogo conta ${mb(counted)})`, title: 'Memória de vídeo achada na GPU (texturas + geometrias + alvos e sombras) sobre o teto do dispositivo; entre parênteses o que o gpuLedger do jogo conta. Clique: os objetos na GPU.' },
+      { id: 'disk', label: 'Disco', percent: storage && storage.quota > 0 ? clamp((storage.usage / storage.quota) * 100) : null,
+        detail: storage ? `${mb(storage.usage)} / ${mb(storage.quota)}` : 'indisponível', title: 'Armazenamento do site (IndexedDB, OPFS, cache) sobre a cota. Clique: o que usa o disco.' },
       { id: 'fps', label: 'FPS', percent: n > 1 ? clamp((fps / 60) * 100) : null,
-        detail: n > 1 ? `${fps.toFixed(0)} fps` : 'stopped', title: 'Frames per second over 60. Click: the overview.' },
+        detail: n > 1 ? `${fps.toFixed(0)} q/s` : 'parado', title: 'Quadros por segundo sobre 60. Clique: a visão geral.' },
       { id: 'draws', label: 'Draws', percent: n ? clamp((draws / n / 1000) * 100) : null,
-        detail: n ? `${Math.round(draws / n)} calls` : '-', title: 'Draw calls per frame over 1000 (the view budget). Click: capture a frame.' },
+        detail: n ? `${Math.round(draws / n)} chamadas` : '-', title: 'Chamadas de desenho por quadro sobre 1000 (o orçamento da vista). Clique: capturar um quadro.' },
     ];
   };
 

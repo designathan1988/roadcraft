@@ -23,13 +23,12 @@ import type { SegmentId } from '@world/ids';
 import { laneOffset } from '@world/roadTypes';
 import { m } from '@world/units';
 import type { SimClient } from '@sim/host/simClient';
-import { MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MICRO_RADIUS, ML, MesoMemory } from '@sim/meso/memory';
+import { MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, MesoMemory } from '@sim/meso/memory';
 import { JAM_SPACING } from '@sim/meso/model';
 import { linkDirection, linkSegment } from '@sim/meso/tileLinks';
 
 /** THE FAR TRAFFIC: the meso model's cars on every road outside the micro window, as Cidade's density cars, a draw a tile */
-/** DO NOT write every far car again at each meso step nor draw the tiles off the view: each link's cars belong to the tile of its middle, a mesh a tile culled by its sphere, and only the tiles where a link's numbers changed are written and sent.
- *  DO NOT walk every link the worker holds each step: it sends only the links that changed (`MesoDelta`), and only those are looked at here. */
+/** DO NOT write every far car again at each meso step nor draw the tiles off the view: each link's cars belong to the tile of its middle, a mesh a tile culled by its sphere, and only the tiles where a link's numbers changed are written and sent. */
 // Each car an instance (its link's slot, place, lane, speed); the vertex shader places it on the link's road in a float texture (`texelFetch`):
 // the page's roads by their centreline, the far tiles' straight through the start, middle and end their link tables give (`meso/tileLinks.ts`).
 
@@ -38,6 +37,8 @@ const LINK_POINTS = 8;
 /** Texels a row of the centreline texture: a whole number of roads a row. */
 const TEX_WIDTH = 1024;
 const ROADS_PER_ROW = TEX_WIDTH / LINK_POINTS;
+/** Slots the page's first buffer holds; a bigger one is made when the worker asks for more (`MesoMemory.wanted`). */
+const FIRST_CAPACITY = 1 << 15;
 /** How far the view's centre moves from the window's before the window is moved. */
 const RECENTRE = MICRO_RADIUS * 0.3;
 /** Seconds of the wall a window message may go unanswered (the worker not up yet) before it is sent again. */
@@ -122,13 +123,9 @@ const farLateral = (lane: number, lanes: number, oneWay: boolean): number =>
 
 /** `heightAt`: the road's deck at a point, or the ground's for a road not on the page (`renderer.ts` deckHeight). */
 export function createDensityCars(heightAt: (x: number, y: number, segment: SegmentId | undefined) => number): DensityCars {
-  const memory = new MesoMemory();
-  let sent: { x: number; y: number; at: number } | null = null;
-  /** The slots the deltas taken this frame changed, and a stamp a slot to keep each once. */
-  const changed: number[] = [];
-  const unique: number[] = [];
-  let seenStamp = new Uint32Array(0);
-  let stamp = 0;
+  let memory = MesoMemory.make(FIRST_CAPACITY);
+  let sent: { x: number; y: number; at: number; buffer: SharedArrayBuffer } | null = null;
+  let serial = 0;
   let netState: object | null = null;
   /** Each slot's link as its line was written (NaN: none), the worker's serial of that line, and the slots by their segment (the network's delta names segments). */
   let slotLink = new Float64Array(0);
@@ -178,7 +175,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
   }
   const tiles = new Map<number, CarTile>();
   /** Each slot's tile, and the numbers its cars were last written from (NaN: write them). */
-  const slotTile: (CarTile | undefined)[] = [];
+  let slotTile: (CarTile | undefined)[] = [];
   let signature = new Float32Array(0);
   /** Cars written in every tile. */
   let total = 0;
@@ -335,12 +332,12 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     for (const id of delta.segments) for (const slot of bySegment.get(id) ?? []) writeLine(net, slot);
   }
 
-  /** The slots of the deltas whose link or line the worker changed (`ML.shape`): their link noted and their line written. */
-  function readLines(net: Network, slots: readonly number[]): void {
-    track(memory.capacity);
+  /** The slots whose link or line the worker changed (`ML.shape`): their link noted and their line written. */
+  function readLines(net: Network, slots: number): void {
+    track(slots);
     const recs = memory.links;
     const changed: number[] = [];
-    for (const slot of slots) {
+    for (let slot = 0; slot < slots; slot++) {
       const r = slot * MESO_RECORD;
       if ((recs[r + ML.flags]! & MESO_PRESENT) !== 0 && recs[r + ML.shape]! !== seenShape[slot]) changed.push(slot);
     }
@@ -365,21 +362,28 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     }
   }
 
-  /** The window told the worker (again when the view moved far enough, or nobody answered); whole while no delta came (every link sent). */
+  /** The window told the worker (again when the view moved far enough, the buffer changed, or nobody answered). */
   function tellWindow(sim: SimClient, x: number, y: number): void {
+    if (memory.wanted > memory.capacity) {
+      let next = memory.capacity;
+      while (next < memory.wanted) next *= 2;
+      // The worker writes every line into a new buffer: each slot's read again from it.
+      memory = MesoMemory.make(next);
+      serial = 0;
+    }
     const now = performance.now();
-    const moved = !sent || Math.hypot(x - sent.x, y - sent.y) > RECENTRE;
+    const moved = !sent || Math.hypot(x - sent.x, y - sent.y) > RECENTRE || sent.buffer !== memory.buffer;
     const unanswered = !!sent && memory.serial === 0 && now - sent.at > RESEND_MS;
     if (!moved && !unanswered) return;
     const cx = moved || !sent ? x : sent.x, cy = moved || !sent ? y : sent.y;
-    sim.window(cx, cy, MICRO_RADIUS, memory.serial === 0);
-    sent = { x: cx, y: cy, at: now };
+    sim.window(cx, cy, MICRO_RADIUS, memory.buffer);
+    sent = { x: cx, y: cy, at: now, buffer: memory.buffer };
   }
 
   /** The tiles of the slots whose numbers the meso step changed (their count, queue, speed, lanes, line or flags), marked to be written. */
-  function noteChanges(slots: readonly number[]): void {
+  function noteChanges(slots: number): void {
     const recs = memory.links;
-    for (const slot of slots) {
+    for (let slot = 0; slot < slots; slot++) {
       const tile = slotTile[slot];
       if (!tile) continue;
       const r = slot * MESO_RECORD, o = slot * SIGNATURE;
@@ -464,21 +468,17 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     update(net, sim, focusX, focusY) {
       tellWindow(sim, focusX, focusY);
       syncLines(net);
-      const deltas = sim.takeMeso();
-      if (deltas.length) {
-        changed.length = 0;
-        for (const d of deltas) memory.apply(d, changed);
-        // Each slot once, in the order first changed.
-        if (seenStamp.length < memory.capacity) seenStamp = new Uint32Array(memory.capacity);
-        if (++stamp === 0xffffffff) { stamp = 1; seenStamp.fill(0); }
-        unique.length = 0;
-        for (const slot of changed) if (seenStamp[slot] !== stamp) { seenStamp[slot] = stamp; unique.push(slot); }
-        readLines(net, unique);
-        noteChanges(unique);
-      }
+      const head = memory.head;
       // The window the worker stands at (its numbers in this step), not the one asked for: its cars and these meet at its edge.
-      uniforms.uWindow.value.set(memory.windowX, memory.windowY, memory.windowR);
+      uniforms.uWindow.value.set(head[MH.windowX]!, head[MH.windowY]!, head[MH.windowR]!);
       uniforms.uTime.value = sim.clock.time % TIME_WRAP;
+      const now = memory.serial;
+      if (now !== serial) {
+        serial = now;
+        const slots = Math.min(memory.capacity, memory.wanted);
+        readLines(net, slots);
+        noteChanges(slots);
+      }
       // The tiles a step or an edit changed: written and sent, the others left as they are.
       for (const tile of tiles.values()) if (tile.dirty) writeTile(net, tile);
     },

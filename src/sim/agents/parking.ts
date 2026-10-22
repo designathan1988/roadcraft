@@ -5,11 +5,11 @@ import type { SegmentId } from '@world/ids';
 import type { LaneletId } from '@world/lanelets';
 import { OWNER } from '@world/tiles';
 import { type Bay, type BayLane, bayWork } from './bay';
-import { LOT_READS, TRAIT_PARKING, type TrafficBuilding, type TrafficBuildings, type TrafficFacts } from './trafficBuildings';
+import { LOT_READS, type TrafficBuilding, type TrafficBuildings } from './trafficBuildings';
 import { BuildingsInOrder } from './buildingOrder';
 import { type LaneGridWorld, laneChangesSince, laneGrid, lanesInBox, lanesNear } from './laneGrid';
 export { laneChangesSince, lanesInBox };
-import { type KerbBook, type KerbReads, type KerbWorld, followKerbs, kerbStreetsIn, newKerbBook } from './kerbBays';
+import { type KerbBook, type KerbReads, type KerbWorld, followKerbs, newKerbBook } from './kerbBays';
 import {
   type BayReads, type LotAsk, type LotExit, type WallRing, LANE_REACH, bayRows, baysOfShare, gateExits as lotGateExits, laneFor, shareOf,
 } from './lotBays';
@@ -34,9 +34,9 @@ export function collectBays(w: BayWorld): Bay[] {
 }
 /** How far round a change a lot's box grown by `LOT_READS` (`TrafficBuilding.reach`) may reach */
 const LOT_REACHED = LOT_READS * 2;
-/** What a building's bays are worked out from, digested, once per traffic record */
-const RECORD_READS = new WeakMap<TrafficBuilding, { lot?: number }>();
-function recordReads(b: TrafficBuilding): { lot?: number } {
+/** What a building's bays are worked out from, as text, once per record */
+const RECORD_READS = new WeakMap<TrafficBuilding, { lot?: number; walls?: readonly Wall[] }>();
+function recordReads(b: TrafficBuilding): { lot?: number; walls?: readonly Wall[] } {
   let reads = RECORD_READS.get(b);
   if (!reads) RECORD_READS.set(b, reads = {});
   return reads;
@@ -51,7 +51,7 @@ function lotKey(b: TrafficBuilding): number {
   return reads.lot;
 }
 
-const hasParking = (b: TrafficFacts): boolean => (b.traits & TRAIT_PARKING) !== 0;
+const hasParking = (b: TrafficBuilding): boolean => (b.elements ?? []).some((el) => el.kind === 'parking');
 
 /** What a lot's bays are worked out from: its record (`lotKey`), and the lanes and walls within reach, digested. */
 interface LotSources { readonly lot: number; readonly key: number }
@@ -340,16 +340,6 @@ export function baySources(w: BayWorld): string[] {
   return out;
 }
 
-/** The sources of bays whose lot or street meets the rectangle (the micro window's square), in the town's order as `baySources`: found by place, DO NOT list the map's. */
-export function baySourcesIn(w: BayWorld, x0: number, y0: number, x1: number, y1: number): string[] {
-  const book = baysNow(w);
-  const out: string[] = [];
-  // `near` answers in the store's order, the lots' own.
-  for (const id of w.buildings.nearIds(x0, y0, x1, y1)) if (book.known.has(id)) out.push(`L${id}`);
-  for (const id of kerbStreetsIn(book.kerb, x0, y0, x1, y1)) if (book.kerb.bays.get(id)?.length) out.push(`K${id}`);
-  return out;
-}
-
 /** A source's bays now (`bayChangesSince`), as fresh copies (ids within the source); none when it has none. */
 export function baysOfSource(w: BayWorld, source: string): Bay[] {
   const book = baysNow(w);
@@ -363,7 +353,7 @@ function lotsReached(w: BayWorld, lots: BuildingsInOrder, rects: readonly Change
   const out = new Set<BuildingId>();
   for (const id of named) if (lots.has(id)) out.add(id);
   // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
-  for (const id of w.buildings.nearAny(rects, LOT_REACHED, (b, r) => lots.has(b.id) && meets(r, b.reach))) out.add(id);
+  for (const b of w.buildings.nearAny(rects, LOT_REACHED, (b, r) => lots.has(b.id) && meets(r, b.reach))) out.add(b.id);
   return out;
 }
 
@@ -439,35 +429,34 @@ export interface Wall extends WallRing {
   readonly digest: number;
 }
 
-/** A building's solid footprints, with their bounds and digests: read by id alone (`TrafficBuildings.footprints`), no traffic record worked out for them, kept for the life of this look (`Walls`). */
-function buildingWalls(store: TrafficBuildings, id: BuildingId): readonly Wall[] {
-  const made: Wall[] = [];
-  for (const ring of store.footprints(id)) {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    const digest = new Digest().add(id);
-    for (const p of ring) {
-      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
-      digest.add(p.x).add(p.y);
+/** A record's solid footprints, with their bounds and digests, made once (`recordReads`) */
+function recordWalls(b: TrafficBuilding): readonly Wall[] {
+  const reads = recordReads(b);
+  if (!reads.walls) {
+    const made: Wall[] = [];
+    for (const ring of b.footprints) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      const digest = new Digest().add(b.id);
+      for (const p of ring) {
+        x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+        digest.add(p.x).add(p.y);
+      }
+      made.push({ building: b.id, ring, x0, y0, x1, y1, digest: digest.value() });
     }
-    made.push({ building: id, ring, x0, y0, x1, y1, digest: digest.value() });
+    reads.walls = made;
   }
-  return made;
+  return reads.walls;
 }
 
 /** DO NOT go back to a list of every building's walls: one change of one building made it again. */
 export class Walls {
-  /** Each building's walls read in this look (a look's lots share their neighbours). */
-  private readonly read = new Map<BuildingId, readonly Wall[]>();
-
   constructor(private readonly store: TrafficBuildings) {}
 
   /** The walls whose bounds meet a box, in the store's order. */
   inBox(x0: number, y0: number, x1: number, y1: number): Wall[] {
     const out: Wall[] = [];
-    for (const id of this.store.nearIds(x0, y0, x1, y1)) {
-      let walls = this.read.get(id);
-      if (!walls) this.read.set(id, walls = buildingWalls(this.store, id));
-      for (const wl of walls) if (wl.x1 >= x0 && wl.x0 <= x1 && wl.y1 >= y0 && wl.y0 <= y1) out.push(wl);
+    for (const b of this.store.near(x0, y0, x1, y1)) {
+      for (const wl of recordWalls(b)) if (wl.x1 >= x0 && wl.x0 <= x1 && wl.y1 >= y0 && wl.y0 <= y1) out.push(wl);
     }
     return out;
   }

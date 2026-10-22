@@ -47,7 +47,7 @@ export interface SceneEnvironment {
   /** What moves and is drawn into the shadows (`sunCascades.ts` `Movers`). */
   setMovers(movers: readonly Movers[]): void;
   /** What chooses its casters by each cascade's texel (`SunCascades.setCasters`). */
-  setCasters(casters: ((texel: number | null, cascade: number, half: number) => void) | null): void;
+  setCasters(casters: ((texel: number | null, cascade: number) => void) | null): void;
   /** The cascades' maps, for the video memory count. */
   shadowMaps(): (WebGLRenderTarget | null)[];
   setQuality(quality: EnvironmentQuality): void;

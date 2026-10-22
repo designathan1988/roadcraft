@@ -10,12 +10,12 @@ import {
 export type DebugView = 'none' | 'overdraw' | 'wireframe' | 'normals' | 'uv' | 'mips';
 
 export const DEBUG_VIEWS: readonly { readonly id: DebugView; readonly label: string; readonly title: string }[] = [
-  { id: 'none', label: 'Normal', title: 'The scene with its own materials' },
-  { id: 'overdraw', label: 'Overdraw', title: 'Each fragment adds a little colour, with no depth test: the brightest is drawn the most times' },
-  { id: 'wireframe', label: 'Wireframe', title: 'The edges of the triangles (each object material in wireframe)' },
-  { id: 'normals', label: 'Flat normals', title: 'The normal of each face, from the derivatives of the view position (the one the object shader computed)' },
-  { id: 'uv', label: 'UV', title: 'A checker on the texture coordinates (one material over the whole scene: what the object shader places disappears)' },
-  { id: 'mips', label: 'Mips', title: 'One colour per mip level, red is level 0 (one material over the whole scene: what the object shader places disappears)' },
+  { id: 'none', label: 'Normal', title: 'A cena com os materiais dela' },
+  { id: 'overdraw', label: 'Sobreposição', title: 'Cada fragmento soma um pouco de cor, sem teste de profundidade: o mais claro é desenhado mais vezes' },
+  { id: 'wireframe', label: 'Arame', title: 'As arestas dos triângulos (o material de cada objeto em wireframe)' },
+  { id: 'normals', label: 'Normais planas', title: 'A normal de cada face, das derivadas da posição na vista (a que o shader do objeto calculou)' },
+  { id: 'uv', label: 'UV', title: 'Um xadrez nas coordenadas de textura (um material sobre a cena toda: o que o shader do objeto posiciona some)' },
+  { id: 'mips', label: 'Mips', title: 'Uma cor por nível de mip, vermelho o nível 0 (um material sobre a cena toda: o que o shader do objeto posiciona some)' },
 ];
 
 export interface DebugViews {

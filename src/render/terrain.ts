@@ -227,8 +227,6 @@ export interface PlateSurface extends TerrainSurface {
   gpuBytes(): number;
   /** Its own textures (its corners, the paint and corner layers, the shore, the water's ground): sent ahead of its first draw (`uploads.ts`). */
   textures(): Texture[];
-  /** Whether the view is near the plate (`flatAtlas.ts`): its painted layers at their full side only then (`fitPaint`). */
-  paintDetail?(near: boolean): void;
 }
 
 /** A plate of the ground and where its centre stands (`flatAtlas.ts`). */
@@ -329,37 +327,37 @@ const unionDab = (box: DabRect | null, dab: PaintDab): DabRect => {
   return box ? [Math.min(box[0], r[0]), Math.min(box[1], r[1]), Math.max(box[2], r[2]), Math.max(box[3], r[3])] : r;
 };
 /** The paint texels a dab lays (`rasterPaint`, the same bounds). */
-function paintTexelBox(dab: PaintDab, res = PAINT_RES): TexelBox {
-  const cell = TERRAIN_SIZE / res;
+function paintTexelBox(dab: PaintDab): TexelBox {
+  const cell = TERRAIN_SIZE / PAINT_RES;
   const cx = (dab.x + TERRAIN_HALF) / cell, cy = (dab.y + TERRAIN_HALF) / cell, r = dab.radius / cell;
   return {
-    x0: Math.max(0, Math.floor(cx - r)), x1: Math.min(res - 1, Math.ceil(cx + r)),
-    y0: Math.max(0, Math.floor(cy - r)), y1: Math.min(res - 1, Math.ceil(cy + r)),
+    x0: Math.max(0, Math.floor(cx - r)), x1: Math.min(PAINT_RES - 1, Math.ceil(cx + r)),
+    y0: Math.max(0, Math.floor(cy - r)), y1: Math.min(PAINT_RES - 1, Math.ceil(cy + r)),
   };
 }
 const unionTexels = (a: TexelBox | null, b: TexelBox): TexelBox =>
   a ? { x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1) } : b;
 
-/** Lays one dab into the weight textures (`res` texels a side): within its radius every layer moves toward the dab's */
-function rasterPaint(layers: readonly Uint8Array[], dab: PaintDab, res = PAINT_RES): void {
+/** Lays one dab into the weight textures: within its radius every layer moves toward the dab's */
+function rasterPaint(layers: readonly Uint8Array[], dab: PaintDab): void {
   const a = layers[0]!;
   const b = layers[1]!;
   // Rocks lie on bare ground: they lay the soil layer part way.
   const layer = PAINT_KINDS.indexOf(dab.kind === 'rocks' ? 'soil' : dab.kind);
   const reach = dab.kind === 'rocks' ? 0.2 : 1;
-  const cell = TERRAIN_SIZE / res;
+  const cell = TERRAIN_SIZE / PAINT_RES;
   const cx = (dab.x + TERRAIN_HALF) / cell;
   const cy = (dab.y + TERRAIN_HALF) / cell;
   const r = dab.radius / cell;
-  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(res - 1, Math.ceil(cx + r));
-  const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(res - 1, Math.ceil(cy + r));
+  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(PAINT_RES - 1, Math.ceil(cx + r));
+  const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(PAINT_RES - 1, Math.ceil(cy + r));
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / Math.max(1e-6, r);
       if (d >= 1) continue;
       const fall = 1 - d * d * (3 - 2 * d);
       const w = Math.min(1, dab.strength * fall) * reach;
-      const i = (y * res + x) * 4;
+      const i = (y * PAINT_RES + x) * 4;
       for (let k = 0; k < 8; k++) {
         const data = k < 4 ? a : b;
         const j = i + (k & 3);
@@ -2032,7 +2030,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const layPaintInto = (texels: Uint8Array, res: number): void => {
     const layers = [paintLayer(texels, res, 0), paintLayer(texels, res, 1)];
     for (const layer of layers) layer.fill(0);
-    for (const dab of paintDabs) if (!isGeologyKind(dab.kind) && !isBiomeKind(dab.kind)) rasterPaint(layers, dab, res);
+    for (const dab of paintDabs) if (!isGeologyKind(dab.kind) && !isBiomeKind(dab.kind)) rasterPaint(layers, dab);
   };
   /** The array's `layers` (null: all) from their truth: the dabs and the corner layer. */
   const fillPaint = (into: Uint8Array, res: number, layers: readonly number[] | null): void => {
@@ -2055,37 +2053,25 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     }
     return [paintLayer(texels, paintRes, 0), paintLayer(texels, paintRes, 1)];
   };
-  /** Whether a dab of the document reaches this ground (`paintStep`). */
-  let painted = false;
-  /** Whether the plate is near the view (`PlateSurface.paintDetail`): its painted layers held at their full side only then. */
-  let paintNear = true;
-  /**
-   * THE PAINTED GROUND'S ARRAY AT THE SIDE THE PLATE WANTS: full (`PAINT_RES`) where a dab reaches it and the view is near, the start side
-   * (the corner layer's, `PAINT_START_RES`) otherwise - its texels laid again from the dabs at the new side (`fillPaint`).
-   * DO NOT hold every painted plate at full size: every plate of the map with a building is drawn and painted (its squares), and a city
-   * of 70,000 buildings held 25 arrays of 12.6 MB - 315 of its 602 MB of textures, three times the large city's (step-70k, 2026-10-22).
-   */
-  const fitPaint = (): void => {
-    const want = painted && paintNear ? PAINT_RES : PAINT_START_RES;
-    if (want === paintRes) return;
-    // A stroke being laid holds its layers at this side (`paintRaster`): smaller once it is over.
-    if (want < paintRes && paintTexels.held) return;
-    const was = paintArray;
-    const next = paintLayers(want);
+  /** The painted ground's array at its full size (`PAINT_RES`), made when the first dab reaches this ground */
+  const growPaint = (): void => {
+    if (paintRes >= PAINT_RES) return;
+    const small = paintArray;
+    const next = paintLayers(PAINT_RES);
     const own = material.userData['terrainUniforms'] as { uPaint: { value: Texture }; uPaintRes: { value: number } };
     own.uPaint.value = next;
-    own.uPaintRes.value = want;
+    own.uPaintRes.value = PAINT_RES;
     paintArray = next;
-    paintRes = want;
+    paintRes = PAINT_RES;
     paintTexels.hold(null);
     paintTexels = stagePaint(next);
-    // The whole layers go at its first send: no box of the array before left to send.
+    // The whole layers go at its first send: no box of the smaller array left to send.
     paintBox = null;
     // Every layer at its first send, the light too: the layers a dab marks would leave it out.
     for (let layer = 0; layer < PAINT_LAYERS; layer++) next.addLayerUpdate(layer);
-    // The array before taken out of the uploads' queue before it is let go: a texture disposed never reaches initTexture (it made its GL texture again, and was filled then).
-    cancelUploads([was]);
-    was.dispose();
+    // The smaller array taken out of the uploads' queue before it is let go: a texture disposed never reaches initTexture (it made its GL texture again, and was filled then).
+    cancelUploads([small]);
+    small.dispose();
   };
   paintArray.addLayerUpdate(LIGHT_LAYER);
   paintArray.needsUpdate = true;
@@ -2120,7 +2106,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     if (import.meta.env.DEV) performance.measure('terrain-light/worker', { start: startedAt - result.ms, end: startedAt, detail: `${width}x${rect.y1 - rect.y0 + 1} corners` });
     // Rows run from +y downwards.
     diary?.record('light', [[origin.x - TERRAIN_HALF + rect.x0 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y1 * TERRAIN_CELL, origin.x - TERRAIN_HALF + rect.x1 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y0 * TERRAIN_CELL]],
-      { cause: 'terrain slope rebuilt', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} corners, in a worker` });
+      { cause: 'inclinação do terreno refeita', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} cantos, num worker` });
   };
   /** Called each frame (the sun's direction is not read: the slope does not depend on it); the slope asked for where the land moved, once no stroke is held. */
   const setSun = (): void => {
@@ -2167,9 +2153,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     // Whether a dab of ground or cover was laid: the plants follow those, and a dab of geology changes neither.
     let covered = false;
     const geologyRects: (readonly [number, number, number, number])[] = [];
-    // Something to lay: the array at its full size first (near the view).
-    painted = dabs.length > 0;
-    fitPaint();
+    // Something to lay: the array at its full size first.
+    if (dabs.length > 0) growPaint();
     // Dabs only added since the last time: lay just those, on the layers held while the brush paints. DO NOT judge it by the first dab and the count: a dab taken off the middle and one added kept both.
     let appended = paintCount > 0 && dabs.length >= paintCount;
     for (let i = 0; appended && i < paintCount; i++) if (dabs[i] !== paintDabs[i]) appended = false;
@@ -2187,7 +2172,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       // Its paint layers read from now on (TER-02): never back to 0, a dab taken away leaves the layers 0 where it was.
       (material.userData['terrainUniforms'] as { uHasPaint: { value: number } }).uHasPaint.value = 1;
       // The layers laid from the dabs before these (`paintDabs`), then these; only their box sent (`flushPaint`).
-      if (appended) { rasterPaint(raster ??= paintRaster(), dab, paintRes); paintBox = unionTexels(paintBox, paintTexelBox(dab, paintRes)); }
+      if (appended) { rasterPaint(raster ??= paintRaster(), dab); paintBox = unionTexels(paintBox, paintTexelBox(dab)); }
       rasterCover(covers, dab);
       reached = unionDab(reached, dab);
       covered = true;
@@ -2245,11 +2230,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   const parts: TerrainPart[] = [];
   const surface: PlateSurface = {
-    paintDetail(near) {
-      if (near === paintNear) return;
-      paintNear = near;
-      fitPaint();
-    },
     meshes: [ground, rim, water],
     parts,
     regionOf(box) {

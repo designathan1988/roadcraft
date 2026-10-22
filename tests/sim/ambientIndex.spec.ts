@@ -258,7 +258,7 @@ describe("the scenery's indexes and the buildings' diary", () => {
     const journal = new ChangeJournal();
     const table = new TrafficBuildingTable(journal);
     const walls = new SightWalls(), mix = new BuildingMix(), demand = new DemandCells();
-    const places = new LotPlaces({ wayOf: () => null } as never);
+    const places = new LotPlaces({ wayOf: () => null, gatesOf: () => [] } as never);
     walls.sync(table, journal); mix.sync(table, journal); demand.sync(table, journal); places.sync(table, journal);
     const read = journal.version;
     // Tiles' buildings come and go while none of them reads: the diary lets go what nobody follows.

@@ -25,30 +25,6 @@ export interface CurbRamp {
   readonly structure: string;
 }
 
-/** A ramp as plain data, every field its own (`rampData`): what a message's clone keeps of it (a road tile's job, `roadTileMesh.ts`). */
-export type CurbRampData = { -readonly [K in keyof CurbRamp]: CurbRamp[K] };
-
-/** DO NOT keep a ramp as an object of nine boxed numbers (~170 B a ramp, two a zebra, 2026-10-21): its numbers in one run, read through getters (a class: a message's clone of it keeps no getter, it crosses as `rampData`). */
-class PackedRamp implements CurbRamp {
-  constructor(readonly segment: SegmentId, readonly structure: string, private readonly v: readonly number[]) {}
-  get x(): number { return this.v[0]!; }
-  get y(): number { return this.v[1]!; }
-  get tx(): number { return this.v[2]!; }
-  get ty(): number { return this.v[3]!; }
-  get nx(): number { return this.v[4]!; }
-  get ny(): number { return this.v[5]!; }
-  get half(): number { return this.v[6]!; }
-  get run(): number { return this.v[7]!; }
-  get flare(): number { return this.v[8]!; }
-}
-
-/** A ramp kept compact (`PackedRamp`) from its fields. */
-export const rampOf = (r: CurbRamp): CurbRamp => new PackedRamp(r.segment, r.structure, [r.x, r.y, r.tx, r.ty, r.nx, r.ny, r.half, r.run, r.flare]);
-
-/** A ramp's fields as plain data (`CurbRampData`). */
-export const rampData = (r: CurbRamp): CurbRampData =>
-  ({ x: r.x, y: r.y, tx: r.tx, ty: r.ty, nx: r.nx, ny: r.ny, half: r.half, run: r.run, flare: r.flare, segment: r.segment, structure: r.structure });
-
 /** How far onto the carriageway a ramp still answers, so a walker's step off it is level. */
 const ROAD_REACH = m(0.6);
 /** Bucket size of the lookup grid. */

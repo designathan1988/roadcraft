@@ -23,8 +23,8 @@ for (const measuring of [true, false]) {
     r.measure(true);
     return { out };
   }, { WINDOWS, measuring });
-  console.log(`\n== ${measuring ? 'measure mode (clock held)' : 'game running'} ==`);
+  console.log(`\n== ${measuring ? 'modo de medição (relógio parado)' : 'jogo rodando'} ==`);
   console.log(sameScene(rows.out).line);
-  for (const o of rows.out) console.log(`GPU p50 ${String(o.p50).padStart(6)} p95 ${String(o.p95).padStart(6)} n ${o.n}  CPU ${o.cpu}  shadow passes ${o.passes} whole ${o.whole} by ${o.why}  tri ${o.chosenTri} det ${o.detail} facade ${o.facade}`);
+  for (const o of rows.out) console.log(`GPU p50 ${String(o.p50).padStart(6)} p95 ${String(o.p95).padStart(6)} n ${o.n}  CPU ${o.cpu}  sombras passes ${o.passes} inteiras ${o.whole} por ${o.why}  tri ${o.chosenTri} det ${o.detail} fach ${o.facade}`);
 }
 await browser.close();

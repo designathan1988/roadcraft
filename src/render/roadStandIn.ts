@@ -3,18 +3,12 @@ import { BufferAttribute, BufferGeometry, Color, Group, Mesh, MeshStandardMateri
 import type { NodeId, SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
 import { Level } from '@world/roadTypes';
+import { tileKeyAt } from '@world/tiles';
 import { pullTowardEye } from './depthConvention';
+import { STREET_MEANS } from './farRoadTiles';
 
-/** A ROAD JUST BUILT, DRAWN ON THE PAGE IN THE NEXT FRAME UNTIL THE WORLD'S BUILD OF ITS COMMIT LANDS (`renderer.ts` worldSteps): its casing and its carriageway, and the junctions at its ends, from the network the commit solved
- *  - DO NOT leave a road built invisible until the world's build lands: the coarse in place until the fine comes, as every level does. */
-
-/** THE MEAN LINEAR ALBEDO OF EACH BAKED STREET TEXTURE (`bake/roadRecipes.ts`), every texel as stored (sRGB bytes) and read (linear): constants, worked out once from the recipes. */
-export const STREET_MEANS: Readonly<Record<'asphalt' | 'footway' | 'kerb' | 'verge', readonly [number, number, number]>> = {
-  asphalt: [0.040666, 0.041456, 0.044698],
-  footway: [0.210044, 0.208119, 0.195658],
-  kerb: [0.338651, 0.331236, 0.316671],
-  verge: [0.029413, 0.070144, 0.010057],
-};
+/** A ROAD JUST BUILT, DRAWN ON THE PAGE IN THE NEXT FRAME UNTIL ITS TILE'S NEAR ROADS COME BACK FROM THEIR WORKER (`farRoads.ts`): its casing and its carriageway, and the junctions at its ends, from the network the commit solved; let go tile by tile as each tile's bake is drawn
+ *  - DO NOT leave a road built invisible until the worker answers: the edited tile's bake is ~0.6 s on a worker for a dense tile, after a worker is free and before its upload (over 2 s, the player's measure); the coarse in place until the fine comes, as every level does. */
 
 /** What the stand-in reads of the roads' heights (`RoadElevation`). */
 export interface StandInHeights {
@@ -60,33 +54,58 @@ function meshOf(parts: { positions: number[]; indices: number[] }, material: Mes
   return mesh;
 }
 
-/** THE ROADS JUST BUILT, BY THE COMMIT THEY CAME WITH, until the world's build of that commit lands. */
+/** THE ROADS JUST BUILT, BY THE TILE THEIR MIDDLE IS IN, until each tile's near roads are drawn. */
 export class RoadStandIn {
   readonly group = new Group();
   private readonly casing = standInMaterial(STREET_MEANS.footway, 2);
   private readonly asphalt = standInMaterial(STREET_MEANS.asphalt, 3);
-  /** Each commit's stand-in meshes by the network revision it made: let go once a build of that revision landed (`landed`). DO NOT keep only the last commit's: each edit starts the world's build again, and the roads of every commit before it were drawn nowhere until the last build landed (two blocks laid one road a second, jogador-vazio 08-10). */
+  /** Each tile's stand-in meshes (a world drawn by tiles: let go as each tile's near roads are drawn). */
+  private readonly byTile = new Map<number, Mesh[]>();
+  /** Each commit's stand-in meshes by the network revision it made (a world the page draws whole: let go once a build of that revision landed, `landed`). DO NOT keep only the last commit's: each edit starts the world's build again, and the roads of every commit before it were drawn nowhere until the last build landed (two blocks laid one road a second, jogador-vazio 08-10). */
   private readonly byRevision = new Map<number, Mesh[]>();
+  /** The tiles given a stand-in this frame: not looked at for letting go before the near roads were asked of the edit (`settle`). */
+  private readonly fresh = new Set<number>();
 
   constructor() {
     this.group.name = 'road-stand-ins';
   }
 
-  /** The roads `segments` drawn now (the commit's network solved, of network revision `revision`): their outlines, and the junctions at their ends whose every road is one of them.
-   *  - DO NOT draw a road or a junction that was there before (a street the new one meets, split at the new junction): it is drawn already, and the stand-in's flat tone covered it until the build came (via2 37/40). */
-  show(net: Network, heights: StandInHeights, segments: Iterable<SegmentId>, revision: number): void {
+  /** The tiles with a road standing in. */
+  get tiles(): readonly number[] {
+    return [...this.byTile.keys()];
+  }
+
+  /** The tiles with a road standing in since an earlier frame: those `done` may let go (`renderer.ts`, after the near roads were chosen). */
+  settled(): number[] {
+    return [...this.byTile.keys()].filter((tile) => !this.fresh.has(tile));
+  }
+
+  /** The frame's stand-ins looked at from the next frame on. */
+  settle(): void {
+    this.fresh.clear();
+  }
+
+  /** The roads `segments` drawn now (the commit's network solved): their outlines, and the junctions at their ends whose every road is one of them, each under the tile its middle is in.
+   *  - DO NOT draw a road or a junction that was there before (a street the new one meets, split at the new junction): its near roads are drawn, and the stand-in's flat tone covered them until the bake came (via2 37/40). */
+  show(net: Network, heights: StandInHeights, segments: Iterable<SegmentId>, revision?: number): void {
     const only = new Set(segments);
-    const casingParts = { positions: [] as number[], indices: [] as number[] };
-    const asphaltParts = { positions: [] as number[], indices: [] as number[] };
+    const byTile = new Map<number, { casing: { positions: number[]; indices: number[] }; asphalt: { positions: number[]; indices: number[] } }>();
+    const partsOf = (tile: number) => {
+      let parts = byTile.get(tile);
+      if (!parts) byTile.set(tile, parts = { casing: { positions: [], indices: [] }, asphalt: { positions: [], indices: [] } });
+      return parts;
+    };
     const nodes = new Set<NodeId>();
     for (const id of only) {
       const ribbon = net.ribbons.get(id);
       const segment = net.doc.segment(id);
       if (!ribbon || !segment) continue;
+      const mid = ribbon.full.sampleAt(ribbon.full.length / 2).p;
+      const parts = partsOf(tileKeyAt(mid.x, mid.y));
       const height = (x: number, y: number): number => heights.onSegment(id, x, y);
       const casing = ribbon.rings[Level.Casing], asphalt = ribbon.rings[Level.Asphalt];
-      if (casing) fill(casing.flatten(), height, casingParts);
-      if (asphalt) fill(asphalt.flatten(), height, asphaltParts);
+      if (casing) fill(casing.flatten(), height, parts.casing);
+      if (asphalt) fill(asphalt.flatten(), height, parts.asphalt);
       nodes.add(segment.a);
       nodes.add(segment.b);
     }
@@ -94,20 +113,25 @@ export class RoadStandIn {
       const levels = net.junctions.get(id);
       const node = net.doc.node(id);
       if (!levels || !node || !node.incident.every((s) => only.has(s))) continue;
+      const parts = partsOf(tileKeyAt(node.x, node.y));
       const height = (x: number, y: number): number => heights.at(x, y);
-      // The outlines kept (`JunctionLevels.ringAt`): DO NOT make the casing's level again for its outline alone.
-      const casing = levels.ringAt(Level.Casing), asphalt = levels.ringAt(Level.Asphalt);
-      if (casing) fill(casing.flatten(), height, casingParts);
-      if (asphalt) fill(asphalt.flatten(), height, asphaltParts);
+      const casing = levels.get(Level.Casing), asphalt = levels.get(Level.Asphalt);
+      if (casing) fill(casing.ring.flatten(), height, parts.casing);
+      if (asphalt) fill(asphalt.ring.flatten(), height, parts.asphalt);
     }
-    const meshes = [meshOf(casingParts, this.casing, 1), meshOf(asphaltParts, this.asphalt, 2)].filter((m): m is Mesh => m !== null);
-    if (!meshes.length) return;
-    const kept = this.byRevision.get(revision);
-    if (kept) kept.push(...meshes); else this.byRevision.set(revision, meshes);
-    for (const mesh of meshes) this.group.add(mesh);
+    for (const [tile, parts] of byTile) {
+      const meshes = [meshOf(parts.casing, this.casing, 1), meshOf(parts.asphalt, this.asphalt, 2)].filter((m): m is Mesh => m !== null);
+      if (!meshes.length) continue;
+      // By the commit's revision where the page draws the world whole; by the tile where tiles draw it.
+      const into = revision === undefined ? this.byTile : this.byRevision, key = revision ?? tile;
+      const kept = into.get(key);
+      if (kept) kept.push(...meshes); else into.set(key, meshes);
+      if (revision === undefined) this.fresh.add(tile);
+      for (const mesh of meshes) this.group.add(mesh);
+    }
   }
 
-  /** The commits whose stand-ins wait for the world's build (`show`). */
+  /** The commits whose stand-ins wait for the world's build (`show` with a revision). */
   get revisions(): readonly number[] {
     return [...this.byRevision.keys()];
   }
@@ -117,12 +141,26 @@ export class RoadStandIn {
     for (const [key, meshes] of [...this.byRevision]) {
       if (key > revision) continue;
       this.byRevision.delete(key);
-      for (const mesh of meshes) { this.group.remove(mesh); mesh.geometry.dispose(); }
+      this.letGo(meshes);
     }
+  }
+
+  private letGo(meshes: readonly Mesh[]): void {
+    for (const mesh of meshes) { this.group.remove(mesh); mesh.geometry.dispose(); }
+  }
+
+  /** A tile's near roads drawn (its bake of the edit come): what stood in there let go. */
+  drop(tile: number): void {
+    const meshes = this.byTile.get(tile);
+    if (!meshes) return;
+    this.byTile.delete(tile);
+    this.fresh.delete(tile);
+    this.letGo(meshes);
   }
 
   /** Every stand-in let go (another map, the diary read from nothing). */
   clear(): void {
+    for (const tile of [...this.byTile.keys()]) this.drop(tile);
     this.landed(Infinity);
   }
 

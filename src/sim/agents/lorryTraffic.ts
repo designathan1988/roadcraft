@@ -13,9 +13,9 @@ import { closeLane, laneClear, openLanes, type Closure } from '../vehicles/laneC
 import { CLOSURE_STOP } from '../vehicles/obstacles';
 import { Shunt } from './manoeuvre';
 import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardInputs, yardKey, yardOf } from './lorryDocks';
-import { lanesInBox } from './parking';
+import { gatedProperty, lanesInBox } from './parking';
 import { BuildingsInOrder } from './buildingOrder';
-import { type BuildingSource, type TrafficBuilding, type TrafficFacts, TRAIT_YARD } from './trafficBuildings';
+import type { BuildingSource, TrafficBuilding } from './trafficBuildings';
 import type { Waypoint } from './hybridAStar';
 
 /** Lorries to the works' loading docks: a lorry of the passing traffic is sent to a dock that has a way in and out */
@@ -452,7 +452,7 @@ export function closures(w: SimWorld, poses: readonly Waypoint[], owner: number,
 }
 
 /** A building with a yard a lorry is sent to: a car-gated property with loading docks. */
-const hasYard = (b: TrafficFacts): boolean => (b.traits & TRAIT_YARD) !== 0;
+const hasYard = (b: TrafficBuilding): boolean => gatedProperty(b) !== null && b.docks.length > 0;
 
 /** The town's yards and their docks, in the store's order (the lorries' draw follows it), kept from the diary */
 export class YardList {

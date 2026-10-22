@@ -100,7 +100,7 @@ export function desktopSaves(): DesktopStores | null {
       await ready();
       return markTexts(await call({ op: 'marks', prefix }));
     },
-    // The changed squares' binary frames go to the writer as they are: it compresses them there, as the job system's `save` lane does in a browser.
+    // The changed records go to the writer as they are: it makes the text and the gzip there, as the job system's `save` lane does in a browser.
     writer: { write: async (batch) => { await ready(); return written(await call({ op: 'batch', batch })); } },
   };
   const store: LargeStore = {

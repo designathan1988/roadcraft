@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MemberDiff, RoadDoc } from '@world/doc';
+import { RoadDoc } from '@world/doc';
 import { blueprintByKey } from '@world/buildings/blueprints';
 import { type Building, cloneBuilding } from '@world/buildings/types';
 
@@ -57,11 +57,8 @@ describe("a building's wear", () => {
     const patch = doc.endEdit()!;
     expect(patch).not.toBeNull();
     const record = patch.records.find((r) => r.part === 'buildings' && r.id === a.id)!;
-    // Kept as the members that changed (`MemberDiff`): the wear alone, on both sides.
-    expect(record.after).toBeInstanceOf(MemberDiff);
-    expect(Object.keys((record.after as MemberDiff).changed)).toEqual(['decay']);
-    expect((record.after as MemberDiff).changed['decay']).toBe(0.7);
-    expect(((record.before as MemberDiff).changed['decay'] as number | undefined) ?? 0).toBe(a.decay ?? 0);
+    expect((record.after as Building).decay).toBe(0.7);
+    expect((record.before as Building).decay ?? 0).toBe(a.decay ?? 0);
   });
 
   it('finds the buildings round a place by place, as the whole store would', () => {

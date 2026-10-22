@@ -2,9 +2,7 @@
 export function identityMemo<K extends object, V>(compute: (key: K) => V): (key: K) => V {
   const known = new WeakMap<K, V>();
   return (key) => {
-    // One lookup for a value kept (the common answer); `has` only for a value that is undefined.
-    const kept = known.get(key);
-    if (kept !== undefined || known.has(key)) return kept as V;
+    if (known.has(key)) return known.get(key)!;
     const value = compute(key);
     known.set(key, value);
     return value;

@@ -12,7 +12,7 @@ export interface CodeState {
   readonly sampler: CodeSampler;
   readonly store: SourceStore;
   view: SampleView;
-  /** Sampling while the "Code" tab is shown. */
+  /** Sampling while the "Código" tab is shown. */
   live: boolean;
   /** Each engine product's refreshes since the lab began (`Engine.onRefresh`). */
   readonly products: Map<string, ProductCount>;

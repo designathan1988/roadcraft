@@ -3,7 +3,6 @@ import type { Vec2 } from '@core/vec2';
 import { m } from '../units';
 import type { ZoneDensity, ZoneUse } from '../zones';
 import { TensorField, valueNoise, type BasisField } from './field';
-import { MAP_HALF } from './wholeMap';
 import { planarize, traceStreets, type StreetEdge, type StreetGraph, type StreetLevel } from './streets';
 
 /** A GENERATED CITY'S PLAN: what the player asks for (`CityOptions`) made into the city's grain */
@@ -68,8 +67,8 @@ export interface CityPlan {
   zoneAt(p: Vec2, onMain: boolean): { use: ZoneUse; density: ZoneDensity } | 'park';
 }
 
-/** How far a round city may reach from the origin: the map's own half side (`wholeMap.ts` MAP_HALF, 5 120 m on the 10-tile map). */
-const ROUND_REACH = MAP_HALF;
+/** How far a round city may reach from the origin (the map it was made for, 10 km across): the streamed world has no such edge. */
+const ROUND_REACH = m(5_120);
 const RADIUS: Record<CitySize, number> = { small: m(420), medium: m(640), large: m(880) };
 
 export function planCity(options: CityOptions): CityPlan {

@@ -9,8 +9,8 @@ import { createSceneTab } from './sceneTab';
 import { createInspectorState, type Selection } from './state';
 import './inspector.css';
 
-/** THE LAB'S INSPECTOR, Chrome's element picker for the game: "Inspector" (pick in the game and see everything about it - the game's entity, the 3D object,
- *  its geometry, materials, program, switches, draws, memory and the code that makes it - and edit it live), "Scene" (the scene's tree) and "Console" (a REPL with the selection in scope).
+/** THE LAB'S INSPECTOR, Chrome's element picker for the game: "Inspetor" (pick in the game and see everything about it - the game's entity, the 3D object,
+ *  its geometry, materials, program, switches, draws, memory and the code that makes it - and edit it live), "Cena" (the scene's tree) and "Console" (a REPL with the selection in scope).
  *  Ctrl+Shift+C with the lab open starts the picker. The selection and the edits go into every report (`inspector`) and to the probes (`window.__labInspector`). */
 export function createInspectorTabs(ctx: LabContext): LabTab[] {
   const state = createInspectorState(ctx);

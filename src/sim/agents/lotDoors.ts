@@ -2,7 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import type { BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
-import { personGates as gatesForPeople } from './lotBays';
+import { carGates } from './parking';
 import { PEOPLE_GRID, buildLotGrid, sees, wayOut } from './lotNav';
 import type { TrafficBuilding, TrafficPart } from './trafficBuildings';
 
@@ -21,7 +21,8 @@ export interface DoorWay {
 
 /** A gate narrower than a car's is a person's (`parking.ts` CAR_GATE). */
 export function personGates(b: TrafficBuilding): TrafficPart[] {
-  return gatesForPeople(b);
+  const cars = new Set(carGates(b));
+  return (b.elements ?? []).filter((el) => el.kind === 'gate' && !cars.has(el));
 }
 
 /** Farthest a door may be behind its gate. */

@@ -19,21 +19,21 @@ interface Kept {
 
 const KEY = 'roadcraft.lab.window';
 const MODES: readonly (readonly [Mode, string, string])[] = [
-  ['left', 'left', 'Dock left'],
-  ['right', 'right', 'Dock right'],
-  ['center', 'center', 'Centre, large'],
-  ['max', 'max', 'Maximise (double-click the title)'],
-  ['mini', 'mini', 'Meters only'],
+  ['left', 'left', 'Encaixar à esquerda'],
+  ['right', 'right', 'Encaixar à direita'],
+  ['center', 'center', 'Centralizar, grande'],
+  ['max', 'max', 'Maximizar (duplo clique no título)'],
+  ['mini', 'mini', 'Só os medidores'],
 ];
 
 /** The tabs' groups, in the order shown (a tab of no group goes to the last). */
 const GROUPS: readonly (readonly [string, readonly string[]])[] = [
-  ['Diagnostics', ['doctor', 'overview', 'diagnostics']],
-  ['Elements', ['inspector', 'scene', 'console']],
+  ['Diagnóstico', ['doctor', 'overview', 'diagnostics']],
+  ['Elementos', ['inspector', 'scene', 'console']],
   ['GPU', ['gpu', 'gpu-frame', 'gpu-objects', 'gpu-webgl']],
-  ['CPU and memory', ['consumers', 'code', 'coverage']],
-  ['Controls', ['switches', 'optimizations']],
-  ['Record and test', ['recorder', 'recorder-reports', 'tests-sweep', 'tests-bench', 'probes']],
+  ['CPU e memória', ['consumers', 'code', 'coverage']],
+  ['Controles', ['switches', 'optimizations']],
+  ['Gravar e testar', ['recorder', 'recorder-reports', 'tests-sweep', 'tests-bench', 'probes']],
 ];
 
 /** Where each meter leads when clicked: the tab and what it is asked to show. */
@@ -42,7 +42,7 @@ const METER_TARGET: Readonly<Record<UsageReading['id'], readonly [string, Readon
   gpu: ['gpu', {}],
   ram: ['consumers', { category: 'RAM' }],
   vram: ['gpu-objects', {}],
-  disk: ['consumers', { category: 'Disk' }],
+  disk: ['consumers', { category: 'Disco' }],
   fps: ['overview', {}],
   draws: ['gpu-frame', {}],
 };
@@ -76,7 +76,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
   const panel = document.createElement('aside');
   panel.className = 'lab-panel';
   panel.hidden = true;
-  panel.setAttribute('aria-label', 'Debugging lab');
+  panel.setAttribute('aria-label', 'Laboratório de depuração');
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] => {
     const e = document.createElement(tag);
     if (className) e.className = className;
@@ -98,7 +98,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
   // ---- the head: title, meters, the window's buttons
   const head = el('header', 'lab-head');
   const title = el('strong', 'lab-title');
-  title.append(icon('flask', 16), el('span', '', 'Lab'));
+  title.append(icon('flask', 16), el('span', '', 'Laboratório'));
   const meters = el('div', 'lab-meters');
   const tools = el('div', 'lab-tools');
   const modeButtons = new Map<Mode, HTMLButtonElement>();
@@ -107,10 +107,10 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
     modeButtons.set(mode, b);
     tools.appendChild(b);
   }
-  const seeThrough = button('eye', '', 'See-through: show the game behind', () => { kept.see = !kept.see; save(); place(); }, 'lab-icon-button');
-  const smaller = button('minus', '', 'Smaller text', () => { kept.font = Math.max(10, kept.font - 1); save(); place(); }, 'lab-icon-button');
-  const larger = button('plus', '', 'Larger text', () => { kept.font = Math.min(18, kept.font + 1); save(); place(); }, 'lab-icon-button');
-  const close = button('close', '', 'Close (Esc, F7)', () => { win.close(); }, 'lab-icon-button lab-close');
+  const seeThrough = button('eye', '', 'Transparente: ver o jogo atrás', () => { kept.see = !kept.see; save(); place(); }, 'lab-icon-button');
+  const smaller = button('minus', '', 'Letra menor', () => { kept.font = Math.max(10, kept.font - 1); save(); place(); }, 'lab-icon-button');
+  const larger = button('plus', '', 'Letra maior', () => { kept.font = Math.min(18, kept.font + 1); save(); place(); }, 'lab-icon-button');
+  const close = button('close', '', 'Fechar (Esc, F7)', () => { win.close(); }, 'lab-icon-button lab-close');
   tools.append(seeThrough, smaller, larger, close);
   head.append(title, meters, tools);
 
@@ -128,9 +128,9 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
   });
   const status = el('footer', 'lab-status');
   const statusText = el('span', 'lab-status-text');
-  const copyState = button('copy', 'Copy state', 'Copy the lab\'s full state (every section of the report) to the clipboard as JSON', () => {
+  const copyState = button('copy', 'Copiar estado', 'Copiar para a área de transferência o estado completo do laboratório (todas as seções do relatório) em JSON', () => {
     const state = { at: new Date().toISOString(), usage: usage.readings(), settings: ctx.effects.snapshot(), sections: ctx.collectReport(), events: ctx.events().slice(-200) };
-    void navigator.clipboard.writeText(JSON.stringify(state, null, 1)).then(() => { statusText.textContent = 'State copied.'; },
+    void navigator.clipboard.writeText(JSON.stringify(state, null, 1)).then(() => { statusText.textContent = 'Estado copiado.'; },
       (error: unknown) => console.warn('lab: state not copied', error));
   });
   status.append(statusText, copyState);
@@ -194,7 +194,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
     const g = groupOf(tab.id);
     if (g !== lastGroup) {
       lastGroup = g;
-      tabBar.appendChild(el('div', 'lab-tab-group', GROUPS[g]?.[0] ?? 'Other'));
+      tabBar.appendChild(el('div', 'lab-tab-group', GROUPS[g]?.[0] ?? 'Outros'));
     }
     const b = button(tabIcon(tab.id), tab.title, `${tab.title}${i < 9 ? ` (Alt+${i + 1})` : ''}`, () => show(tab.id), 'lab-tab');
     b.setAttribute('role', 'tab');
@@ -215,7 +215,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
         tab.mount(body);
       } catch (error) {
         console.error(`lab tab ${tab.id} failed to mount`, error);
-        body.replaceChildren(el('p', 'lab-bad', `The tab failed to open: ${String(error)}`));
+        body.replaceChildren(el('p', 'lab-bad', `A aba falhou ao abrir: ${String(error)}`));
       }
       tabButtons.get(tab.id)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       try { window.localStorage.setItem('roadcraft.lab.tab', tab.id); } catch (error) { console.warn('lab tab not kept', error); }
@@ -317,9 +317,9 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
     const last = events[events.length - 1];
     const recording = (window as unknown as { __labRecorder?: { recording?: boolean } }).__labRecorder?.recording === true;
     statusText.replaceChildren(
-      ...(recording ? [el('span', 'lab-rec', '● recording')] : []),
-      el('span', 'lab-muted', `${events.length} events`),
-      ...(last ? [el('span', '', `last: ${last.detail}`)] : []),
+      ...(recording ? [el('span', 'lab-rec', '● gravando')] : []),
+      el('span', 'lab-muted', `${events.length} eventos`),
+      ...(last ? [el('span', '', `último: ${last.detail}`)] : []),
     );
     if (kept.mode === 'mini') return;
     try {
@@ -347,7 +347,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
       show(id ?? current?.id ?? keptTab ?? tabs[0]?.id ?? '', params);
       timer ??= window.setInterval(tick, LAB_REFRESH_MS);
       tick();
-      if (!wasOpen) ctx.emit('lab.open', 'lab opened');
+      if (!wasOpen) ctx.emit('lab.open', 'laboratório aberto');
     },
     close() {
       if (panel.hidden) return false;

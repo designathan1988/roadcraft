@@ -329,6 +329,23 @@ export const MASS_GRID = 4;
 export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
   [c.position, c.normal, c.color, c.facade, c.grid, c.seed, c.index, c.bounds].map((a) => a.buffer as ArrayBuffer);
 
+/** Numbers a box of a box level is drawn from (`massBoxes.ts`): centre x, y, half sides, turn; wall's foot, top, floor; wall rgb, bay; roof rgb, storey; glass share, seed. */
+export const BOX_INSTANCE = 18;
+
+/** A BOX LEVEL'S BUILDINGS AS INSTANCES OF ONE BOX (`farTiles.ts` levels 2 and up): `BOX_INSTANCE` numbers a box in place of its 20 vertices and 30 indices. */
+export interface BoxMass {
+  readonly boxes: Float32Array;
+  readonly bounds: Bounds;
+  readonly top: number;
+  readonly error: number;
+}
+
+/** A far level's masses: a mesh's arrays, or boxes to instance. */
+export type FarMass = CellMass | BoxMass;
+export const isBoxMass = (m: FarMass): m is BoxMass => 'boxes' in m;
+/** Every buffer of a far level's masses: handed over, not copied. */
+export const farMassBuffers = (m: FarMass): ArrayBuffer[] => (isBoxMass(m) ? [m.boxes.buffer as ArrayBuffer, m.bounds.buffer as ArrayBuffer] : cellMassBuffers(m));
+
 /** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
 export function cellBytes(arrays: CellArrays): number {
   let bytes = 0;

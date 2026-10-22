@@ -113,7 +113,7 @@ export function createPicker(state: InspectorState, selected: (selection: Select
       const title = document.createElement('strong');
       title.textContent = `${o.type} "${o.name || '—'}"`;
       const sub = document.createElement('span');
-      sub.textContent = `${s.entity ? `${entityLabel(s.entity)} · ` : ''}${s.instanceId !== null ? `instance ${s.instanceId} · ` : ''}${s.batchId !== null ? `batch ${s.batchId} · ` : ''}${s.exact ? 'triangles' : 'by box'} · ${s.hits.length} under the cursor`;
+      sub.textContent = `${s.entity ? `${entityLabel(s.entity)} · ` : ''}${s.instanceId !== null ? `instância ${s.instanceId} · ` : ''}${s.batchId !== null ? `lote ${s.batchId} · ` : ''}${s.exact ? 'triângulos' : 'pela caixa'} · ${s.hits.length} sob o cursor`;
       tip.append(title, sub);
       tip.style.left = `${Math.min(window.innerWidth - 260, at.cx + 14)}px`;
       tip.style.top = `${Math.min(window.innerHeight - 50, at.cy + 16)}px`;
@@ -140,7 +140,7 @@ export function createPicker(state: InspectorState, selected: (selection: Select
     const p = local(me);
     try {
       const s = selectionAt(ctx, p.x, p.y);
-      ctx.emit('inspector.pick', `picked: ${s.object ? `${s.object.type} "${s.object.name}"` : 'nothing'}${s.entity ? ` · ${entityLabel(s.entity)}` : ''}`);
+      ctx.emit('inspector.pick', `escolhido: ${s.object ? `${s.object.type} "${s.object.name}"` : 'nada'}${s.entity ? ` · ${entityLabel(s.entity)}` : ''}`);
       selected(s);
     } catch (error) {
       console.error('lab inspector: pick failed', error);
@@ -166,7 +166,7 @@ export function createPicker(state: InspectorState, selected: (selection: Select
       document.body.appendChild(tip);
       const game = document.getElementById('game');
       if (game) { cursorWas = game.style.cursor; game.style.cursor = 'crosshair'; }
-      ctx.emit('inspector.pickMode', 'picker on');
+      ctx.emit('inspector.pickMode', 'seletor ligado');
       for (const l of listeners) l(true);
     },
     stop() {
@@ -182,7 +182,7 @@ export function createPicker(state: InspectorState, selected: (selection: Select
       hover.show(null, null, null);
       const game = document.getElementById('game');
       if (game) game.style.cursor = cursorWas;
-      ctx.emit('inspector.pickMode', 'picker off');
+      ctx.emit('inspector.pickMode', 'seletor desligado');
       for (const l of listeners) l(false);
     },
     onChange(listener) { listeners.push(listener); },

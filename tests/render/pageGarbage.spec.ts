@@ -10,7 +10,7 @@ import { m } from '@world/units';
 import { TILE } from '@world/tiles';
 import { createTransit } from '@render/transit';
 import { createDensityCars } from '@render/densityCars';
-import { ML, MESO_PRESENT, MesoDeltaBuilder, type MesoDelta } from '@sim/meso/memory';
+import { MC, ML, MESO_PRESENT, MESO_RECORD, MesoMemory } from '@sim/meso/memory';
 import { linkId } from '@sim/meso/tileLinks';
 
 /** The garbage a frame leaves on the page while the camera moves (V8's sampling heap profiler): the vehicles, the trains and the far cars draw into buffers kept from frame to frame */
@@ -56,34 +56,26 @@ describe("the page's garbage a frame", () => {
     const transit = createTransit();
     const trains = [{ colour: '#c0392b', metro: false, cars: Array.from({ length: 6 }, (_, i) => ({ x: m(100) + i * m(20), y: m(50), heading: 0 })) }];
     const density = createDensityCars(() => 0);
-    // The worker's deltas, made before the frames (they are the worker's garbage, not the page's): the 40 roads' counts moving each step.
-    const deltas: MesoDelta[] = [];
-    const out = new MesoDeltaBuilder();
-    for (let d = 0; d < 4; d++) {
-      for (let s = 0; s < 40; s++) {
-        const at = out.push(s, linkId(s + 1, 0)), r = out.recordsNow;
-        r[at + ML.count] = 5 + (d % 3); r[at + ML.queued] = 1; r[at + ML.speed] = m(10); r[at + ML.length] = m(200); r[at + ML.lanes] = 1; r[at + ML.flags] = MESO_PRESENT;
-        const x = (s % 8 + 0.5) * TILE, y = (Math.floor(s / 8) + 0.5) * TILE;
-        r[at + ML.ax] = x - m(100); r[at + ML.ay] = y; r[at + ML.mx] = x; r[at + ML.my] = y; r[at + ML.bx] = x + m(100); r[at + ML.by] = y; r[at + ML.shape] = d === 0 ? 1 : 0;
-      }
-      out.end(40, 0, 0, 0, 0);
-      deltas.push(out.take()!);
-    }
-    let queue: MesoDelta[] = [], spare: MesoDelta[] = [];
-    const sim = {
-      window: () => {},
-      takeMeso: () => { const q = queue; spare.length = 0; queue = spare; spare = q; return q; },
-      clock: { time: 0 },
-    } as unknown as SimClient;
+    let buffer: SharedArrayBuffer | null = null;
+    const sim = { window: (_x: number, _y: number, _r: number, b: SharedArrayBuffer) => { buffer = b; }, clock: { time: 0 } } as unknown as SimClient;
     density.update(net, sim, 0, 0);
-    queue.push(deltas[0]!);
+    const memory = new MesoMemory(buffer!);
+    for (let s = 0; s < 40; s++) {
+      const r = s * MESO_RECORD, recs = memory.links;
+      memory.ids[s] = linkId(s + 1, 0);
+      recs[r + ML.count] = 5; recs[r + ML.queued] = 1; recs[r + ML.speed] = m(10); recs[r + ML.lanes] = 1; recs[r + ML.flags] = MESO_PRESENT;
+      const x = (s % 8 + 0.5) * TILE, y = (Math.floor(s / 8) + 0.5) * TILE;
+      recs[r + ML.ax] = x - m(100); recs[r + ML.ay] = y; recs[r + ML.mx] = x; recs[r + ML.my] = y; recs[r + ML.bx] = x + m(100); recs[r + ML.by] = y; recs[r + ML.shape] = 1;
+    }
+    Atomics.store(memory.control, MC.wanted, 40);
     let serial = 1;
     let pos = 0;
     const frame = (): void => {
       pos += m(2);
       for (const car of traffic) { car.frames.bx = car.frames.x; car.frames.x += m(0.3); }
       for (const car of trains[0]!.cars) car.x += m(0.5);
-      queue.push(deltas[1 + (serial++ % 3)]!);
+      for (let s = 0; s < 40; s++) memory.links[s * MESO_RECORD + ML.count] = 5 + (serial % 3);
+      Atomics.store(memory.control, MC.serial, ++serial);
       agents.sync(world, net, 0.5, true, 6, { vehicleVisible: () => true, vehicleBox: { x0: pos - m(800), y0: -m(800), x1: pos + m(800), y1: m(800) }, screenScale: () => 6, eye: new Vector3(pos, m(200), 0) });
       transit.update(trains as never, () => 0);
       density.update(net, sim, pos, 0);

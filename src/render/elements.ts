@@ -20,6 +20,7 @@ import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
 import { KEEP_CELL, keepCellKey } from './candidateKeep';
 import { keepCellAt, keepCellRect } from './cellKeeps';
+import type { ActiveTiles } from './activeTiles';
 import { createInstanceRuns, leastPixel, RunBuilder, type Run, type RunStore } from './instanceRuns';
 import type { Exhaust, PuffKind } from './exhaust';
 import URLS from 'virtual:model-urls/elements?ext=gltf,bin,png';
@@ -241,10 +242,29 @@ export interface ElementLayer {
   /** Gives off the effects' particles near the camera (three's x, y, z), `dt` seconds on. */
   emit(dt: number, eye: Vector3, exhaust: Exhaust): void;
   readonly hasEffects: boolean;
+  /** Where each prop kind's variants are drawn among the layer's stores (`ElementLayout`): what a tile's bake builds its run in. */
+  readonly layout: ElementLayout;
+  /** The streamed world: the elements are the tiles' (`elementTiles.ts`, `put`), the page's own taken away and none made by `sync`; off, every cell made again by the next whole `sync`. */
+  setTiled(tiled: boolean): void;
+  /** A tile's bake drawn (`bakeElements`), its effects giving off; taken away by `take` with the same bake. */
+  put(bake: ElementBake): void;
+  take(bake: ElementBake): void;
   dispose(): void;
 }
 
-/** Elements put in a run of the layer's stores (`storesOf`), each on the ground at its point, turned and sized, tinted by its seed; the effects pushed to `fires`. */
+/** Each prop kind's variants as the stores of their parts, and how many stores (`createElementLayer`). */
+export interface ElementLayout {
+  readonly kinds: readonly (readonly [ElementKind, readonly (readonly number[])[]])[];
+  readonly stores: number;
+}
+
+/** A tile's elements as a bake hands them (`elementTiles.ts`): its props in one run, its effects with the ground under each. */
+export interface ElementBake {
+  readonly run: Run | null;
+  readonly effects: readonly { readonly item: ElementItem; readonly z: number }[];
+}
+
+/** Elements put in a run of the layer's stores (`layout`), each on the ground at its point, turned and sized, tinted by its seed; the effects pushed to `fires`. */
 function elementsInto(builder: RunBuilder, storesOf: ReadonlyMap<ElementKind, readonly (readonly number[])[]>, items: readonly ElementItem[],
   groundAt: (x: number, y: number) => number, fires: { readonly item: ElementItem; readonly z: number }[]): void {
   const tint = { r: 1, g: 1, b: 1 };
@@ -261,6 +281,15 @@ function elementsInto(builder: RunBuilder, storesOf: ReadonlyMap<ElementKind, re
   }
 }
 
+/** THE ELEMENTS OF A TILE BAKED, IN A WORKER: its props in one run of the layer's stores, its effects, each on the ground as drawn (`elementsInto`, the page's own); none: null */
+export function bakeElements(items: readonly ElementItem[], groundAt: (x: number, y: number) => number, layout: ElementLayout): ElementBake | null {
+  const builder = new RunBuilder(Array.from({ length: layout.stores }, () => ({ tinted: true })));
+  const effects: { item: ElementItem; z: number }[] = [];
+  elementsInto(builder, new Map(layout.kinds), items, groundAt, effects);
+  const run = builder.build();
+  return run.size || effects.length ? { run: run.size ? run : null, effects } : null;
+}
+
 /** The props that throw a shadow worth its pass. */
 const CASTS: ReadonlySet<ElementKind> = new Set<ElementKind>(['stones', 'pebbles', 'scrub', 'fern', 'tallGrass']);
 /** How far off the view a prop still throws a shadow into it. */
@@ -269,10 +298,11 @@ const ELEMENT_SHADOW_REACH = m(8);
 /** An effect giving off its particles: where it stands, and the particles owed since the last frame. */
 interface Emitter { readonly item: ElementItem; readonly z: number; owed: number }
 
-/** @rebuild Every element of the map by the cell it stands in, and every cell drawn before: a map opened or replaced whole. */
-function allByCell(source: ElementSource, before: Iterable<number>): Map<number, ElementItem[]> {
+/** @rebuild Every element of the map by the cell it stands in (those `here` says are made here), and every cell drawn before: a map opened or replaced whole. */
+function allByCell(source: ElementSource, before: Iterable<number>, here: (item: ElementItem) => boolean): Map<number, ElementItem[]> {
   const byCell = new Map<number, ElementItem[]>();
   for (const item of source.elements) {
+    if (!here(item)) continue;
     const key = keepCellAt(item.x, item.y);
     const list = byCell.get(key);
     if (list) list.push(item); else byCell.set(key, [item]);
@@ -281,8 +311,10 @@ function allByCell(source: ElementSource, before: Iterable<number>): Map<number,
   return byCell;
 }
 
-/** DO NOT build every element of the map again when one is laid: the elements kept cell by cell, instanced per kind */
-export function createElementLayer(kit: ElementKit): ElementLayer {
+/** DO NOT build every element of the map again when one is laid: the elements kept cell by cell, instanced per kind; `active`, the streamed world's active tiles, the only ones whose elements are made here (`activeTiles.ts`; none, every element) */
+export function createElementLayer(kit: ElementKit, active?: ActiveTiles): ElementLayer {
+  /** An element of the kept ring round the active tiles is the far levels' (`activeTiles.ts`): not made here. */
+  const here = (item: ElementItem): boolean => !active || active.has(item.x, item.y);
   const stores: RunStore[] = [];
   /** Each prop kind's variants, as the stores of their parts. */
   const storesOf = new Map<ElementKind, number[][]>();
@@ -306,6 +338,10 @@ export function createElementLayer(kit: ElementKit): ElementLayer {
     elementsInto(builder, storesOf, items, groundAt, fires);
     return { run: builder.build(), fires: fires.map((f) => ({ ...f, owed: 0 })) };
   };
+  const layout: ElementLayout = { kinds: [...storesOf], stores: stores.length };
+  /** The tiles' bakes drawn (`put`), each with its effects as emitters. */
+  const tiles = new Map<ElementBake, Emitter[]>();
+  let tiled = false;
   /** An effect giving off near the eye. */
   const give = (e: Emitter, dt: number, eye: Vector3, exhaust: Exhaust): void => {
     const { item } = e;
@@ -321,9 +357,10 @@ export function createElementLayer(kit: ElementKit): ElementLayer {
     group: runs.group,
     get hasEffects() { return effects > 0; },
     sync(cells, source, groundAt) {
-      const byCell = cells === null ? allByCell(source, [...drawn.keys(), ...emitters.keys()]) : new Map<number, ElementItem[]>();
+      if (tiled) return false;
+      const byCell = cells === null ? allByCell(source, [...drawn.keys(), ...emitters.keys()], here) : new Map<number, ElementItem[]>();
       // A cell's elements from the document's filing by place (`RoadDoc.elementsIn`), each in the cell its point falls in.
-      for (const key of cells ?? []) byCell.set(key, source.elementsIn(keepCellRect(key)).filter((e) => keepCellAt(e.x, e.y) === key));
+      for (const key of cells ?? []) byCell.set(key, source.elementsIn(keepCellRect(key)).filter((e) => keepCellAt(e.x, e.y) === key && here(e)));
       const removed: Run[] = [], added: Run[] = [];
       for (const [key, items] of byCell) {
         const was = drawn.get(key);
@@ -346,11 +383,39 @@ export function createElementLayer(kit: ElementKit): ElementLayer {
       const i0 = Math.floor((eye.x - EFFECT_REACH) / KEEP_CELL), i1 = Math.floor((eye.x + EFFECT_REACH) / KEEP_CELL);
       const j0 = Math.floor((-eye.z - EFFECT_REACH) / KEEP_CELL), j1 = Math.floor((-eye.z + EFFECT_REACH) / KEEP_CELL);
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (const e of emitters.get(keepCellKey(i, j)) ?? []) give(e, dt, eye, exhaust);
+      // A tile's effects: the tiles drawn are those round the view, a handful of effects each.
+      for (const list of tiles.values()) for (const e of list) give(e, dt, eye, exhaust);
+    },
+    layout,
+    setTiled(on) {
+      if (on === tiled) return;
+      tiled = on;
+      if (!on) return;
+      // The page's own cells taken away: the tiles' are drawn from now on.
+      if (drawn.size) runs.update({ removed: [...drawn.values()], added: [] });
+      for (const list of emitters.values()) effects -= list.length;
+      drawn.clear();
+      emitters.clear();
+    },
+    put(bake) {
+      if (tiles.has(bake)) return;
+      const fires = bake.effects.map((f) => ({ ...f, owed: 0 }));
+      tiles.set(bake, fires);
+      effects += fires.length;
+      if (bake.run) runs.update({ removed: [], added: [bake.run] });
+    },
+    take(bake) {
+      const fires = tiles.get(bake);
+      if (!fires) return;
+      tiles.delete(bake);
+      effects -= fires.length;
+      if (bake.run) runs.update({ removed: [bake.run], added: [] });
     },
     dispose() {
       runs.dispose();
       drawn.clear();
       emitters.clear();
+      tiles.clear();
       effects = 0;
     },
   };

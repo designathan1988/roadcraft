@@ -2,13 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { QualityGovernor, type QualityLevel } from '@render/quality';
 
-const BUDGET = 1000 / 60;
-
-/** Feeds `seconds` of 60 Hz frames, each costing `cost(tier)` ms of the GPU; returns every tier change, applied as the game applies them. */
-function run(governor: QualityGovernor, seconds: number, cost: (tier: QualityLevel) => number): QualityLevel[] {
+/** Feeds `seconds` of frames of one length and cost; returns every tier change. */
+function run(governor: QualityGovernor, seconds: number, frame: number, costMs: number): QualityLevel[] {
   const changes: QualityLevel[] = [];
-  for (let t = 0; t < seconds; t += 1 / 60) {
-    const next = governor.sample(1 / 60, cost(governor.current), BUDGET);
+  for (let t = 0; t < seconds; t += frame) {
+    const next = governor.sample(frame, costMs);
     if (next) {
       governor.set(next);
       changes.push(next);
@@ -18,48 +16,47 @@ function run(governor: QualityGovernor, seconds: number, cost: (tier: QualityLev
 }
 
 describe('the automatic quality governor', () => {
-  it('drops a tier when the p90 of two windows misses the frame', () => {
+  it('drops a tier when frames are slow', () => {
     const governor = new QualityGovernor('high');
-    expect(run(governor, 6, () => 22)[0]).toBe('medium');
+    expect(run(governor, 6, 1 / 25, 30)[0]).toBe('medium');
   });
 
-  it('does not move for one slow window (a road built, a city opened)', () => {
+  it('climbs back once the display is kept up with and the frames are cheap', () => {
+    // It used to need a median frame under 9 ms to climb, which a 60 Hz display never reports
     const governor = new QualityGovernor('high');
-    let frame = 0;
-    expect(run(governor, 20, () => (frame++ >= 60 && frame < 150 ? 40 : 12))).toEqual([]);
-  });
-
-  it('does not move on a few slow frames: the p90, not the worst', () => {
-    const governor = new QualityGovernor('high');
-    let frame = 0;
-    expect(run(governor, 30, () => (frame++ % 20 === 0 ? 40 : 12))).toEqual([]);
-  });
-
-  it('climbs back to its ceiling once the frames have room', () => {
-    const governor = new QualityGovernor('high');
-    run(governor, 12, () => 40);
+    run(governor, 12, 1 / 20, 40);
     expect(governor.current).toBe('low');
-    run(governor, 40, () => 4);
+    run(governor, 30, 1 / 60, 3);
     expect(governor.current).toBe('high');
   });
 
-  it('never climbs above the tier the hardware was given', () => {
+  it('never climbs above the tier it started on', () => {
     const governor = new QualityGovernor('high');
-    expect(run(governor, 30, () => 1)).toEqual([]);
+    expect(run(governor, 30, 1 / 60, 1)).toEqual([]);
+    expect(governor.current).toBe('high');
   });
 
-  it('holds between the marks: neither down nor up (the hysteresis)', () => {
+  it('does not climb while the frames are expensive, even at 60 fps', () => {
     const governor = new QualityGovernor('medium', 'high');
-    expect(run(governor, 60, () => 13)).toEqual([]);
+    expect(run(governor, 30, 1 / 60, 12)).toEqual([]);
   });
 
-  it('stops trying a tier the machine could not hold, longer each time', () => {
+  it('stops trying a tier the machine could not hold', () => {
     const governor = new QualityGovernor('medium', 'high');
-    const cost = (tier: QualityLevel): number => (tier === 'high' ? 25 : 5);
-    // Raised at ~7 s, undone at ~11 s, then held 90 s.
-    expect(run(governor, 95, cost)).toEqual(['high', 'medium']);
-    // Tried again once the hold ran out, undone again, and now held 180 s.
-    expect(run(governor, 100, cost)).toEqual(['high', 'medium']);
-    expect(run(governor, 80, cost)).toEqual([]);
+    // Climbs, then the higher tier is slow at once: back down, and it holds.
+    let tier: QualityLevel = governor.current;
+    const history: QualityLevel[] = [];
+    for (let t = 0; t < 60; t += 1 / 60) {
+      const slow = tier === 'high';
+      const next = governor.sample(slow ? 1 / 25 : 1 / 60, slow ? 30 : 3);
+      if (next) {
+        governor.set(next);
+        tier = next;
+        history.push(next);
+      }
+    }
+    expect(history.slice(0, 2)).toEqual(['high', 'medium']);
+    // No second attempt within the hold.
+    expect(history.length).toBe(2);
   });
 });

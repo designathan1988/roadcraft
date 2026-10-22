@@ -19,6 +19,9 @@ export interface PlantCells {
   cull(frustum: Frustum, view: Matrix4): void;
   /** The map zoom: the leaf cards left out (`InstanceRuns.setMap`). */
   setMap(map: boolean): void;
+  /** A run made elsewhere (a tile's, baked in a worker: `plantedTiles.ts`) drawn with the cells' own; taken away by `take` with the same run. */
+  put(run: Run): void;
+  take(run: Run): void;
   dispose(): void;
 }
 
@@ -59,6 +62,8 @@ function plantLayer(name: string, stores: readonly RunStore[], format: PoseForma
     },
     cull(frustum, view) { runs.cull(frustum, view); },
     setMap(map) { runs.setMap(map); },
+    put(run) { runs.update({ removed: [], added: [run] }); },
+    take(run) { runs.update({ removed: [run], added: [] }); },
     dispose() { runs.dispose(); drawn.clear(); },
   };
 }
@@ -155,7 +160,15 @@ export interface CoverLayout {
   readonly trees: Readonly<Record<(typeof FOREST_SPECIES)[number], readonly number[]>>;
 }
 
-/** Stones, scrub and card trees put in a run of a cover layer's stores: posed by their stance, tinted by their kind (a stone by its rock), the model picked by the seed. */
+/** The layout of a cover layer of these many models (`createCoverCells` lays its stores in this order): what a tile's bake builds its runs in (`coverTiles.ts`). */
+export function coverLayout(rocks: number, scrub: number, trees: Readonly<Record<(typeof FOREST_SPECIES)[number], number>>): { readonly layout: CoverLayout; readonly stores: number } {
+  let next = 0;
+  const take = (n: number): number[] => Array.from({ length: n }, () => next++);
+  const layout: CoverLayout = { rocks: take(rocks), scrub: take(scrub), trees: Object.fromEntries(FOREST_SPECIES.map((species) => [species, take(trees[species])])) as unknown as CoverLayout['trees'] };
+  return { layout, stores: next };
+}
+
+/** Stones, scrub and card trees put in a run of a cover layer's stores: posed by their stance, tinted by their kind (a stone by its rock), the model picked by the seed; the page's cells and a tile's bake alike. */
 export function coverInto(builder: RunBuilder, layout: CoverLayout, rocks: readonly CoverPlacement[], scrub: readonly CoverPlacement[], trees: readonly TreePlacement[]): void {
   const pose = new Float32Array(COVER_POSE.stride), colour = new Color(), tint = { r: 1, g: 1, b: 1 };
   const put = (store: number, item: CoverPlacement, stance: (typeof COVER_STANCE)[keyof typeof COVER_STANCE], paint: (item: CoverPlacement, out: Color) => Color): void => {

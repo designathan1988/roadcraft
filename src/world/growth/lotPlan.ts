@@ -1,7 +1,7 @@
 import type { Rng } from '@core/rng';
 import type { BlueprintBody } from '@world/buildings/blueprints';
 import { RETAINING_STONE, mat } from '@world/buildings/cityBuildings';
-import { FOLLOWS_GROUND, elementClash, elementsMeet, isStructure, massSpans, planReach, unsupportedElements } from '@world/buildings/elements';
+import { FOLLOWS_GROUND, elementClash, elementsMeet, isStructure, planReach, unsupportedElements } from '@world/buildings/elements';
 import type { MaterialSpec } from '@world/buildings/materials';
 import type { MadeBuilding, Rect } from '@world/buildings/procedural';
 import { type Building, type BuildingElement, type ElementKind, type LotSurface, MAX_ELEMENTS, MAX_TERRACE, type Side, type Volume, componentAt } from '@world/buildings/types';
@@ -266,8 +266,6 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   /** The x spans kept clear in front of the people's gates (`put`), filled once the door is known. */
   const gateWays: { x0: number; x1: number }[] = [];
   const probe = (): Building => ({ ...body, id: 0, x: 0, y: 0, rotation: 0 } as Building);
-  /** The heights of the building's blocks as `elementClash` reads them (`massSpans`), worked out once: the plan lays lots and moves only them (`lift`), never a block's floors, and the blocks it adds are lots (`elementClash` reads a block past these afresh). DO NOT work them out again for every part a lot tries: a hundred a building. */
-  const spans = massSpans(body as unknown as Building);
   /** The part every candidate is written into (`fits`): never laid, never kept. */
   const candidate: { id: number; kind: ElementKind; x: number; y: number; facing: Side; w: number; d: number; z: number; h: number; material: MaterialSpec | undefined } =
     { id: 0, kind: 'shrub', x: 0, y: 0, facing: 0, w: 0, d: 0, z: 0, h: 0, material: undefined };
@@ -323,8 +321,8 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       c.id = nextElement; c.kind = kind; c.x = X(x); c.y = Y(y); c.facing = facing; c.w = m(Math.min(w, 40)); c.d = m(d); c.z = m(z); c.h = m(h); c.material = material;
       // Read as a part: an absent material and an undefined one read alike (`isStructure`, `elementsMeet`).
       const el = c as unknown as BuildingElement;
-      // What `elementClash` reads of the building (its blocks and storeys) is the body's own; its blocks' heights read once (`spans`).
-      if (elementClash(body as unknown as Building, el, spans)) return false;
+      // What `elementClash` reads of the building (its blocks and storeys) is the body's own.
+      if (elementClash(body as unknown as Building, el)) return false;
       // Nothing solid in another's footprint
       if (laying || isStructure(el)) return true;
       // Its reach worked out here, not kept: the candidate is written again for the next.

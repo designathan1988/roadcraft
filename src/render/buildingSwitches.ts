@@ -8,6 +8,7 @@ import type { BuildingChoices, BuildingSwitch, EffectSwitches, FrameHider } from
 
 const ROOT_SWITCH: Readonly<Record<BuildingRoot, BuildingSwitch>> = {
   masses: 'bMasses',
+  farTiles: 'bFarTiles',
   facades: 'bFacadeLevel',
   cells: 'bDetail',
   parts: 'bParts',

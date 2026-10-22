@@ -5,7 +5,7 @@ import { JAM_SPACING, MesoModel, WAVE_SPEED, laneCapacity } from '@sim/meso/mode
 import { ObjectModel } from './support/objectModel';
 
 /** The model's public face, as both the tables by slot and the object model have it. */
-type Model = Omit<MesoModel, 'bytes' | 'setRates' | 'flowInto' | 'stepping' | 'stepSome'>;
+type Model = Omit<MesoModel, 'bytes' | 'setRates' | 'flowInto'>;
 
 /** THE MESO MODEL (Link Transmission Model, equal-priority node model): vehicles kept, capacities respected, queues spilling back */
 
