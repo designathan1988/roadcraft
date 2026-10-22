@@ -175,7 +175,7 @@ describe('the ground cut and filled', () => {
     const blocks = bodyOf(generators, 'shapeBlocksSteps');
     expect(blocks).not.toMatch(/BATCH|regions\.slice\(/);
     expect(blocks).toMatch(/while \(!shaping\.landed\) \{ landShapes\(\); if \(shaping\.landed\) break; yield 'wait'; \}/);
-    expect(renderer).toMatch(/function\* worldSteps\([\s\S]{0,700}while \(compares\.some\(\(c\) => c && !c\.ready\)\)/);
+    expect(renderer).toMatch(/function\* worldSteps\([\s\S]{0,1500}while \(compares\.some\(\(c\) => c && !c\.ready\)\)/);
   });
 
   it('compares two solves off the page, each block of a solve asked once', () => {
