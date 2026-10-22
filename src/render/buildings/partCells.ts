@@ -1,5 +1,6 @@
 import { Box3, type BufferGeometry, Group, InstancedInterleavedBuffer, InstancedMesh, InterleavedBufferAttribute, type InstancedBufferAttribute, type Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnlyAttributes } from '../mesh/gpuOnly';
+import { gateUntilBuilt } from '../uploads';
 import { FINISH_ATTRIBUTE } from './cellArrays';
 import { GROUND_ATTRIBUTE, LOOK_FLOATS, SHELL_PARTS, shellPartError } from './shellParts';
 import type { Axes, BuildingKit, PartKind, PartScreen } from './kit';
@@ -70,6 +71,11 @@ interface Band {
   width: number;
   /** Its widest piece, NaN until first read (`choose`): its pieces and scales never change, so worked out once (PRD-30). */
   widest: number;
+  /** What the band casts: every instance of it, at the level each cascade's texel asks (`castInto`), drawn into the cascades alone; null until
+   *  first asked. */
+  caster: InstancedMesh | null;
+  /** The level each cascade's texel asks of the band (`shadowLevel`), by texel. */
+  readonly castLevels: Map<number, number>;
 }
 
 /** The largest of three lengths scaled. */
@@ -126,6 +132,7 @@ export class PartCell {
         poses: new InstancedInterleavedBuffer(f.poses, POSE_FLOATS), colours: f.colours ? Object.assign(new InstancedInterleavedBuffer(f.colours, 3), { isFloat16BufferAttribute: true }) : null,
         looks: f.looks ? new InstancedInterleavedBuffer(f.looks, LOOK_FLOATS) : null,
         meshes: new Map(), drawn: new Map(), unseen: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0, widest: Number.NaN,
+        caster: null, castLevels: new Map(),
       };
       own[`${f.kind}-${this.bands.length}-poses`] = band.poses;
       if (band.colours) own[`${f.kind}-${this.bands.length}-colours`] = band.colours;
@@ -181,14 +188,15 @@ export class PartCell {
         }
         // A run's posed copy of its level: a shell's part too, now that it has a coarse level (`kit.ts`).
         mesh.geometry = this.posedLevel(band, mesh, level);
-        // A card casts nothing: its bars are under the texel where it is drawn, and its face would cast whole (`kit.ts` cards).
-        mesh.castShadow = casts && !band.screen.levels[level]!.card;
-        // Drawn into a cascade only where its widest piece spans the texel (`castInto`): its changes nowhere coarser (`ChangeBox.reach`).
-        mesh.userData['castReach'] = band.width;
+        // The runs cast nothing: the band's caster does (`castInto`), at the cascade's level, whatever the camera chose here.
+        mesh.castShadow = false;
         mesh.visible = visible;
         band.drawn.set(key, level);
       }
     }
+    // A band drawn casts by a caster of its own (`castInto`), made here, outside the shadow passes. DO NOT make it with the cell: every cell's
+    // casters went through the door with it, the district's frames p95 13 -> 93 ms (`npm run diagnose`, 2026-10-22); nor in a cascade's pass.
+    for (const band of this.bands) if (!band.caster && band.drawn.size > 0 && this.kit.castsShadow.has(band.kind)) this.makeCaster(band);
     if (this.tick % 60 === 0) this.evictStale();
   }
 
@@ -263,12 +271,88 @@ export class PartCell {
     return kept;
   }
 
-  /** Before a sun cascade is drawn: each band drawn casts into it only where its widest piece spans the cascade's texel. */
-  castInto(texel: number): void {
+  /** Before a sun cascade is drawn: each band casts into it where its widest piece spans the cascade's texel, every instance of it at the
+   *  level that texel asks (`shadowLevel`), by its caster drawn into the cascades alone; `null`, the passes over: the casters hidden, as
+   *  they stand between the passes. DO NOT cast the runs the camera chose: their levels and their runs change as the camera moves, and each
+   *  change was a change of the near cascade's store, drawn whole again at nearly every frame of a flight (`tooBigNear` 295 of 501 passes,
+   *  `npm run diagnose`, 2026-10-22). What the band casts follows the cascade's texel alone. */
+  castInto(texel: number | null): void {
     for (const band of this.bands) {
-      const casts = this.kit.castsShadow.has(band.kind) && band.width >= texel;
-      for (const [key, level] of band.drawn) band.meshes.get(key)!.castShadow = casts && !band.screen.levels[level]!.card;
+      if (!this.kit.castsShadow.has(band.kind) || band.start[LEAVES] === 0) continue;
+      // None yet: the band was never drawn (`choose` makes it then), nothing of it casts.
+      const caster = band.caster;
+      if (!caster) continue;
+      if (texel === null) {
+        // Between the passes: hidden from the colour pass, at its first level, casting (what the casters' signature reads, `renderer.ts`).
+        caster.visible = false;
+        caster.geometry = this.posedLevel(band, caster, 0);
+        caster.castShadow = true;
+        continue;
+      }
+      if (Number.isNaN(band.widest)) band.widest = widestBar(band.screen.pieces, band.scale);
+      const level = band.widest >= texel ? this.shadowLevel(band, texel) : NONE;
+      // A card casts nothing: its face would cast whole (`kit.ts` cards).
+      const casts = level !== NONE && !band.screen.levels[level]!.card && partLook(this.kit, band.kind, this.faded).visible;
+      caster.visible = casts;
+      caster.castShadow = casts;
+      if (casts) caster.geometry = this.posedLevel(band, caster, level);
     }
+  }
+
+  /** The level a cascade of `texel` draws the band at: the finest any of its sub-cells asks there, as a sub-cell's level is chosen for a
+   *  pixel (`levelAt`, a texel standing for the pixel); NONE when each is under its texel. Worked out once a texel. */
+  private shadowLevel(band: Band, texel: number): number {
+    let level = band.castLevels.get(texel);
+    if (level !== undefined) return level;
+    level = NONE;
+    for (let m = 0; m < LEAVES; m++) {
+      if (band.start[m + 1] === band.start[m]) continue;
+      level = Math.min(level, this.levelAt(band, m, 1 / texel, band.screen.levels.length));
+    }
+    // A card's face would cast whole (`kit.ts` cards): the coarsest level of bars before it casts for it.
+    while (level !== NONE && level > 0 && band.screen.levels[level]!.card) level--;
+    if (band.castLevels.size > 8) band.castLevels.clear();
+    band.castLevels.set(texel, level);
+    return level;
+  }
+
+  /** The band's caster: every instance of it, its own bounds, its depth material, drawn into the cascades alone (`castInto`). */
+  private makeCaster(band: Band): InstancedMesh {
+    const look = partLook(this.kit, band.kind, this.faded);
+    const geometry = posedCopy(band.screen.levels[0]!.geometry, band.poses, 0);
+    if (band.looks) {
+      geometry.setAttribute(FINISH_ATTRIBUTE, new InterleavedBufferAttribute(band.looks, 1, 0));
+      geometry.setAttribute('aDecay', new InterleavedBufferAttribute(band.looks, 1, 1));
+      geometry.setAttribute(GROUND_ATTRIBUTE, new InterleavedBufferAttribute(band.looks, 1, 2));
+    }
+    const mesh = new InstancedMesh(geometry, look.material, 0);
+    mesh.userData['posed'] = new Map<number, BufferGeometry>([[0, geometry]]);
+    mesh.userData['first'] = 0;
+    // Drawn in the cascades alone: the casters' signature reads it hidden (`renderer.ts` casterChanges), its changes told where it casts.
+    mesh.userData['shadowOnly'] = true;
+    if (Number.isNaN(band.widest)) band.widest = widestBar(band.screen.pieces, band.scale);
+    mesh.userData['castReach'] = band.widest;
+    mesh.customDepthMaterial = partPoseDepth(look.material);
+    mesh.count = band.start[LEAVES]!;
+    const box = new Box3();
+    for (let m = 0; m < LEAVES; m++) {
+      if (band.start[m + 1] === band.start[m]) continue;
+      const o = m * 6, b = band.box;
+      box.union(new Box3(new Vector3(b[o], b[o + 1], b[o + 2]), new Vector3(b[o + 3], b[o + 4], b[o + 5])));
+    }
+    mesh.boundingBox = box;
+    mesh.boundingSphere = box.getBoundingSphere(new Sphere());
+    mesh.name = `building-${band.kind}-caster`;
+    mesh.receiveShadow = false;
+    mesh.castShadow = true;
+    mesh.visible = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    this.group.add(mesh);
+    // Drawn into no cascade before its programs are built (`uploads.ts`): made after the cell went through the door, it goes through its own.
+    gateUntilBuilt(mesh);
+    band.caster = mesh;
+    return mesh;
   }
 
   /** Every kind drawn faded ("Ocultar outros") or not. */
@@ -324,7 +408,7 @@ export class PartCell {
   dispose(): void {
     // A band's runs go at once: the first mesh disposed takes their shared buffer off the GPU (`WebGLObjects`).
     for (const band of this.bands) {
-      for (const mesh of band.meshes.values()) {
+      for (const mesh of band.caster ? [...band.meshes.values(), band.caster] : band.meshes.values()) {
         // Its posed copies of the kit's levels: their own buffers freed, the kit's kept (`partPose.ts`).
         for (const [level, copy] of mesh.userData['posed'] as Map<number, BufferGeometry>) letGoPosed(copy, band.screen.levels[level]!.geometry);
         mesh.dispose();

@@ -280,8 +280,9 @@ export const HYSTERESIS = 0.15;
 const PICK_SLACK = 1e-4;
 /** Levels an instance was drawn at. */
 const NEAR = 0, FAR = 1, NONE = 2, UNKNOWN = 255;
-/** A slot's `want` with this bit: drawn at its level for the sun's cascades alone, off the frame under them (`keepBox`); the level in the bits under it. */
-const SHADE = 0x80, LEVEL_BITS = 0x7f;
+/** A slot's `want` with this bit: it stands under the near cascade's cover (`keepBox`), where it casts by its near level whatever its
+ *  colour's level (`reconcile`); its colour's level in the bits under it. */
+const COVER = 0x80, LEVEL_BITS = 0x7f;
 
 /** Half the drawing buffer's height, device pixels, as the meshes last drew (`onBeforeRender`): the screen sizes are in it. */
 const screen = { half: 540 };
@@ -375,8 +376,11 @@ interface Level {
   fresh: boolean;
   /** The widest instance it drew at its last cull (radius, world units): what a cascade's texel is measured against (`shadowCasters.ts`). */
   largest: number;
-  /** Positions from 0 drawn in the colour pass; those after them, to `drawn`, only into the sun's cascades (`SHADE`, `castBySize` counts). */
-  colour: number;
+  /** Positions from 0 to here, the level's front: the near level's drawn in the colour pass (those after them cast alone), the far level's
+   *  cast (those after them, under the cover, cast by the near level); `castBySize` counts. */
+  front: number;
+  /** Per slot of the kind: whether it casts from this level now (`reconcile`: a change of it is a change of the shadow). */
+  cast: Uint8Array;
 }
 
 interface MeshState {
@@ -451,7 +455,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       if (!s) continue;
       if (!centre) { centre = s.center.clone(); reach = s.radius; } else reach = Math.max(reach, centre.distanceTo(s.center) + s.radius);
     }
-    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), at: new Int32Array(0), live: false, drawn: 0, entering: new IntList(), changed: new IntList(), fresh: false, largest: 0, colour: 0 });
+    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), at: new Int32Array(0), live: false, drawn: 0, entering: new IntList(), changed: new IntList(), fresh: false, largest: 0, front: 0, cast: new Uint8Array(0) });
     const levels = [level(), level()] as const;
     return {
       index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1, levels,
@@ -613,9 +617,10 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     // not drawn under a pixel, `least`: a bin, a bench, a hydrant) only where it spans `SMALL_CAST_TEXELS`. DO NOT cast a bin a texel or two
     // wide into every cascade: at the district's view the street furniture drew twice its own triangles again into the shadows (bins 0.8 M
     // in the scene, 1.5 M in the cascades, `npm run diagnose`, 2026-10-22) for shadows PCF spreads to nothing.
-    // Drawn in the colour pass to `colour`, into the cascades to `drawn`: what stands off the frame under them casts, and is not drawn there.
+    // Its instances in the colour pass and in the cascades (`Level.front`): the near level casts what it draws and what stands under the
+    // cover; the far level draws all it holds and casts what stands past the cover.
     s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest, texels: castTexelsOf(k),
-      counts: { colour: () => (s.wasDrawn ? b.colour : 0), shadow: () => (s.wasDrawn ? b.drawn : 0) } });
+      counts: { colour: () => colourCount(s), shadow: () => (!s.wasDrawn ? 0 : spec.far ? b.front : b.drawn) } });
     return mesh;
   };
 
@@ -656,10 +661,13 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       if (pack) {
         b.shown.fill(-1);
         b.drawn = 0;
-        b.colour = 0;
+        b.front = 0;
         for (const s of b.meshes) if (s.mesh) s.mesh.count = 0;
       } else at.set(b.at.subarray(0, Math.min(b.at.length, capacity)));
       b.at = at;
+      const cast = new Uint8Array(capacity);
+      if (!pack) cast.set(b.cast.subarray(0, Math.min(b.cast.length, capacity)));
+      b.cast = cast;
     }
     if (pack) {
       k.bounds = null;
@@ -729,15 +737,22 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   /** The margin as the cull tests it: a thing's shadow falls from it away from the sun, `margin` along the ray at most, so its sphere is tested moved half that way and grown by half (it holds that ray, and lies within the margin's sphere round the thing); with no sun known, the margin round every way. */
   let reachX = 0, reachY = 0, reachZ = 0, reachR = margin;
 
-  /** Slot `i` of the kind drawn at `level` by the cull in progress (`NONE`: not drawn), `shade`: for the cascades alone; a slot new to its level asked a position (`reconcile`). */
-  const mark = (k: Kind, i: number, level: number, shade = false): void => {
-    k.want[i] = level === NONE || !shade ? level : level | SHADE;
-    if (level === NONE) return;
-    const b = k.levels[level === FAR ? 1 : 0];
+  /** Slot `i` held by the level (0 near, 1 far) at the cull in progress: a slot new to it asked a position (`reconcile`). */
+  const hold = (k: Kind, id: number, i: number): void => {
+    const b = k.levels[id]!;
     const radius = k.spheres[i * 4 + 3]!;
     if (radius > b.largest) b.largest = radius;
     if (b.live && b.at[i]! < 0) b.entering.push(i);
   };
+  /** Slot `i` of the kind drawn at `level` by the cull in progress (`NONE`: not drawn), `cover`: under the near cascade's cover, where
+   *  the near level holds it for its shadow whatever its colour's level. */
+  const mark = (k: Kind, i: number, level: number, cover = false): void => {
+    k.want[i] = cover ? level | COVER : level;
+    if (level === NEAR || cover) hold(k, 0, i);
+    if (level === FAR) hold(k, 1, i);
+  };
+  /** A mesh's instances in the colour pass: the near level's front (drawn near), the far level's every one. */
+  const colourCount = (s: MeshState): number => (!s.wasDrawn ? 0 : s.spec.far ? s.level.drawn : s.level.front);
   /** Slot `i`'s pose and tint into position `p` of the level's buffers, once for all its meshes. */
   const put = (k: Kind, b: Level, i: number, p: number): void => {
     b.shown[p] = i;
@@ -775,11 +790,23 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         if (boxes) addChangeBox(boxes, dirtyBox, s.mesh!.userData['castBoxPool'] as Box3[], LAYER_BOXES, nearBox, reach);
       }
     };
+    // Held: the near level what is drawn near or stands under the cover, the far level what is drawn far. Cast: the near level all it holds,
+    // the far level what stands past the cover. DO NOT tell the shadows of a slot whose colour changed level under the cover: it casts by the
+    // near level all along - the near cascade's store was thrown away at nearly every frame of a flight for the level swaps round the camera
+    // (`tooBigNear` in 295 of 501 passes, `npm run diagnose`, 2026-10-22).
+    const held = (s: number): boolean => (id === NEAR ? (want[s]! & LEVEL_BITS) === NEAR || (want[s]! & COVER) !== 0 : (want[s]! & LEVEL_BITS) === FAR);
+    const casting = (s: number): boolean => id === NEAR || (want[s]! & COVER) === 0;
+    const cast = b.cast;
     for (let p = 0; p < n;) {
       const s = shown[p]!;
-      if (seen[s] === now && (want[s]! & LEVEL_BITS) === id) { p++; continue; }
+      if (seen[s] === now && held(s)) {
+        if ((cast[s] === 1) !== casting(s)) dirty(s);
+        p++;
+        continue;
+      }
       at[s] = -1;
-      dirty(s);
+      if (cast[s] === 1) dirty(s);
+      cast[s] = 0;
       n--;
       // The last position's slot moved here (looked at again: it may be going too).
       if (p < n) put(k, b, shown[n]!, p);
@@ -791,22 +818,24 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       sizeLevel(k, b, capacity, n);
     }
     const entering = b.entering.items;
-    for (let e = 0, count = b.entering.length; e < count; e++) { const i = entering[e]!; if (at[i]! < 0) { put(k, b, i, n++); dirty(i); } }
+    for (let e = 0, count = b.entering.length; e < count; e++) { const i = entering[e]!; if (at[i]! < 0) { put(k, b, i, n++); if (casting(i)) dirty(i); } }
     b.drawn = n;
-    // The colour's positions first, the cascades' alone after them: a slot crossing the frame's edge under a cascade moves between the two,
-    // not out of the level - nothing of the shadow changed, no box (`dirty`). DO NOT draw what is kept for the shadows in the colour pass:
-    // the small city's trees drawn went from 7 to 147 (the scene census, 2026-10-22).
-    // DO NOT read the positions through \`shown\` here: the level grown above (\`sizeLevel\`) has a new array of them.
+    // The front first (`Level.front`): the near level's drawn near, the far level's cast. A slot moving between the two parts moves in the
+    // buffers, nothing of what the level casts told unless its casting changed (above). DO NOT draw what the near level holds for the shadows
+    // alone in the colour pass: the small city's trees drawn went from 7 to 147 (the scene census, 2026-10-22).
+    // DO NOT read the positions through `shown` here: the level grown above (`sizeLevel`) has a new array of them.
     const order = b.shown;
+    const inFront = id === NEAR ? (s: number): boolean => (want[s]! & LEVEL_BITS) === NEAR : casting;
     let lo = 0, hi = n - 1;
     while (lo <= hi) {
-      if ((want[order[lo]!]! & SHADE) === 0) { lo++; continue; }
-      if ((want[order[hi]!]! & SHADE) !== 0) { hi--; continue; }
+      if (inFront(order[lo]!)) { lo++; continue; }
+      if (!inFront(order[hi]!)) { hi--; continue; }
       const a = order[lo]!, c = order[hi]!;
       put(k, b, c, lo++);
       put(k, b, a, hi--);
     }
-    b.colour = lo;
+    b.front = lo;
+    for (let p = 0; p < n; p++) { const s = order[p]!; cast[s] = casting(s) ? 1 : 0; }
     // A quarter of the buffers in use or less: shrunk to twice what is drawn, so they follow the view, not the most it ever held.
     if (b.capacity > MIN_CAPACITY && n * 4 < b.capacity) sizeLevel(k, b, Math.max(MIN_CAPACITY, n * 2), n);
     if (b.fresh) return;
@@ -873,29 +902,39 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       const was = k.serial - 1, now = k.serial;
       const far = levels?.far === undefined || !k.pictured ? -1 : mapMode === true ? Infinity : levels.far;
       const least = levels?.least ?? -1;
-      // Past the first slot whose pick is over the share the leaf's largest keeps, nothing more is drawn (`sorted`).
+      // Past the first slot whose pick is over the share the leaf's largest keeps, nothing more is drawn (`sorted`); under the cover each
+      // still casts (`COVER`): DO NOT let the shadow follow the thinning, which follows the camera.
       const stopAt = far < 0 ? Infinity : thinWant(node.big![k.index]! * (wNear > 1e-4 ? perUnitAtOne / wNear : Infinity)) + PICK_SLACK;
+      let covered = false;
+      if (keepBox !== null && casts[k.index]) {
+        nodeProbe.center.set(node.x, node.y, node.z);
+        nodeProbe.radius = node.r + PAD;
+        covered = keepBox.intersectsSphere(nodeProbe);
+      }
       for (const i of slots) {
         const r = sp[i * 4 + 3]!;
         if (r === -Infinity) continue;
-        if (picks[i]! > stopAt) break;
-        let shade = false;
+        const thinned = picks[i]! > stopAt;
+        if (thinned && !covered) break;
+        let inFrame = true;
         if (inner !== 0) {
           // A cell across the view's edge: its slots one by one.
           probe.center.set(sp[i * 4]! + reachX, sp[i * 4 + 1]! + reachY, sp[i * 4 + 2]! + reachZ);
           probe.radius = r + reachR;
-          if (!cullFrustum!.intersectsSphere(probe)) {
-            // Off the frame: kept while it stands under a cascade and its kind casts (`keepBox`).
-            if (!keepBox || !casts[k.index]) continue;
-            probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
-            probe.radius = r;
-            if (!keepBox.intersectsSphere(probe)) continue;
-            shade = true;
-          }
+          inFrame = cullFrustum!.intersectsSphere(probe);
         }
+        let cover = false;
+        if (covered) {
+          probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
+          probe.radius = r;
+          cover = keepBox!.intersectsSphere(probe);
+        }
+        if (!inFrame && !cover) continue;
         const prev = seen[i] === was ? lv[i]! : UNKNOWN;
         seen[i] = now;
-        if (!levels) { mark(k, i, NEAR, shade); continue; }
+        // Not drawn (off the frame, or thinned out) but under the cover: its shadow alone.
+        if (!inFrame || thinned) { lv[i] = UNKNOWN; mark(k, i, NONE, cover); continue; }
+        if (!levels) { mark(k, i, NEAR, cover); continue; }
         const w = wOf(feet[i * 3]!, feet[i * 3 + 1]!, feet[i * 3 + 2]!);
         const across = sizes[i]! * (w > 1e-4 ? perUnitAtOne / w : Infinity);
         let level: number;
@@ -908,7 +947,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         } else level = NEAR;
         lv[i] = level;
         // A far picture past the share its size keeps is thinned out (the GPU grows the ones kept, `impostorThin`).
-        mark(k, i, level === FAR && picks[i]! > thinWant(across) + PICK_SLACK ? NONE : level, shade);
+        mark(k, i, level === FAR && picks[i]! > thinWant(across) + PICK_SLACK ? NONE : level, cover);
       }
     }
   };
@@ -1053,7 +1092,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         k.levels.forEach((b, id) => { if (b.live && b.poses) reconcile(k, b, id === 0 ? NEAR : FAR); });
         for (const s of k.meshes) {
           s.wasDrawn = drawnNow(k, s);
-          if (s.mesh) { s.mesh.count = s.wasDrawn ? s.level.colour : 0; settleInScene(s); }
+          if (s.mesh) { s.mesh.count = colourCount(s); settleInScene(s); }
         }
       }
       nearBox = null;

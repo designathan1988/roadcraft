@@ -723,7 +723,8 @@ export function createSceneRenderer(
     for (const child of scene.children) casterStack.push(child);
     while (casterStack.length > 0) {
       const o = casterStack.pop()!;
-      if (!o.visible || moverRoots.has(o)) continue;
+      // A caster drawn into the cascades alone (`userData.shadowOnly`, a building's parts: `PartCell.castInto`) stands hidden between the passes.
+      if ((!o.visible && o.userData['shadowOnly'] !== true) || moverRoots.has(o)) continue;
       for (const child of o.children) casterStack.push(child);
       const mesh = o as Mesh & { isInstancedMesh?: boolean; isBatchedMesh?: boolean; count?: number; instanceMatrix?: { version: number } };
       if (!mesh.isMesh || !mesh.castShadow || swayMeshes.has(mesh)) continue;
@@ -1271,6 +1272,8 @@ export function createSceneRenderer(
   /** The box the sun's cascades cover (`crowdFrustum.keep`), and the margin past it, world units. */
   const cascadeCover = new Box3();
   const CASCADE_KEEP_MARGIN = m(24);
+  /** The widest cover kept, world units a side: a street's or a district's near cascade, not the map's. */
+  const CASCADE_KEEP_MOST = m(600);
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
   /** The roads' blocks at their full level: in the view's frustum (the buildings' detail's, set each frame) and under the tier's budget (`applyGeometryBudget`). */
@@ -3579,7 +3582,11 @@ export function createSceneRenderer(
       crowdFrustum.setFromProjectionMatrix(crowdProjection, cullCamera.coordinateSystem, cullCamera.reversedDepth);
       // What casts under the sun's cascades kept by the layers' culls whatever the frame holds (`cellInstances.ts` KeptFrustum): the box
       // the cascades covered at the last pass, a margin past it so things come and go where no cascade draws.
-      crowdFrustum.keep = renderer.shadowMap.enabled && environment.shadowCover(cascadeCover, CASCADE_KEEP_MARGIN) ? cascadeCover : null;
+      // DO NOT keep under a near cascade the size of the view (the map's zoom): every slot under it walked and cast at the near level, the map
+      // view's frames went from p99 16.8 to 83.5 ms (`npm run diagnose`, 2026-10-22). Past `CASCADE_KEEP_MOST` a side, the layers cull as the frame shows.
+      const covered = renderer.shadowMap.enabled && environment.shadowCover(cascadeCover, CASCADE_KEEP_MARGIN)
+        && Math.max(cascadeCover.max.x - cascadeCover.min.x, cascadeCover.max.z - cascadeCover.min.z) <= CASCADE_KEEP_MOST;
+      crowdFrustum.keep = covered ? cascadeCover : null;
       changeNear = crowdFrustum.keep;
       cameraRight.setFromMatrixColumn(cullCamera.matrixWorld, 0).normalize();
       // The canvas's CSS size read once a frame, before the vehicles ask `screenScale`

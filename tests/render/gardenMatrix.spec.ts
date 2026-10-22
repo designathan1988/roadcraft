@@ -38,7 +38,7 @@ describe('the matrix of a plant turned about the up axis', () => {
     const cells = readFileSync('src/render/cellInstances.ts', 'utf8');
     // A plant kept at its position is not written again (`reconcile`); one moved or come is written as its pose (`put`).
     const reconcile = cells.slice(cells.indexOf('const reconcile = '), cells.indexOf('const sendSpan = '));
-    expect(reconcile).toMatch(/if \(seen\[s\] === now && \(want\[s\]! & LEVEL_BITS\) === id\) \{ p\+\+; continue; \}/);
+    expect(reconcile).toMatch(/if \(seen\[s\] === now && held\(s\)\) \{\s+if \(\(cast\[s\] === 1\) !== casting\(s\)\) dirty\(s\);\s+p\+\+;\s+continue;\s+\}/);
     const write = cells.slice(cells.indexOf('const put = '), cells.indexOf('const reconcile = '));
     expect(write).toMatch(/poses\[to \+ j\] = data\[from \+ j\]/);
     expect(write).not.toMatch(/matrixInto|instanceMatrix/);

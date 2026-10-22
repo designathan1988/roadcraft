@@ -1111,8 +1111,8 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
           shadowHidden.clear();
           massCells.shadowMasses(false);
         }
-        if (partTexel === null) return;
-        for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(partTexel);
+        // The passes over: every cell's casters hidden again, as the casters' signature reads them (`PartCell.castInto`).
+        for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (partTexel === null || cell.group.visible) cell.castInto(partTexel);
         return;
       }
       // The parts of the cells whose masses cannot stand in (their detail still casts): by their size in this cascade, as above.

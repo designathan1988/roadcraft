@@ -1,7 +1,7 @@
 import { POSE_FLOATS } from '@render/buildings/partPose';
 import { fileParts, partBandings } from '@render/buildings/partFiling';
 import { describe, expect, it } from 'vitest';
-import { type BufferGeometry, DataUtils, InstancedMesh, type InterleavedBufferAttribute } from 'three';
+import { type BufferGeometry, DataUtils, InstancedMesh, type InterleavedBufferAttribute, type Mesh } from 'three';
 import { type BuildingChunk, emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
@@ -67,24 +67,37 @@ describe('the parts of a cell', () => {
     const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 5010, 5));
     expect(drawn(cell)).toHaveLength(0);
-    const made = cell.group.children.length;
+    // The runs alone: each band's caster stands in the group from the start (`PartCell.castInto`).
+    const runs = (): number => cell.group.children.filter((o) => o.userData['shadowOnly'] !== true).length;
+    const made = runs();
     cell.choose(view(10, 110, 5));
     cell.choose(view(10, 5010, 5));
     cell.choose(view(10, 110, 5));
     expect(drawn(cell)).toHaveLength(2);
-    expect(cell.group.children.length).toBe(Math.max(made, 2));
+    expect(runs()).toBe(Math.max(made, 2));
   });
 
-  it('cast a frame\'s shadow only where its bars span a shadow texel', () => {
+  it('cast a frame\'s shadow only where its bars span a shadow texel, by a caster of its own, never by the runs the camera chose', () => {
+    // The band's caster: drawn into the cascades alone (hidden between the passes), every instance of the band.
+    const casters = (c: PartCell): Mesh[] => c.group.children.filter((o) => o.userData['shadowOnly'] === true) as Mesh[];
     const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows], 10, 10))]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 30, 5, 0.05));
-    expect(drawn(cell).every((mesh) => mesh.castShadow)).toBe(true);
-    cell.choose(view(10, 30, 5, 0.2));
     expect(drawn(cell).some((mesh) => mesh.castShadow)).toBe(false);
+    // Every instance the runs draw at this view, all of the band's: the caster holds them all.
+    const all = drawn(cell).reduce((n, mesh) => n + mesh.count, 0);
+    cell.castInto(0.05);
+    expect(casters(cell)).toHaveLength(1);
+    expect(casters(cell).map((mesh) => [mesh.castShadow, mesh.visible, (mesh as InstancedMesh).count])).toEqual([[true, true, all]]);
+    cell.castInto(0.2);
+    expect(casters(cell).some((mesh) => mesh.castShadow || mesh.visible)).toBe(false);
+    // Between the passes: hidden from the colour pass, as the casters' signature reads it.
+    cell.castInto(null);
+    expect(casters(cell).every((mesh) => !mesh.visible && mesh.castShadow)).toBe(true);
     // A post is the frame's model 30 cm tall and 50 cm deep: its sides' shadow spans the texel.
     const post = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([posts], 10, 10))]], partBandings(kit.screen)), kit);
     post.choose(view(10, 30, 5, 0.2));
-    expect(drawn(post).every((mesh) => mesh.castShadow)).toBe(true);
+    post.castInto(0.2);
+    expect(casters(post).every((mesh) => mesh.castShadow && mesh.visible)).toBe(true);
   });
 
   it('choose by sub-cell: the near sub-cell whole, the far one by its street faces', () => {
