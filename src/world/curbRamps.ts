@@ -5,7 +5,7 @@ import { orientedPolyline } from './geometry';
 import { carriesPedestrians } from './pedestrianAccess';
 import { FOOTWAY_RISE, roadProfile } from './roadTypes';
 import { m } from './units';
-import { RAMP_CELL, rampCellKey, rampCells, rampRiseIn, type CurbRamp } from './rampRise';
+import { RAMP_CELL, rampCellKey, rampCells, rampOf, rampRiseIn, type CurbRamp } from './rampRise';
 
 export type { CurbRamp } from './rampRise';
 
@@ -46,14 +46,14 @@ function rampsAt(net: Network, nodeId: NodeId): CurbRamp[] {
     const tx = frame.t.x, ty = frame.t.y;
     for (const side of [-1, 1] as const) {
       const nx = -ty * side, ny = tx * side;
-      ramps.push({
+      ramps.push(rampOf({
         x: frame.p.x + nx * (road.width / 2), y: frame.p.y + ny * (road.width / 2),
         tx, ty, nx, ny, half,
         run: Math.min(RAMP_RUN, road.sidewalk),
         flare: FLARE_RUN,
         segment: segmentId,
         structure: segment.structure,
-      });
+      }));
     }
   };
   // A street that leads nowhere is crossed at its end, with no zebra (`walkways.ts`, the unmarked crossing)

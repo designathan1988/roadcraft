@@ -7,7 +7,7 @@ import { ROAD_TYPES } from '@world/roadTypes';
 import type { CarriagewayMaterial } from '@world/roadSection';
 import { packFlush } from '@world/roads/footwayRise';
 import { rampsMeeting } from '@world/curbRamps';
-import type { CurbRamp } from '@world/rampRise';
+import { type CurbRamp, rampData } from '@world/rampRise';
 import { roadStructure } from '@world/structures';
 import { type RoadElevation, SURFACE_READ_REACH } from '@world/elevation';
 import { LANE_LINE } from '@world/roadTypes';
@@ -488,7 +488,7 @@ export function* roadSurfaceSteps(
       const joined = concat(edgeLists);
       const edgeData = { keys: Float64Array.from(edgeKeys), ends: joined.lineEnds, xy: joined.lines };
       for (const array of [edgeData.keys, edgeData.ends, edgeData.xy]) transfer.push(array.buffer as ArrayBuffer);
-      return { data: { field, looks: lookList, flush: flush.data, ramps: [...ramps], edges: edgeData }, transfer };
+      return { data: { field, looks: lookList, flush: flush.data, ramps: [...ramps].map(rampData), edges: edgeData }, transfer };
     };
     /** A tile's rings, read off the inputs as it is built (held round the view: its cells derived again if they were let go); null for a tile the pass no longer has. */
     const ringsOf = ringsReader(inputs, pass.id);
