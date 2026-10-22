@@ -228,6 +228,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     ambientOcclusion: true,
     // Kept over the MSAA: it smooths what multisampling cannot (the shading's own edges - window grids, specular glints, cut-out leaves).
     smaa: true,
+    // DO NOT turn on 4x here for the district's sparkle: measured alone it cost ~4 ms of GPU there (p95 13 -> 17 ms) and left 32 % of its
+    // pixels off a supersampled frame against 34 % (`npm run diagnose`, 2026-10-22): the sparkle is the shading's, not the edges'.
     msaa: 0,
     aoFull: false,
     sharpen: 0.45,

@@ -21,14 +21,40 @@ export const KEPT = 16;
 /** Filed in the town (`TownIndex`), in the cell `filedI`, `filedJ`. */
 export const FILED = 32;
 
-/** The digest of a record with its wear and without it (`massing.ts` reads no wear): what its detail and its masses are made of. */
-export function recordDigests(b: Building): { readonly sig: number; readonly massSig: number } {
-  const { decay: _wear, ...shape } = b;
-  return { sig: new Digest().addPlain(b).value(), massSig: new Digest().addPlain(shape).value() };
+/** Each member object's digest, once (`TownColumns.members`): a record's members are shared with other buildings (`intern.ts`, `SharedMembers`:
+ *  a storey, a facade, a material once for the city) and never edited in place (records are replaced), so one hashed is hashed for every building that has it. */
+function memberDigest(member: object, known: WeakMap<object, number>): number {
+  let d = known.get(member);
+  if (d === undefined) {
+    d = new Digest().addPlain(member).value();
+    known.set(member, d);
+  }
+  return d;
+}
+
+/** The digest of a record with its wear and without it (`massing.ts` reads no wear): what its detail and its masses are made of.
+ *  DO NOT walk the whole record twice, nor its shared members again for every building: filing a reopened city of 8,102 buildings
+ *  spent 0.77 s of the page here (`npm run diagnose`, 2026-10-22). The shape once (members by their digest), the wear over it. */
+export function recordDigests(b: Building, members: WeakMap<object, number> = new WeakMap()): { readonly sig: number; readonly massSig: number } {
+  const shape = new Digest();
+  const record = b as unknown as Record<string, unknown>;
+  let keys = 0;
+  for (const key in record) {
+    const value = record[key];
+    if (key === 'decay' || value === undefined || typeof value === 'function') continue;
+    shape.addText(key);
+    if (typeof value === 'object' && value !== null) shape.add(memberDigest(value, members));
+    else shape.addPlain(value);
+    keys++;
+  }
+  const massSig = shape.add(keys).value();
+  return { sig: new Digest().add(massSig).addPlain(b.decay ?? null).value(), massSig };
 }
 
 export class TownColumns {
   private readonly slots = new IdSlots(1024);
+  /** The digests of the members the records filed share (`recordDigests`). */
+  readonly members = new WeakMap<object, number>();
   flags = new Uint8Array(16);
   /** The id held at each slot. */
   ids = new Float64Array(16);
@@ -96,7 +122,7 @@ export class TownColumns {
     const slot = this.slots.take(b.id);
     this.ids[slot] = b.id;
     const box = storedBounds(b);
-    const { sig, massSig } = recordDigests(b);
+    const { sig, massSig } = recordDigests(b, this.members);
     this.x[slot] = b.x; this.y[slot] = b.y;
     this.minX[slot] = box.minX; this.minY[slot] = box.minY; this.maxX[slot] = box.maxX; this.maxY[slot] = box.maxY;
     this.height[slot] = buildingHeight(b);

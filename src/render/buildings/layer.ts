@@ -112,7 +112,7 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   /** A record's digest: its columns' when it is the document's, else worked out (a building drawn on its own). */
   const sigOf = (b: Building): number => {
     const slot = docNow?.buildings.get(b.id) === b ? slotNow(b.id) : -1;
-    return slot >= 0 ? columns.sig[slot]! : recordDigests(b).sig;
+    return slot >= 0 ? columns.sig[slot]! : recordDigests(b, columns.members).sig;
   };
   const signatures = signatureBodies(signatureRoot);
   group.matrixAutoUpdate = false;

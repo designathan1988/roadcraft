@@ -173,7 +173,6 @@ import { measureHitch } from '@core/hitch';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
-import { fenceCompilePolls } from './fencedCompile';
 import { chosenBackend } from './gpu/backendChoice';
 import type { CompareOptions, CompareResult, WebGpuView } from './gpu/webgpuView';
 
@@ -494,8 +493,6 @@ export function createSceneRenderer(
   renderer.info.autoReset = false;
   // Checking every program's compile and link log makes each new shader wait for the driver on the main thread
   renderer.debug.checkShaderErrors = import.meta.env.DEV;
-  // Programs built off the draw polled behind a fence: the page never waits on the GPU process's backlog (`fencedCompile.ts`).
-  fenceCompilePolls(renderer);
   // The GPU time of every frame.
   const gpuTimer = createGpuTimer(renderer);
   renderer.outputColorSpace = SRGBColorSpace;
