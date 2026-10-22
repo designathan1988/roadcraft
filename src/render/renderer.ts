@@ -3622,6 +3622,7 @@ export function createSceneRenderer(
       const covered = renderer.shadowMap.enabled && environment.shadowCover(cascadeCover, CASCADE_KEEP_MARGIN)
         && Math.max(cascadeCover.max.x - cascadeCover.min.x, cascadeCover.max.z - cascadeCover.min.z) <= CASCADE_KEEP_MOST;
       crowdFrustum.keep = covered ? cascadeCover : null;
+      crowdFrustum.keepTexel = environment.shadowNearTexel();
       changeNear = crowdFrustum.keep;
       cameraRight.setFromMatrixColumn(cullCamera.matrixWorld, 0).normalize();
       // The canvas's CSS size read once a frame, before the vehicles ask `screenScale`

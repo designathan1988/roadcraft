@@ -56,6 +56,8 @@ export interface SceneEnvironment {
   setFarCascadeEvery(n: number): void;
   /** The world box the sun's cascades cover, grown by `margin` (`SunCascades.coverBox`): false without shadows. */
   shadowCover(target: Box3, margin: number): boolean;
+  /** The near cascade's texel, world units (`SunCascades.nearTexel`). */
+  shadowNearTexel(): number;
   /** The cascades' maps made again for the renderer's shadow map type (`SunCascades.remakeMaps`). */
   remakeShadowMaps(): void;
   /** The time of day, minutes after midnight: the sun's path, the sky, the light; the moon at night. */
@@ -292,6 +294,7 @@ export function createEnvironment(
     setWeather(k, f) { overcast = Math.max(0, Math.min(1, k)); flash = Math.max(0, Math.min(1.5, f)); },
     setFarCascadeEvery: (n) => cascades.setFarEvery(n),
     shadowCover: (target, margin) => cascades.coverBox(target, margin),
+    shadowNearTexel: () => cascades.nearTexel(),
     remakeShadowMaps: () => cascades.remakeMaps(),
     setQuality(next) {
       cascades.setEnabled(next.shadows, next.shadowMapSize);

@@ -58,7 +58,7 @@ export interface KindMesh {
  * and going out at its edges were changes all round the near cascade, whose store was thrown away and drawn whole in half the frames of a
  * flight (318 of 606, `npm run diagnose`, 2026-10-22). Kept under the cascades, they come and go past them, where no cascade draws.
  */
-export type KeptFrustum = Frustum & { keep?: Box3 | null };
+export type KeptFrustum = Frustum & { keep?: Box3 | null; /** The near cascade's texel, world units: under it a thing casts only if it spans its texels there (`castBySize`). */ keepTexel?: number };
 
 /** Texels a small kind's widest instance must span (radius) to cast into a cascade (`makeMesh`). */
 const SMALL_CAST_TEXELS = 2;
@@ -726,6 +726,8 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   const nodeProbe = new Sphere();
   /** The box the sun's cascades cover (`KeptFrustum.keep`) at the cull in progress, or null: what casts is kept there off the frame too. */
   let keepBox: Box3 | null = null;
+  /** The near cascade's texel at the cull in progress (`KeptFrustum.keepTexel`); 0: unknown, every caster under the cover kept. */
+  let keepTexel = 0;
   /** The same box for the cull's `reconcile` (`keepBox` is the walk's alone): the changes under it kept apart from those past it (`addChangeBox`). */
   let nearBox: Box3 | null = null;
   /** Per kind: whether any of its meshes casts (`keepBox` keeps only those). */
@@ -911,11 +913,16 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         nodeProbe.radius = node.r + PAD;
         covered = keepBox.intersectsSphere(nodeProbe);
       }
+      // What casts into the near cascade by its size (`castBySize`: its texels there): the cover asks nothing of a thing too small for them.
+      const castFrom = keepTexel * castTexelsOf(k);
       for (const i of slots) {
         const r = sp[i * 4 + 3]!;
         if (r === -Infinity) continue;
         const thinned = picks[i]! > stopAt;
-        if (thinned && !covered) break;
+        // Under the cover only what casts into the near cascade. DO NOT test every thinned slot of a covered leaf against the cover: the
+        // flight's cull grew by a third for slots too small to cast there (`visit` 540 -> 771 ms, `npm run diagnose`, 2026-10-22).
+        const mayCover = covered && r >= castFrom;
+        if (thinned && !mayCover) { if (!covered) break; continue; }
         let inFrame = true;
         if (inner !== 0) {
           // A cell across the view's edge: its slots one by one.
@@ -924,7 +931,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
           inFrame = cullFrustum!.intersectsSphere(probe);
         }
         let cover = false;
-        if (covered) {
+        if (mayCover) {
           probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
           probe.radius = r;
           cover = keepBox!.intersectsSphere(probe);
@@ -1077,6 +1084,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       wReach = Math.hypot(w0, w1, w2);
       cullFrustum = frustum;
       keepBox = (frustum as KeptFrustum).keep ?? null;
+      keepTexel = (frustum as KeptFrustum).keepTexel ?? 0;
       if (shadowSun.known && margin > 0) {
         reachX = -shadowSun.x * margin / 2; reachY = -shadowSun.y * margin / 2; reachZ = -shadowSun.z * margin / 2;
         reachR = margin / 2;

@@ -136,6 +136,8 @@ export interface SunCascades {
   /** The world box (three's axes) round the near cascades' squares (0 to `KEEP_CASCADES` - 1) through their depth ranges, grown by `margin`:
    *  what the layers keep their casters for whatever the camera frames (`cellInstances.ts` keep); false when none is placed. */
   coverBox(target: Box3, margin: number): boolean;
+  /** The near cascade's texel, world units (0 before it is placed): what a caster under its cover must span to cast there (`castBySize`). */
+  nearTexel(): number;
   /** The maps made again, for the renderer's shadow map type changed (`shadowMap.type`: PCF compares its depth, Basic reads it): every cascade drawn whole next. */
   remakeMaps(): void;
   /** Copies the sun's colour and intensity to the other cascades. */
@@ -919,6 +921,9 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         refitted[i] = true;
         everDrawn[i] = false;
       });
+    },
+    nearTexel() {
+      return enabled && fits[0]!.placed ? texelOf(0) : 0;
     },
     coverBox(target, margin) {
       target.makeEmpty();
