@@ -45,6 +45,8 @@ interface Entry<T> {
   /** DO NOT keep the rectangle and the cells as two lists (and a set a cell: ~440 B a thing filed, 2026-10-21): [x0, y0, x1, y1, cell...], laid at its size. */
   readonly data: readonly number[];
 }
+/** From how many ids a cell's list grows by pushing (a list pushed to takes room for ~17 more: kept at its size below). */
+const GROWN_LIST = 16;
 /** How many numbers of an entry's run are its rectangle. */
 const RECT = 4;
 
@@ -88,7 +90,14 @@ export class CellFiling<Id extends number, T extends object> {
       data[k++] = key;
       const list = this.cellToWrite(key);
       if (!list) this.byCell.set(key, [id]);
-      else list.push(id);
+      else if (list.length >= GROWN_LIST) list.push(id);
+      else {
+        // A short list laid again at its size: one pushed to grows its room past a dozen and a half ids (most cells hold a few).
+        const next = new Array<Id>(list.length + 1);
+        for (let i = 0; i < list.length; i++) next[i] = list[i]!;
+        next[list.length] = id;
+        this.byCell.set(key, next);
+      }
       this.bump(key);
     }, side);
     this.entries.set(id, { item, data });

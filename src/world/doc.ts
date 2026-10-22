@@ -25,7 +25,7 @@ import { type Barrier, type BarrierKind, isBarrierKind } from './barriers';
 import { TUNNEL_HEADROOM, type RoadStructure, migrateStructure } from './structures';
 import { MAX_TERRAIN_STAMPS, RELIEF_LEGACY, readRelief, type ReliefVersion, type TerrainStamp } from './terrain';
 import { normalizeParking, sameParking, type SegmentParking } from './parking';
-import { type LandscapeItem, type LandscapeKind, type SignType, SIGN_TEXT_MAX, isLandscapeKind, isSignType } from './landscape';
+import { type LandscapeItem, type LandscapeKind, type SignType, LANDSCAPE_KINDS, SIGN_TEXT_MAX, isLandscapeKind, isSignType } from './landscape';
 import { MAX_PAINT_DABS, type PaintDab, isPaintKind } from './terrainPaint';
 import { MAX_PLACED_CLOUDS, readCloud, type PlacedCloud } from './clouds';
 import { DEFAULT_WEATHER, readWeather, type Weather } from './weather';
@@ -43,7 +43,7 @@ import { type DocImage, dataOf, imageBytes, imageOf, packImage, unpackImage } fr
 import { allocate } from './buildings/recordTable';
 import type { SerializedBuilding } from './buildings/serialize';
 import type { Building, BuildingId } from './buildings/types';
-import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
+import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark, zoneDensityName, zoneUseName } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, DOC_CHANGE_KINDS, TILE_LOADED, TILE_UNLOADED, isStreaming, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { OWNER, TILE, TILE_COUNTED, tileIdBase, tileKey, tileOfKey, tileRect } from './tiles';
@@ -3058,7 +3058,8 @@ function finishNode(node: RoadNode, n: SerializedDoc['nodes'][number]): void {
 function landscapeRecord(raw: NonNullable<SerializedDoc['landscape']>[number], repair: boolean): LandscapeItem | null {
   if (!isLandscapeKind(raw?.kind) || !Number.isFinite(raw.x) || !Number.isFinite(raw.y) || !Number.isInteger(raw.id)) return null;
   const at = repair ? onWorld(raw) : { x: raw.x, y: raw.y };
-  return { id: raw.id, kind: raw.kind, x: at.x, y: at.y,
+  // The game's own string for the kind, not the parsed one (a string of its own an item, ~24 B each).
+  return { id: raw.id, kind: LANDSCAPE_KINDS.find((k) => k === raw.kind) ?? raw.kind, x: at.x, y: at.y,
     ...(isSignType(raw.signType) ? { signType: raw.signType } : {}),
     ...(typeof raw.text === 'string' && raw.text ? { text: raw.text.slice(0, SIGN_TEXT_MAX) } : {}),
     ...(Number.isFinite(raw.planted) ? { planted: raw.planted } : {}) };
@@ -3081,7 +3082,8 @@ function migratedBuildings(raw: TileRecords['buildings']): Building[] {
 
 /** A stored lot as a store keeps it: its own corners (a stored record is never changed in place, and the data read may be), its building only if it stands. */
 function lotRecord(lot: Lot, standing: (id: number) => boolean): Lot {
-  const { building: _gone, ...free } = { ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) };
+  const { building: _gone, ...free } = { ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })),
+    ...(lot.use !== undefined ? { use: zoneUseName(lot.use) } : {}), ...(lot.density !== undefined ? { density: zoneDensityName(lot.density) } : {}) };
   return lot.building !== undefined && standing(lot.building) ? { ...free, building: lot.building } : free;
 }
 
