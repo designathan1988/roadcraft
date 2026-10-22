@@ -6,7 +6,7 @@ import {
 } from 'three';
 
 import { compileAhead, drainCompiles } from '@render/uploads';
-import { PROGRAM_FAMILIES, createShaderCatalogue, litStandIns } from '@render/shaderCatalogue';
+import { PROGRAM_FAMILIES, WORLD_STAND_INS, createShaderCatalogue, litStandIns } from '@render/shaderCatalogue';
 
 /** THE PROGRAMS COMPILED AT LOAD (`shaderCatalogue.ts`) */
 describe('the shader catalogue', () => {
@@ -112,7 +112,7 @@ describe('the shader catalogue', () => {
       compileAsync: (object: Object3D, _camera: Camera, target: Scene) => {
         let lights = 0;
         target.traverseVisible((o) => { if ((o as PointLight).isLight) lights++; });
-        if (object !== scene && (object as Group).isGroup && object.children.length) sets.push(lights);
+        if (object !== scene && object.name !== WORLD_STAND_INS && (object as Group).isGroup && object.children.length) sets.push(lights);
         return Promise.resolve();
       },
     } as unknown as WebGLRenderer;
@@ -148,7 +148,7 @@ describe('the shader catalogue', () => {
       setRenderTarget: () => {},
       compileAsync: (object: Object3D) => {
         if (object.name === 'view') { asked.push('view'); return new Promise<void>((done) => { view = done; }); }
-        if ((object as Group).isGroup && object.children.length) { asked.push('variant'); return new Promise<void>((done) => setTimeout(done, 0)); }
+        if (object.name !== WORLD_STAND_INS && (object as Group).isGroup && object.children.length) { asked.push('variant'); return new Promise<void>((done) => setTimeout(done, 0)); }
         return Promise.resolve();
       },
     } as unknown as WebGLRenderer;

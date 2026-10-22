@@ -5,6 +5,8 @@ import { compileAhead, compileAheadWith, compileCopy, shadowStandIns, warmPendin
 
 /** The families of the catalogue, every one compiled before the town is shown. */
 export const PROGRAM_FAMILIES = ['world', 'people'] as const;
+/** The name of the world's stand-ins (`compile`): what the tests tell apart from a light variant's. */
+export const WORLD_STAND_INS = 'program-stand-ins-world';
 type ProgramFamily = typeof PROGRAM_FAMILIES[number];
 
 /** A family's stand-ins: drawn lit into the frame's target, and cast into the sun's shadow (`uploads.ts` shadowStandIn). */
@@ -46,8 +48,8 @@ const isLit = (material: Material): boolean => {
   return !!(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial || (material as ShaderMaterial).lights);
 };
 
-/** One stand-in for each lit program the meshes under `roots` are drawn with (its material and what of the mesh is in the program's key): what a light variant compiles, not the whole scene again. */
-export function litStandIns(roots: readonly Object3D[]): Group {
+/** One stand-in for each lit program the meshes under `roots` are drawn with (its material and what of the mesh is in the program's key): what a light variant compiles, not the whole scene again. `lit` false: every program, lit or not (the world's own, `compile`). */
+export function litStandIns(roots: readonly Object3D[], lit = true): Group {
   const group = new Group();
   const seen = new Set<string>();
   for (const root of roots) {
@@ -55,7 +57,7 @@ export function litStandIns(roots: readonly Object3D[]): Group {
       const mesh = object as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean; isBatchedMesh?: boolean; instanceColor?: unknown; morphTexture?: unknown };
       if (!mesh.isMesh) return;
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      if (!materials.some(isLit)) return;
+      if (lit && !materials.some(isLit)) return;
       const g = mesh.geometry;
       const key = [materials.map((m) => m.uuid).join(','), !!mesh.isInstancedMesh, !!mesh.instanceColor, !!mesh.morphTexture, !!mesh.isSkinnedMesh, !!mesh.isBatchedMesh,
         mesh.receiveShadow, Object.keys(g.attributes).sort().join(','), Object.keys(g.morphAttributes).sort().join(',')].join('/');
@@ -114,7 +116,12 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
       compiled = true;
       const done = settle;
       // The world as it stands, hidden things too (`compileAsync` walks every mesh), and each of its casters' shadow programs once.
-      const world = family('world', () => ({ lit: scene, shadow: shadowStandIns(scene) }));
+      // DO NOT hand three the scene itself: its compile works out every mesh's program parameters and key, thousands of meshes for a few
+      // hundred programs - 3 to 7 s of the page frozen creating a city of 8,102 buildings (`npm run diagnose`, 2026-10-22). One stand-in a
+      // program (its material and what of the mesh is in the program's key, as the light variants are), let go once compiled.
+      let worldLit: Group | null = null;
+      const world = family('world', () => { worldLit = litStandIns([scene], false); worldLit.name = WORLD_STAND_INS; return { lit: worldLit, shadow: shadowStandIns(scene) }; })
+        .finally(() => { worldLit?.clear(); });
       // The people come after the town is shown: their programs, every one of them, now (`personVariants.ts`).
       peopleDone ??= family('people', () => { const made = people(); peopleLit = made.lit; return made; });
       void Promise.all([world, peopleDone]).then(async () => {

@@ -286,7 +286,7 @@ function programNames() {
 function newPrograms(before, after) {
   const had = new Set(before);
   const counts = new Map();
-  for (const p of after) if (!had.has(p)) { const name = p.split(' ')[0]; counts.set(name, (counts.get(name) ?? 0) + 1); }
+  for (const p of after) if (!had.has(p)) { const name = p.slice(0, 70); counts.set(name, (counts.get(name) ?? 0) + 1); }
   return [...counts].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ×${n}`);
 }
 
