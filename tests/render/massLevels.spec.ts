@@ -1,6 +1,6 @@
 import { refOf } from '@world/buildings/recordTable';
 import { describe, expect, it } from 'vitest';
-import type { Mesh, Object3D } from 'three';
+import { Frustum, Plane, Vector3, type Mesh, type Object3D } from 'three';
 
 import { type CellMass, cellMass } from '@render/buildings/cellArrays';
 import type { CellEnv, CellPool } from '@render/buildings/cellPool';
@@ -179,6 +179,66 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     look(2);
     expect(far.coarse(tileOf(0, 0))).toBe(false);
     expect(far.near('0,0')).toBe(true);
+    far.dispose();
+    kit.dispose();
+  });
+
+  it('refining, the plate drawn over the view gives way once the tiles the view meets have come: one out of it never holds it (the opening on low)', () => {
+    const kit = createBuildingKit();
+    const far = createMassCells(kit, CELL);
+    // Plate p:0,0 holds the tiles t:0,0 (cells 0..3) and t:-1,0 (cells -4..-1).
+    for (const [i, key] of [[0, '0,0'], [-4, '-4,0']] as const) { far.planLevel(tileOf(i, 0)); far.plan(key, 0, m(30)); }
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    far.choose(m(128), m(128), m(500), 1000, 0.1, false);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // The view over x and y 300-1000 m: tile t:0,0 in it, t:-1,0 (x under 0) out of it - not asked while the curtain is up (`layer.ts` deferred).
+    const view = new Frustum(
+      new Plane(new Vector3(1, 0, 0), -m(300)), new Plane(new Vector3(-1, 0, 0), m(1000)),
+      new Plane(new Vector3(0, 0, 1), m(1000)), new Plane(new Vector3(0, 0, -1), -m(300)),
+      new Plane(new Vector3(0, 1, 0), m(1000)), new Plane(new Vector3(0, -1, 0), m(10_000)));
+    const look = (): void => far.choose(m(650), m(650), m(500), 1000, 0.3, false, Infinity, view);
+    look();
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    expect(far.waitingInView).toBeGreaterThan(0);
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
+    look();
+    // The tile in the view drawn, the plate gone from it, nothing left for the view to wait for; the cells out of the view drawn by their base.
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    expect(far.coarse(plateOf(0, 0))).toBe(false);
+    expect(far.waitingInView).toBe(0);
+    far.dispose();
+    kit.dispose();
+  });
+
+  it('over the budget, lets go a plate in the view its tiles draw, and asks it back only once the view wants it whole (low)', () => {
+    const kit = createBuildingKit();
+    const far = createMassCells(kit, CELL);
+    far.planLevel(tileOf(0, 0));
+    far.plan('0,0', 0, m(30));
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    const view = new Frustum(
+      new Plane(new Vector3(1, 0, 0), m(2000)), new Plane(new Vector3(-1, 0, 0), m(2000)),
+      new Plane(new Vector3(0, 0, 1), m(2000)), new Plane(new Vector3(0, 0, -1), m(2000)),
+      new Plane(new Vector3(0, 1, 0), m(1000)), new Plane(new Vector3(0, -1, 0), m(10_000)));
+    const look = (orthoPx: number): void => far.choose(m(128), m(128), m(500), 1000, orthoPx, false, Infinity, view);
+    look(0.1);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // Drawn whole: never let go, whatever the budget.
+    expect(far.evictLevels(0)).toBe(0);
+    // Nearer: its tile drawn in its place, the plate idle in the view - let go, and not asked again while its tile draws it.
+    look(0.3);
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
+    look(0.3);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    expect(far.evictLevels(0)).toBeGreaterThan(0);
+    expect(far.levelDrawn(plateOf(0, 0))).toBe(false);
+    look(0.3);
+    expect(far.askable(plateOf(0, 0))).toBe(false);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    // Back out: the view wants it whole, it is asked; its tile stands meanwhile (no hole).
+    look(0.1);
+    expect(far.askable(plateOf(0, 0))).toBe(true);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
     far.dispose();
     kit.dispose();
   });

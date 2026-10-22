@@ -82,8 +82,10 @@ interface Level {
   wanted: boolean;
   /** A tile refined too: its cells drawn one by one, each cell's masses wanted (`exposedCells`). */
   exposed: boolean;
-  /** Its masses let go out of the view for the budget (`evictLevels`): asked again only once the view meets it, and not waited for till then. */
+  /** Its masses let go for the budget (`evictLevels`): out of the view, or in it and drawn by its children; asked again only once the view meets it and wants it whole (`askable`), and not waited for till then. */
   evicted: boolean;
+  /** The view wanted it drawn in place of its children at the last `choose` (out of the view, a level always is): one idle in the view is not, its children drawn. */
+  whole: boolean;
   /** The last `choose` it met the view's frustum at (`chooseSerial`): the least recently seen go first (`evictLevels`). */
   seenAt: number;
 }
@@ -151,6 +153,8 @@ export interface MassCells {
   evictLevels(budget: number): number;
   /** Whether a tile's or a plate's masses were let go for the budget and not asked again since (`evictLevels`). */
   evicted(key: string): boolean;
+  /** Whether a tile or a plate let go for the budget may be asked again: the view meets it and wants it drawn whole (true for one not let go). DO NOT ask one let go while its children draw it: it lands and is let go again, every frame. */
+  askable(key: string): boolean;
   /** Whether a tile or a plate has its masses on the GPU (drawn or ready to be). */
   levelDrawn(key: string): boolean;
   /** Whether a tile or a plate met the view's frustum, grown by `VIEW_KEEP`, at the last `choose` (false before any `choose`; true for every level of a `choose` with no frustum): a plate out of it is not asked while the curtain is up (`massLevels.ts` deferred). */
@@ -406,7 +410,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     const bound = Math.max(FAR_ERROR, (key[0] === 't' ? TILE_DETAIL : PLATE_DETAIL).drop);
     level = {
       key, mesh: null, i0, j0, n, x0: i0 * cellSize, y0: j0 * cellSize, x1: (i0 + n) * cellSize, y1: (j0 + n) * cellSize, top: 0, error: Infinity, coarse: false,
-      tiles: children, bound, empty: false, wanted: key[0] === 'p', exposed: false, evicted: false, seenAt: 0,
+      tiles: children, bound, empty: false, wanted: key[0] === 'p', exposed: false, evicted: false, whole: true, seenAt: 0,
     };
     map.set(key, level);
     if (key[0] === 't') ensure(plateOf(i0, j0));
@@ -657,6 +661,10 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     evicted(key) {
       return levelsOf(key).get(key)?.evicted ?? false;
     },
+    askable(key) {
+      const level = levelsOf(key).get(key);
+      return !level?.evicted || ((allSeen || seenPlates.has(key)) && level.whole);
+    },
     levelDrawn(key) {
       return (levelsOf(key).get(key)?.mesh ?? null) !== null;
     },
@@ -664,9 +672,15 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       // The bases with the rest: never let go, what they hold leaves the levels less room.
       let total = gpuLedger.bytes('plate masses') + gpuLedger.bytes('tile masses') + gpuLedger.bytes('cell masses') + gpuLedger.bytes('base masses');
       if (total <= budget || allSeen) return 0;
+      // Out of the view first; then IN THE VIEW AND IDLE, drawn by its children (Cesium's cache keeps a refined tile's content only while
+      // under `cacheBytes`): the plates and tiles a district view refines stood on the GPU beside the tiles and cells drawn in their place,
+      // 125 MB of the city of 25,000 buildings' 244 MB of masses on low against a budget of 96 (step-25k, 2026-10-21). DO NOT let go one
+      // drawn, or one the view wants whole: the hole it leaves waits for the workers. The base stands under all of them for good.
       const out: Level[] = [];
-      for (const map of [plates, tiles]) for (const level of map.values()) if (level.mesh && !seenPlates.has(level.key)) out.push(level);
-      // The least recently seen first; of those seen as long ago, the largest.
+      for (const map of [plates, tiles]) {
+        for (const level of map.values()) if (level.mesh && (!seenPlates.has(level.key) || (!level.coarse && !level.whole))) out.push(level);
+      }
+      // The least recently seen first (the idle ones in the view were seen now: after every level out of it); of those seen as long ago, the largest.
       const bytes = new Map(out.map((level) => [level, geometryCost(level.mesh!.geometry).bytes]));
       out.sort((a, b) => a.seenAt - b.seenAt || bytes.get(b)! - bytes.get(a)!);
       let freed = 0;
@@ -801,6 +815,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       for (const plate of plates.values()) {
         look(plate);
         const plateWhole = coarseWanted(plate);
+        plate.whole = plateWhole;
         // DO NOT coarsen into a plate made before its buildings changed (one drawn already may stay: nothing better is under it): its cells' masses were let go under a mesh without them, and the far tree had let their tiles go (the map's centre empty, conf20/03-map, 2026-10-17).
         const plateDrawn = plateWhole && plate.mesh !== null && (plate.coarse || current(plate.key));
         // Let go for the budget and still out of the view: its tiles neither wanted nor asked (DO NOT refine to them: their masses came in for the plate let go, and went out again).
@@ -812,17 +827,20 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         for (const key of plate.tiles) {
           const tile = tiles.get(key);
           if (!tile) continue;
-          if (plateDrawn || plateGone) { tileState.push({ tile, coarse: false }); setWanted(tile, false); setExposed(tile, false); continue; }
+          if (plateDrawn || plateGone) { tileState.push({ tile, coarse: false }); setWanted(tile, false); setExposed(tile, false); tile.whole = true; continue; }
           setWanted(tile, true);
           look(tile);
           const tileWhole = coarseWanted(tile);
+          tile.whole = tileWhole;
           const tileDrawn = tileWhole && tile.mesh !== null && (tile.coarse || current(key));
           if (tileWhole && !tileDrawn) wait(tile);
           // Refining from a tile drawn: it stands until its cells' masses come (refinement without a hole).
           const hold = !tileWhole && tile.coarse && tile.mesh !== null && !forcedLevels.has(key) && allNear !== true && !cellsLanded(tile);
           if (hold) wait(tile);
-          // A tile let go for the budget out of the view covers nothing the view sees: DO NOT hold the plate drawn over the view for it.
-          if (!tileDrawn && !hold && plate.coarse && !cellsLanded(tile) && !(tile.evicted && !seenPlates.has(tile.key))) covered = false;
+          // A tile OUT OF THE VIEW covers nothing the view sees (the plate's base draws under it, `syncBases`): DO NOT hold the plate drawn over the view for it.
+          // Let go for the budget, or never asked while the curtain is up (`layer.ts` deferred: out of the view behind the curtain), it does not come
+          // until the view meets it: the plate stood, waited for in the view, and the opening of the city of 25,000 buildings on low never ended (step-25k, 2026-10-21).
+          if (!tileDrawn && !hold && plate.coarse && !cellsLanded(tile) && seenPlates.has(tile.key)) covered = false;
           tileState.push({ tile, coarse: tileDrawn || hold });
           // Wanted whole and not come: its cells stay as they are (kept if held, not asked if not: coarsening without a hole).
           setExposed(tile, tileWhole && !tileDrawn ? tile.exposed : !tileDrawn);

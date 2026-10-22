@@ -477,8 +477,8 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
   // The base over each plate's square (the top level, `massBase.ts`): asked first, kept for good, drawn wherever nothing finer is.
   levels.landBase = (key, base) => { massCells.landBase(key, base); chooseNow(); };
   // Behind the curtain a tile or a plate out of the view is not asked: the workers make what the opening's picture draws first (`coarsePending`), the rest nearest first once it is shown.
-  // One let go for the budget (`massBudget`) waits for the view to meet it again: DO NOT ask it back at once, to be let go again.
-  levels.deferred = (key) => (hiddenNow || massCells.evicted(key)) && !massCells.levelSeen(key);
+  // One let go for the budget (`massBudget`) waits for the view to meet it again and want it whole (`askable`): DO NOT ask it back at once, to be let go again.
+  levels.deferred = (key) => (hiddenNow && !massCells.levelSeen(key)) || !massCells.askable(key);
   // A plate with no masses of its own is a hole in the map (the corners of a city opened on its middle, step-25k 08-early-map): before the view's detail.
   levels.hole = (key) => key[0] === 'p' && !massCells.levelDrawn(key);
   /** The most the town's masses (cells, tiles, plates) hold on the GPU, bytes (`quality.ts` GEOMETRY_BUDGETS): past it the levels out of the view go, least recently seen first. */
@@ -1075,7 +1075,7 @@ export function createBuildingLayer(anisotropy = 4): BuildingLayer {
         if (heldFar.has(key)) count.heldFar++;
         if (heldCoarse.has(key)) count.heldCoarse++;
       }
-      return { ...count, evictions: massCells.books()['massEvictions'] ?? 0, scale: frame.scale, budgetTriangles: frame.budget, chosenTriangles: chosenTriangles(), residentBytes: resident.total, detailBudgetBytes: budget, roomBytes: room() };
+      return { ...count, evictions: massCells.books()['massEvictions'] ?? 0, massing: requests.massing, levelsWaiting: massCells.waiting, levelsWaitingInView: massCells.waitingInView, basesWaiting: massCells.basesWaiting, scale: frame.scale, budgetTriangles: frame.budget, chosenTriangles: chosenTriangles(), residentBytes: resident.total, detailBudgetBytes: budget, roomBytes: room() };
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, shadowTexel) {
       partView.x = eyeX; partView.y = eyeY; partView.z = eyeZ; partView.pxAtMetre = pxAtMetre; partView.orthoPx = orthoPx; partView.shadowTexel = shadowTexel;
