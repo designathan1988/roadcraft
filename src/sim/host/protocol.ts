@@ -119,6 +119,8 @@ export interface SimControls {
   readonly focus: SimFocus | null;
   /** The city's time of day set to these minutes after midnight (a saved map reopened), told once. */
   readonly clock?: number;
+  /** A map opening behind its curtain (`SceneHandle.opening`): its traffic's topology, bays and steps wait for it to be shown (`simHost.ts` frame). */
+  readonly opening?: boolean;
 }
 
 export interface SimFocus {

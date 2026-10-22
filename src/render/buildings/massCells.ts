@@ -159,6 +159,8 @@ export interface MassCells {
   levelDrawn(key: string): boolean;
   /** Whether a tile or a plate met the view's frustum, grown by `VIEW_KEEP`, at the last `choose` (false before any `choose`; true for every level of a `choose` with no frustum): a plate out of it is not asked while the curtain is up (`massLevels.ts` deferred). */
   levelSeen(key: string): boolean;
+  /** Whether the view wants a tile or a plate drawn whole (in place of its children) at the last `choose` (true for one not chosen yet). */
+  levelWhole(key: string): boolean;
   /** Whether a tile or a plate is drawn in place of its cells. */
   coarse(key: string): boolean;
   /** Every cell there is (the whole town filed again, `layer.ts`). */
@@ -657,6 +659,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     },
     levelSeen(key) {
       return allSeen || seenPlates.has(key);
+    },
+    levelWhole(key) {
+      return levelsOf(key).get(key)?.whole ?? true;
     },
     evicted(key) {
       return levelsOf(key).get(key)?.evicted ?? false;

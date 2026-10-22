@@ -9,7 +9,7 @@ import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
 import { PART_KINDS } from './kit';
 import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
-import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, massFloor, type MassingChunk } from './massing';
+import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, baseFloor, emitMassing, massFloor, type MassingChunk } from './massing';
 import { type PartFiling, fileParts, filingBuffers } from './partFiling';
 import { levelCells } from './levelKeys';
 import { type BaseMass, BaseWriter, baseBuffers, emitBase } from './massBase';
@@ -142,14 +142,15 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   };
   const { groundAt, naturalAt } = reads;
   if (job.kind === 'massBase') {
-    // The top level: each building's floor (measured once, handed to its later jobs: `floors`) and its blocks' prisms, in its cell's run.
+    // The top level: each building's blocks' prisms, in its cell's run, on its floor as seen from afar (`baseFloor`) where no job measured it yet.
+    // DO NOT measure the exact floor here (`massFloor`, the bays laid out): every building of the map is in a base, and the curtain waits for every base (`layer.ts` coarsePending) - 70,000 floors were ~22 s of the workers behind the opening of the step-70k city (2026-10-22). Nor hand the estimate on (`floors`): the finer levels stand on the exact one.
     const writer = new BaseWriter();
-    const floors: (number | null)[] = [];
+    const floors: (number | null | undefined)[] = [];
     let n = 0;
     for (const b of eachRecord(job.entries.map((entry) => entry.record))) {
       const given = job.entries[n]!.floor;
-      const floor = given !== undefined ? given ?? undefined : massFloor(b, naturalAt, paved);
-      floors.push(floor ?? null);
+      const floor = given !== undefined ? given ?? undefined : baseFloor(b, naturalAt, paved);
+      floors.push(given);
       n++;
       emitBase(writer.cellOf(b), b, floor, groundAt, drawsSignature(b), job.tone);
     }
@@ -158,14 +159,16 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   const detail = MASS_DETAIL[job.kind];
   if (detail) {
     const masses: MassingChunk[] = [];
-    const floors: (number | null)[] = [];
+    const floors: (number | null | undefined)[] = [];
+    // A tile's and a plate's masses are drawn from afar, as the base is: on the floor seen from afar where none was measured (`baseFloor`), never handed on. DO NOT lay every building's bays out for them: with the bases' estimate (no floor handed on) the plates of the step-70k city took ~3 s of a worker each after the curtain, the map standing in cells' masses (2026-10-22).
+    const far = job.kind !== 'mass';
     // One record at a time, let go once its masses are made: a plate's job is four tiles of buildings (`eachRecord`).
     let n = 0;
     for (const b of eachRecord(job.entries.map((entry) => entry.record))) {
       // DO NOT measure a floor an earlier job of the same building on the same ground measured (`CellEntry.floor`).
       const given = job.entries[n]!.floor;
-      const floor = given !== undefined ? given ?? undefined : massFloor(b, naturalAt, paved);
-      floors.push(floor ?? null);
+      const floor = given !== undefined ? given ?? undefined : far ? baseFloor(b, naturalAt, paved) : massFloor(b, naturalAt, paved);
+      floors.push(far ? given : floor ?? null);
       n++;
       const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone, detail, { floor });
       if (mass) masses.push(mass);

@@ -8,7 +8,7 @@ import { levelsOf } from '@render/mesh/roadLod';
 import { GEOMETRY_BUDGETS, NETWORK_FAR_MB, type QualityLevel, roadBudgetMB } from '@render/quality';
 import { m } from '@world/units';
 import { installNullPage, primeCookedSurfaces } from '../support/nullGpu';
-import { HEIGHT, WIDTH, openCityMap, setView, type City, type View } from '../support/sceneHarness';
+import { HEIGHT, WIDTH, drawnPieces, openCityMap, setView, type City, type View } from '../support/sceneHarness';
 
 /**
  * NO HOLE IN THE TOWN OR IN ITS STREETS AT ANY VIEW: the city of 25,000 buildings (`scripts/look/step-25k.json`) opened on the null GPU as
@@ -90,18 +90,12 @@ function roadCensus(city: City, wanted: ReadonlySet<string>): { missing: string[
     if (mesh.name === 'road-far-network') network += bytes;
     if (mesh.parent?.name === 'road-network' || mesh.name === 'road-far-network') roads += bytes;
   });
-  city.scene.scene.traverseVisible((o: Object3D) => {
-    const mesh = o as Mesh;
-    if (!mesh.isMesh || !(mesh.name.startsWith('asphalt') || mesh.name === 'road-far-network')) return;
-    const g = mesh.geometry;
-    if (!(g.index ? g.index.count : g.getAttribute('position').count)) return;
-    if (!g.boundingBox) g.computeBoundingBox();
-    mesh.updateWorldMatrix(true, false);
-    box.copy(g.boundingBox!).applyMatrix4(mesh.matrixWorld);
+  for (const { box: piece } of drawnPieces(city.scene.scene, (name) => name.startsWith('asphalt') || name === 'road-far-network')) {
+    box.copy(piece);
     for (let i = Math.floor(box.min.x / ROAD_CELL); i <= Math.floor(box.max.x / ROAD_CELL); i++) {
       for (let j = Math.floor(-box.max.z / ROAD_CELL); j <= Math.floor(-box.min.z / ROAD_CELL); j++) drawn.add(`${i},${j}`);
     }
-  });
+  }
   const missing: string[] = [];
   for (const key of wanted) {
     const [i, j] = key.split(',').map(Number) as [number, number];

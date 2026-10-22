@@ -1,4 +1,3 @@
-import { Box3, type Mesh, type Object3D } from 'three';
 import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildLargeCityMap } from '@editor/smallCityMap';
@@ -6,7 +5,7 @@ import { prepareCity } from '@editor/preparedCity';
 import type { QualityLevel } from '@render/quality';
 import { m } from '@world/units';
 import { installNullPage, primeCookedSurfaces } from '../support/nullGpu';
-import { DISTRICT, HEIGHT, WIDTH, openCityMap, setView, type City, type View } from '../support/sceneHarness';
+import { DISTRICT, HEIGHT, WIDTH, drawnPieces, openCityMap, setView, type City, type View } from '../support/sceneHarness';
 
 /**
  * A LARGER CITY OPENS AS THE LARGE ONE DOES (the scale step of 25,000 buildings, `scripts/look/step-25k.json`): the large city of seed 7
@@ -49,21 +48,12 @@ function roadCells(city: City): Set<string> {
 /** The cells the visible road surfaces' meshes reach (the carriageway's blocks, near or far, and the network's far level), with their triangles. */
 function drawnRoadCells(city: City): Map<string, number> {
   const out = new Map<string, number>();
-  const box = new Box3();
-  city.scene.scene.traverseVisible((o: Object3D) => {
-    const mesh = o as Mesh;
-    if (!mesh.isMesh || !(mesh.name.startsWith('asphalt') || mesh.name === 'road-far-network')) return;
-    const g = mesh.geometry;
-    const n = Math.floor((g.index ? g.index.count : g.getAttribute('position').count) / 3);
-    if (!n) return;
-    if (!g.boundingBox) g.computeBoundingBox();
-    mesh.updateWorldMatrix(true, false);
-    box.copy(g.boundingBox!).applyMatrix4(mesh.matrixWorld);
+  for (const { box, triangles: n } of drawnPieces(city.scene.scene, (name) => name.startsWith('asphalt') || name === 'road-far-network')) {
     // The scene's z is the plan's -y.
     for (let i = Math.floor(box.min.x / CELL); i <= Math.floor(box.max.x / CELL); i++) {
       for (let j = Math.floor(-box.max.z / CELL); j <= Math.floor(-box.min.z / CELL); j++) out.set(`${i},${j}`, (out.get(`${i},${j}`) ?? 0) + n);
     }
-  });
+  }
   return out;
 }
 
