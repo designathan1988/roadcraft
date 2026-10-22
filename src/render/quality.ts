@@ -222,16 +222,14 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
   ultra: {
     pixelRatio: 2,
     shadows: true,
-    // The near cascade at 3072 (2.25x the texels of high's), the far two at 1536 (`sunCascades.ts` setEnabled halves them): roof and kerb shadows sharper where the street is looked at.
-    shadowMapSize: 3072,
+    // DO NOT raise it to 3072 with MSAA 4x and full-resolution GTAO (80074433): the picture came out washed out, 18 % of the district's pixels changed against the approved look (bisected, 2026-10-22).
+    shadowMapSize: 2048,
     postProcessing: true,
     ambientOcclusion: true,
     // Kept over the MSAA: it smooths what multisampling cannot (the shading's own edges - window grids, specular glints, cut-out leaves).
     smaa: true,
-    // Four samples on the one HDR scene target, resolved before every pass (`postprocess.ts`): the roofs' and walls' geometric edges SMAA alone leaves stepped.
-    msaa: 4,
-    // The occlusion at the scene's full resolution: at half, scaled up, it bled across every roof edge it lies along.
-    aoFull: true,
+    msaa: 0,
+    aoFull: false,
     sharpen: 0.45,
     anisotropy: 16,
     detailProps: true,

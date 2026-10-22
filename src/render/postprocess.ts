@@ -1,5 +1,4 @@
 import {
-  ACESFilmicToneMapping, AgXToneMapping, CineonToneMapping, ColorManagement, CustomToneMapping, LinearToneMapping, NeutralToneMapping, ReinhardToneMapping, SRGBTransfer,
   Color, DepthTexture, type DirectionalLight, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
   RGFormat, RedFormat, SRGBColorSpace, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
@@ -422,39 +421,8 @@ export function createPostChain(
   output.uniforms['uTexel'] = { value: new Vector2(1 / Math.max(1, size.x * ratio), 1 / Math.max(1, size.y * ratio)) };
   output.material.needsUpdate = true;
   composer.addPass(output);
-  // The programs no warm-up above built (the scene's copy, SMAA's three, the output's), built now in parallel: a tier change makes a new chain, and the old one's materials,
-  // disposed before the new chain first draws, give their programs back (three's WebGLPrograms.releaseProgram at usedTimes 0) - linked again in the frame otherwise.
-  {
-    const quad = fullScreenTriangle();
-    const passes = new Scene();
-    passes.add(new Mesh(quad, copyQuad.material));
-    if (smaa) {
-      const materials = smaa as unknown as { _materialEdges: ShaderMaterial; _materialWeights: ShaderMaterial; _materialBlend: ShaderMaterial };
-      passes.add(new Mesh(quad, materials._materialEdges), new Mesh(quad, materials._materialWeights), new Mesh(quad, materials._materialBlend));
-    }
-    // The output's defines as its first draw sets them (r186 OutputPass.render), so that draw finds them set and builds nothing new.
-    {
-      const state = output as unknown as { _outputColorSpace: string | null; _toneMapping: number | null };
-      state._outputColorSpace = renderer.outputColorSpace;
-      state._toneMapping = renderer.toneMapping;
-      output.material.defines = outputDefines(renderer.outputColorSpace, renderer.toneMapping);
-      output.material.needsUpdate = true;
-    }
-    const screen = new Scene();
-    screen.add(new Mesh(quad, output.material));
-    const previous = renderer.getRenderTarget();
-    // Each for the target it draws into: the composer's (no tone mapping, the working colour space), and the screen.
-    renderer.setRenderTarget(composer.renderTarget1);
-    const intoChain = renderer.compileAsync(passes, camera).catch((error: unknown) => {
-      console.error('Post pass shader precompile failed', error);
-    });
-    renderer.setRenderTarget(null);
-    const intoScreen = renderer.compileAsync(screen, camera).catch((error: unknown) => {
-      console.error('Output shader precompile failed', error);
-    });
-    renderer.setRenderTarget(previous);
-    warming.push(Promise.all([intoChain, intoScreen]).finally(() => quad.dispose()));
-  }
+  // DO NOT build the passes' programs ahead here, nor set the OutputPass's state and defines before its first draw: with that warm-up the whole picture
+  // came out washed out (18 % of the district's pixels changed against the approved look; bisected to 80074433, and the picture back with it removed, 2026-10-22).
   // Each pass told to the lab's observer when one is set (`PostPassHook`).
   for (const [pass, name] of [[scenePass, 'scene'], [gtao, 'gtao'], [canyon?.pass, 'canyon'], [bloom, 'bloom'], [clouds, 'clouds'], [smaa, 'smaa'], [output, 'output']] as [Pass | null | undefined, string][]) {
     if (!pass) continue;
@@ -1271,20 +1239,4 @@ export function shareBloomBlur(materials: readonly ShaderMaterial[]): void {
       .replace(loop, `${loop} if ( i >= uPairs ) break;`);
     material.needsUpdate = true;
   }
-}
-
-/** The defines three's OutputPass gives its material for a colour space and a tone mapping (r186 OutputPass.render), set ahead to compile its program before its first draw. */
-export function outputDefines(colorSpace: string, toneMapping: number): Record<string, string> {
-  const defines: Record<string, string> = {};
-  if (ColorManagement.getTransfer(colorSpace) === SRGBTransfer) defines['SRGB_TRANSFER'] = '';
-  const name = toneMapping === LinearToneMapping ? 'LINEAR_TONE_MAPPING'
-    : toneMapping === ReinhardToneMapping ? 'REINHARD_TONE_MAPPING'
-    : toneMapping === CineonToneMapping ? 'CINEON_TONE_MAPPING'
-    : toneMapping === ACESFilmicToneMapping ? 'ACES_FILMIC_TONE_MAPPING'
-    : toneMapping === AgXToneMapping ? 'AGX_TONE_MAPPING'
-    : toneMapping === NeutralToneMapping ? 'NEUTRAL_TONE_MAPPING'
-    : toneMapping === CustomToneMapping ? 'CUSTOM_TONE_MAPPING'
-    : null;
-  if (name) defines[name] = '';
-  return defines;
 }
