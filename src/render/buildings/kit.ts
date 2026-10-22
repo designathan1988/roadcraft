@@ -14,6 +14,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { weldGeometry } from '../mesh/weld';
+import { dropHiddenFaces } from '../mesh/hiddenFaces';
 
 import type { Finish } from '@world/buildings/materials';
 import { SHELL_NORMAL_GLSL, createFarShellMaterial, createShellMaterial, finishAlbedo } from './finishes';
@@ -28,7 +29,7 @@ import { CARD, CARD_ATTRIBUTE, prefilterThinParts, twoSided } from './thinParts'
 import { roomBehindGlass } from './glassRoom';
 import { FACADE_PROP_KINDS, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
 import type { PartKind } from './chunk';
-import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
+import { AC_FRONT_GLSL, AC_FRONT_Z, acFarGeometry, createFacadePropGeometries } from './facadePropModels';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { m } from '@world/units';
 import { pullTowardEye } from '../depthConvention';
@@ -241,9 +242,23 @@ function boxWithout(w: number, h: number, d: number, x: number, y: number, z: nu
   const g = box(w, h, d, x, y, z);
   const index = g.getIndex()!;
   const kept: number[] = [];
-  BOX_FACES.forEach((face, k) => { if (!covered.includes(face)) for (let i = 6 * k; i < 6 * k + 6; i++) kept.push(index.getX(i)); });
+  g.clearGroups();
+  BOX_FACES.forEach((face, k) => {
+    if (covered.includes(face)) return;
+    // Each face kept its own group, as three's box has: what `dropHiddenFaces` reads a face by.
+    g.addGroup(kept.length, 6, k);
+    for (let i = 6 * k; i < 6 * k + 6; i++) kept.push(index.getX(i));
+  });
   g.setIndex(kept);
   return g;
+}
+
+/** Parts merged into one model, the faces another part covers taken out first (`mesh/hiddenFaces.ts`); the parts let go. */
+function mergedParts(parts: readonly BufferGeometry[]): BufferGeometry {
+  dropHiddenFaces(parts, false);
+  const merged = mergeGeometries([...parts]) as BufferGeometry;
+  for (const p of parts) p.dispose();
+  return merged;
 }
 
 /** A window frame's bar across the unit square. */
@@ -261,9 +276,7 @@ function frameGeometry(): BufferGeometry {
     boxWithout(t * 0.8, 1, 1, 0, 0, 0, ['+y', '-y']),
     boxWithout(1, t * 0.8, 1, 0, 0.18, 0, ['+x', '-x']),
   ];
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return merged;
+  return mergedParts(parts);
 }
 
 /** A balcony railing: top rail and balusters on three sides, z from 0 (wall) to 1. */
@@ -279,9 +292,7 @@ function railingGeometry(): BufferGeometry {
     parts.push(box(0.015, 0.94, 0.015, -0.5, 0.5, i / 4));
     parts.push(box(0.015, 0.94, 0.015, 0.5, 0.5, i / 4));
   }
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return merged;
+  return mergedParts(parts);
 }
 
 /** A flat quad facing `axis` ('z' out of the wall, 'x' along it), centred at (x, y, z). */
@@ -321,9 +332,7 @@ function railingCardGeometry(): BufferGeometry {
 function roofRailingGeometry(): BufferGeometry {
   const parts: BufferGeometry[] = [box(1, 0.06, 0.05, 0, 0.97, 0), box(1, 0.04, 0.03, 0, 0.45, 0)];
   for (let i = 0; i <= 4; i++) parts.push(box(0.02, 0.94, 0.02, -0.5 + i / 4, 0.5, 0));
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return merged;
+  return mergedParts(parts);
 }
 
 /** A door leaf in the component frame */
@@ -335,9 +344,7 @@ function doorGeometry(): BufferGeometry {
   }
   // The handle, at hand height, near the lock stile.
   parts.push(box(0.1, 0.035, 1.6, 0.4, -0.04, 0.9));
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return merged;
+  return mergedParts(parts);
 }
 
 /** A shop awning: a sloped canvas from the wall (y 0, z 0) down and out, with a valance. */
@@ -359,9 +366,7 @@ function louvreGeometry(): BufferGeometry {
     slat.translate(0, y, -0.1);
     parts.push(slat);
   }
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return merged;
+  return mergedParts(parts);
 }
 
 /** A glass parapet: a clear pane the full width standing on the slab, a slim metal cap along its top. */
@@ -380,9 +385,7 @@ function briseGeometry(): BufferGeometry {
   const t = BRISE_BLADE;
   const parts: BufferGeometry[] = [];
   for (let k = 0; k < BRISE_FINS; k++) parts.push(box(t, 1, 1, -0.5 + t / 2 + (k * (1 - t)) / (BRISE_FINS - 1), 0, 0));
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return merged;
+  return mergedParts(parts);
 }
 
 /** A brise's rack from afar: each blade a plane through its middle, seen from both sides; its thickness (`BRISE_BLADE`) left out. */
@@ -407,10 +410,7 @@ function awningGeometry(): BufferGeometry {
   canvas.computeBoundingBox();
   const edge = canvas.boundingBox!;
   const valance = box(1, 0.28, 0.025, 0, edge.min.y + 0.03 - 0.14, edge.max.z - 0.0125);
-  const merged = mergeGeometries([canvas, valance]) as BufferGeometry;
-  canvas.dispose();
-  valance.dispose();
-  return merged;
+  return mergedParts([canvas, valance]);
 }
 
 /** A shell part's model (`shellParts.ts`) in three's axes (plan x, up, -plan y): each face's corners in its order, fanned and wound as `Shell.face` winds it; white, its uv.x marking a paving's inset sides. */
@@ -444,6 +444,30 @@ function shellPartGeometry(faces: readonly ShellPartFace[]): BufferGeometry {
   g.computeBoundingBox();
   g.computeBoundingSphere();
   return g;
+}
+
+/** The condenser's material: its case's front drawn with the fan, grille and louvres (`AC_FRONT_GLSL`) where the model has a plain face,
+ *  and the lid as the case's top band (`acLidTone`: nothing else of the model reaches over the case's top). */
+function acUnitMaterial(): MeshStandardMaterial {
+  const material = new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.55, metalness: 0.15 });
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vAcLocal;
+varying float vAcFront;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+vAcLocal = position;
+vAcFront = step(0.9, normal.z) * step(${(AC_FRONT_Z - 0.002).toFixed(4)}, position.z);`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vAcLocal;
+varying float vAcFront;
+${AC_FRONT_GLSL}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+diffuseColor.rgb *= (vAcFront > 0.5 ? acFrontTone(vAcLocal) : 1.0) * acLidTone(vAcLocal);`);
+  };
+  material.customProgramCacheKey = () => 'facade-ac-front';
+  return material;
 }
 
 /** `anisotropy`: the tier's taps for the facades' maps (`quality.ts`), as the ground's: at 4 a wall seen along the street blurred into its mean. */
@@ -511,7 +535,7 @@ export function createBuildingKit(anisotropy = 4): BuildingKit {
       color: 0xa9c4c4, roughness: 0.05, metalness: 0.2, envMapIntensity: 1.4, transparent: true, opacity: 0.42, depthWrite: false,
     }),
     // The props on the facades and balconies (`facadeProps.ts`): toned per vertex
-    acUnit: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.55, metalness: 0.15 }),
+    acUnit: acUnitMaterial(),
     pot: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85, metalness: 0 }),
     foliage: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
     bush: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),

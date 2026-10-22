@@ -6,11 +6,14 @@ import {
   CylinderGeometry,
   Float32BufferAttribute,
   IcosahedronGeometry,
+  PlaneGeometry,
   RingGeometry,
   SphereGeometry,
+  Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { weldGeometry } from '../mesh/weld';
+import { dropFacing, dropHiddenFaces } from '../mesh/hiddenFaces';
 import { AC, type FacadePropKind, POT_HIGH } from './facadeProps';
 
 /** The models of the props on the facades and balconies (`facadeProps.ts` places them) */
@@ -37,7 +40,9 @@ function block(w: number, h: number, d: number, x: number, y: number, z: number,
   return tone(g, rgb);
 }
 
-function merged(parts: BufferGeometry[]): BufferGeometry {
+/** Parts merged into one model, the faces another part covers taken out first (`mesh/hiddenFaces.ts`); `floor`: it stands on y = 0, what lies on it facing down left out too. */
+function merged(parts: BufferGeometry[], floor = false): BufferGeometry {
+  dropHiddenFaces(parts, floor);
   const g = mergeGeometries(parts) as BufferGeometry;
   for (const p of parts) p.dispose();
   g.computeBoundingBox();
@@ -45,32 +50,16 @@ function merged(parts: BufferGeometry[]): BufferGeometry {
   return g;
 }
 
-/** A split condenser, centred on its case */
+/** A split condenser, centred on its case: the case (its top 2 cm the lid, drawn by the material), two arms, two braces down to two plates on
+ *  the wall, the two lines into the wall. Every face turned to the wall (-z) left out: no camera stands between the wall and the unit. */
 function acUnitGeometry(): BufferGeometry {
   const { w, h, d, gap } = AC;
   const front = d / 2;
-  const parts: BufferGeometry[] = [
-    block(w, h, d, 0, 0, 0, grey(1)),
-    block(w + 0.01, 0.02, d + 0.01, 0, h / 2 + 0.005, 0, grey(0.93)),
-  ];
-  // The fan's hole, dark, and the grille over it.
-  const fx = -w / 2 + 0.27, r = 0.19;
-  const hole = new CircleGeometry(r, 16);
-  hole.translate(fx, 0, front + 0.002);
-  parts.push(tone(hole, grey(0.1)));
-  for (const [r0, r1] of [[0.055, 0.07], [0.115, 0.13], [0.175, 0.195]] as const) {
-    const ring = new RingGeometry(r0, r1, 16);
-    ring.translate(fx, 0, front + 0.006);
-    parts.push(tone(ring, grey(0.82)));
-  }
-  for (const a of [0, Math.PI / 2]) {
-    const spoke = new BoxGeometry(2 * r, 0.012, 0.006);
-    spoke.rotateZ(a + Math.PI / 4);
-    spoke.translate(fx, 0, front + 0.006);
-    parts.push(tone(spoke, grey(0.82)));
-  }
-  // The coil's louvres at the right of the front.
-  for (let k = 0; k < 5; k++) parts.push(block(0.2, 0.014, 0.008, w / 2 - 0.14, -h / 2 + 0.09 + k * 0.07, front + 0.004, grey(0.72)));
+  const intoWall = new Vector3(0, 0, -1);
+  // The case with its lid's height: the lid, 2 cm over it, is a band of the case the material tones (`AC_FRONT_GLSL`).
+  const parts: BufferGeometry[] = [block(w, h + AC_LID, d, 0, AC_LID / 2, 0, grey(1))];
+  // The fan's hole, its grille and the coil's louvres are drawn on the case's front by its material (`AC_FRONT_GLSL`): DO NOT model them,
+  // 180 of the condenser's 316 triangles were rings, spokes and slats standing 4 to 8 mm proud of that face.
   const wall = -front - gap;
   for (const x of [-w / 2 + 0.12, w / 2 - 0.12]) {
     // The arm under the case, out from the wall, a brace down to a plate on the wall
@@ -79,17 +68,21 @@ function acUnitGeometry(): BufferGeometry {
     brace.rotateX(-Math.PI / 4);
     brace.translate(x, -h / 2 - 0.15, wall + 0.12);
     parts.push(tone(brace, grey(0.38)));
-    parts.push(block(0.05, 0.3, 0.012, x, -h / 2 - 0.13, wall + 0.002, grey(0.38)));
+    // The plate flat on the wall: its face alone (its 12 mm edges are a pixel's sliver).
+    const plate = new PlaneGeometry(0.05, 0.3);
+    plate.translate(x, -h / 2 - 0.13, wall + 0.008);
+    parts.push(tone(plate, grey(0.38)));
   }
-  // The lines: copper and their black insulation, out of the case's right end into the wall.
+  // The lines: copper and their black insulation, out of the case's right end into the wall; four sides at 2-4 cm across.
   for (const [y, rad, rgb] of [[-0.08, 0.012, [0.72, 0.45, 0.3]], [-0.15, 0.022, [0.08, 0.08, 0.08]]] as const) {
     // Into the wall by 2 cm, its end never in the wall's plane.
     const run = gap + d / 2 + 0.04;
-    const pipe = new CylinderGeometry(rad, rad, run, 6, 1, true);
+    const pipe = new CylinderGeometry(rad, rad, run, 4, 1, true, Math.PI / 4);
     pipe.rotateX(Math.PI / 2);
     pipe.translate(w / 2 + 0.03, y, wall - 0.02 + run / 2);
     parts.push(tone(pipe, rgb));
   }
+  for (const part of parts) dropFacing(part, intoWall);
   return merged(parts);
 }
 
@@ -102,7 +95,7 @@ function potGeometry(): BufferGeometry {
   const soil = new CircleGeometry(0.15, 14);
   soil.rotateX(-Math.PI / 2);
   soil.translate(0, POT_HIGH - 0.03, 0);
-  return merged([tone(body, grey(1)), tone(rim, grey(0.92)), tone(soil, [0.24, 0.17, 0.11])]);
+  return merged([tone(body, grey(1)), tone(rim, grey(0.92)), tone(soil, [0.24, 0.17, 0.11])], true);
 }
 
 /** A small seeded stream for the plant's leaves: the same model every load. */
@@ -172,7 +165,7 @@ function chairGeometry(): BufferGeometry {
   for (const x of [-0.19, 0.19]) for (const z of [-0.17, 0.18]) parts.push(block(0.025, 0.43, 0.025, x, 0.215, z, grey(0.9)));
   // Arm rests.
   for (const x of [-0.21, 0.21]) parts.push(block(0.03, 0.025, 0.38, x, 0.63, 0, grey(0.95)));
-  return merged(parts);
+  return merged(parts, true);
 }
 
 /** A small round table from the floor up: top, a post and its base. */
@@ -183,7 +176,7 @@ function tableGeometry(): BufferGeometry {
   post.translate(0, 0.355, 0);
   const foot = new CylinderGeometry(0.2, 0.22, 0.025, 14);
   foot.translate(0, 0.0125, 0);
-  return merged([tone(top, grey(1)), tone(post, grey(0.85)), tone(foot, grey(0.85))]);
+  return merged([tone(top, grey(1)), tone(post, grey(0.85)), tone(foot, grey(0.85))], true);
 }
 
 /** A floor-standing clothes airer (the varal de chao), 1.2 m along X */
@@ -212,7 +205,7 @@ function airerGeometry(): BufferGeometry {
   cloth(0.35, -0.2, 0.22, 0.6, [0.2, 0.22, 0.3]);
   cloth(-0.05, 0.2, 0.3, 0.32, [0.95, 0.93, 0.88]);
   for (const x of [-0.5, -0.42]) cloth(x, 0.2, 0.06, 0.14, [0.9, 0.85, 0.3]);
-  return merged(parts);
+  return merged(parts, true);
 }
 
 /** A satellite dish on its wall arm, the arm's foot at the origin on the wall: the dish 0.6 m across, facing up and out. */
@@ -227,15 +220,45 @@ function dishGeometry(): BufferGeometry {
   return merged([tone(bowl, grey(1)), arm, mount, feed, lnb]);
 }
 
-/** A condenser from afar (`kit.ts` `far`) */
+/** A condenser from afar (`kit.ts` `far`): its case and arms; the fan and louvres drawn on the front by the material, as near. */
 export function acFarGeometry(): BufferGeometry {
   const { w, h, d } = AC;
-  const hole = new CircleGeometry(0.19, 8);
-  hole.translate(-w / 2 + 0.27, 0, d / 2 + 0.003);
-  const parts = [block(w, h, d, 0, 0, 0, grey(1)), tone(hole, grey(0.12))];
+  const parts = [block(w, h + AC_LID, d, 0, AC_LID / 2, 0, grey(1))];
   for (const x of [-w / 2 + 0.12, w / 2 - 0.12]) parts.push(block(0.035, 0.035, d + AC.gap, x, -h / 2 - 0.018, -AC.gap / 2, grey(0.38)));
+  for (const part of parts) dropFacing(part, new Vector3(0, 0, -1));
   return merged(parts);
 }
+
+/** The condenser's front as its material draws it, on the case's face (+z at d / 2, model space): the fan's dark hole, the grille's three
+ *  rings and two crossed spokes over it, and the coil's five louvres at the right, in the tones the modelled ones had (0.1, 0.82, 0.72);
+ *  each edge smoothed over a pixel (fwidth) so they do not crawl. */
+export const AC_FRONT_GLSL = /* glsl */ `
+float acBand(float x, float a, float b, float aa) { return smoothstep(a - aa, a + aa, x) - smoothstep(b - aa, b + aa, x); }
+float acFrontTone(vec3 p) {
+  vec2 q = p.xy - vec2(${(-AC.w / 2 + 0.27).toFixed(4)}, 0.0);
+  float d = length(q), aa = max(fwidth(d), 1e-5);
+  float hole = 1.0 - smoothstep(0.19 - aa, 0.19 + aa, d);
+  float rings = acBand(d, 0.055, 0.07, aa) + acBand(d, 0.115, 0.13, aa) + acBand(d, 0.175, 0.195, aa);
+  vec2 r = vec2(q.x + q.y, q.y - q.x) * 0.70710678;
+  float ra = max(fwidth(r.x), 1e-5);
+  float spokes = max(1.0 - smoothstep(0.006 - ra, 0.006 + ra, abs(r.x)), 1.0 - smoothstep(0.006 - ra, 0.006 + ra, abs(r.y))) * step(d, 0.19);
+  float tone = mix(1.0, 0.1, hole);
+  tone = mix(tone, 0.82, clamp(rings + spokes, 0.0, 1.0));
+  float lx = abs(p.x - ${(AC.w / 2 - 0.14).toFixed(4)}), la = max(fwidth(p.x), 1e-5);
+  float slats = 0.0;
+  for (int k = 0; k < 5; k++) slats += acBand(p.y, ${(-AC.h / 2 + 0.09 - 0.007).toFixed(4)} + float(k) * 0.07, ${(-AC.h / 2 + 0.09 + 0.007).toFixed(4)} + float(k) * 0.07, la);
+  slats *= 1.0 - smoothstep(0.1 - la, 0.1 + la, lx);
+  return mix(tone, 0.72, clamp(slats, 0.0, 1.0));
+}
+/** The lid: the case's top and its top 2 cm all round, in the lid's tone (0.93), its lower edge smoothed over a pixel. */
+float acLidTone(vec3 p) {
+  float aa = max(fwidth(p.y), 1e-5);
+  return mix(1.0, 0.93, smoothstep(${(AC.h / 2).toFixed(4)} - aa, ${(AC.h / 2).toFixed(4)} + aa, p.y));
+}`;
+/** The lid's height over the case (it was a slab of its own). */
+export const AC_LID = 0.02;
+/** The case's front face: its model-space front (z) within this of `AC.d / 2`, facing +z. */
+export const AC_FRONT_Z = AC.d / 2;
 
 /** Every prop's model, made once (`kit.ts`). */
 export function createFacadePropGeometries(): Record<FacadePropKind, BufferGeometry> {
@@ -290,7 +313,7 @@ function loungerGeometry(): BufferGeometry {
   // The cushion, a shade lighter, along the bed.
   parts.push(block(1.2, 0.05, 0.56, 0.25, 0.37, 0, grey(1.0)));
   for (const x of [-0.35, 0.85]) for (const z of [-0.26, 0.26]) parts.push(block(0.04, 0.3, 0.04, x, 0.15, z, grey(0.7)));
-  return merged(parts);
+  return merged(parts, true);
 }
 
 /** A bicycle on its stand, along X, from the floor up: two wheels */
@@ -322,6 +345,6 @@ function bikeGeometry(): BufferGeometry {
   bar(head[0], head[1], base, r);
   parts.push(block(0.22, 0.05, 0.1, seat[0] - 0.02, seat[1] + 0.05, 0, grey(0.1)));
   parts.push(block(0.04, 0.04, 0.5, head[0] - 0.03, head[1] + 0.12, 0, grey(0.15)));
-  return merged(parts);
+  return merged(parts, true);
 }
 

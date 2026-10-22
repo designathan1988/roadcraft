@@ -16,10 +16,10 @@ function axisBox(g: BufferGeometry): boolean {
   return true;
 }
 
-/** The faces of the parts no one can see taken out: one lying on the floor facing down, or one whose every point, `COVER_PROBE` out of it, is inside
+/** The faces of the parts no one can see taken out: one lying on the floor facing down (`floor`: the model stands on y = 0), or one whose every point, `COVER_PROBE` out of it, is inside
  *  another part's box (a book's bottom on its shelf, a tread inside the next, a leg's ends in the floor and in the top). A face only partly
  *  covered is kept whole. DO NOT keep them: they are drawn and cast for every instance of the model. */
-export function dropHiddenFaces(parts: readonly BufferGeometry[]): void {
+export function dropHiddenFaces(parts: readonly BufferGeometry[], floor = true): void {
   const solids: { part: BufferGeometry; box: Box3 }[] = [];
   for (const part of parts) {
     if (!axisBox(part)) continue;
@@ -55,7 +55,7 @@ export function dropHiddenFaces(parts: readonly BufferGeometry[]): void {
       }
       let hidden = false;
       if (flat) {
-        const onFloor = n.y < -0.9999 && lowest <= 1e-4;
+        const onFloor = floor && n.y < -0.9999 && lowest <= 1e-4;
         hidden = onFloor;
         if (!hidden) {
           // Each triangle's corners drawn in a little towards its middle, its middle, its edges' middles: all must be inside another part.
@@ -92,4 +92,38 @@ export function dropHiddenFaces(parts: readonly BufferGeometry[]): void {
     part.setIndex(kept.map((v) => remap[v]!));
     part.clearGroups();
   }
+}
+
+/** The triangles of `part` facing `towards` (unit; within `cos` of it) taken out, its unused corners with them: the side of a prop against a wall
+ *  faces the wall, where no camera stands. */
+export function dropFacing(part: BufferGeometry, towards: Vector3, cos = 0.99): BufferGeometry {
+  const index = part.index;
+  if (!index) return part;
+  const position = part.getAttribute('position');
+  const a = new Vector3(), b = new Vector3(), c = new Vector3(), e = new Vector3(), f = new Vector3();
+  const kept: number[] = [];
+  for (let i = 0; i < index.count; i += 3) {
+    a.fromBufferAttribute(position, index.getX(i));
+    b.fromBufferAttribute(position, index.getX(i + 1));
+    c.fromBufferAttribute(position, index.getX(i + 2));
+    const n = e.subVectors(b, a).cross(f.subVectors(c, a)).normalize();
+    if (n.dot(towards) > cos) continue;
+    kept.push(index.getX(i), index.getX(i + 1), index.getX(i + 2));
+  }
+  if (kept.length === index.count) return part;
+  const remap = new Int32Array(position.count).fill(-1);
+  let used = 0;
+  for (const v of kept) if (remap[v] === -1) remap[v] = used++;
+  for (const [name, attribute] of Object.entries(part.attributes)) {
+    const size = attribute.itemSize;
+    const array = new Float32Array(used * size);
+    for (let v = 0; v < remap.length; v++) {
+      const to = remap[v]!;
+      if (to >= 0) for (let k = 0; k < size; k++) array[to * size + k] = attribute.array[v * size + k]!;
+    }
+    part.setAttribute(name, new BufferAttribute(array, size, attribute.normalized));
+  }
+  part.setIndex(kept.map((v) => remap[v]!));
+  part.clearGroups();
+  return part;
 }
