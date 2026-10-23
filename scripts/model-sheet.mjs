@@ -1,3 +1,4 @@
+/* global fetch, performance, document, createImageBitmap */
 // A model's sheet: the game's own furniture model rendered and, beside it, its triangles as a hidden-line wireframe, with the triangle count.
 // `node scripts/model-sheet.mjs [kind] [out.png] [--url=http://127.0.0.1:5300]`  (kind: any `FURNITURE_KINDS` entry, default `chair`; out: `<kind>-sheet.png`)
 // Uses the dev server on the url, or starts one of its own when none answers.
