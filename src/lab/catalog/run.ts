@@ -11,7 +11,7 @@ import { measureItem, type CatalogRow, type ItemSpec } from './items';
 import { buildingKitItems, effectItems, elementItems, groundCoverItems, miscItems, sceneryItems, treeItems, vehicleItems } from './kits';
 import { peopleAssetItems, peopleItems } from './people';
 import { layoutItems, terrainItems } from './layout';
-import { barrierItems, farCarItems, flagItems, signalItems, signItems, transitItems, waterItems } from './layers';
+import { barrierItems, farCarItems, farForestItems, farNetworkItems, flagItems, signalItems, signItems, transitItems, waterItems } from './layers';
 import { engineBuildingItems } from './engineBuildings';
 import { shellPieceItems } from './shellPieces';
 import { buildingItems, cityCounts, destructionPeak, drawCallsByGroup, previewItems, probe, sceneSnapshot, signatureOf, type BuildingMeasure, type CountEntry, type SceneLayer, type SceneSeen } from './city';
@@ -102,6 +102,8 @@ export async function catalogueKits(proxies: readonly string[], targetBytes: num
   await group('far traffic', () => farCarItems(add));
   await group('transit tracks and stations', () => transitItems(add, new Map()));
   await group('water', () => waterItems(add));
+  await group('far forest', () => farForestItems(add, sheetRenderer(480)));
+  await group('network far roads', () => farNetworkItems(add));
   await group('landscape kit, street furniture, poles', () => sceneryItems(add));
   await group('ground cover', () => groundCoverItems(add));
   await group('trees', () => treeItems(add));

@@ -7,10 +7,21 @@ import { createFlagLayer } from '../../render/buildings/flagLayer';
 import { createSignalHeads } from '../../render/signals';
 import { carGeometry } from '../../render/densityCars';
 import { createTransit } from '../../render/transit';
-import { unifiedWaterGeometry } from '../../render/terrain';
+import { TERRAIN_BASE, unifiedWaterGeometry } from '../../render/terrain';
 import { createWaterSurface } from '../../render/water';
 import { sheetMaterial } from './items';
-import type { BufferGeometry } from 'three';
+import { BufferGeometry as BufferGeometryClass, DoubleSide, InstancedMesh, type BufferGeometry, type InstancedBufferAttribute, type InstancedBufferGeometry, type WebGLRenderer } from 'three';
+import { REGIONS } from '@world/ecology';
+import { ROAD_TYPES } from '@world/roadTypes';
+import { BufferAttribute, Group } from 'three';
+import { farRoadInput } from '../../render/networkFarRoads';
+import { buildFarRoadCells } from '../../render/networkFarRoadsBuild';
+import { TILE, TILE_ORIGIN } from '../../render/roadSurfaceEntries';
+import type { PieceSpec } from './items';
+import { RELIEF_FLAT } from '@world/terrain';
+import { createFarForest } from '../../render/farForest';
+import { farWoods } from '../../render/farWoods';
+import { TERRAIN_CELL, TERRAIN_HALF } from '../../render/terrainGrid';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { buildRoadElevation } from '@world/elevation';
@@ -148,6 +159,78 @@ export function waterItems(add: Add): void {
   const course = Array.from({ length: 9 }, (_, i) => ({ x: -m(80) + i * m(20), y: Math.sin(i / 2) * m(10), half: m(8), level: -m(1) }));
   const bed = (x: number, y: number): number => (Math.abs(y - Math.sin((x + m(80)) / m(40)) * m(10)) < m(9) ? -m(3) : 0);
   one('river', '160 m course, 16 m wide', unifiedWaterGeometry([], bed, undefined, [course]));
+}
+
+/** The far woods of one plate of each region as the far forest draws them (`farForest.ts`): the plate's trees worked out by the worker's own function
+ *  (`farWoods.ts` farWoods), each a quad turned to the camera and painted with its tree's picture by the shader; the grid the atlas gives it (`flatAtlas.ts`). */
+export function farForestItems(add: Add, renderer: WebGLRenderer): void {
+  // `flatAtlas.ts` SIDE and FAR_QUADS: the plate's corners a side and the far patch's quads a side.
+  const grid = { side: Math.round((2 * TERRAIN_HALF) / TERRAIN_CELL) + 1, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: 32 };
+  for (const region of REGIONS) {
+    const forest = createFarForest(4, grid, (_key, ask, done) => done(farWoods(ask)));
+    forest.book.sync(RELIEF_FLAT, { region, seed: 1 }, 0, 0);
+    forest.book.add(1, 0, 0, 0);
+    forest.update(renderer, 0);
+    const mesh = forest.object.children[0] as Mesh<InstancedBufferGeometry> | undefined;
+    if (!mesh) { add({ group: 'Far forest', name: region, variation: 'one plate', origin: 'kit', source: 'src/render/farForest.ts', build: 'instanced', pieces: [], notes: ['no far trees on this region\'s plate'] }); continue; }
+    const g = mesh.geometry, count = g.instanceCount;
+    // The picture: each tree's quad standing at its foot, as tall as the tree (the shader turns it to the camera and paints the tree on it).
+    const spot = g.getAttribute('aSpot') as InstancedBufferAttribute;
+    const quad = new BufferGeometryClass();
+    quad.setAttribute('position', g.getAttribute('position'));
+    quad.setAttribute('normal', g.getAttribute('normal'));
+    quad.setIndex(g.index);
+    const standing = new InstancedMesh(quad, new MeshStandardMaterial({ color: 0x46613a, roughness: 0.9, side: DoubleSide }), count);
+    const at = new Matrix4();
+    for (let i = 0; i < count; i++) {
+      const size = spot.getW(i);
+      standing.setMatrixAt(i, at.makeScale(size, size, size).setPosition(spot.getX(i), spot.getY(i) + size / 2, spot.getZ(i)));
+    }
+    standing.name = 'far-forest';
+    add({ group: 'Far forest', name: region, variation: `one plate, ${count} trees`, origin: 'kit', source: 'src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)',
+      build: 'instanced', pieces: [{ label: 'tree quad', geometry: g, material: forest.material, copies: count }], object: standing, countKey: `far-forest:${region}`,
+      notes: ['each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree\'s picture (impostorShaders.ts); the plate\'s trees thinned by the quality tier\'s budget'] });
+  }
+}
+
+/** The network's far level as the renderer asks it (`renderer.ts` requestNetworkFar): every road's and junction's outline at its class's colour
+ *  (`networkFarRoads.ts` farRoadInput), merged a cell at a time by the worker's own function (`networkFarRoadsBuild.ts` buildFarRoadCells); each
+ *  class of road straight and at a four-way junction. */
+export function farNetworkItems(add: Add): void {
+  const flat = (): number => 0;
+  for (let t = 0; t < ROAD_TYPES.length; t++) {
+    for (const [layout, junction] of [['straight', false], ['four-way junction', true]] as const) {
+      const doc = new RoadDoc();
+      if (junction) {
+        const centre = doc.addNode({ x: 0, y: 0 });
+        for (const [x, y] of [[-LEG, 0], [LEG, 0], [0, LEG], [0, -LEG]] as const) doc.addSegment(doc.addNode({ x, y }).id, centre.id, t);
+      } else doc.addSegment(doc.addNode({ x: -LEG, y: 0 }).id, doc.addNode({ x: LEG, y: 0 }).id, t);
+      const net = new Network(doc);
+      net.rebuild();
+      const { input } = farRoadInput(net, buildRoadElevation(net, flat), flat, 8 * TILE, TILE_ORIGIN, null);
+      const group = new Group();
+      group.name = 'road-far-network';
+      const pieces: PieceSpec[] = [];
+      for (const cell of buildFarRoadCells(input)) {
+        if (!cell.indices.length) continue;
+        const g = new BufferGeometryClass();
+        g.setAttribute('position', new BufferAttribute(cell.positions, 3));
+        g.setAttribute('color', new BufferAttribute(cell.colors, 3));
+        g.setIndex(new BufferAttribute(cell.indices, 1));
+        g.computeVertexNormals();
+        const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+        const label = cell.layer === 0 ? 'casing (footways and kerbs)' : 'carriageway';
+        pieces.push({ label: `${label}, cell ${cell.key}`, geometry: g, material });
+        const mesh = new Mesh(g, material);
+        mesh.name = label;
+        group.add(mesh);
+      }
+      add({ group: 'Roads: network far level', name: `${ROAD_TYPES[t]!.id} ${layout}`, variation: `${LEG * 2} m`, origin: 'kit',
+        source: 'src/render/networkFarRoads.ts (farRoadInput) + src/render/networkFarRoadsBuild.ts (buildFarRoadCells)', build: 'merged', pieces, object: group,
+        countKey: `far-network:${ROAD_TYPES[t]!.id}`,
+        notes: ['the roads\' top level: shown in a cell whose blocks\' far levels the far budget let go; one GPU batch a layer in the game (GpuBatchedMesh), one instance a cell'] });
+    }
+  }
 }
 
 /** Rails and stations as the transit layer lays them (`transit.ts`): a train's track with a station, the metro's under the ground with its station and way
