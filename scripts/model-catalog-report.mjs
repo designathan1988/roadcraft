@@ -15,9 +15,7 @@ const kb = (b) => `${n(Math.round((b ?? 0) / 1024))} KB`;
 
 /** What is not catalogued yet, and why: the engine's layout layers still to be built alone. */
 const PENDING = [
-  'Water (src/render/terrain.ts unifiedWaterGeometry)', 'Far forest (src/render/farForest.ts)', 'Network far roads (src/render/networkFarRoads.ts)',
-  'The buildings\' far levels (massCells.ts, farParts.ts, shellBatch.ts, partCells.ts)',
-  'Copies of each object in a generated city, and triangles x copies',
+  'Copies of each object in a generated city, and triangles x copies (needs the game open: `node scripts/model-catalog.mjs` without --no-game)',
 ];
 /** Layers that draw no geometry of their own: what they place is catalogued under the kit it comes from. */
 const NO_OWN_GEOMETRY = [
