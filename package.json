@@ -18,6 +18,7 @@
     "typecheck:tsc": "tsc --noEmit",
     "verify": "node scripts/verify.mjs",
     "diagnose": "node scripts/diagnose/diagnose.mjs",
+    "model-sheet": "node scripts/model-sheet.mjs",
     "lint": "eslint . --suppressions-location scripts/baselines/eslint-suppressions.json",
     "test": "node scripts/run-limited.mjs npm run test:raw",
     "test:raw": "vitest run",
