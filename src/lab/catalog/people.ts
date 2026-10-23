@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, MeshStandardMaterial, type Material, type Object3D, type SkinnedMesh } from 'three';
 import { loadPeopleAssets } from '../../people/body/assets';
-import { fitProxy, loadProxyItem } from '../../people/body/proxy';
+import { fitProxy, parseProxy, proxyUrl, type ProxyMeta } from '../../people/body/proxy';
 import { loadCookedPerson } from '../../render/people/cookedLoad';
 import { createProceduralCrowd } from '../../render/people/proceduralCrowd';
 import { CROWD_IDS } from '../../render/citizenCasting';
@@ -54,16 +54,23 @@ export async function peopleAssetItems(add: Add, proxies: readonly string[], tar
     group: 'People: base body', name: 'MakeHuman base mesh', variation: 'with helper geometry', origin: 'file', source: 'public/models/people/base.bin', build: 'skinned',
     pieces: [{ label: 'body and helpers', geometry: meshOf(positions, triangles(false)), material: skin, bones }], notes: ['the file as shipped; the helpers (joints, proxies\' fitting cubes) are not drawn'],
   });
-  for (const name of proxies) {
+  // Read straight from its two files, many at once: DO NOT load them as the game does (`loadProxyItem` decodes each texture whole to sample its colour, minutes for 577).
+  const read = async (name: string): Promise<{ meta: ProxyMeta; bin: ArrayBuffer }> => {
+    const [meta, bin] = await Promise.all([fetch(proxyUrl(`${name}.json`)).then((r) => r.json() as Promise<ProxyMeta>), fetch(proxyUrl(`${name}.bin`)).then((r) => r.arrayBuffer())]);
+    return { meta, bin };
+  };
+  const loaded = await Promise.all(proxies.map((name) => read(name).then((value) => ({ name, value }), (error: unknown) => ({ name, error }))));
+  for (const entry of loaded) {
+    const name = entry.name;
     try {
-      const item = await loadProxyItem(name);
-      const pack = item.pack;
+      if ('error' in entry) throw entry.error;
+      const pack = parseProxy(entry.value.meta, entry.value.bin);
       const fitted = fitProxy(pack, positions);
-      const material = new MeshStandardMaterial({ color: pack.colour, roughness: 0.8, transparent: item.transparent });
+      const material = new MeshStandardMaterial({ color: pack.colour, roughness: 0.8, transparent: !!entry.value.meta.transparent });
       add({
         group: `People: ${pack.kind}`, name, origin: 'file', source: `public/models/people/proxies/${name}.bin`, build: 'skinned',
         pieces: [{ label: pack.kind, geometry: meshOf(fitted, pack.index, pack.uvs), material, bones }],
-        notes: [`hides ${pack.deleteVerts.length} base-body vertices under it`, ...(item.textureFile ? [`texture ${item.textureFile}`] : [])], countKey: `proxy:${name}`,
+        notes: [`hides ${pack.deleteVerts.length} base-body vertices under it`, ...(entry.value.meta.texture ? [`texture ${entry.value.meta.texture}`] : [])], countKey: `proxy:${name}`,
       });
     } catch (error) {
       console.error(`[catalogue] ${name} could not be loaded`, error);

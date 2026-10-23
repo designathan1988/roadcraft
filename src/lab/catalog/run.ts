@@ -1,7 +1,9 @@
 import {
   ACESFilmicToneMapping, Box3, Color, DirectionalLight, HemisphereLight, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial,
-  NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene, SRGBColorSpace, Vector3, WebGLRenderer, WireframeGeometry, type BufferGeometry, type Object3D,
+  NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WireframeGeometry, type BufferGeometry, type Object3D,
 } from 'three';
+import { primeSurfaceBake, startSurfaceBake } from '../../render/surfaceBakeClient';
+import { surfaceMaps } from '../../render/surfaceTextures';
 import { measureItem, type CatalogRow, type ItemSpec } from './items';
 import { buildingKitItems, effectItems, elementItems, groundCoverItems, miscItems, sceneryItems, treeItems, vehicleItems } from './kits';
 import { peopleAssetItems, peopleItems } from './people';
@@ -45,13 +47,17 @@ function add(spec: ItemSpec): void {
   }
 }
 
-/** Runs one group's builder; a group that fails is listed, the others go on. */
+/** Runs one group's builder unless `only` leaves it out; a group that fails is listed, the others go on. */
 async function group(name: string, run: () => void | Promise<void>): Promise<void> {
+  const only = (window as unknown as { __catalogueOnly?: RegExp | null }).__catalogueOnly;
+  if (only && !only.test(name)) return;
   try { await run(); } catch (error) { recordGap(`${name}: could not be built: ${String(error)}`); }
 }
 
-/** Every kit, each object and variation built on its own; `proxies` the garment and hair files, `targetBytes` the shape targets' files. */
-export async function catalogueKits(proxies: readonly string[], targetBytes: number): Promise<number> {
+/** Every kit, each object and variation built on its own; `proxies` the garment and hair files, `targetBytes` the shape targets' files;
+ *  `only` (a pattern) the groups to build, every group when empty. */
+export async function catalogueKits(proxies: readonly string[], targetBytes: number, only = ''): Promise<number> {
+  (window as unknown as { __catalogueOnly?: RegExp | null }).__catalogueOnly = only ? new RegExp(only, 'i') : null;
   await group('building kit and furniture', () => buildingKitItems(add));
   await group('landscape kit, street furniture, poles', () => sceneryItems(add));
   await group('ground cover', () => groundCoverItems(add));
@@ -154,19 +160,51 @@ export function catalogueResult(): { rows: CatalogRow[]; gaps: string[]; drawCal
   return { rows: s.rows, gaps: s.gaps, drawCalls: s.drawCalls, destruction: s.destruction, scene };
 }
 
+/** The baked surfaces (the buildings' finishes and the roads' maps) read when the game has not read them: the catalogue's page runs without the game. */
+export async function catalogueSurfaces(): Promise<boolean> {
+  if (surfaceMaps('building-finishes', 0)) return false;
+  primeSurfaceBake(await startSurfaceBake());
+  return true;
+}
+
+/** The one renderer every sheet is drawn with: DO NOT make one a sheet (a WebGL context each, and the browser keeps 16 at most). */
+function sheetRenderer(panel: number): WebGLRenderer {
+  const w = window as unknown as { __catalogueRenderer?: WebGLRenderer };
+  if (!w.__catalogueRenderer) {
+    const canvas = document.createElement('canvas');
+    w.__catalogueRenderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    w.__catalogueRenderer.setPixelRatio(1);
+    w.__catalogueRenderer.outputColorSpace = SRGBColorSpace;
+  }
+  const renderer = w.__catalogueRenderer;
+  const size = renderer.getSize(new Vector2());
+  if (size.x !== panel || size.y !== panel) renderer.setSize(panel, panel, false);
+  return renderer;
+}
+
+/** Several objects' sheets in one call (`panel` pixels a picture): fewer trips between the page and the script. */
+export async function catalogueSheets(ids: readonly string[], panel = 480): Promise<{ id: string; png: string | null; error?: string }[]> {
+  const out: { id: string; png: string | null; error?: string }[] = [];
+  for (const id of ids) {
+    try { out.push({ id, png: await catalogueSheet(id, panel) }); } catch (error) { recordGap(`${id}: its sheet could not be drawn (${String(error)})`); out.push({ id, png: null, error: String(error) }); }
+  }
+  return out;
+}
+
+/** Every row's id, costliest first (the order the sheets are numbered in). */
+export function catalogueIds(): string[] {
+  return [...state().rows].sort((a, b) => b.totalTriangles - a.totalTriangles || b.triangles - a.triangles).map((r) => r.id);
+}
+
 /** One object's sheet: rendered and as a hidden-line wireframe side by side, titled; a PNG as base64. */
-export async function catalogueSheet(id: string): Promise<string | null> {
+export async function catalogueSheet(id: string, panel = 800): Promise<string | null> {
   const s = state();
   const object = s.objects.get(id);
   const row = s.rows.find((r) => r.id === id);
   if (!object || !row || object.children.length === 0) return null;
-  const W = 800, H = 800;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(1);
-  renderer.setSize(W, H, false);
-  renderer.outputColorSpace = SRGBColorSpace;
+  const W = panel, H = panel;
+  const renderer = sheetRenderer(panel);
+  const canvas = renderer.domElement;
   renderer.toneMapping = ACESFilmicToneMapping;
   const box = new Box3().setFromObject(object);
   const centre = box.getCenter(new Vector3()), size = box.getSize(new Vector3());
@@ -201,17 +239,22 @@ export async function catalogueSheet(id: string): Promise<string | null> {
   renderer.toneMapping = NoToneMapping;
   renderer.render(wire, camera);
   const right = await createImageBitmap(canvas);
-  renderer.dispose();
+  // The object back where it was (the shaded scene took it), the sheet's own geometries let go.
+  shaded.remove(object);
+  floor.geometry.dispose(); (floor.material as MeshStandardMaterial).dispose();
+  wire.traverse((o) => { if ((o as LineSegments).isLineSegments) (o as LineSegments).geometry.dispose(); });
   const pad = 20, top = 120;
   const page = document.createElement('canvas');
   page.width = W * 2 + pad * 3; page.height = H + top + pad;
   const g = page.getContext('2d')!;
   g.fillStyle = '#fff'; g.fillRect(0, 0, page.width, page.height);
   g.drawImage(left, pad, top); g.drawImage(right, W + pad * 2, top);
-  g.fillStyle = '#141e28'; g.font = 'bold 30px Segoe UI, sans-serif';
+  g.fillStyle = '#141e28'; g.font = `bold ${Math.round(panel / 27)}px Segoe UI, sans-serif`;
   g.fillText(`${row.group} - ${row.name}${row.variation ? ` (${row.variation})` : ''}`, pad, 44);
-  g.font = '22px Segoe UI, sans-serif';
-  g.fillText(`${row.triangles.toLocaleString('en')} triangles x ${row.instances.toLocaleString('en')} copies = ${row.totalTriangles.toLocaleString('en')}; ${row.vertices.toLocaleString('en')} vertices; ${(row.totalBytes / 1024).toFixed(0)} KB`, pad, 80);
+  g.font = `${Math.round(panel / 36)}px Segoe UI, sans-serif`;
+  // Its copies only where a test city counted them (a run without the game has none).
+  const copies = row.instancesFrom ? ` x ${row.instances.toLocaleString('en')} copies = ${row.totalTriangles.toLocaleString('en')}` : '';
+  g.fillText(`${row.triangles.toLocaleString('en')} triangles${copies}; ${row.vertices.toLocaleString('en')} vertices; ${(row.totalBytes / 1024).toFixed(0)} KB`, pad, 80);
   g.fillText(`${row.solids || row.build}${row.hiddenTriangles ? `; ${row.hiddenTriangles} hidden triangles` : ''}`, pad, 108);
   return page.toDataURL('image/png').split(',')[1] ?? null;
 }

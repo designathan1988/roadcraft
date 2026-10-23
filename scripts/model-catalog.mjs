@@ -5,8 +5,9 @@
 // every group's draw calls, the destruction's peak. Lights and effects of the frame are not objects and are left out; the effects with geometry
 // are measured in a section of their own; the editor's previews are listed but kept out of the running game's cost.
 //
-// `node scripts/model-catalog.mjs [out folder] [--url=http://127.0.0.1:5300] [--seed=7] [--sheets=20]`   (default folder: `reports/model-catalog`)
-// Writes `catalog.csv` and `catalog.json` (sorted by total cost), `sheets/NN-<id>.png` (render + wireframe of the costliest), `gaps.md`.
+// `node scripts/model-catalog.mjs [out folder] [--url=http://127.0.0.1:5300] [--seed=7] [--sheets=20|all] [--panel=800] [--no-game] [--only=<groups>]`
+//   (default folder: `reports/model-catalog`). `--no-game --sheets=all`: every kit object photographed without opening the game, in a few minutes.
+// Writes `catalog.csv` and `catalog.json` (sorted by total cost), `sheets/NN-<id>.png` (render + wireframe), `gaps.md`.
 // The page side is `src/lab/catalog/` (kits.ts, people.ts, city.ts, measure.ts, items.ts, run.ts).
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -18,10 +19,17 @@ const flag = (name, fallback) => flags.find((f) => f.startsWith(`--${name}=`))?.
 const out = resolve(args.find((a) => !a.startsWith('--')) ?? 'reports/model-catalog');
 const url = flag('url', 'http://127.0.0.1:5300/');
 const seed = Number(flag('seed', 7));
-const sheetCount = Number(flag('sheets', 20));
+const sheetCount = flag('sheets', '20');
+/** Pixels of each picture of a sheet (render and wireframe side by side). */
+const panel = Number(flag('panel', sheetCount === 'all' ? 480 : 800));
+/** Only the kits, without opening the game: the fast way to photograph every object (no buildings, no test city). */
+const noGame = flags.includes('--no-game');
+/** A pattern of the groups to build (`buildings|vehicles`); every group when absent. */
+const only = flag('only', '');
 mkdirSync(out, { recursive: true });
-rmSync(join(out, 'sheets'), { recursive: true, force: true });
 mkdirSync(join(out, 'sheets'), { recursive: true });
+// The last run's sheets let go, the folder kept (a shell or a viewer may hold it open).
+for (const file of readdirSync(join(out, 'sheets'))) if (file.endsWith('.png')) rmSync(join(out, 'sheets', file), { force: true });
 
 // ---- what the page needs from the disk: the garment and hair files, the shape targets' size, the textures' sizes.
 const PEOPLE = resolve('public/models/people');
@@ -64,24 +72,32 @@ const sheets = [];
 try {
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 900 } })).newPage();
   page.on('pageerror', (error) => console.error(`page error: ${error.message}`));
-  await page.goto(url);
-  await page.waitForFunction(() => performance.getEntriesByName('opening:shown').length > 0, null, { timeout: 180000, polling: 250 });
-  step('kits');
-  step(`kits: ${await call(page, 'catalogueKits', proxies, targetBytes)} items`);
-  await page.evaluate((s) => { performance.clearMarks(); return window.__roadcraft.generateCity({ seed: s, size: 'large' }); }, seed);
-  await page.waitForFunction(() => performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0, null, { timeout: 600000, polling: 250 });
-  await page.waitForFunction(() => { const c = document.getElementById('loading-curtain'); return !!c && getComputedStyle(c).display === 'none'; }, null, { timeout: 300000, polling: 250 });
-  await page.waitForTimeout(2000);
-  step(`test city objects: ${await call(page, 'catalogueCityObjects')} items`);
-  for (const view of VIEWS) {
-    await call(page, 'catalogueView', ...view);
-    await page.waitForTimeout(3500);
-    step(`view ${view.join(' ')}: ${await call(page, 'catalogueLook')} layer kinds`);
+  if (noGame) {
+    // A static file of the dev server: the same origin, so the game's modules load, but the game itself does not start.
+    await page.goto(`${url}models/people/base.json`);
+    step(`surfaces read: ${await call(page, 'catalogueSurfaces')}`);
+  } else {
+    await page.goto(url);
+    await page.waitForFunction(() => performance.getEntriesByName('opening:shown').length > 0, null, { timeout: 180000, polling: 250 });
   }
-  await call(page, 'catalogueView', ...VIEWS[3]);
-  await page.waitForTimeout(3000);
-  step(`finish: ${await call(page, 'catalogueFinish')} items`);
+  step(`kits: ${await call(page, 'catalogueKits', proxies, targetBytes, only)} items`);
+  if (!noGame) {
+    await page.evaluate((s) => { performance.clearMarks(); return window.__roadcraft.generateCity({ seed: s, size: 'large' }); }, seed);
+    await page.waitForFunction(() => performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0, null, { timeout: 600000, polling: 250 });
+    await page.waitForFunction(() => { const c = document.getElementById('loading-curtain'); return !!c && getComputedStyle(c).display === 'none'; }, null, { timeout: 300000, polling: 250 });
+    await page.waitForTimeout(2000);
+    step(`test city objects: ${await call(page, 'catalogueCityObjects')} items`);
+    for (const view of VIEWS) {
+      await call(page, 'catalogueView', ...view);
+      await page.waitForTimeout(3500);
+      step(`view ${view.join(' ')}: ${await call(page, 'catalogueLook')} layer kinds`);
+    }
+    await call(page, 'catalogueView', ...VIEWS[3]);
+    await page.waitForTimeout(3000);
+    step(`finish: ${await call(page, 'catalogueFinish')} items`);
+  }
   result = await call(page, 'catalogueResult');
+  if (noGame) result.gaps.push('Run without the game (--no-game): the buildings (built from a city\'s records), the test city\'s layers, copies, costs, draw calls and the destruction\'s peak are left out.');
   // The proxies' textures: their size on the GPU (RGBA, its mips) from the file's header.
   for (const row of result.rows) {
     const texture = row.notes.find((n) => n.startsWith('texture '))?.slice(8);
@@ -94,19 +110,21 @@ try {
     row.notes.push(`texture ${size.width}x${size.height} (${Math.round(bytes / 1024)} KB with mips)`);
   }
   result.rows.sort((a, b) => b.totalTriangles - a.totalTriangles || b.triangles - a.triangles);
-  const top = result.rows.filter((r) => !r.preview && r.totalTriangles > 0 && r.origin !== 'test city').slice(0, sheetCount);
-  for (const [i, row] of top.entries()) {
-    let png = null;
-    try {
-      png = await call(page, 'catalogueSheet', row.id);
-    } catch (error) {
-      console.error(`sheet of ${row.id} failed: ${error.message}`);
-      result.gaps.push(`${row.id}: its sheet could not be drawn (${error.message.split('\n')[0]})`);
-    }
-    if (!png) continue;
-    const file = `${String(i + 1).padStart(2, '0')}-${row.id.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 80)}.png`;
-    writeFileSync(join(out, 'sheets', file), Buffer.from(png, 'base64'));
-    sheets.push(file);
+  // The sheets: every object (`--sheets=all`), or the costliest N of the running game; drawn by one renderer, a batch of them a call.
+  const drawable = result.rows.filter((r) => r.origin !== 'test city' && r.pieces.length > 0);
+  const chosen = sheetCount === 'all' ? drawable : drawable.filter((r) => !r.preview && r.totalTriangles > 0).slice(0, Number(sheetCount));
+  const digits = String(chosen.length).length;
+  const BATCH = 25;
+  for (let start = 0; start < chosen.length; start += BATCH) {
+    const batch = chosen.slice(start, start + BATCH);
+    const drawn = await call(page, 'catalogueSheets', batch.map((r) => r.id), panel);
+    drawn.forEach((d, k) => {
+      if (!d.png) { if (d.error) result.gaps.push(`${d.id}: its sheet could not be drawn (${d.error.split('\n')[0]})`); return; }
+      const file = `${String(start + k + 1).padStart(digits, '0')}-${d.id.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 80)}.png`;
+      writeFileSync(join(out, 'sheets', file), Buffer.from(d.png, 'base64'));
+      sheets.push(file);
+    });
+    step(`sheets: ${Math.min(start + BATCH, chosen.length)} of ${chosen.length}`);
   }
 } finally {
   await browser.close();
