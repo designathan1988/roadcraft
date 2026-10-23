@@ -440,6 +440,8 @@ interface CellNode {
   readonly slots: number[][] | null;
   /** Leaf: per kind, the largest size of a slot in it, world units across. */
   readonly big: Float32Array | null;
+  /** Leaf: per kind, the largest radius of a slot in it: whether any of it can cast into the near cascade (`visit` castFrom). */
+  readonly wide: Float32Array | null;
 }
 
 export function createCellInstances(kindSpecs: readonly KindSpec[], format: SlotFormat, margin: number): CellInstances {
@@ -486,6 +488,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     children: leaf ? null : [null, null, null, null],
     slots: leaf ? kinds.map(() => []) : null,
     big: leaf ? new Float32Array(kinds.length) : null,
+    wide: leaf ? new Float32Array(kinds.length) : null,
   });
   const leafAt = (ix: number, iz: number): CellNode => {
     const key = cellKey(ix, iz);
@@ -515,6 +518,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     const leaf = leafAt(ix, iz);
     leaf.slots![k.index]!.push(i);
     leaf.big![k.index] = Math.max(leaf.big![k.index]!, k.sizes[i]!);
+    leaf.wide![k.index] = Math.max(leaf.wide![k.index]!, r);
     growNode(leaf, x, y, z, r);
     grown.add(cellKey(ix, iz));
   };
@@ -539,7 +543,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   // a slot list a kind each): a 13 s flight over the city allocated 356 MB here (`npm run diagnose`, 2026-10-22).
   const emptied = (node: CellNode): void => {
     node.r = -1;
-    if (node.slots) { for (const list of node.slots) list.length = 0; node.big!.fill(0); return; }
+    if (node.slots) { for (const list of node.slots) list.length = 0; node.big!.fill(0); node.wide!.fill(0); return; }
     for (const child of node.children!) if (child) emptied(child);
   };
   /** Whether `node` holds nothing now; an empty child let go from it. */
@@ -898,6 +902,13 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     }
     // The nearest the leaf comes to the eye (w), for the largest size in it.
     const wNear = wOf(node.x, node.y, node.z) - node.r * wReach;
+    // Under the near cascade's cover: the leaf's one test, for every kind in it.
+    let leafCovered = false;
+    if (keepBox !== null) {
+      nodeProbe.center.set(node.x, node.y, node.z);
+      nodeProbe.radius = node.r + PAD;
+      leafCovered = keepBox.intersectsSphere(nodeProbe);
+    }
     for (const k of kinds) {
       if (!k.active) continue;
       const slots = node.slots![k.index]!;
@@ -910,14 +921,11 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       // Past the first slot whose pick is over the share the leaf's largest keeps, nothing more is drawn (`sorted`); under the cover each
       // still casts (`COVER`): DO NOT let the shadow follow the thinning, which follows the camera.
       const stopAt = far < 0 ? Infinity : thinWant(node.big![k.index]! * (wNear > 1e-4 ? perUnitAtOne / wNear : Infinity)) + PICK_SLACK;
-      let covered = false;
-      if (keepBox !== null && casts[k.index]) {
-        nodeProbe.center.set(node.x, node.y, node.z);
-        nodeProbe.radius = node.r + PAD;
-        covered = keepBox.intersectsSphere(nodeProbe);
-      }
       // What casts into the near cascade by its size (`castBySize`: its texels there): the cover asks nothing of a thing too small for them.
       const castFrom = keepTexel * castTexelsOf(k);
+      // A leaf none of whose slots reaches a texel there is no cover's: its walk stops at its first slot thinned out. DO NOT walk every
+      // thinned slot of a covered leaf to find each too small: a covered leaf of benches and bins was walked whole at each cull of a move.
+      const covered = leafCovered && casts[k.index]! && node.wide![k.index]! >= castFrom;
       for (const i of slots) {
         const r = sp[i * 4 + 3]!;
         if (r === -Infinity) continue;
