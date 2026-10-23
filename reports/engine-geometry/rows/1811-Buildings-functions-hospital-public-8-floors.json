@@ -1,0 +1,129 @@
+{
+ "id": "Buildings: functions/hospital/public (8 floors)",
+ "group": "Buildings: functions",
+ "name": "hospital",
+ "variation": "public (8 floors)",
+ "origin": "kit",
+ "source": "src/world/buildings/cityBuildings.ts (CITY_BUILDINGS)",
+ "build": "merged",
+ "triangles": 8622,
+ "vertices": 15047,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B litSlot/instance:1xFloat32=4B roomA:4xUint16=8B roomB:4xUint16=8B roomC:4xUint16=8B roomD:4xUint16=8B roomE:4xUint16=8B color:3xFloat32=12B shellFinish:1xFloat32=4B aDecay:1xFloat32=4B shellGround:1xFloat32=4B",
+ "bytesPerVertex": 104,
+ "geometryBytes": 234592,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 234592,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1) | MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1) | MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1) | MeshStandardMaterial \"building-part-dish\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.5, metalness 0.2, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in room-lights-awake-interior-v15-recess|part-pose | patched built-in thin-part-prefiltered-v3-cards|part-pose | patched built-in onBeforeCompile() {}|part-pose | patched built-in facade-ac-front|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 8622,
+   "vertices": 15047
+  }
+ ],
+ "solids": "855 solids: 167 other, 394 quad, 35 open prism, 259 box",
+ "hiddenTriangles": 90,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 8,
+ "trianglesPerFloor": 1078,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1811-Buildings-functions-hospital-public-8-floors.png",
+ "model": "models/1811-Buildings-functions-hospital-public-8-floors.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 4246,
+   "vertices": 6601,
+   "bytes": 183900,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-glass x183",
+   "triangles": 366,
+   "vertices": 732,
+   "bytes": 14048,
+   "material": "MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-frame",
+   "triangles": 56,
+   "vertices": 144,
+   "bytes": 4976,
+   "material": "MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1)"
+  },
+  {
+   "label": "building-concrete x198",
+   "triangles": 2376,
+   "vertices": 4752,
+   "bytes": 7176,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-door x2",
+   "triangles": 124,
+   "vertices": 248,
+   "bytes": 4404,
+   "material": "MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-shutter x35",
+   "triangles": 420,
+   "vertices": 840,
+   "bytes": 1960,
+   "material": "MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)"
+  },
+  {
+   "label": "building-glassDark x55",
+   "triangles": 110,
+   "vertices": 220,
+   "bytes": 4320,
+   "material": "MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-acUnit x8",
+   "triangles": 592,
+   "vertices": 1088,
+   "bytes": 5596,
+   "material": "MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1)"
+  },
+  {
+   "label": "building-dish x2",
+   "triangles": 292,
+   "vertices": 342,
+   "bytes": 7096,
+   "material": "MeshStandardMaterial \"building-part-dish\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.5, metalness 0.2, opacity 1)"
+  },
+  {
+   "label": "building-lotBox x4",
+   "triangles": 40,
+   "vertices": 80,
+   "bytes": 1116,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built alone at its detail level (L0) by buildBuildingMeshes, every part with it; its far levels (facade L1, masses) are the building layer's cells"
+ ],
+ "countKey": "building:Buildings: functions:hospital:public",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,500 triangles (8,622 today, 5.7 times the budget): blocks as boxes (10 triangles each) with the facade shader (windows, frames, sills, slabs, shopfronts, doors, fake interiors), roof and props as geometry near only.",
+  "Remove its 90 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "35 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "104 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1500
+}

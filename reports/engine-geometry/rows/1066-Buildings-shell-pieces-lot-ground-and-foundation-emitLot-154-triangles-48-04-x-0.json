@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/lot ground and foundation/emitLot, 154 triangles, 48.04 x 0.00 x 26.04 m, from function factory",
+ "group": "Buildings: shell pieces",
+ "name": "lot ground and foundation",
+ "variation": "emitLot, 154 triangles, 48.04 x 0.00 x 26.04 m, from function factory",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitLot)",
+ "build": "merged",
+ "triangles": 154,
+ "vertices": 462,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 16632,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 16632,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 154,
+   "vertices": 462
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1066-Buildings-shell-pieces-lot-ground-and-foundation-emitLot-154-triangles-48-04-x-0.png",
+ "model": "models/1066-Buildings-shell-pieces-lot-ground-and-foundation-emitLot-154-triangles-48-04-x-0.glb",
+ "pieces": [
+  {
+   "label": "emitLot",
+   "triangles": 154,
+   "vertices": 462,
+   "bytes": 16632,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: stone",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (154 today, 77.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: the foundation ring round the lot is cut into many strips (44-164 triangles); one box ring (8-16 triangles) or the lot plane alone.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

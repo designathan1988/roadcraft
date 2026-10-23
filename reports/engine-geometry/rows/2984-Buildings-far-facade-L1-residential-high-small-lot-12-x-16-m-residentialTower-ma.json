@@ -1,0 +1,181 @@
+{
+ "id": "Buildings: far facade (L1)/residential high (small lot 12 x 16 m (residentialTower))/made to measure",
+ "group": "Buildings: far facade (L1)",
+ "name": "residential high (small lot 12 x 16 m (residentialTower))",
+ "variation": "made to measure",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitChunk far, assembleBuildingMeshes)",
+ "build": "merged",
+ "triangles": 20858,
+ "vertices": 40140,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B facadeSize:2xUint16=4B facadeCell:4xInt16=8B facadeOpening:4xUint8=4B facadeTrim:4xUint8=4B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B color:3xFloat32=12B",
+ "bytesPerVertex": 68,
+ "geometryBytes": 125724,
+ "textureBytes": 16384,
+ "extraBytes": 0,
+ "totalBytes": 142108,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-facade\" [building-shell-v2-weathered-laid-none-far-lots-own-walls-facade-level-v7] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-roofRailing\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1) | MeshStandardMaterial \"building-part-awning\" [onBeforeCompile() {}|part-pose] (roughness 0.92, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-lamp\" [outside-lamp-lot|part-pose] (roughness 0.35, metalness 0, opacity 1) | MeshBasicMaterial \"building-part-wash\" [outside-wash-lot|part-pose] (transparent, opacity 0) | MeshStandardMaterial \"building-part-fin\" [onBeforeCompile() {}|part-pose] (roughness 0.7, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-glassRail\" [onBeforeCompile() {}|part-pose] (transparent, roughness 0.05, metalness 0.2, opacity 0.42) | MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1) | MeshStandardMaterial \"building-part-pot\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.85, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-foliage\" [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.75, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-bush\" [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-chair\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.6, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-table\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.55, metalness 0.1, opacity 1) | MeshStandardMaterial \"building-part-airer\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.8, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-lounger\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.75, metalness 0, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in building-shell-v2-weathered-laid-none-far-lots-own-walls-facade-level-v7 | patched built-in onBeforeCompile() {}|part-pose | patched built-in thin-part-prefiltered-v3-cards|part-pose | patched built-in outside-lamp-lot|part-pose | patched built-in outside-wash-lot|part-pose | patched built-in facade-ac-front|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 20858,
+   "vertices": 40140
+  }
+ ],
+ "solids": "3284 solids: 2136 other, 142 open prism, 52 quad, 934 box, 20 closed cylinder",
+ "hiddenTriangles": 3025,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2984-Buildings-far-facade-L1-residential-high-small-lot-12-x-16-m-residentialTower-ma.png",
+ "model": "models/2984-Buildings-far-facade-L1-residential-high-small-lot-12-x-16-m-residentialTower-ma.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 158,
+   "vertices": 240,
+   "bytes": 6708,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-shell",
+   "triangles": 92,
+   "vertices": 184,
+   "bytes": 8648,
+   "material": "MeshStandardMaterial \"building-facade\" [building-shell-v2-weathered-laid-none-far-lots-own-walls-facade-level-v7] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-concrete x224",
+   "triangles": 2688,
+   "vertices": 5376,
+   "bytes": 8008,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-roofRailing x32",
+   "triangles": 2496,
+   "vertices": 4992,
+   "bytes": 6484,
+   "material": "MeshStandardMaterial \"building-part-roofRailing\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1)"
+  },
+  {
+   "label": "building-awning x15",
+   "triangles": 360,
+   "vertices": 720,
+   "bytes": 2160,
+   "material": "MeshStandardMaterial \"building-part-awning\" [onBeforeCompile() {}|part-pose] (roughness 0.92, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-lamp",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 872,
+   "material": "MeshStandardMaterial \"building-part-lamp\" [outside-lamp-lot|part-pose] (roughness 0.35, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-wash",
+   "triangles": 2,
+   "vertices": 4,
+   "bytes": 172,
+   "material": "MeshBasicMaterial \"building-part-wash\" [outside-wash-lot|part-pose] (transparent, opacity 0)"
+  },
+  {
+   "label": "building-fin x360",
+   "triangles": 4320,
+   "vertices": 8640,
+   "bytes": 12360,
+   "material": "MeshStandardMaterial \"building-part-fin\" [onBeforeCompile() {}|part-pose] (roughness 0.7, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-glassRail x72",
+   "triangles": 864,
+   "vertices": 1728,
+   "bytes": 3144,
+   "material": "MeshStandardMaterial \"building-part-glassRail\" [onBeforeCompile() {}|part-pose] (transparent, roughness 0.05, metalness 0.2, opacity 0.42)"
+  },
+  {
+   "label": "building-acUnit x17",
+   "triangles": 1258,
+   "vertices": 2312,
+   "bytes": 5884,
+   "material": "MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1)"
+  },
+  {
+   "label": "building-pot x20",
+   "triangles": 2240,
+   "vertices": 3260,
+   "bytes": 7180,
+   "material": "MeshStandardMaterial \"building-part-pot\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-foliage x13",
+   "triangles": 2496,
+   "vertices": 4940,
+   "bytes": 15248,
+   "material": "MeshStandardMaterial \"building-part-foliage\" [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.75, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-bush x7",
+   "triangles": 1176,
+   "vertices": 2604,
+   "bytes": 14624,
+   "material": "MeshStandardMaterial \"building-part-bush\" [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-chair x19",
+   "triangles": 1482,
+   "vertices": 2964,
+   "bytes": 6692,
+   "material": "MeshStandardMaterial \"building-part-chair\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.6, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-table x4",
+   "triangles": 584,
+   "vertices": 892,
+   "bytes": 9032,
+   "material": "MeshStandardMaterial \"building-part-table\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.55, metalness 0.1, opacity 1)"
+  },
+  {
+   "label": "building-airer",
+   "triangles": 168,
+   "vertices": 336,
+   "bytes": 13136,
+   "material": "MeshStandardMaterial \"building-part-airer\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.8, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-lounger x7",
+   "triangles": 462,
+   "vertices": 924,
+   "bytes": 5372,
+   "material": "MeshStandardMaterial \"building-part-lounger\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.75, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map DataTexture 64x64 RGBA 8-bit, 1 levels, 16384 B"
+ ],
+ "notes": [
+  "the bays laid as runs, their windows drawn by the facade shader (facadeLevel.ts); what is set into an opening left to the shader"
+ ],
+ "countKey": "building-l1:residential high (small lot 12 x 16 m (residentialTower))",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 200 triangles (20,858 today, 104.3 times the budget): the blocks as boxes and the facade shader alone: no parts, the balconies and railings painted (Cidade Otimizada does it past 240 m).",
+  "Picture: the far level still carries every balcony, railing bar, unit and roof drum of the near level; at this distance the masses level (boxes) with the facade texture is what shows.",
+  "Remove its 3,025 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "162 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "68 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 200
+}

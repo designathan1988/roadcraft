@@ -1,0 +1,65 @@
+{
+ "id": "People: shoes/culturalibre_heroine_boots_4",
+ "group": "People: shoes",
+ "name": "culturalibre_heroine_boots_4",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/culturalibre_heroine_boots_4.bin",
+ "build": "skinned",
+ "triangles": 1712,
+ "vertices": 1385,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 64864,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 64864,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1712,
+   "vertices": 1385
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2110-People-shoes-culturalibre-heroine-boots-4.png",
+ "model": "models/2110-People-shoes-culturalibre-heroine-boots-4.glb",
+ "pieces": [
+  {
+   "label": "shoes",
+   "triangles": 1712,
+   "vertices": 1385,
+   "bytes": 64864,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "hides 2758 base-body vertices under it"
+ ],
+ "countKey": "proxy:culturalibre_heroine_boots_4",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (1,712 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Picture: soles, laces and straps modelled at full detail (up to 153,938 triangles a pair); a city figure's feet are a few pixels.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

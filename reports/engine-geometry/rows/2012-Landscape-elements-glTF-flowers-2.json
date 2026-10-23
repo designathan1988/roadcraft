@@ -1,0 +1,75 @@
+{
+ "id": "Landscape elements (glTF)/flowers/2",
+ "group": "Landscape elements (glTF)",
+ "name": "flowers",
+ "variation": "2",
+ "origin": "file",
+ "source": "public/models/elements/*.gltf (src/render/elements.ts)",
+ "build": "instanced",
+ "triangles": 1690,
+ "vertices": 1302,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 77568,
+ "textureBytes": 27641528,
+ "extraBytes": 0,
+ "totalBytes": 27719096,
+ "materials": "MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1690,
+   "vertices": 1302
+  }
+ ],
+ "solids": "48 solids: 48 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2012-Landscape-elements-glTF-flowers-2.png",
+ "model": "models/2012-Landscape-elements-glTF-flowers-2.glb",
+ "pieces": [
+  {
+   "label": "part 1",
+   "triangles": 490,
+   "vertices": 302,
+   "bytes": 19168,
+   "material": "MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "part 2",
+   "triangles": 1200,
+   "vertices": 1000,
+   "bytes": 58400,
+   "material": "MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B",
+  "map Texture 1008x981 RGBA 8-bit, 10 levels, 5271908 B"
+ ],
+ "notes": [],
+ "countKey": "element:flowers",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 60 triangles (1,690 today, 28.2 times the budget): a few crossed alpha-tested cards; gone past a short distance.",
+  "Alpha-tested cards; drop past ~30 m.",
+  "Picture: each cap or blossom a closed dense mesh (880-3,216 triangles a clump); cut-out cards.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "26 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 60
+}

@@ -1,0 +1,61 @@
+{
+ "id": "Editor previews/pole run/3 poles",
+ "group": "Editor previews",
+ "name": "pole run",
+ "variation": "3 poles",
+ "origin": "editor preview",
+ "source": "src/render/poleLayer.ts (buildPolePreview)",
+ "build": "individual",
+ "triangles": 64,
+ "vertices": 128,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B aStart:3xFloat32=12B aEnd:3xFloat32=12B aSagPhase:2xFloat32=8B",
+ "bytesPerVertex": 56,
+ "geometryBytes": 8064,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 8064,
+ "materials": "MeshStandardMaterial [wire-instanced] (double-sided, roughness 0.55, metalness 0.3, opacity 1)",
+ "shader": "patched built-in wire-instanced",
+ "motion": "wind sway (vertex)",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 64,
+   "vertices": 128
+  }
+ ],
+ "solids": "8 solids: 8 open prism",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": true,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2043-Editor-previews-pole-run-3-poles.png",
+ "model": "models/2043-Editor-previews-pole-run-3-poles.glb",
+ "pieces": [
+  {
+   "label": "utility-wires",
+   "triangles": 64,
+   "vertices": 128,
+   "bytes": 8064,
+   "material": "MeshStandardMaterial [wire-instanced] (double-sided, roughness 0.55, metalness 0.3, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": null
+}

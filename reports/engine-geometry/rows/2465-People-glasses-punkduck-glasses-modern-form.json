@@ -1,0 +1,68 @@
+{
+ "id": "People: glasses/punkduck_glasses_modern_form",
+ "group": "People: glasses",
+ "name": "punkduck_glasses_modern_form",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/punkduck_glasses_modern_form.bin",
+ "build": "skinned",
+ "triangles": 4520,
+ "vertices": 2651,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 139072,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 139072,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 4520,
+   "vertices": 2651
+  }
+ ],
+ "solids": "7 solids: 3 other, 4 closed cylinder",
+ "hiddenTriangles": 13,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2465-People-glasses-punkduck-glasses-modern-form.png",
+ "model": "models/2465-People-glasses-punkduck-glasses-modern-form.glb",
+ "pieces": [
+  {
+   "label": "glasses",
+   "triangles": 4520,
+   "vertices": 2651,
+   "bytes": 139072,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map punkduck_glasses_modern_form.webp 512x512 WebP, 21772 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture punkduck_glasses_modern_form.webp"
+ ],
+ "countKey": "proxy:punkduck_glasses_modern_form",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (4,520 today, 113.0 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
+  "Remove its 13 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 40
+}

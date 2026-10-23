@@ -1,0 +1,64 @@
+{
+ "id": "Street furniture/tree pit",
+ "group": "Street furniture",
+ "name": "tree pit",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/scenery.ts",
+ "build": "instanced",
+ "triangles": 90,
+ "vertices": 190,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 7380,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 7380,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 90,
+   "vertices": 190
+  }
+ ],
+ "solids": "6 solids: 2 other, 4 open prism",
+ "hiddenTriangles": 32,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1941-Street-furniture-tree-pit.png",
+ "model": "models/1941-Street-furniture-tree-pit.glb",
+ "pieces": [
+  {
+   "label": "tree pit",
+   "triangles": 90,
+   "vertices": 190,
+   "bytes": 7380,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:tree",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (90 today, 2.3 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "A textured decal quad on the ground (2 triangles).",
+  "Remove its 32 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

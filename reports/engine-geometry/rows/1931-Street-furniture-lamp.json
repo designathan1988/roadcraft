@@ -1,0 +1,71 @@
+{
+ "id": "Street furniture/lamp",
+ "group": "Street furniture",
+ "name": "lamp",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/propGeometry.ts",
+ "build": "instanced",
+ "triangles": 132,
+ "vertices": 200,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 10308,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 10308,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 132,
+   "vertices": 200
+  },
+  {
+   "level": 1,
+   "triangles": 32,
+   "vertices": 59
+  }
+ ],
+ "solids": "6 solids: 3 open prism, 2 closed cylinder, 1 box",
+ "hiddenTriangles": 19,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1931-Street-furniture-lamp.png",
+ "model": "models/1931-Street-furniture-lamp.glb",
+ "pieces": [
+  {
+   "label": "lamp",
+   "triangles": 132,
+   "vertices": 200,
+   "bytes": 7992,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "far level: the column alone (lampFarGeometry); the lens, pool and beam are separate items"
+ ],
+ "countKey": "landscape:lamp",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (132 today, 3.3 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "A 6-sided column and a box head, glow emissive (Cidade Otimizada: 34).",
+  "Remove its 19 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "5 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

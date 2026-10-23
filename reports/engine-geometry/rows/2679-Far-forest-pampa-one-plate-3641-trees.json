@@ -1,0 +1,62 @@
+{
+ "id": "Far forest/pampa/one plate, 3641 trees",
+ "group": "Far forest",
+ "name": "pampa",
+ "variation": "one plate, 3641 trees",
+ "origin": "kit",
+ "source": "src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)",
+ "build": "instanced",
+ "triangles": 7282,
+ "vertices": 14564,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 116620,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 116620,
+ "materials": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)",
+ "shader": "patched built-in far-forest-impostor",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 7282,
+   "vertices": 14564
+  }
+ ],
+ "solids": "3641 solids: 3641 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2679-Far-forest-pampa-one-plate-3641-trees.png",
+ "model": "models/2679-Far-forest-pampa-one-plate-3641-trees.glb",
+ "pieces": [
+  {
+   "label": "tree quad x3641",
+   "triangles": 7282,
+   "vertices": 14564,
+   "bytes": 116620,
+   "material": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget"
+ ],
+ "countKey": "far-forest:pampa",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels."
+ ],
+ "target": null
+}

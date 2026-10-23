@@ -1,0 +1,66 @@
+{
+ "id": "Flags/flag cloth/1.8 x 1.2 m",
+ "group": "Flags",
+ "name": "flag cloth",
+ "variation": "1.8 x 1.2 m",
+ "origin": "kit",
+ "source": "src/render/buildings/flagLayer.ts (createFlagLayer, set)",
+ "build": "instanced",
+ "triangles": 576,
+ "vertices": 325,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aPattern/instance:1xFloat32=4B aLength/instance:1xFloat32=4B aC0/instance:3xFloat32=12B aC1/instance:3xFloat32=12B aC2/instance:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 13900,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 13900,
+ "materials": "MeshStandardMaterial \"flag-cloth\" [flag-cloth-v1] (double-sided, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "patched built-in flag-cloth-v1",
+ "motion": "wind sway (vertex); wave (vertex)",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 576,
+   "vertices": 325
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2667-Flags-flag-cloth-1-8-x-1-2-m.png",
+ "model": "models/2667-Flags-flag-cloth-1-8-x-1-2-m.glb",
+ "pieces": [
+  {
+   "label": "flag-cloth",
+   "triangles": 576,
+   "vertices": 325,
+   "bytes": 13900,
+   "material": "MeshStandardMaterial \"flag-cloth\" [flag-cloth-v1] (double-sided, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "the same cloth for every flag: its 14 patterns and colours drawn by the shader, its wave moved by the wind in the vertex shader"
+ ],
+ "countKey": "flags",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 64 triangles (576 today, 9.0 times the budget): a cloth of 8 x 4 quads: the wave stays smooth in the vertex shader.",
+  "8 x 4 quads.",
+  "Picture: nothing visible in the isolated shot (the object draws off its own transform or under the ground plane); check it is drawn at all where placed.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 64
+}

@@ -1,0 +1,66 @@
+{
+ "id": "Furniture (interiors)/bookshelf",
+ "group": "Furniture (interiors)",
+ "name": "bookshelf",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 1814,
+ "vertices": 3628,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 359172,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 359172,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1814,
+   "vertices": 3628
+  }
+ ],
+ "solids": "182 solids: 182 other",
+ "hiddenTriangles": 2,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1753-Furniture-interiors-bookshelf.png",
+ "model": "models/1753-Furniture-interiors-bookshelf.glb",
+ "pieces": [
+  {
+   "label": "bookshelf",
+   "triangles": 1814,
+   "vertices": 3628,
+   "bytes": 359172,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 184 box (184 parts)"
+ ],
+ "countKey": "furniture:bookshelf",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (1,814 today, 45.4 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.",
+  "One box (10 triangles) whose front face shows the books by parallax (interior mapping of a shallow box): 184 boxes today, one a book.",
+  "Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

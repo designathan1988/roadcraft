@@ -1,0 +1,63 @@
+{
+ "id": "Buildings: shell pieces/roof/emitRoof, 2 triangles, 40.00 x 0.00 x 23.00 m, from residential high large lot",
+ "group": "Buildings: shell pieces",
+ "name": "roof",
+ "variation": "emitRoof, 2 triangles, 40.00 x 0.00 x 23.00 m, from residential high large lot",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitRoof)",
+ "build": "merged",
+ "triangles": 2,
+ "vertices": 6,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 216,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 216,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2,
+   "vertices": 6
+  }
+ ],
+ "solids": "1 solids: 1 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1443-Buildings-shell-pieces-roof-emitRoof-2-triangles-40-00-x-0-00-x-23-00-m-from-res.png",
+ "model": "models/1443-Buildings-shell-pieces-roof-emitRoof-2-triangles-40-00-x-0-00-x-23-00-m-from-res.glb",
+ "pieces": [
+  {
+   "label": "emitRoof",
+   "triangles": 2,
+   "vertices": 6,
+   "bytes": 216,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: stone",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

@@ -1,0 +1,64 @@
+{
+ "id": "Furniture (interiors)/treadmill",
+ "group": "Furniture (interiors)",
+ "name": "treadmill",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 48,
+ "vertices": 96,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 9504,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 9504,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 48,
+   "vertices": 96
+  }
+ ],
+ "solids": "5 solids: 2 other, 2 open prism, 1 box",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1777-Furniture-interiors-treadmill.png",
+ "model": "models/1777-Furniture-interiors-treadmill.glb",
+ "pieces": [
+  {
+   "label": "treadmill",
+   "triangles": 48,
+   "vertices": 96,
+   "bytes": 9504,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 5 box (5 parts)"
+ ],
+ "countKey": "furniture:treadmill",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (48 today, 1.2 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.",
+  "2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

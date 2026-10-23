@@ -1,0 +1,171 @@
+{
+ "id": "Utility poles/pole span/two poles (one with a lamp), their wires",
+ "group": "Utility poles",
+ "name": "pole span",
+ "variation": "two poles (one with a lamp), their wires",
+ "origin": "kit",
+ "source": "src/render/poleLayer.ts (buildUtilities)",
+ "build": "instanced",
+ "triangles": 642,
+ "vertices": 887,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aStart:3xFloat32=12B aEnd:3xFloat32=12B aSagPhase:2xFloat32=8B",
+ "bytesPerVertex": 56,
+ "geometryBytes": 18896,
+ "textureBytes": 365916,
+ "extraBytes": 0,
+ "totalBytes": 384812,
+ "materials": "MeshStandardMaterial (roughness 0.92, metalness 0, opacity 1) | MeshStandardMaterial (roughness 0.45, metalness 0.55, opacity 1) | MeshStandardMaterial (roughness 0.25, metalness 0, opacity 1) | MeshStandardMaterial (roughness 0.68, metalness 0.35, opacity 1) | MeshStandardMaterial (roughness 0.5, metalness 0.3, opacity 1) | MeshBasicMaterial (opacity 1) | MeshBasicMaterial (transparent, opacity 0) | ShaderMaterial \"street-light-beam\" (transparent, opacity 1) | MeshStandardMaterial [wire-instanced] (double-sided, roughness 0.55, metalness 0.3, opacity 1)",
+ "shader": "three MeshStandardMaterial | three MeshBasicMaterial | written | patched built-in wire-instanced",
+ "motion": "wind sway (vertex)",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 642,
+   "vertices": 887
+  }
+ ],
+ "solids": "29 solids: 10 open prism, 8 box, 2 closed cylinder, 8 other, 1 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1918-Utility-poles-pole-span-two-poles-one-with-a-lamp-their-wires.png",
+ "model": "models/1918-Utility-poles-pole-span-two-poles-one-with-a-lamp-their-wires.glb",
+ "pieces": [
+  {
+   "label": "utility-poles",
+   "triangles": 24,
+   "vertices": 26,
+   "bytes": 976,
+   "material": "MeshStandardMaterial (roughness 0.92, metalness 0, opacity 1)"
+  },
+  {
+   "label": "utility-arms",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 840,
+   "material": "MeshStandardMaterial (roughness 0.92, metalness 0, opacity 1)"
+  },
+  {
+   "label": "utility-caps",
+   "triangles": 40,
+   "vertices": 64,
+   "bytes": 2288,
+   "material": "MeshStandardMaterial (roughness 0.45, metalness 0.55, opacity 1)"
+  },
+  {
+   "label": "utility-braces x2",
+   "triangles": 24,
+   "vertices": 48,
+   "bytes": 840,
+   "material": "MeshStandardMaterial (roughness 0.45, metalness 0.55, opacity 1)"
+  },
+  {
+   "label": "utility-insulators x3",
+   "triangles": 90,
+   "vertices": 129,
+   "bytes": 1556,
+   "material": "MeshStandardMaterial (roughness 0.25, metalness 0, opacity 1)"
+  },
+  {
+   "label": "utility-lamp-arms",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 840,
+   "material": "MeshStandardMaterial (roughness 0.68, metalness 0.35, opacity 1)"
+  },
+  {
+   "label": "utility-lamp-heads",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 840,
+   "material": "MeshStandardMaterial (roughness 0.5, metalness 0.3, opacity 1)"
+  },
+  {
+   "label": "utility-lamp-lenses",
+   "triangles": 2,
+   "vertices": 4,
+   "bytes": 140,
+   "material": "MeshBasicMaterial (opacity 1)"
+  },
+  {
+   "label": "utility-lamp-pools",
+   "triangles": 28,
+   "vertices": 30,
+   "bytes": 1128,
+   "material": "MeshBasicMaterial (transparent, opacity 0)"
+  },
+  {
+   "label": "utility-lamp-beams",
+   "triangles": 144,
+   "vertices": 95,
+   "bytes": 3904,
+   "material": "ShaderMaterial \"street-light-beam\" (transparent, opacity 1)"
+  },
+  {
+   "label": "utility-poles",
+   "triangles": 24,
+   "vertices": 26,
+   "bytes": 976,
+   "material": "MeshStandardMaterial (roughness 0.92, metalness 0, opacity 1)"
+  },
+  {
+   "label": "utility-arms",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 840,
+   "material": "MeshStandardMaterial (roughness 0.92, metalness 0, opacity 1)"
+  },
+  {
+   "label": "utility-caps",
+   "triangles": 40,
+   "vertices": 64,
+   "bytes": 2288,
+   "material": "MeshStandardMaterial (roughness 0.45, metalness 0.55, opacity 1)"
+  },
+  {
+   "label": "utility-braces x2",
+   "triangles": 24,
+   "vertices": 48,
+   "bytes": 840,
+   "material": "MeshStandardMaterial (roughness 0.45, metalness 0.55, opacity 1)"
+  },
+  {
+   "label": "utility-insulators x3",
+   "triangles": 90,
+   "vertices": 129,
+   "bytes": 1556,
+   "material": "MeshStandardMaterial (roughness 0.25, metalness 0, opacity 1)"
+  },
+  {
+   "label": "utility-wires",
+   "triangles": 64,
+   "vertices": 128,
+   "bytes": 8064,
+   "material": "MeshStandardMaterial [wire-instanced] (double-sided, roughness 0.55, metalness 0.3, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 128x512 RGBA 8-bit, 10 levels, 349532 B",
+  "map DataTexture 64x64 RGBA 8-bit, 1 levels, 16384 B"
+ ],
+ "notes": [],
+ "countKey": "poles",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 60 triangles (642 today, 10.7 times the budget): prisms of 4-6 sides; insulators and caps painted.",
+  "12 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 60
+}

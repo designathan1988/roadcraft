@@ -1,0 +1,109 @@
+{
+ "id": "Buildings: functions/church/public (8 floors)",
+ "group": "Buildings: functions",
+ "name": "church",
+ "variation": "public (8 floors)",
+ "origin": "kit",
+ "source": "src/world/buildings/cityBuildings.ts (CITY_BUILDINGS)",
+ "build": "merged",
+ "triangles": 3374,
+ "vertices": 7104,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B litSlot/instance:1xFloat32=4B roomA:4xUint16=8B roomB:4xUint16=8B roomC:4xUint16=8B roomD:4xUint16=8B roomE:4xUint16=8B",
+ "bytesPerVertex": 104,
+ "geometryBytes": 61096,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 61096,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1) | MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1) | MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in room-lights-awake-interior-v15-recess|part-pose | patched built-in thin-part-prefiltered-v3-cards|part-pose | patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 3374,
+   "vertices": 7104
+  }
+ ],
+ "solids": "254 solids: 51 other, 92 quad, 62 open prism, 49 box",
+ "hiddenTriangles": 121,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 8,
+ "trianglesPerFloor": 422,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1818-Buildings-functions-church-public-8-floors.png",
+ "model": "models/1818-Buildings-functions-church-public-8-floors.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 996,
+   "vertices": 1516,
+   "bytes": 42360,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-glass x52",
+   "triangles": 104,
+   "vertices": 208,
+   "bytes": 4092,
+   "material": "MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-frame x26",
+   "triangles": 1456,
+   "vertices": 3744,
+   "bytes": 5776,
+   "material": "MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1)"
+  },
+  {
+   "label": "building-concrete x41",
+   "triangles": 492,
+   "vertices": 984,
+   "bytes": 2152,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-door x4",
+   "triangles": 248,
+   "vertices": 496,
+   "bytes": 4468,
+   "material": "MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-shutter x4",
+   "triangles": 48,
+   "vertices": 96,
+   "bytes": 968,
+   "material": "MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)"
+  },
+  {
+   "label": "building-glassDark x15",
+   "triangles": 30,
+   "vertices": 60,
+   "bytes": 1280,
+   "material": "MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built alone at its detail level (L0) by buildBuildingMeshes, every part with it; its far levels (facade L1, masses) are the building layer's cells"
+ ],
+ "countKey": "building:Buildings: functions:church:public",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,500 triangles (3,374 today, 2.2 times the budget): blocks as boxes (10 triangles each) with the facade shader (windows, frames, sills, slabs, shopfronts, doors, fake interiors), roof and props as geometry near only.",
+  "Picture: the paved ground of the lot is a grid of quads round the building; one quad with the paving painted.",
+  "Remove its 121 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "62 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "104 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1500
+}

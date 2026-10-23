@@ -1,0 +1,67 @@
+{
+ "id": "Furniture (interiors)/floorLamp",
+ "group": "Furniture (interiors)",
+ "name": "floorLamp",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 160,
+ "vertices": 243,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 24288,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 24288,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 160,
+   "vertices": 243
+  }
+ ],
+ "solids": "2 solids: 1 other, 1 closed cylinder",
+ "hiddenTriangles": 8,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1780-Furniture-interiors-floorLamp.png",
+ "model": "models/1780-Furniture-interiors-floorLamp.glb",
+ "pieces": [
+  {
+   "label": "floorLamp",
+   "triangles": 160,
+   "vertices": 243,
+   "bytes": 24288,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 3 cylinder (3 parts)"
+ ],
+ "countKey": "furniture:floorLamp",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (160 today, 4.0 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.",
+  "6-sided prisms or boxes, its glow emissive.",
+  "Picture: shades and bases as 24-sided cones and discs (146-260 triangles for a lamp); 6-8 sides.",
+  "Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

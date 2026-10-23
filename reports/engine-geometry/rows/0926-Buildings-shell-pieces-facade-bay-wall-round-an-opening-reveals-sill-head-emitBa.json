@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/facade bay (wall round an opening, reveals, sill, head)/emitBay, 24 triangles, 9.00 x 6.70 x 10.00 m, from function bakery",
+ "group": "Buildings: shell pieces",
+ "name": "facade bay (wall round an opening, reveals, sill, head)",
+ "variation": "emitBay, 24 triangles, 9.00 x 6.70 x 10.00 m, from function bakery",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitBay)",
+ "build": "merged",
+ "triangles": 24,
+ "vertices": 72,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 2592,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 2592,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 24,
+   "vertices": 72
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/0926-Buildings-shell-pieces-facade-bay-wall-round-an-opening-reveals-sill-head-emitBa.png",
+ "model": "models/0926-Buildings-shell-pieces-facade-bay-wall-round-an-opening-reveals-sill-head-emitBa.glb",
+ "pieces": [
+  {
+   "label": "emitBay",
+   "triangles": 24,
+   "vertices": 72,
+   "bytes": 2592,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: stucco",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (24 today, 12.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: the wall round each opening is cut into many small rectangles (reveals, sill, head) a bay; the whole face should be one quad and the openings, reveals and sills drawn by the facade shader (window grid by UV).",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

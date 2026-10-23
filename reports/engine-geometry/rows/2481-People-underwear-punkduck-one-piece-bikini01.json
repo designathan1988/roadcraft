@@ -1,0 +1,67 @@
+{
+ "id": "People: underwear/punkduck_one_piece_bikini01",
+ "group": "People: underwear",
+ "name": "punkduck_one_piece_bikini01",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/punkduck_one_piece_bikini01.bin",
+ "build": "skinned",
+ "triangles": 2874,
+ "vertices": 1924,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 96056,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 96056,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2874,
+   "vertices": 1924
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2481-People-underwear-punkduck-one-piece-bikini01.png",
+ "model": "models/2481-People-underwear-punkduck-one-piece-bikini01.glb",
+ "pieces": [
+  {
+   "label": "underwear",
+   "triangles": 2874,
+   "vertices": 1924,
+   "bytes": 96056,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map punkduck_one_piece_bikini01.webp 256x256 WebP, 2440 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 854 base-body vertices under it",
+  "texture punkduck_one_piece_bikini01.webp"
+ ],
+ "countKey": "proxy:punkduck_one_piece_bikini01",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (2,874 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

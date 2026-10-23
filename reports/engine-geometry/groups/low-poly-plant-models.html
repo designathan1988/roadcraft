@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Low-poly plant models</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Low-poly plant models</h1><p class="muted">9 objects, 1,924 triangles one of each.</p></header>
+<main><article class="row" id="Low-poly plant models/palm">
+  <a href="../images/1987-Low-poly-plant-models-palm.png"><img loading="lazy" src="../images/1987-Low-poly-plant-models-palm.png" alt="Low-poly plant models/palm"></a>
+  <div class="data">
+    <h3>palm</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 250 triangles (480 today, 1.9 times the budget): three levels with the same silhouette (~250 / 86 / 20, Cidade Otimizada) before the impostor.</li><li>Remove its 83 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>10 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>480</dd><dt>Vertices</dt><dd>930</dd>
+      <dt>Levels</dt><dd>L0 480</dd>
+      <dt>Memory</dt><dd>37 KB (geometry 37 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>11 solids: 5 open prism, 5 closed cylinder, 1 other</dd><dt>Hidden triangles</dt><dd>83</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1987-Low-poly-plant-models-palm.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/oak">
+  <a href="../images/1984-Low-poly-plant-models-oak.png"><img loading="lazy" src="../images/1984-Low-poly-plant-models-oak.png" alt="Low-poly plant models/oak"></a>
+  <div class="data">
+    <h3>oak</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 250 triangles (282 today, 1.1 times the budget): three levels with the same silhouette (~250 / 86 / 20, Cidade Otimizada) before the impostor.</li><li>6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>282</dd><dt>Vertices</dt><dd>766</dd>
+      <dt>Levels</dt><dd>L0 282</dd>
+      <dt>Memory</dt><dd>30 KB (geometry 30 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>46 solids: 4 open prism, 2 closed cylinder, 40 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1984-Low-poly-plant-models-oak.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/ipeYellow">
+  <a href="../images/1988-Low-poly-plant-models-ipeYellow.png"><img loading="lazy" src="../images/1988-Low-poly-plant-models-ipeYellow.png" alt="Low-poly plant models/ipeYellow"></a>
+  <div class="data">
+    <h3>ipeYellow</h3>
+    <div class="advice"><b>What to change</b><ul><li>6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>240</dd><dt>Vertices</dt><dd>612</dd>
+      <dt>Levels</dt><dd>L0 240</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>60 solids: 5 open prism, 1 closed cylinder, 54 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1988-Low-poly-plant-models-ipeYellow.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/ipePink">
+  <a href="../images/1989-Low-poly-plant-models-ipePink.png"><img loading="lazy" src="../images/1989-Low-poly-plant-models-ipePink.png" alt="Low-poly plant models/ipePink"></a>
+  <div class="data">
+    <h3>ipePink</h3>
+    <div class="advice"><b>What to change</b><ul><li>Same triangles and vertices as ipeYellow : load one mesh and change its colour, not a second copy.</li><li>6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>240</dd><dt>Vertices</dt><dd>612</dd>
+      <dt>Levels</dt><dd>L0 240</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>60 solids: 5 open prism, 1 closed cylinder, 54 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1989-Low-poly-plant-models-ipePink.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/broadleafTall">
+  <a href="../images/1985-Low-poly-plant-models-broadleafTall.png"><img loading="lazy" src="../images/1985-Low-poly-plant-models-broadleafTall.png" alt="Low-poly plant models/broadleafTall"></a>
+  <div class="data">
+    <h3>broadleafTall</h3>
+    <div class="advice"><b>What to change</b><ul><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>180</dd><dt>Vertices</dt><dd>472</dd>
+      <dt>Levels</dt><dd>L0 180</dd>
+      <dt>Memory</dt><dd>19 KB (geometry 19 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>38 solids: 3 open prism, 1 closed cylinder, 34 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1985-Low-poly-plant-models-broadleafTall.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/cypress">
+  <a href="../images/1986-Low-poly-plant-models-cypress.png"><img loading="lazy" src="../images/1986-Low-poly-plant-models-cypress.png" alt="Low-poly plant models/cypress"></a>
+  <div class="data">
+    <h3>cypress</h3>
+    <div class="advice"><b>What to change</b><ul><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>158</dd><dt>Vertices</dt><dd>334</dd>
+      <dt>Levels</dt><dd>L0 158</dd>
+      <dt>Memory</dt><dd>17 KB (geometry 17 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>72 solids: 1 open prism, 71 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1986-Low-poly-plant-models-cypress.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/hedge">
+  <a href="../images/1992-Low-poly-plant-models-hedge.png"><img loading="lazy" src="../images/1992-Low-poly-plant-models-hedge.png" alt="Low-poly plant models/hedge"></a>
+  <div class="data">
+    <h3>hedge</h3>
+    <div class="advice"><b>What to change</b><ul><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>120</dd><dt>Vertices</dt><dd>320</dd>
+      <dt>Levels</dt><dd>L0 120</dd>
+      <dt>Memory</dt><dd>13 KB (geometry 13 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>21 solids: 1 closed cylinder, 20 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1992-Low-poly-plant-models-hedge.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/bush">
+  <a href="../images/1990-Low-poly-plant-models-bush.png"><img loading="lazy" src="../images/1990-Low-poly-plant-models-bush.png" alt="Low-poly plant models/bush"></a>
+  <div class="data">
+    <h3>bush</h3>
+    <div class="advice"><b>What to change</b><ul><li>Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>112</dd><dt>Vertices</dt><dd>304</dd>
+      <dt>Levels</dt><dd>L0 112</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>17 solids: 1 closed cylinder, 16 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1990-Low-poly-plant-models-bush.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Low-poly plant models/bushFlowering">
+  <a href="../images/1991-Low-poly-plant-models-bushFlowering.png"><img loading="lazy" src="../images/1991-Low-poly-plant-models-bushFlowering.png" alt="Low-poly plant models/bushFlowering"></a>
+  <div class="data">
+    <h3>bushFlowering</h3>
+    <div class="advice"><b>What to change</b><ul><li>Same triangles and vertices as bush : load one mesh and change its colour, not a second copy.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>112</dd><dt>Vertices</dt><dd>304</dd>
+      <dt>Levels</dt><dd>L0 112</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>52 B: position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>17 solids: 1 closed cylinder, 16 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/lowPolyTrees.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it</dd>
+    </dl>
+    <a class="file" href="../models/1991-Low-poly-plant-models-bushFlowering.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

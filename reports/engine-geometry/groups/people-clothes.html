@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: clothes</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: clothes</h1><p class="muted">20 objects, 103,738 triangles one of each.</p></header>
+<main><article class="row" id="People: clothes/male_casualsuit01">
+  <a href="../images/2345-People-clothes-male-casualsuit01.png"><img loading="lazy" src="../images/2345-People-clothes-male-casualsuit01.png" alt="People: clothes/male_casualsuit01"></a>
+  <div class="data">
+    <h3>male_casualsuit01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (16,672 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>16,672</dd><dt>Vertices</dt><dd>8,984</dd>
+      <dt>Levels</dt><dd>L0 16,672</dd>
+      <dt>Memory</dt><dd>476 KB (geometry 476 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_casualsuit01.webp 512x512 WebP, 21942 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_casualsuit01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 8430 base-body vertices under it<br>texture male_casualsuit01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2345-People-clothes-male-casualsuit01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/male_elegantsuit01">
+  <a href="../images/2351-People-clothes-male-elegantsuit01.png"><img loading="lazy" src="../images/2351-People-clothes-male-elegantsuit01.png" alt="People: clothes/male_elegantsuit01"></a>
+  <div class="data">
+    <h3>male_elegantsuit01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (14,956 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,956</dd><dt>Vertices</dt><dd>8,522</dd>
+      <dt>Levels</dt><dd>L0 14,956</dd>
+      <dt>Memory</dt><dd>442 KB (geometry 442 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_elegantsuit01.webp 512x512 WebP, 6840 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_elegantsuit01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 6410 base-body vertices under it<br>texture male_elegantsuit01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2351-People-clothes-male-elegantsuit01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/male_casualsuit06">
+  <a href="../images/2350-People-clothes-male-casualsuit06.png"><img loading="lazy" src="../images/2350-People-clothes-male-casualsuit06.png" alt="People: clothes/male_casualsuit06"></a>
+  <div class="data">
+    <h3>male_casualsuit06</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (7,168 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,168</dd><dt>Vertices</dt><dd>4,035</dd>
+      <dt>Levels</dt><dd>L0 7,168</dd>
+      <dt>Memory</dt><dd>210 KB (geometry 210 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_casualsuit06.webp 512x512 WebP, 18566 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_casualsuit06.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 5026 base-body vertices under it<br>texture male_casualsuit06.webp</dd>
+    </dl>
+    <a class="file" href="../models/2350-People-clothes-male-casualsuit06.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/male_worksuit01">
+  <a href="../images/2352-People-clothes-male-worksuit01.png"><img loading="lazy" src="../images/2352-People-clothes-male-worksuit01.png" alt="People: clothes/male_worksuit01"></a>
+  <div class="data">
+    <h3>male_worksuit01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (6,986 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,986</dd><dt>Vertices</dt><dd>4,166</dd>
+      <dt>Levels</dt><dd>L0 6,986</dd>
+      <dt>Memory</dt><dd>212 KB (geometry 212 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 5 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_worksuit01.webp 512x512 WebP, 33532 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_worksuit01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 2868 base-body vertices under it<br>texture male_worksuit01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2352-People-clothes-male-worksuit01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/male_casualsuit05">
+  <a href="../images/2349-People-clothes-male-casualsuit05.png"><img loading="lazy" src="../images/2349-People-clothes-male-casualsuit05.png" alt="People: clothes/male_casualsuit05"></a>
+  <div class="data">
+    <h3>male_casualsuit05</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (5,996 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,996</dd><dt>Vertices</dt><dd>3,871</dd>
+      <dt>Levels</dt><dd>L0 5,996</dd>
+      <dt>Memory</dt><dd>191 KB (geometry 191 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_casualsuit05.webp 512x512 WebP, 26588 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_casualsuit05.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 6058 base-body vertices under it<br>texture male_casualsuit05.webp</dd>
+    </dl>
+    <a class="file" href="../models/2349-People-clothes-male-casualsuit05.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/female_casualsuit02">
+  <a href="../images/2294-People-clothes-female-casualsuit02.png"><img loading="lazy" src="../images/2294-People-clothes-female-casualsuit02.png" alt="People: clothes/female_casualsuit02"></a>
+  <div class="data">
+    <h3>female_casualsuit02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (5,488 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,488</dd><dt>Vertices</dt><dd>3,204</dd>
+      <dt>Levels</dt><dd>L0 5,488</dd>
+      <dt>Memory</dt><dd>164 KB (geometry 164 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map female_casualsuit02.webp 512x512 WebP, 47864 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/female_casualsuit02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 2716 base-body vertices under it<br>texture female_casualsuit02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2294-People-clothes-female-casualsuit02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/male_casualsuit03">
+  <a href="../images/2347-People-clothes-male-casualsuit03.png"><img loading="lazy" src="../images/2347-People-clothes-male-casualsuit03.png" alt="People: clothes/male_casualsuit03"></a>
+  <div class="data">
+    <h3>male_casualsuit03</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,800 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,800</dd><dt>Vertices</dt><dd>2,796</dd>
+      <dt>Levels</dt><dd>L0 4,800</dd>
+      <dt>Memory</dt><dd>144 KB (geometry 144 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_casualsuit03.webp 512x512 WebP, 50876 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_casualsuit03.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 6058 base-body vertices under it<br>texture male_casualsuit03.webp</dd>
+    </dl>
+    <a class="file" href="../models/2347-People-clothes-male-casualsuit03.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/female_casualsuit01">
+  <a href="../images/2293-People-clothes-female-casualsuit01.png"><img loading="lazy" src="../images/2293-People-clothes-female-casualsuit01.png" alt="People: clothes/female_casualsuit01"></a>
+  <div class="data">
+    <h3>female_casualsuit01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,236 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,236</dd><dt>Vertices</dt><dd>2,406</dd>
+      <dt>Levels</dt><dd>L0 4,236</dd>
+      <dt>Memory</dt><dd>125 KB (geometry 125 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map female_casualsuit01.webp 512x512 WebP, 30844 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/female_casualsuit01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 5372 base-body vertices under it<br>texture female_casualsuit01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2293-People-clothes-female-casualsuit01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/female_elegantsuit01">
+  <a href="../images/2295-People-clothes-female-elegantsuit01.png"><img loading="lazy" src="../images/2295-People-clothes-female-elegantsuit01.png" alt="People: clothes/female_elegantsuit01"></a>
+  <div class="data">
+    <h3>female_elegantsuit01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,192 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,192</dd><dt>Vertices</dt><dd>2,446</dd>
+      <dt>Levels</dt><dd>L0 4,192</dd>
+      <dt>Memory</dt><dd>126 KB (geometry 126 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map female_elegantsuit01.webp 512x512 WebP, 29398 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/female_elegantsuit01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 4136 base-body vertices under it<br>texture female_elegantsuit01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2295-People-clothes-female-elegantsuit01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/shoes03">
+  <a href="../images/2530-People-clothes-shoes03.png"><img loading="lazy" src="../images/2530-People-clothes-shoes03.png" alt="People: clothes/shoes03"></a>
+  <div class="data">
+    <h3>shoes03</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,128 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,128</dd><dt>Vertices</dt><dd>2,542</dd>
+      <dt>Levels</dt><dd>L0 4,128</dd>
+      <dt>Memory</dt><dd>128 KB (geometry 128 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>12 solids: 12 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map shoes03.webp 512x512 WebP, 8266 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/shoes03.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3206 base-body vertices under it<br>texture shoes03.webp</dd>
+    </dl>
+    <a class="file" href="../models/2530-People-clothes-shoes03.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/male_casualsuit02">
+  <a href="../images/2346-People-clothes-male-casualsuit02.png"><img loading="lazy" src="../images/2346-People-clothes-male-casualsuit02.png" alt="People: clothes/male_casualsuit02"></a>
+  <div class="data">
+    <h3>male_casualsuit02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,120 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,120</dd><dt>Vertices</dt><dd>2,349</dd>
+      <dt>Levels</dt><dd>L0 4,120</dd>
+      <dt>Memory</dt><dd>122 KB (geometry 122 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_casualsuit02.webp 512x512 WebP, 23946 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_casualsuit02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 6058 base-body vertices under it<br>texture male_casualsuit02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2346-People-clothes-male-casualsuit02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/female_sportsuit01">
+  <a href="../images/2296-People-clothes-female-sportsuit01.png"><img loading="lazy" src="../images/2296-People-clothes-female-sportsuit01.png" alt="People: clothes/female_sportsuit01"></a>
+  <div class="data">
+    <h3>female_sportsuit01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,436 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,436</dd><dt>Vertices</dt><dd>1,986</dd>
+      <dt>Levels</dt><dd>L0 3,436</dd>
+      <dt>Memory</dt><dd>102 KB (geometry 102 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map female_sportsuit01.webp 512x512 WebP, 16696 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/female_sportsuit01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 4678 base-body vertices under it<br>texture female_sportsuit01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2296-People-clothes-female-sportsuit01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/shoes01">
+  <a href="../images/2528-People-clothes-shoes01.png"><img loading="lazy" src="../images/2528-People-clothes-shoes01.png" alt="People: clothes/shoes01"></a>
+  <div class="data">
+    <h3>shoes01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,320</dd><dt>Vertices</dt><dd>1,904</dd>
+      <dt>Levels</dt><dd>L0 3,320</dd>
+      <dt>Memory</dt><dd>98 KB (geometry 98 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map shoes01.webp 512x512 WebP, 32632 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/shoes01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3206 base-body vertices under it<br>texture shoes01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2528-People-clothes-shoes01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/shoes04">
+  <a href="../images/2531-People-clothes-shoes04.png"><img loading="lazy" src="../images/2531-People-clothes-shoes04.png" alt="People: clothes/shoes04"></a>
+  <div class="data">
+    <h3>shoes04</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes01 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,320</dd><dt>Vertices</dt><dd>1,904</dd>
+      <dt>Levels</dt><dd>L0 3,320</dd>
+      <dt>Memory</dt><dd>98 KB (geometry 98 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map shoes04.webp 512x512 WebP, 19556 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/shoes04.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3206 base-body vertices under it<br>texture shoes04.webp</dd>
+    </dl>
+    <a class="file" href="../models/2531-People-clothes-shoes04.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/male_casualsuit04">
+  <a href="../images/2348-People-clothes-male-casualsuit04.png"><img loading="lazy" src="../images/2348-People-clothes-male-casualsuit04.png" alt="People: clothes/male_casualsuit04"></a>
+  <div class="data">
+    <h3>male_casualsuit04</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,240 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,240</dd><dt>Vertices</dt><dd>1,887</dd>
+      <dt>Levels</dt><dd>L0 3,240</dd>
+      <dt>Memory</dt><dd>97 KB (geometry 97 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map male_casualsuit04.webp 512x512 WebP, 23952 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/male_casualsuit04.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 5026 base-body vertices under it<br>texture male_casualsuit04.webp</dd>
+    </dl>
+    <a class="file" href="../models/2348-People-clothes-male-casualsuit04.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/shoes02">
+  <a href="../images/2529-People-clothes-shoes02.png"><img loading="lazy" src="../images/2529-People-clothes-shoes02.png" alt="People: clothes/shoes02"></a>
+  <div class="data">
+    <h3>shoes02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,064</dd><dt>Vertices</dt><dd>1,744</dd>
+      <dt>Levels</dt><dd>L0 3,064</dd>
+      <dt>Memory</dt><dd>90 KB (geometry 90 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map shoes02.webp 512x512 WebP, 32084 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/shoes02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3206 base-body vertices under it<br>texture shoes02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2529-People-clothes-shoes02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/shoes05">
+  <a href="../images/2532-People-clothes-shoes05.png"><img loading="lazy" src="../images/2532-People-clothes-shoes05.png" alt="People: clothes/shoes05"></a>
+  <div class="data">
+    <h3>shoes05</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes02 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,064</dd><dt>Vertices</dt><dd>1,744</dd>
+      <dt>Levels</dt><dd>L0 3,064</dd>
+      <dt>Memory</dt><dd>90 KB (geometry 90 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map shoes05.webp 512x512 WebP, 33654 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/shoes05.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3206 base-body vertices under it<br>texture shoes05.webp</dd>
+    </dl>
+    <a class="file" href="../models/2532-People-clothes-shoes05.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/shoes06">
+  <a href="../images/2533-People-clothes-shoes06.png"><img loading="lazy" src="../images/2533-People-clothes-shoes06.png" alt="People: clothes/shoes06"></a>
+  <div class="data">
+    <h3>shoes06</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes02 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,064</dd><dt>Vertices</dt><dd>1,744</dd>
+      <dt>Levels</dt><dd>L0 3,064</dd>
+      <dt>Memory</dt><dd>90 KB (geometry 90 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map shoes06.webp 512x512 WebP, 44288 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/shoes06.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3206 base-body vertices under it<br>texture shoes06.webp</dd>
+    </dl>
+    <a class="file" href="../models/2533-People-clothes-shoes06.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/fedora01">
+  <a href="../images/2291-People-clothes-fedora01.png"><img loading="lazy" src="../images/2291-People-clothes-fedora01.png" alt="People: clothes/fedora01"></a>
+  <div class="data">
+    <h3>fedora01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,244 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,244</dd><dt>Vertices</dt><dd>702</dd>
+      <dt>Levels</dt><dd>L0 1,244</dd>
+      <dt>Memory</dt><dd>37 KB (geometry 37 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map fedora01.webp 512x512 WebP, 68278 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/fedora01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture fedora01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2291-People-clothes-fedora01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: clothes/fedora_cocked">
+  <a href="../images/2292-People-clothes-fedora-cocked.png"><img loading="lazy" src="../images/2292-People-clothes-fedora-cocked.png" alt="People: clothes/fedora_cocked"></a>
+  <div class="data">
+    <h3>fedora_cocked</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,244 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as fedora01 : load one mesh and change its colour, not a second copy.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,244</dd><dt>Vertices</dt><dd>702</dd>
+      <dt>Levels</dt><dd>L0 1,244</dd>
+      <dt>Memory</dt><dd>37 KB (geometry 37 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map fedora_cocked.webp 512x512 WebP, 68278 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/fedora_cocked.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture fedora_cocked.webp</dd>
+    </dl>
+    <a class="file" href="../models/2292-People-clothes-fedora-cocked.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

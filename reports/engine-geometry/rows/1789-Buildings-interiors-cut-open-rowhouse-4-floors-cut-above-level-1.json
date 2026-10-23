@@ -1,0 +1,208 @@
+{
+ "id": "Buildings: interiors (cut open)/rowhouse/4 floors, cut above level 1",
+ "group": "Buildings: interiors (cut open)",
+ "name": "rowhouse",
+ "variation": "4 floors, cut above level 1",
+ "origin": "editor preview",
+ "source": "src/render/buildings/buildingMesh.ts (cutaway)",
+ "build": "merged",
+ "triangles": 4512,
+ "vertices": 6906,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B litSlot/instance:1xFloat32=4B roomA:4xUint16=8B roomB:4xUint16=8B roomC:4xUint16=8B roomD:4xUint16=8B roomE:4xUint16=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B",
+ "bytesPerVertex": 128,
+ "geometryBytes": 233728,
+ "textureBytes": 16384,
+ "extraBytes": 0,
+ "totalBytes": 250112,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1) | MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1) | MeshStandardMaterial \"building-part-railing\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1) | MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-lamp\" [outside-lamp-lot|part-pose] (roughness 0.35, metalness 0, opacity 1) | MeshBasicMaterial \"building-part-wash\" [outside-wash-lot|part-pose] (transparent, opacity 0) | MeshStandardMaterial \"building-part-airer\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.8, metalness 0, opacity 1) | MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in room-lights-awake-interior-v15-recess|part-pose | patched built-in thin-part-prefiltered-v3-cards|part-pose | patched built-in onBeforeCompile() {}|part-pose | patched built-in outside-lamp-lot|part-pose | patched built-in outside-wash-lot|part-pose | patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 4512,
+   "vertices": 6906
+  }
+ ],
+ "solids": "265 solids: 102 other, 38 quad, 25 open prism, 88 box, 12 closed cylinder",
+ "hiddenTriangles": 610,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": true,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1789-Buildings-interiors-cut-open-rowhouse-4-floors-cut-above-level-1.png",
+ "model": "models/1789-Buildings-interiors-cut-open-rowhouse-4-floors-cut-above-level-1.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 462,
+   "vertices": 710,
+   "bytes": 19812,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-glass x29",
+   "triangles": 58,
+   "vertices": 116,
+   "bytes": 2344,
+   "material": "MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-frame x2",
+   "triangles": 112,
+   "vertices": 288,
+   "bytes": 5008,
+   "material": "MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1)"
+  },
+  {
+   "label": "building-concrete x37",
+   "triangles": 444,
+   "vertices": 888,
+   "bytes": 2024,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-door",
+   "triangles": 62,
+   "vertices": 124,
+   "bytes": 4372,
+   "material": "MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-shutter x7",
+   "triangles": 84,
+   "vertices": 168,
+   "bytes": 1064,
+   "material": "MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)"
+  },
+  {
+   "label": "building-railing x2",
+   "triangles": 444,
+   "vertices": 888,
+   "bytes": 15604,
+   "material": "MeshStandardMaterial \"building-part-railing\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1)"
+  },
+  {
+   "label": "building-glassDark x6",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 596,
+   "material": "MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-lamp",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 872,
+   "material": "MeshStandardMaterial \"building-part-lamp\" [outside-lamp-lot|part-pose] (roughness 0.35, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-wash",
+   "triangles": 2,
+   "vertices": 4,
+   "bytes": 172,
+   "material": "MeshBasicMaterial \"building-part-wash\" [outside-wash-lot|part-pose] (transparent, opacity 0)"
+  },
+  {
+   "label": "building-airer",
+   "triangles": 168,
+   "vertices": 336,
+   "bytes": 13136,
+   "material": "MeshStandardMaterial \"building-part-airer\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.8, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-furniture-bed x2",
+   "triangles": 252,
+   "vertices": 392,
+   "bytes": 19636,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-sofa x2",
+   "triangles": 344,
+   "vertices": 576,
+   "bytes": 28744,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-fridge x2",
+   "triangles": 88,
+   "vertices": 176,
+   "bytes": 8776,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-sink x2",
+   "triangles": 128,
+   "vertices": 214,
+   "bytes": 10720,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-toilet x2",
+   "triangles": 140,
+   "vertices": 222,
+   "bytes": 11140,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-bath x2",
+   "triangles": 112,
+   "vertices": 182,
+   "bytes": 9136,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-wardrobe x2",
+   "triangles": 80,
+   "vertices": 160,
+   "bytes": 7984,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-tv x2",
+   "triangles": 64,
+   "vertices": 128,
+   "bytes": 6400,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-plant x2",
+   "triangles": 924,
+   "vertices": 712,
+   "bytes": 37012,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  },
+  {
+   "label": "building-furniture-ceilingLamp x2",
+   "triangles": 520,
+   "vertices": 574,
+   "bytes": 29176,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map DataTexture 64x64 RGBA 8-bit, 1 levels, 16384 B"
+ ],
+ "notes": [
+  "the Construction tool's cut-open view: walls, floors and furniture of the cut level"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2,000 triangles (4,512 today, 2.3 times the budget): walls and floors as boxes, furniture at its budget.",
+  "Remove its 610 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "37 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "128 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2000
+}

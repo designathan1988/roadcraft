@@ -1,0 +1,61 @@
+{
+ "id": "Ground cover/rock/1",
+ "group": "Ground cover",
+ "name": "rock",
+ "variation": "1",
+ "origin": "kit",
+ "source": "src/render/groundCover.ts",
+ "build": "instanced",
+ "triangles": 36,
+ "vertices": 108,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 4752,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 4752,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.94, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 36,
+   "vertices": 108
+  }
+ ],
+ "solids": "1 solids: 1 closed cylinder",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1955-Ground-cover-rock-1.png",
+ "model": "models/1955-Ground-cover-rock-1.glb",
+ "pieces": [
+  {
+   "label": "rock",
+   "triangles": 36,
+   "vertices": 108,
+   "bytes": 4752,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.94, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "cover:rocks",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 60
+}

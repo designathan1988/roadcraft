@@ -1,0 +1,66 @@
+{
+ "id": "Landscape elements (glTF)/stones/2",
+ "group": "Landscape elements (glTF)",
+ "name": "stones",
+ "variation": "2",
+ "origin": "file",
+ "source": "public/models/elements/*.gltf (src/render/elements.ts)",
+ "build": "instanced",
+ "triangles": 244,
+ "vertices": 249,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 10896,
+ "textureBytes": 22369620,
+ "extraBytes": 0,
+ "totalBytes": 22380516,
+ "materials": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 244,
+   "vertices": 249
+  }
+ ],
+ "solids": "1 solids: 1 closed cylinder",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1994-Landscape-elements-glTF-stones-2.png",
+ "model": "models/1994-Landscape-elements-glTF-stones-2.glb",
+ "pieces": [
+  {
+   "label": "part 1",
+   "triangles": 244,
+   "vertices": 249,
+   "bytes": 10896,
+   "material": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B"
+ ],
+ "notes": [],
+ "countKey": "element:stones",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 60 triangles (244 today, 4.1 times the budget): a few crossed alpha-tested cards; gone past a short distance.",
+  "Painted on the ground at any distance but the closest; a decal.",
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 60
+}

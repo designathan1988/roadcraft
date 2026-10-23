@@ -1,0 +1,130 @@
+{
+ "id": "Buildings: functions/council/public (4 floors)",
+ "group": "Buildings: functions",
+ "name": "council",
+ "variation": "public (4 floors)",
+ "origin": "kit",
+ "source": "src/world/buildings/cityBuildings.ts (CITY_BUILDINGS)",
+ "build": "merged",
+ "triangles": 5802,
+ "vertices": 11328,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B litSlot/instance:1xFloat32=4B roomA:4xUint16=8B roomB:4xUint16=8B roomC:4xUint16=8B roomD:4xUint16=8B roomE:4xUint16=8B color:3xFloat32=12B shellFinish:1xFloat32=4B aDecay:1xFloat32=4B shellGround:1xFloat32=4B",
+ "bytesPerVertex": 104,
+ "geometryBytes": 153208,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 153208,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1) | MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1) | MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1) | MeshStandardMaterial \"building-part-dish\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.5, metalness 0.2, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in room-lights-awake-interior-v15-recess|part-pose | patched built-in thin-part-prefiltered-v3-cards|part-pose | patched built-in onBeforeCompile() {}|part-pose | patched built-in facade-ac-front|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 5802,
+   "vertices": 11328
+  }
+ ],
+ "solids": "366 solids: 136 other, 103 quad, 76 open prism, 51 box",
+ "hiddenTriangles": 220,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 4,
+ "trianglesPerFloor": 1451,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1806-Buildings-functions-council-public-4-floors.png",
+ "model": "models/1806-Buildings-functions-council-public-4-floors.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 2762,
+   "vertices": 4293,
+   "bytes": 119604,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-glass x61",
+   "triangles": 122,
+   "vertices": 244,
+   "bytes": 4776,
+   "material": "MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-frame x34",
+   "triangles": 1904,
+   "vertices": 4896,
+   "bytes": 6032,
+   "material": "MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1)"
+  },
+  {
+   "label": "building-concrete x36",
+   "triangles": 432,
+   "vertices": 864,
+   "bytes": 1992,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-door x2",
+   "triangles": 124,
+   "vertices": 248,
+   "bytes": 4404,
+   "material": "MeshStandardMaterial \"building-part-door\" [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-shutter x7",
+   "triangles": 84,
+   "vertices": 168,
+   "bytes": 1064,
+   "material": "MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)"
+  },
+  {
+   "label": "building-glassDark x17",
+   "triangles": 34,
+   "vertices": 68,
+   "bytes": 1432,
+   "material": "MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-acUnit",
+   "triangles": 74,
+   "vertices": 136,
+   "bytes": 5372,
+   "material": "MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1)"
+  },
+  {
+   "label": "building-dish",
+   "triangles": 146,
+   "vertices": 171,
+   "bytes": 7064,
+   "material": "MeshStandardMaterial \"building-part-dish\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.5, metalness 0.2, opacity 1)"
+  },
+  {
+   "label": "building-lotBox x12",
+   "triangles": 120,
+   "vertices": 240,
+   "bytes": 1468,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built alone at its detail level (L0) by buildBuildingMeshes, every part with it; its far levels (facade L1, masses) are the building layer's cells"
+ ],
+ "countKey": "building:Buildings: functions:council:public",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,500 triangles (5,802 today, 3.9 times the budget): blocks as boxes (10 triangles each) with the facade shader (windows, frames, sills, slabs, shopfronts, doors, fake interiors), roof and props as geometry near only.",
+  "Picture: the paved ground of the lot is a grid of quads round the building; one quad with the paving painted.",
+  "Remove its 220 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "76 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "104 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1500
+}

@@ -1,0 +1,61 @@
+{
+ "id": "Barriers/hedge/70 m run",
+ "group": "Barriers",
+ "name": "hedge",
+ "variation": "70 m run",
+ "origin": "kit",
+ "source": "src/render/barriers.ts (createBarriers, sync)",
+ "build": "instanced",
+ "triangles": 216,
+ "vertices": 432,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B",
+ "bytesPerVertex": 64,
+ "geometryBytes": 2888,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 2888,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 1, metalness 0, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 216,
+   "vertices": 432
+  }
+ ],
+ "solids": "18 solids: 18 box",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2664-Barriers-hedge-70-m-run.png",
+ "model": "models/2664-Barriers-hedge-70-m-run.glb",
+ "pieces": [
+  {
+   "label": "barrier-hedge x18",
+   "triangles": 216,
+   "vertices": 432,
+   "bytes": 2888,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 1, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "barrier:hedge",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (216 today, 5.4 times the budget): one plane a run with its bars or boards cut out of a texture (2 triangles a 25 m run in Cidade Otimizada), posts painted.",
+  "64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

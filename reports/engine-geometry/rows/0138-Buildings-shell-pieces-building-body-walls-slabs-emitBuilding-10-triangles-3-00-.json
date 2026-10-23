@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/building body (walls, slabs)/emitBuilding, 10 triangles, 3.00 x 3.00 x 3.00 m, from preset apartments",
+ "group": "Buildings: shell pieces",
+ "name": "building body (walls, slabs)",
+ "variation": "emitBuilding, 10 triangles, 3.00 x 3.00 x 3.00 m, from preset apartments",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitBuilding)",
+ "build": "merged",
+ "triangles": 10,
+ "vertices": 30,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 1080,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1080,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 10,
+   "vertices": 30
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/0138-Buildings-shell-pieces-building-body-walls-slabs-emitBuilding-10-triangles-3-00-.png",
+ "model": "models/0138-Buildings-shell-pieces-building-body-walls-slabs-emitBuilding-10-triangles-3-00-.glb",
+ "pieces": [
+  {
+   "label": "emitBuilding",
+   "triangles": 10,
+   "vertices": 30,
+   "bytes": 1080,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: plaster, concrete",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (10 today, 5.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: faces split along every bay and storey line (long slivers in the wireframe); one polygon a face, the lines in the facade shader.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

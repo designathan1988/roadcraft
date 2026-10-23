@@ -1,0 +1,67 @@
+{
+ "id": "Buildings: part models/roofRailing",
+ "group": "Buildings: part models",
+ "name": "roofRailing",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 78,
+ "vertices": 156,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 5708,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 5708,
+ "materials": "MeshStandardMaterial \"building-part-roofRailing\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1)",
+ "shader": "patched built-in thin-part-prefiltered-v3-cards|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 78,
+   "vertices": 156
+  },
+  {
+   "level": 1,
+   "triangles": 4,
+   "vertices": 8
+  }
+ ],
+ "solids": "7 solids: 4 box, 3 other",
+ "hiddenTriangles": 8,
+ "shadow": "casts: 2 box pieces under a shadow texel, else its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1719-Buildings-part-models-roofRailing.png",
+ "model": "models/1719-Buildings-part-models-roofRailing.glb",
+ "pieces": [
+  {
+   "label": "roofRailing",
+   "triangles": 78,
+   "vertices": 156,
+   "bytes": 5460,
+   "material": "MeshStandardMaterial \"building-part-roofRailing\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:roofRailing",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (78 today, 3.3 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: part models/concrete",
+ "group": "Buildings: part models",
+ "name": "concrete",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 12,
+ "vertices": 24,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 980,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 980,
+ "materials": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 12,
+   "vertices": 24
+  },
+  {
+   "level": 1,
+   "triangles": 2,
+   "vertices": 4
+  }
+ ],
+ "solids": "1 solids: 1 box",
+ "hiddenTriangles": 0,
+ "shadow": "casts: 1 box pieces under a shadow texel, else its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1715-Buildings-part-models-concrete.png",
+ "model": "models/1715-Buildings-part-models-concrete.glb",
+ "pieces": [
+  {
+   "label": "concrete",
+   "triangles": 12,
+   "vertices": 24,
+   "bytes": 840,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:concrete",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

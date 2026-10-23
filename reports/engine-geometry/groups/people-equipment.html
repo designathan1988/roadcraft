@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: equipment</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: equipment</h1><p class="muted">29 objects, 291,948 triangles one of each.</p></header>
+<main><article class="row" id="People: equipment/jaldmic_l1a1">
+  <a href="../images/2313-People-equipment-jaldmic-l1a1.png"><img loading="lazy" src="../images/2313-People-equipment-jaldmic-l1a1.png" alt="People: equipment/jaldmic_l1a1"></a>
+  <div class="data">
+    <h3>jaldmic_l1a1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (63,128 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 2,122 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>63,128</dd><dt>Vertices</dt><dd>39,356</dd>
+      <dt>Levels</dt><dd>L0 63,128</dd>
+      <dt>Memory</dt><dd>1,970 KB (geometry 1,970 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>30 solids: 7 closed cylinder, 23 other</dd><dt>Hidden triangles</dt><dd>2,122</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map jaldmic_l1a1.webp 512x512 WebP, 27402 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/jaldmic_l1a1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture jaldmic_l1a1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2313-People-equipment-jaldmic-l1a1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/elvs_sling_purse1">
+  <a href="../images/2253-People-equipment-elvs-sling-purse1.png"><img loading="lazy" src="../images/2253-People-equipment-elvs-sling-purse1.png" alt="People: equipment/elvs_sling_purse1"></a>
+  <div class="data">
+    <h3>elvs_sling_purse1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (51,080 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 1,204 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>51,080</dd><dt>Vertices</dt><dd>34,154</dd>
+      <dt>Levels</dt><dd>L0 51,080</dd>
+      <dt>Memory</dt><dd>1,666 KB (geometry 1,666 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>68 solids: 62 other, 2 quad, 4 closed cylinder</dd><dt>Hidden triangles</dt><dd>1,204</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_sling_purse1.webp 512x512 WebP, 105416 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_sling_purse1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_sling_purse1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2253-People-equipment-elvs-sling-purse1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/mindfront_tactical_vest_female">
+  <a href="../images/2418-People-equipment-mindfront-tactical-vest-female.png"><img loading="lazy" src="../images/2418-People-equipment-mindfront-tactical-vest-female.png" alt="People: equipment/mindfront_tactical_vest_female"></a>
+  <div class="data">
+    <h3>mindfront_tactical_vest_female</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (37,056 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 208 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>37,056</dd><dt>Vertices</dt><dd>22,052</dd>
+      <dt>Levels</dt><dd>L0 37,056</dd>
+      <dt>Memory</dt><dd>1,123 KB (geometry 1,123 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>59 solids: 16 closed cylinder, 43 other</dd><dt>Hidden triangles</dt><dd>208</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map mindfront_tactical_vest_female.webp 512x512 WebP, 62606 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_tactical_vest_female.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture mindfront_tactical_vest_female.webp</dd>
+    </dl>
+    <a class="file" href="../models/2418-People-equipment-mindfront-tactical-vest-female.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/mindfront_tactical_vest_male">
+  <a href="../images/2419-People-equipment-mindfront-tactical-vest-male.png"><img loading="lazy" src="../images/2419-People-equipment-mindfront-tactical-vest-male.png" alt="People: equipment/mindfront_tactical_vest_male"></a>
+  <div class="data">
+    <h3>mindfront_tactical_vest_male</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (37,056 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Same triangles and vertices as mindfront_tactical_vest_female : load one mesh and change its colour, not a second copy.</li><li>Remove its 285 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>37,056</dd><dt>Vertices</dt><dd>22,052</dd>
+      <dt>Levels</dt><dd>L0 37,056</dd>
+      <dt>Memory</dt><dd>1,123 KB (geometry 1,123 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>59 solids: 16 closed cylinder, 43 other</dd><dt>Hidden triangles</dt><dd>285</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map mindfront_tactical_vest_male.webp 512x512 WebP, 62606 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_tactical_vest_male.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture mindfront_tactical_vest_male.webp</dd>
+    </dl>
+    <a class="file" href="../models/2419-People-equipment-mindfront-tactical-vest-male.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/jaldmic_akm_base">
+  <a href="../images/2311-People-equipment-jaldmic-akm-base.png"><img loading="lazy" src="../images/2311-People-equipment-jaldmic-akm-base.png" alt="People: equipment/jaldmic_akm_base"></a>
+  <div class="data">
+    <h3>jaldmic_akm_base</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (19,509 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 488 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>19,509</dd><dt>Vertices</dt><dd>22,630</dd>
+      <dt>Levels</dt><dd>L0 19,509</dd>
+      <dt>Memory</dt><dd>936 KB (geometry 936 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>28 solids: 16 other, 12 closed cylinder</dd><dt>Hidden triangles</dt><dd>488</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map jaldmic_akm_base.webp 512x512 WebP, 32268 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/jaldmic_akm_base.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture jaldmic_akm_base.webp</dd>
+    </dl>
+    <a class="file" href="../models/2311-People-equipment-jaldmic-akm-base.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_hand_claws">
+  <a href="../images/2082-People-equipment-culturalibre-hand-claws.png"><img loading="lazy" src="../images/2082-People-equipment-culturalibre-hand-claws.png" alt="People: equipment/culturalibre_hand_claws"></a>
+  <div class="data">
+    <h3>culturalibre_hand_claws</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (14,123 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 259 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,123</dd><dt>Vertices</dt><dd>23,641</dd>
+      <dt>Levels</dt><dd>L0 14,123</dd>
+      <dt>Memory</dt><dd>904 KB (geometry 904 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 6 other</dd><dt>Hidden triangles</dt><dd>259</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hand_claws.webp 256x256 WebP, 4430 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hand_claws.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hand_claws.webp</dd>
+    </dl>
+    <a class="file" href="../models/2082-People-equipment-culturalibre-hand-claws.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_p-ivy_weapon">
+  <a href="../images/2482-People-equipment-punkduck-p-ivy-weapon.png"><img loading="lazy" src="../images/2482-People-equipment-punkduck-p-ivy-weapon.png" alt="People: equipment/punkduck_p-ivy_weapon"></a>
+  <div class="data">
+    <h3>punkduck_p-ivy_weapon</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (10,352 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 1,571 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10,352</dd><dt>Vertices</dt><dd>10,503</dd>
+      <dt>Levels</dt><dd>L0 10,352</dd>
+      <dt>Memory</dt><dd>450 KB (geometry 450 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>46 solids: 24 other, 22 closed cylinder</dd><dt>Hidden triangles</dt><dd>1,571</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_p-ivy_weapon.webp 512x512 WebP, 36532 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_p-ivy_weapon.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_p-ivy_weapon.webp</dd>
+    </dl>
+    <a class="file" href="../models/2482-People-equipment-punkduck-p-ivy-weapon.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_electric_guitar">
+  <a href="../images/2450-People-equipment-punkduck-electric-guitar.png"><img loading="lazy" src="../images/2450-People-equipment-punkduck-electric-guitar.png" alt="People: equipment/punkduck_electric_guitar"></a>
+  <div class="data">
+    <h3>punkduck_electric_guitar</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (7,700 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 127 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,700</dd><dt>Vertices</dt><dd>5,177</dd>
+      <dt>Levels</dt><dd>L0 7,700</dd>
+      <dt>Memory</dt><dd>252 KB (geometry 252 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>131 solids: 113 other, 10 closed cylinder, 8 open prism</dd><dt>Hidden triangles</dt><dd>127</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_electric_guitar.webp 512x512 WebP, 51790 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_electric_guitar.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_electric_guitar.webp</dd>
+    </dl>
+    <a class="file" href="../models/2450-People-equipment-punkduck-electric-guitar.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/jaldmic_m1911a1">
+  <a href="../images/2314-People-equipment-jaldmic-m1911a1.png"><img loading="lazy" src="../images/2314-People-equipment-jaldmic-m1911a1.png" alt="People: equipment/jaldmic_m1911a1"></a>
+  <div class="data">
+    <h3>jaldmic_m1911a1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (6,998 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 44 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,998</dd><dt>Vertices</dt><dd>5,308</dd>
+      <dt>Levels</dt><dd>L0 6,998</dd>
+      <dt>Memory</dt><dd>248 KB (geometry 248 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>16 solids: 15 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>44</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map jaldmic_m1911a1.webp 512x512 WebP, 24994 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/jaldmic_m1911a1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture jaldmic_m1911a1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2314-People-equipment-jaldmic-m1911a1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_diver_scuba_rig">
+  <a href="../images/2448-People-equipment-punkduck-diver-scuba-rig.png"><img loading="lazy" src="../images/2448-People-equipment-punkduck-diver-scuba-rig.png" alt="People: equipment/punkduck_diver_scuba_rig"></a>
+  <div class="data">
+    <h3>punkduck_diver_scuba_rig</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (5,676 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 31 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,676</dd><dt>Vertices</dt><dd>3,950</dd>
+      <dt>Levels</dt><dd>L0 5,676</dd>
+      <dt>Memory</dt><dd>190 KB (geometry 190 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>33 solids: 31 other, 2 open prism</dd><dt>Hidden triangles</dt><dd>31</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_diver_scuba_rig.webp 512x512 WebP, 9934 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_diver_scuba_rig.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_diver_scuba_rig.webp</dd>
+    </dl>
+    <a class="file" href="../models/2448-People-equipment-punkduck-diver-scuba-rig.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_cl_gun">
+  <a href="../images/2066-People-equipment-culturalibre-cl-gun.png"><img loading="lazy" src="../images/2066-People-equipment-culturalibre-cl-gun.png" alt="People: equipment/culturalibre_cl_gun"></a>
+  <div class="data">
+    <h3>culturalibre_cl_gun</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,926 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,926</dd><dt>Vertices</dt><dd>3,440</dd>
+      <dt>Levels</dt><dd>L0 4,926</dd>
+      <dt>Memory</dt><dd>165 KB (geometry 165 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>8 solids: 6 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_cl_gun.webp 512x512 WebP, 528 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_cl_gun.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_cl_gun.webp</dd>
+    </dl>
+    <a class="file" href="../models/2066-People-equipment-culturalibre-cl-gun.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_cl_gun_left_hand">
+  <a href="../images/2067-People-equipment-culturalibre-cl-gun-left-hand.png"><img loading="lazy" src="../images/2067-People-equipment-culturalibre-cl-gun-left-hand.png" alt="People: equipment/culturalibre_cl_gun_left_hand"></a>
+  <div class="data">
+    <h3>culturalibre_cl_gun_left_hand</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,926 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Same triangles and vertices as culturalibre_cl_gun : load one mesh and change its colour, not a second copy.</li><li>Remove its 5 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,926</dd><dt>Vertices</dt><dd>3,440</dd>
+      <dt>Levels</dt><dd>L0 4,926</dd>
+      <dt>Memory</dt><dd>165 KB (geometry 165 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>8 solids: 6 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>5</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_cl_gun_left_hand.webp 512x512 WebP, 528 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_cl_gun_left_hand.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_cl_gun_left_hand.webp</dd>
+    </dl>
+    <a class="file" href="../models/2067-People-equipment-culturalibre-cl-gun-left-hand.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_stethoscope">
+  <a href="../images/2498-People-equipment-punkduck-stethoscope.png"><img loading="lazy" src="../images/2498-People-equipment-punkduck-stethoscope.png" alt="People: equipment/punkduck_stethoscope"></a>
+  <div class="data">
+    <h3>punkduck_stethoscope</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,668 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,668</dd><dt>Vertices</dt><dd>2,727</dd>
+      <dt>Levels</dt><dd>L0 4,668</dd>
+      <dt>Memory</dt><dd>140 KB (geometry 140 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 1 closed cylinder, 1 open prism, 5 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_stethoscope.webp 512x512 WebP, 2844 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_stethoscope.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_stethoscope.webp</dd>
+    </dl>
+    <a class="file" href="../models/2498-People-equipment-punkduck-stethoscope.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_handbag01">
+  <a href="../images/2468-People-equipment-punkduck-handbag01.png"><img loading="lazy" src="../images/2468-People-equipment-punkduck-handbag01.png" alt="People: equipment/punkduck_handbag01"></a>
+  <div class="data">
+    <h3>punkduck_handbag01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,460 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,460</dd><dt>Vertices</dt><dd>2,155</dd>
+      <dt>Levels</dt><dd>L0 3,460</dd>
+      <dt>Memory</dt><dd>108 KB (geometry 108 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>13 solids: 10 other, 3 closed cylinder</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_handbag01.webp 512x512 WebP, 18742 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_handbag01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_handbag01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2468-People-equipment-punkduck-handbag01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_wireless_headset">
+  <a href="../images/2517-People-equipment-punkduck-wireless-headset.png"><img loading="lazy" src="../images/2517-People-equipment-punkduck-wireless-headset.png" alt="People: equipment/punkduck_wireless_headset"></a>
+  <div class="data">
+    <h3>punkduck_wireless_headset</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,432 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 30 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,432</dd><dt>Vertices</dt><dd>2,224</dd>
+      <dt>Levels</dt><dd>L0 3,432</dd>
+      <dt>Memory</dt><dd>110 KB (geometry 110 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>10 solids: 6 closed cylinder, 3 open prism, 1 other</dd><dt>Hidden triangles</dt><dd>30</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_wireless_headset.webp 512x512 WebP, 13916 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_wireless_headset.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_wireless_headset.webp</dd>
+    </dl>
+    <a class="file" href="../models/2517-People-equipment-punkduck-wireless-headset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/o4saken_dagger">
+  <a href="../images/2427-People-equipment-o4saken-dagger.png"><img loading="lazy" src="../images/2427-People-equipment-o4saken-dagger.png" alt="People: equipment/o4saken_dagger"></a>
+  <div class="data">
+    <h3>o4saken_dagger</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,026 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 7 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,026</dd><dt>Vertices</dt><dd>1,812</dd>
+      <dt>Levels</dt><dd>L0 3,026</dd>
+      <dt>Memory</dt><dd>92 KB (geometry 92 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>7</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map o4saken_dagger.webp 256x256 WebP, 10378 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/o4saken_dagger.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture o4saken_dagger.webp</dd>
+    </dl>
+    <a class="file" href="../models/2427-People-equipment-o4saken-dagger.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_magic_sceptre">
+  <a href="../images/2120-People-equipment-culturalibre-magic-sceptre.png"><img loading="lazy" src="../images/2120-People-equipment-culturalibre-magic-sceptre.png" alt="People: equipment/culturalibre_magic_sceptre"></a>
+  <div class="data">
+    <h3>culturalibre_magic_sceptre</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,680 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,680</dd><dt>Vertices</dt><dd>1,524</dd>
+      <dt>Levels</dt><dd>L0 2,680</dd>
+      <dt>Memory</dt><dd>79 KB (geometry 79 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_magic_sceptre.webp 256x256 WebP, 9622 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_magic_sceptre.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_magic_sceptre.webp</dd>
+    </dl>
+    <a class="file" href="../models/2120-People-equipment-culturalibre-magic-sceptre.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_war_hammer">
+  <a href="../images/2128-People-equipment-culturalibre-war-hammer.png"><img loading="lazy" src="../images/2128-People-equipment-culturalibre-war-hammer.png" alt="People: equipment/culturalibre_war_hammer"></a>
+  <div class="data">
+    <h3>culturalibre_war_hammer</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,364 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 260 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,364</dd><dt>Vertices</dt><dd>3,024</dd>
+      <dt>Levels</dt><dd>L0 2,364</dd>
+      <dt>Memory</dt><dd>122 KB (geometry 122 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>5 solids: 4 closed cylinder, 1 other</dd><dt>Hidden triangles</dt><dd>260</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_war_hammer.webp 256x256 WebP, 4434 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_war_hammer.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_war_hammer.webp</dd>
+    </dl>
+    <a class="file" href="../models/2128-People-equipment-culturalibre-war-hammer.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_tennis_racket">
+  <a href="../images/2507-People-equipment-punkduck-tennis-racket.png"><img loading="lazy" src="../images/2507-People-equipment-punkduck-tennis-racket.png" alt="People: equipment/punkduck_tennis_racket"></a>
+  <div class="data">
+    <h3>punkduck_tennis_racket</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,068 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 7 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,068</dd><dt>Vertices</dt><dd>1,423</dd>
+      <dt>Levels</dt><dd>L0 2,068</dd>
+      <dt>Memory</dt><dd>69 KB (geometry 69 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>36 solids: 1 closed cylinder, 1 other, 34 open prism</dd><dt>Hidden triangles</dt><dd>7</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_tennis_racket.webp 512x512 WebP, 22174 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_tennis_racket.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_tennis_racket.webp</dd>
+    </dl>
+    <a class="file" href="../models/2507-People-equipment-punkduck-tennis-racket.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_head_mirror">
+  <a href="../images/2469-People-equipment-punkduck-head-mirror.png"><img loading="lazy" src="../images/2469-People-equipment-punkduck-head-mirror.png" alt="People: equipment/punkduck_head_mirror"></a>
+  <div class="data">
+    <h3>punkduck_head_mirror</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,020 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,020</dd><dt>Vertices</dt><dd>1,301</dd>
+      <dt>Levels</dt><dd>L0 2,020</dd>
+      <dt>Memory</dt><dd>64 KB (geometry 64 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>8 solids: 2 other, 6 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_head_mirror.webp 512x512 WebP, 10070 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_head_mirror.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_head_mirror.webp</dd>
+    </dl>
+    <a class="file" href="../models/2469-People-equipment-punkduck-head-mirror.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_shopping_bag01">
+  <a href="../images/2489-People-equipment-punkduck-shopping-bag01.png"><img loading="lazy" src="../images/2489-People-equipment-punkduck-shopping-bag01.png" alt="People: equipment/punkduck_shopping_bag01"></a>
+  <div class="data">
+    <h3>punkduck_shopping_bag01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,336 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,336</dd><dt>Vertices</dt><dd>831</dd>
+      <dt>Levels</dt><dd>L0 1,336</dd>
+      <dt>Memory</dt><dd>42 KB (geometry 42 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_shopping_bag01.webp 512x512 WebP, 20588 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_shopping_bag01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_shopping_bag01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2489-People-equipment-punkduck-shopping-bag01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/maciekg_short_bow">
+  <a href="../images/2341-People-equipment-maciekg-short-bow.png"><img loading="lazy" src="../images/2341-People-equipment-maciekg-short-bow.png" alt="People: equipment/maciekg_short_bow"></a>
+  <div class="data">
+    <h3>maciekg_short_bow</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,216 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,216</dd><dt>Vertices</dt><dd>894</dd>
+      <dt>Levels</dt><dd>L0 1,216</dd>
+      <dt>Memory</dt><dd>42 KB (geometry 42 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 3 closed cylinder, 1 other</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map maciekg_short_bow.webp 512x512 WebP, 22902 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/maciekg_short_bow.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture maciekg_short_bow.webp</dd>
+    </dl>
+    <a class="file" href="../models/2341-People-equipment-maciekg-short-bow.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_wooden_bow">
+  <a href="../images/2131-People-equipment-culturalibre-wooden-bow.png"><img loading="lazy" src="../images/2131-People-equipment-culturalibre-wooden-bow.png" alt="People: equipment/culturalibre_wooden_bow"></a>
+  <div class="data">
+    <h3>culturalibre_wooden_bow</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (732 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>732</dd><dt>Vertices</dt><dd>753</dd>
+      <dt>Levels</dt><dd>L0 732</dd>
+      <dt>Memory</dt><dd>32 KB (geometry 32 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 1 closed cylinder, 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_wooden_bow.webp 256x256 WebP, 13138 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_wooden_bow.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_wooden_bow.webp</dd>
+    </dl>
+    <a class="file" href="../models/2131-People-equipment-culturalibre-wooden-bow.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/punkduck_microphone">
+  <a href="../images/2478-People-equipment-punkduck-microphone.png"><img loading="lazy" src="../images/2478-People-equipment-punkduck-microphone.png" alt="People: equipment/punkduck_microphone"></a>
+  <div class="data">
+    <h3>punkduck_microphone</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (544 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>544</dd><dt>Vertices</dt><dd>385</dd>
+      <dt>Levels</dt><dd>L0 544</dd>
+      <dt>Memory</dt><dd>18 KB (geometry 18 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_microphone.webp 512x512 WebP, 39816 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_microphone.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_microphone.webp</dd>
+    </dl>
+    <a class="file" href="../models/2478-People-equipment-punkduck-microphone.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/maciekg_hammer">
+  <a href="../images/2337-People-equipment-maciekg-hammer.png"><img loading="lazy" src="../images/2337-People-equipment-maciekg-hammer.png" alt="People: equipment/maciekg_hammer"></a>
+  <div class="data">
+    <h3>maciekg_hammer</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (528 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>528</dd><dt>Vertices</dt><dd>397</dd>
+      <dt>Levels</dt><dd>L0 528</dd>
+      <dt>Memory</dt><dd>19 KB (geometry 19 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map maciekg_hammer.webp 512x512 WebP, 66612 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/maciekg_hammer.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture maciekg_hammer.webp</dd>
+    </dl>
+    <a class="file" href="../models/2337-People-equipment-maciekg-hammer.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/joepal_crude_sword">
+  <a href="../images/2323-People-equipment-joepal-crude-sword.png"><img loading="lazy" src="../images/2323-People-equipment-joepal-crude-sword.png" alt="People: equipment/joepal_crude_sword"></a>
+  <div class="data">
+    <h3>joepal_crude_sword</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (476 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 64 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>476</dd><dt>Vertices</dt><dd>291</dd>
+      <dt>Levels</dt><dd>L0 476</dd>
+      <dt>Memory</dt><dd>15 KB (geometry 15 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 box</dd><dt>Hidden triangles</dt><dd>64</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map joepal_crude_sword.webp 256x256 WebP, 1174 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/joepal_crude_sword.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture joepal_crude_sword.webp</dd>
+    </dl>
+    <a class="file" href="../models/2323-People-equipment-joepal-crude-sword.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_hero_kalistick">
+  <a href="../images/2096-People-equipment-culturalibre-hero-kalistick.png"><img loading="lazy" src="../images/2096-People-equipment-culturalibre-hero-kalistick.png" alt="People: equipment/culturalibre_hero_kalistick"></a>
+  <div class="data">
+    <h3>culturalibre_hero_kalistick</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>320</dd><dt>Vertices</dt><dd>580</dd>
+      <dt>Levels</dt><dd>L0 320</dd>
+      <dt>Memory</dt><dd>22 KB (geometry 22 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_kalistick.webp 256x256 WebP, 2288 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_kalistick.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hero_kalistick.webp</dd>
+    </dl>
+    <a class="file" href="../models/2096-People-equipment-culturalibre-hero-kalistick.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_hero_kalistick_lefthanded">
+  <a href="../images/2097-People-equipment-culturalibre-hero-kalistick-lefthanded.png"><img loading="lazy" src="../images/2097-People-equipment-culturalibre-hero-kalistick-lefthanded.png" alt="People: equipment/culturalibre_hero_kalistick_lefthanded"></a>
+  <div class="data">
+    <h3>culturalibre_hero_kalistick_lefthanded</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>320</dd><dt>Vertices</dt><dd>234</dd>
+      <dt>Levels</dt><dd>L0 320</dd>
+      <dt>Memory</dt><dd>11 KB (geometry 11 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_kalistick_lefthanded.webp 256x256 WebP, 2288 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_kalistick_lefthanded.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hero_kalistick_lefthanded.webp</dd>
+    </dl>
+    <a class="file" href="../models/2097-People-equipment-culturalibre-hero-kalistick-lefthanded.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: equipment/culturalibre_suitcase">
+  <a href="../images/2127-People-equipment-culturalibre-suitcase.png"><img loading="lazy" src="../images/2127-People-equipment-culturalibre-suitcase.png" alt="People: equipment/culturalibre_suitcase"></a>
+  <div class="data">
+    <h3>culturalibre_suitcase</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (228 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.</li><li>Remove its 16 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>228</dd><dt>Vertices</dt><dd>354</dd>
+      <dt>Levels</dt><dd>L0 228</dd>
+      <dt>Memory</dt><dd>14 KB (geometry 14 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>8 solids: 4 closed cylinder, 4 box</dd><dt>Hidden triangles</dt><dd>16</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_suitcase.webp 512x512 WebP, 32194 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_suitcase.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_suitcase.webp</dd>
+    </dl>
+    <a class="file" href="../models/2127-People-equipment-culturalibre-suitcase.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

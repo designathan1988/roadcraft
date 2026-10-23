@@ -1,0 +1,67 @@
+{
+ "id": "People: clothes/female_casualsuit01",
+ "group": "People: clothes",
+ "name": "female_casualsuit01",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/female_casualsuit01.bin",
+ "build": "skinned",
+ "triangles": 4236,
+ "vertices": 2406,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 127824,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 127824,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 4236,
+   "vertices": 2406
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2293-People-clothes-female-casualsuit01.png",
+ "model": "models/2293-People-clothes-female-casualsuit01.glb",
+ "pieces": [
+  {
+   "label": "clothes",
+   "triangles": 4236,
+   "vertices": 2406,
+   "bytes": 127824,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map female_casualsuit01.webp 512x512 WebP, 30844 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 5372 base-body vertices under it",
+  "texture female_casualsuit01.webp"
+ ],
+ "countKey": "proxy:female_casualsuit01",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (4,236 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

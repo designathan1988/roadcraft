@@ -1,0 +1,99 @@
+{
+ "id": "Vehicles/bus",
+ "group": "Vehicles",
+ "name": "bus",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/vehicleModels.ts",
+ "build": "instanced",
+ "triangles": 8872,
+ "vertices": 18007,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 707580,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 707580,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 8872,
+   "vertices": 18007
+  },
+  {
+   "level": 1,
+   "triangles": 80,
+   "vertices": 156
+  }
+ ],
+ "solids": "319 solids: 9 other, 62 closed cylinder, 208 box, 40 quad",
+ "hiddenTriangles": 769,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2022-Vehicles-bus.png",
+ "model": "models/2022-Vehicles-bus.glb",
+ "pieces": [
+  {
+   "label": "shell",
+   "triangles": 2196,
+   "vertices": 4472,
+   "bytes": 174168,
+   "material": ""
+  },
+  {
+   "label": "glass",
+   "triangles": 92,
+   "vertices": 174,
+   "bytes": 6816,
+   "material": ""
+  },
+  {
+   "label": "trim",
+   "triangles": 96,
+   "vertices": 168,
+   "bytes": 6624,
+   "material": ""
+  },
+  {
+   "label": "interior",
+   "triangles": 6172,
+   "vertices": 12910,
+   "bytes": 501792,
+   "material": ""
+  },
+  {
+   "label": "steering wheel",
+   "triangles": 316,
+   "vertices": 283,
+   "bytes": 12084,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches"
+ ],
+ "countKey": "vehicle:bus",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,000 triangles (8,872 today, 8.9 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).",
+  "Rebuild near 1,500; 62 cylinders and 208 boxes today.",
+  "Remove its 769 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "62 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1000
+}

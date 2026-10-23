@@ -1,0 +1,63 @@
+{
+ "id": "Buildings: shell pieces/roof/emitRoof, 1 triangles, 0.00 x 1.05 x 3.00 m, from preset factory",
+ "group": "Buildings: shell pieces",
+ "name": "roof",
+ "variation": "emitRoof, 1 triangles, 0.00 x 1.05 x 3.00 m, from preset factory",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitRoof)",
+ "build": "merged",
+ "triangles": 1,
+ "vertices": 3,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 108,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 108,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1,
+   "vertices": 3
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/0284-Buildings-shell-pieces-roof-emitRoof-1-triangles-0-00-x-1-05-x-3-00-m-from-prese.png",
+ "model": "models/0284-Buildings-shell-pieces-roof-emitRoof-1-triangles-0-00-x-1-05-x-3-00-m-from-prese.glb",
+ "pieces": [
+  {
+   "label": "emitRoof",
+   "triangles": 1,
+   "vertices": 3,
+   "bytes": 108,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: metal",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

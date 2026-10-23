@@ -1,0 +1,74 @@
+{
+ "id": "Signs/street name/both ends of a street at a junction",
+ "group": "Signs",
+ "name": "street name",
+ "variation": "both ends of a street at a junction",
+ "origin": "kit",
+ "source": "src/render/signLayer.ts (createSignLayer, sync)",
+ "build": "instanced",
+ "triangles": 56,
+ "vertices": 94,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B",
+ "bytesPerVertex": 64,
+ "geometryBytes": 15600,
+ "textureBytes": 4456440,
+ "extraBytes": 0,
+ "totalBytes": 4472040,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 56,
+   "vertices": 94
+  }
+ ],
+ "solids": "6 solids: 2 other, 4 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2660-Signs-street-name-both-ends-of-a-street-at-a-junction.png",
+ "model": "models/2660-Signs-street-name-both-ends-of-a-street-at-a-junction.glb",
+ "pieces": [
+  {
+   "label": "sign-posts x2",
+   "triangles": 48,
+   "vertices": 70,
+   "bytes": 3312,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1)"
+  },
+  {
+   "label": "sign-plates",
+   "triangles": 8,
+   "vertices": 24,
+   "bytes": 12288,
+   "material": "MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 2176x384 RGBA 8-bit, 12 levels, 4456440 B"
+ ],
+ "notes": [
+  "sign-plates: draws 8 of the 128 triangles its buffers hold room for (its draw range)",
+  "the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)"
+ ],
+ "countKey": "sign:street name",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 30 triangles (56 today, 1.9 times the budget): as it is: a post and a plate.",
+  "64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "4 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 30
+}

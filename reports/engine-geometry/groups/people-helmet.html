@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: helmet</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: helmet</h1><p class="muted">6 objects, 134,832 triangles one of each.</p></header>
+<main><article class="row" id="People: helmet/mrgreaterthan_m1_helmet">
+  <a href="../images/2421-People-helmet-mrgreaterthan-m1-helmet.png"><img loading="lazy" src="../images/2421-People-helmet-mrgreaterthan-m1-helmet.png" alt="People: helmet/mrgreaterthan_m1_helmet"></a>
+  <div class="data">
+    <h3>mrgreaterthan_m1_helmet</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (72,292 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 484 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>72,292</dd><dt>Vertices</dt><dd>117,957</dd>
+      <dt>Levels</dt><dd>L0 72,292</dd>
+      <dt>Memory</dt><dd>4,533 KB (geometry 4,533 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 6 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>484</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map mrgreaterthan_m1_helmet.webp 256x256 WebP, 822 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/mrgreaterthan_m1_helmet.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 111 base-body vertices under it<br>texture mrgreaterthan_m1_helmet.webp</dd>
+    </dl>
+    <a class="file" href="../models/2421-People-helmet-mrgreaterthan-m1-helmet.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: helmet/culturalibre_motorcycle_helmet">
+  <a href="../images/2124-People-helmet-culturalibre-motorcycle-helmet.png"><img loading="lazy" src="../images/2124-People-helmet-culturalibre-motorcycle-helmet.png" alt="People: helmet/culturalibre_motorcycle_helmet"></a>
+  <div class="data">
+    <h3>culturalibre_motorcycle_helmet</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (44,608 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 17 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>44,608</dd><dt>Vertices</dt><dd>22,689</dd>
+      <dt>Levels</dt><dd>L0 44,608</dd>
+      <dt>Memory</dt><dd>1,232 KB (geometry 1,232 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 1 closed cylinder, 1 other</dd><dt>Hidden triangles</dt><dd>17</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_motorcycle_helmet.webp 256x256 WebP, 3782 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_motorcycle_helmet.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_motorcycle_helmet.webp</dd>
+    </dl>
+    <a class="file" href="../models/2124-People-helmet-culturalibre-motorcycle-helmet.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: helmet/culturalibre_skull_helmet">
+  <a href="../images/2125-People-helmet-culturalibre-skull-helmet.png"><img loading="lazy" src="../images/2125-People-helmet-culturalibre-skull-helmet.png" alt="People: helmet/culturalibre_skull_helmet"></a>
+  <div class="data">
+    <h3>culturalibre_skull_helmet</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (8,504 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,504</dd><dt>Vertices</dt><dd>6,627</dd>
+      <dt>Levels</dt><dd>L0 8,504</dd>
+      <dt>Memory</dt><dd>307 KB (geometry 307 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_skull_helmet.webp 256x256 WebP, 17678 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_skull_helmet.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 2816 base-body vertices under it<br>texture culturalibre_skull_helmet.webp</dd>
+    </dl>
+    <a class="file" href="../models/2125-People-helmet-culturalibre-skull-helmet.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: helmet/javherre_casco_caballero_templario_templar_knight_helmet">
+  <a href="../images/2318-People-helmet-javherre-casco-caballero-templario-templar-knight-helmet.png"><img loading="lazy" src="../images/2318-People-helmet-javherre-casco-caballero-templario-templar-knight-helmet.png" alt="People: helmet/javherre_casco_caballero_templario_templar_knight_helmet"></a>
+  <div class="data">
+    <h3>javherre_casco_caballero_templario_templar_knight_helmet</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (6,420 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,420</dd><dt>Vertices</dt><dd>3,461</dd>
+      <dt>Levels</dt><dd>L0 6,420</dd>
+      <dt>Memory</dt><dd>183 KB (geometry 183 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map javherre_casco_caballero_templario_templar_knight_helmet.webp 256x256 WebP, 8558 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/javherre_casco_caballero_templario_templar_knight_helmet.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture javherre_casco_caballero_templario_templar_knight_helmet.webp</dd>
+    </dl>
+    <a class="file" href="../models/2318-People-helmet-javherre-casco-caballero-templario-templar-knight-helmet.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: helmet/culturalibre_warrior_helmet">
+  <a href="../images/2129-People-helmet-culturalibre-warrior-helmet.png"><img loading="lazy" src="../images/2129-People-helmet-culturalibre-warrior-helmet.png" alt="People: helmet/culturalibre_warrior_helmet"></a>
+  <div class="data">
+    <h3>culturalibre_warrior_helmet</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,712 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,712</dd><dt>Vertices</dt><dd>1,714</dd>
+      <dt>Levels</dt><dd>L0 2,712</dd>
+      <dt>Memory</dt><dd>85 KB (geometry 85 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_warrior_helmet.webp 256x256 WebP, 7666 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_warrior_helmet.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_warrior_helmet.webp</dd>
+    </dl>
+    <a class="file" href="../models/2129-People-helmet-culturalibre-warrior-helmet.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: helmet/grinsegold_corinthian_helmet">
+  <a href="../images/2305-People-helmet-grinsegold-corinthian-helmet.png"><img loading="lazy" src="../images/2305-People-helmet-grinsegold-corinthian-helmet.png" alt="People: helmet/grinsegold_corinthian_helmet"></a>
+  <div class="data">
+    <h3>grinsegold_corinthian_helmet</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (296 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>296</dd><dt>Vertices</dt><dd>201</dd>
+      <dt>Levels</dt><dd>L0 296</dd>
+      <dt>Memory</dt><dd>10 KB (geometry 10 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map grinsegold_corinthian_helmet.webp 256x256 WebP, 8778 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/grinsegold_corinthian_helmet.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture grinsegold_corinthian_helmet.webp</dd>
+    </dl>
+    <a class="file" href="../models/2305-People-helmet-grinsegold-corinthian-helmet.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

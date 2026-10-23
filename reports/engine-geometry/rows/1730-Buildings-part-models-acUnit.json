@@ -1,0 +1,69 @@
+{
+ "id": "Buildings: part models/acUnit",
+ "group": "Buildings: part models",
+ "name": "acUnit",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 74,
+ "vertices": 136,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 7680,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 7680,
+ "materials": "MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1)",
+ "shader": "patched built-in facade-ac-front|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 74,
+   "vertices": 136
+  },
+  {
+   "level": 1,
+   "triangles": 30,
+   "vertices": 60
+  }
+ ],
+ "solids": "9 solids: 3 other, 2 box, 2 quad, 2 open prism",
+ "hiddenTriangles": 6,
+ "shadow": "casts: 1 box pieces under a shadow texel, else its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1730-Buildings-part-models-acUnit.png",
+ "model": "models/1730-Buildings-part-models-acUnit.glb",
+ "pieces": [
+  {
+   "label": "acUnit",
+   "triangles": 74,
+   "vertices": 136,
+   "bytes": 5340,
+   "material": "MeshStandardMaterial \"building-part-acUnit\" [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:acUnit",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (74 today, 3.1 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "One box (10 triangles): the grille and fan painted (Cidade Otimizada: 10).",
+  "Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

@@ -1,0 +1,73 @@
+{
+ "id": "Low-poly plant models/palm",
+ "group": "Low-poly plant models",
+ "name": "palm",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/lowPolyTrees.ts",
+ "build": "instanced",
+ "triangles": 480,
+ "vertices": 930,
+ "attributes": "position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B",
+ "bytesPerVertex": 52,
+ "geometryBytes": 38280,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 38280,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 480,
+   "vertices": 930
+  }
+ ],
+ "solids": "11 solids: 5 open prism, 5 closed cylinder, 1 other",
+ "hiddenTriangles": 83,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1987-Low-poly-plant-models-palm.png",
+ "model": "models/1987-Low-poly-plant-models-palm.glb",
+ "pieces": [
+  {
+   "label": "body",
+   "triangles": 240,
+   "vertices": 720,
+   "bytes": 25920,
+   "material": ""
+  },
+  {
+   "label": "foliage cards",
+   "triangles": 240,
+   "vertices": 210,
+   "bytes": 12360,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it"
+ ],
+ "countKey": "source",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 250 triangles (480 today, 1.9 times the budget): three levels with the same silhouette (~250 / 86 / 20, Cidade Otimizada) before the impostor.",
+  "Remove its 83 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "10 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 250
+}

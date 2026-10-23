@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engine Geometry Catalogue</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header>
+<h1>Engine Geometry Catalogue</h1>
+<p class="muted">Every object the engine's builders make, each built alone (no city). 3,084 objects so far, updated 2026-10-23T20:09:16.155Z. Each picture: the object rendered (left) and its hidden-line wireframe (right).</p>
+<p class="muted">hidden triangles: triangles whose centre lies strictly inside another closed convex solid of the same object (its face planes, the solids welded by position), or pressed face to face on another triangle (the same centre, opposite normals); n/a for lines, points and geometry whose arrays could not be read.</p>
+<p><a href="optimization.html"><b>Geometry Optimization: what to change in every object, and why</b></a></p>
+<h2>Groups</h2>
+<table class="sum"><tr><th>Group</th><th>Objects</th><th>Triangles (one of each)</th></tr>
+<tr><td><a href="groups/people-suit.html">People: suit</a></td><td>57</td><td>969,592</td></tr>
+<tr><td><a href="groups/people-shoes.html">People: shoes</a></td><td>59</td><td>961,759</td></tr>
+<tr><td><a href="groups/people-hair.html">People: hair</a></td><td>70</td><td>857,077</td></tr>
+<tr><td><a href="groups/people-dress.html">People: dress</a></td><td>56</td><td>784,224</td></tr>
+<tr><td><a href="groups/buildings-far-facade-l1.html">Buildings: far facade (L1)</a></td><td>80</td><td>756,308</td></tr>
+<tr><td><a href="groups/people-cast-cooked.html">People: cast (cooked)</a></td><td>16</td><td>528,559</td></tr>
+<tr><td><a href="groups/people-eyebrows.html">People: eyebrows</a></td><td>26</td><td>421,092</td></tr>
+<tr><td><a href="groups/buildings-made-to-measure.html">Buildings: made to measure</a></td><td>27</td><td>387,578</td></tr>
+<tr><td><a href="groups/buildings-functions.html">Buildings: functions</a></td><td>42</td><td>385,586</td></tr>
+<tr><td><a href="groups/people-top.html">People: top</a></td><td>42</td><td>369,895</td></tr>
+<tr><td><a href="groups/people-underwear.html">People: underwear</a></td><td>58</td><td>331,833</td></tr>
+<tr><td><a href="groups/people-equipment.html">People: equipment</a></td><td>29</td><td>291,948</td></tr>
+<tr><td><a href="groups/roads.html">Roads</a></td><td>48</td><td>219,539</td></tr>
+<tr><td><a href="groups/people-bottom.html">People: bottom</a></td><td>25</td><td>186,905</td></tr>
+<tr><td><a href="groups/people-hat.html">People: hat</a></td><td>33</td><td>147,036</td></tr>
+<tr><td><a href="groups/people-mask.html">People: mask</a></td><td>13</td><td>143,264</td></tr>
+<tr><td><a href="groups/people-helmet.html">People: helmet</a></td><td>6</td><td>134,832</td></tr>
+<tr><td><a href="groups/people-jewelry.html">People: jewelry</a></td><td>14</td><td>125,834</td></tr>
+<tr><td><a href="groups/people-eyelashes.html">People: eyelashes</a></td><td>9</td><td>116,456</td></tr>
+<tr><td><a href="groups/people-skirt.html">People: skirt</a></td><td>20</td><td>104,554</td></tr>
+<tr><td><a href="groups/people-clothes.html">People: clothes</a></td><td>20</td><td>103,738</td></tr>
+<tr><td><a href="groups/vehicles.html">Vehicles</a></td><td>13</td><td>101,522</td></tr>
+<tr><td><a href="groups/buildings-presets.html">Buildings: presets</a></td><td>11</td><td>91,778</td></tr>
+<tr><td><a href="groups/people-glasses.html">People: glasses</a></td><td>15</td><td>90,814</td></tr>
+<tr><td><a href="groups/people-gloves.html">People: gloves</a></td><td>9</td><td>76,828</td></tr>
+<tr><td><a href="groups/people-base-body.html">People: base body</a></td><td>2</td><td>63,364</td></tr>
+<tr><td><a href="groups/far-forest.html">Far forest</a></td><td>6</td><td>44,152</td></tr>
+<tr><td><a href="groups/buildings-interiors-cut-open.html">Buildings: interiors (cut open)</a></td><td>3</td><td>28,964</td></tr>
+<tr><td><a href="groups/buildings-shell-pieces.html">Buildings: shell pieces</a></td><td>1712</td><td>27,394</td></tr>
+<tr><td><a href="groups/people-beard.html">People: beard</a></td><td>5</td><td>21,116</td></tr>
+<tr><td><a href="groups/editor-previews.html">Editor previews</a></td><td>5</td><td>19,066</td></tr>
+<tr><td><a href="groups/people-horns.html">People: horns</a></td><td>4</td><td>17,184</td></tr>
+<tr><td><a href="groups/landscape-elements-gltf.html">Landscape elements (glTF)</a></td><td>23</td><td>11,622</td></tr>
+<tr><td><a href="groups/people-socks.html">People: socks</a></td><td>4</td><td>10,120</td></tr>
+<tr><td><a href="groups/barriers.html">Barriers</a></td><td>5</td><td>9,156</td></tr>
+<tr><td><a href="groups/furniture-interiors.html">Furniture (interiors)</a></td><td>40</td><td>7,172</td></tr>
+<tr><td><a href="groups/buildings-masses-cell-level.html">Buildings: masses (cell level)</a></td><td>79</td><td>6,508</td></tr>
+<tr><td><a href="groups/water.html">Water</a></td><td>2</td><td>5,488</td></tr>
+<tr><td><a href="groups/terrain.html">Terrain</a></td><td>4</td><td>3,312</td></tr>
+<tr><td><a href="groups/buildings-masses-tile-level.html">Buildings: masses (tile level)</a></td><td>79</td><td>2,516</td></tr>
+<tr><td><a href="groups/buildings-masses-plate-level.html">Buildings: masses (plate level)</a></td><td>79</td><td>2,204</td></tr>
+<tr><td><a href="groups/people-procedural-crowd.html">People: procedural crowd</a></td><td>8</td><td>2,094</td></tr>
+<tr><td><a href="groups/buildings-part-models.html">Buildings: part models</a></td><td>31</td><td>2,082</td></tr>
+<tr><td><a href="groups/people-eyes.html">People: eyes</a></td><td>1</td><td>2,040</td></tr>
+<tr><td><a href="groups/low-poly-plant-models.html">Low-poly plant models</a></td><td>9</td><td>1,924</td></tr>
+<tr><td><a href="groups/ecosystem-trees.html">Ecosystem trees</a></td><td>12</td><td>1,852</td></tr>
+<tr><td><a href="groups/street-furniture.html">Street furniture</a></td><td>13</td><td>1,741</td></tr>
+<tr><td><a href="groups/forest-trees-painted-woods.html">Forest trees (painted woods)</a></td><td>8</td><td>1,720</td></tr>
+<tr><td><a href="groups/traffic-signals.html">Traffic signals</a></td><td>1</td><td>1,648</td></tr>
+<tr><td><a href="groups/street-trees-and-bushes.html">Street trees and bushes</a></td><td>8</td><td>1,444</td></tr>
+<tr><td><a href="groups/buildings-base-farthest-level.html">Buildings: base (farthest level)</a></td><td>79</td><td>1,318</td></tr>
+<tr><td><a href="groups/transit.html">Transit</a></td><td>4</td><td>1,128</td></tr>
+<tr><td><a href="groups/roads-network-far-level.html">Roads: network far level</a></td><td>12</td><td>1,032</td></tr>
+<tr><td><a href="groups/utility-poles.html">Utility poles</a></td><td>12</td><td>1,014</td></tr>
+<tr><td><a href="groups/sky.html">Sky</a></td><td>1</td><td>960</td></tr>
+<tr><td><a href="groups/flags.html">Flags</a></td><td>1</td><td>576</td></tr>
+<tr><td><a href="groups/ground-cover.html">Ground cover</a></td><td>9</td><td>420</td></tr>
+<tr><td><a href="groups/signs.html">Signs</a></td><td>12</td><td>318</td></tr>
+<tr><td><a href="groups/effects.html">Effects</a></td><td>6</td><td>282</td></tr>
+<tr><td><a href="groups/people-held-props.html">People: held props</a></td><td>7</td><td>272</td></tr>
+</table>
+<h2>Layers with no geometry of their own</h2>
+<ul><li>Gardens (src/render/gardens.ts gardenKinds): the landscape kit's tree and bush models (Street trees and bushes), placed by the buildings' garden elements.</li><li>Long grass (src/render/grass.ts grassClump): the landscape kit's grass tuft and wildflower (Street furniture), placed in clumps.</li></ul>
+<h2>Not catalogued yet</h2>
+<ul><li>Copies of each object in a generated city, and triangles x copies (needs the game open: `node scripts/model-catalog.mjs` without --no-game)</li></ul>
+<h2>Could not be measured</h2>
+<ul><li>Clouds: no mesh; drawn by ray marching in the post chain (src/render/postprocess.ts CLOUD_SHADOWS).</li><li>Vehicles' intermediate levels: made at run time by the simplifier (vehicleLevels.ts partLevels, meshoptimizer); the catalogue gives the full model (L0) and the far model.</li><li>Pictures: the colours are each material's base colour where its look needs the running game (baked surfaces, the engine's uniforms); the geometry and every number are the engine's.</li><li>Editor feedback on the ground (src/render/renderer.ts blink) and the tools' 2D gizmos (drawn on a canvas over the view): no catalogued mesh.</li><li>Run without the game (--no-game): no copies, costs (triangles x copies), draw calls or destruction peak: those are counted in a generated city.</li></ul>
+</header></body></html>

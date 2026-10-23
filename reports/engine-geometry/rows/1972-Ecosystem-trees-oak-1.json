@@ -1,0 +1,73 @@
+{
+ "id": "Ecosystem trees/oak/1",
+ "group": "Ecosystem trees",
+ "name": "oak",
+ "variation": "1",
+ "origin": "kit",
+ "source": "src/render/natureTrees.ts",
+ "build": "instanced",
+ "triangles": 282,
+ "vertices": 766,
+ "attributes": "position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B",
+ "bytesPerVertex": 52,
+ "geometryBytes": 30616,
+ "textureBytes": 4194304,
+ "extraBytes": 0,
+ "totalBytes": 4224920,
+ "materials": "MeshStandardMaterial [wind-nearfade|pose-tree] (vertex colours, flat shading, roughness 0.85, metalness 0, opacity 1) | MeshStandardMaterial [wind-nearfade-billboard-coverage-near|pose-tree] (vertex colours, double-sided, alpha test 0.5, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "patched built-in wind-nearfade|pose-tree | patched built-in wind-nearfade-billboard-coverage-near|pose-tree",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 282,
+   "vertices": 766
+  }
+ ],
+ "solids": "46 solids: 4 open prism, 2 closed cylinder, 40 other",
+ "hiddenTriangles": 0,
+ "shadow": "casts: body by its depth material",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1972-Ecosystem-trees-oak-1.png",
+ "model": "models/1972-Ecosystem-trees-oak-1.glb",
+ "pieces": [
+  {
+   "label": "body",
+   "triangles": 202,
+   "vertices": 606,
+   "bytes": 21816,
+   "material": "MeshStandardMaterial [wind-nearfade|pose-tree] (vertex colours, flat shading, roughness 0.85, metalness 0, opacity 1)"
+  },
+  {
+   "label": "foliage cards",
+   "triangles": 80,
+   "vertices": 160,
+   "bytes": 8800,
+   "material": "MeshStandardMaterial [wind-nearfade-billboard-coverage-near|pose-tree] (vertex colours, double-sided, alpha test 0.5, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 1536x512 RGBA 8-bit, 11 levels, 4194304 B"
+ ],
+ "notes": [
+  "one model at every distance; past it the far picture (impostor)"
+ ],
+ "countKey": "nature:trees",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 250 triangles (282 today, 1.1 times the budget): three levels with the same silhouette (~250 / 86 / 20, Cidade Otimizada) before the impostor.",
+  "6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 250
+}

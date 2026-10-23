@@ -1,0 +1,64 @@
+{
+ "id": "People: eyes/eyes",
+ "group": "People: eyes",
+ "name": "eyes",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/eyes.bin",
+ "build": "skinned",
+ "triangles": 2040,
+ "vertices": 1076,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 58912,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 58912,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2040,
+   "vertices": 1076
+  }
+ ],
+ "solids": "4 solids: 4 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2289-People-eyes-eyes.png",
+ "model": "models/2289-People-eyes-eyes.glb",
+ "pieces": [
+  {
+   "label": "eyes",
+   "triangles": 2040,
+   "vertices": 1076,
+   "bytes": 58912,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "hides 0 base-body vertices under it"
+ ],
+ "countKey": "proxy:eyes",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (2,040 today): painted into the head's texture: no geometry of its own.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

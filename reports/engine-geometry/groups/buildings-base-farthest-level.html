@@ -1,0 +1,1678 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buildings: base (farthest level)</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Buildings: base (farthest level)</h1><p class="muted">79 objects, 1,318 triangles one of each.</p></header>
+<main><article class="row" id="Buildings: base (farthest level)/residential high (small lot 12 x 16 m (residentialTower))/made to measure">
+  <a href="../images/2988-Buildings-base-farthest-level-residential-high-small-lot-12-x-16-m-residentialTo.png"><img loading="lazy" src="../images/2988-Buildings-base-farthest-level-residential-high-small-lot-12-x-16-m-residentialTo.png" alt="Buildings: base (farthest level)/residential high (small lot 12 x 16 m (residentialTower))/made to measure"></a>
+  <div class="data">
+    <h3>residential high (small lot 12 x 16 m (residentialTower)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (76 today, 1.9 times the budget): as it is.</li><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>76</dd><dt>Vertices</dt><dd>56</dd>
+      <dt>Levels</dt><dd>L0 76</dd>
+      <dt>Memory</dt><dd>2 KB (geometry 2 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2988-Buildings-base-farthest-level-residential-high-small-lot-12-x-16-m-residentialTo.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential high (medium lot 24 x 26 m (residentialTower))/made to measure">
+  <a href="../images/2993-Buildings-base-farthest-level-residential-high-medium-lot-24-x-26-m-residentialT.png"><img loading="lazy" src="../images/2993-Buildings-base-farthest-level-residential-high-medium-lot-24-x-26-m-residentialT.png" alt="Buildings: base (farthest level)/residential high (medium lot 24 x 26 m (residentialTower))/made to measure"></a>
+  <div class="data">
+    <h3>residential high (medium lot 24 x 26 m (residentialTower)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (54 today, 1.4 times the budget): as it is.</li><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>54</dd><dt>Vertices</dt><dd>40</dd>
+      <dt>Levels</dt><dd>L0 54</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2993-Buildings-base-farthest-level-residential-high-medium-lot-24-x-26-m-residentialT.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential high (large lot 40 x 36 m (residentialTower))/made to measure">
+  <a href="../images/2998-Buildings-base-farthest-level-residential-high-large-lot-40-x-36-m-residentialTo.png"><img loading="lazy" src="../images/2998-Buildings-base-farthest-level-residential-high-large-lot-40-x-36-m-residentialTo.png" alt="Buildings: base (farthest level)/residential high (large lot 40 x 36 m (residentialTower))/made to measure"></a>
+  <div class="data">
+    <h3>residential high (large lot 40 x 36 m (residentialTower)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (54 today, 1.4 times the budget): as it is.</li><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>54</dd><dt>Vertices</dt><dd>40</dd>
+      <dt>Levels</dt><dd>L0 54</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2998-Buildings-base-farthest-level-residential-high-large-lot-40-x-36-m-residentialTo.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/courtyard (preset)/preset">
+  <a href="../images/2737-Buildings-base-farthest-level-courtyard-preset-preset.png"><img loading="lazy" src="../images/2737-Buildings-base-farthest-level-courtyard-preset-preset.png" alt="Buildings: base (farthest level)/courtyard (preset)/preset"></a>
+  <div class="data">
+    <h3>courtyard (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40</dd><dt>Vertices</dt><dd>32</dd>
+      <dt>Levels</dt><dd>L0 40</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2737-Buildings-base-farthest-level-courtyard-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/council (public)/function">
+  <a href="../images/2777-Buildings-base-farthest-level-council-public-function.png"><img loading="lazy" src="../images/2777-Buildings-base-farthest-level-council-public-function.png" alt="Buildings: base (farthest level)/council (public)/function"></a>
+  <div class="data">
+    <h3>council (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>34</dd><dt>Vertices</dt><dd>28</dd>
+      <dt>Levels</dt><dd>L0 34</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2777-Buildings-base-farthest-level-council-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/school (public)/function">
+  <a href="../images/2812-Buildings-base-farthest-level-school-public-function.png"><img loading="lazy" src="../images/2812-Buildings-base-farthest-level-school-public-function.png" alt="Buildings: base (farthest level)/school (public)/function"></a>
+  <div class="data">
+    <h3>school (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>32</dd><dt>Vertices</dt><dd>28</dd>
+      <dt>Levels</dt><dd>L0 32</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2812-Buildings-base-farthest-level-school-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/university (public)/function">
+  <a href="../images/2817-Buildings-base-farthest-level-university-public-function.png"><img loading="lazy" src="../images/2817-Buildings-base-farthest-level-university-public-function.png" alt="Buildings: base (farthest level)/university (public)/function"></a>
+  <div class="data">
+    <h3>university (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>30</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 30</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2817-Buildings-base-farthest-level-university-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/factory (work)/function">
+  <a href="../images/2932-Buildings-base-farthest-level-factory-work-function.png"><img loading="lazy" src="../images/2932-Buildings-base-farthest-level-factory-work-function.png" alt="Buildings: base (farthest level)/factory (work)/function"></a>
+  <div class="data">
+    <h3>factory (work) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>30</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 30</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2932-Buildings-base-farthest-level-factory-work-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/cityHall (public)/function">
+  <a href="../images/2772-Buildings-base-farthest-level-cityHall-public-function.png"><img loading="lazy" src="../images/2772-Buildings-base-farthest-level-cityHall-public-function.png" alt="Buildings: base (farthest level)/cityHall (public)/function"></a>
+  <div class="data">
+    <h3>cityHall (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>22</dd><dt>Vertices</dt><dd>20</dd>
+      <dt>Levels</dt><dd>L0 22</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2772-Buildings-base-farthest-level-cityHall-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/prison (public)/function">
+  <a href="../images/2832-Buildings-base-farthest-level-prison-public-function.png"><img loading="lazy" src="../images/2832-Buildings-base-farthest-level-prison-public-function.png" alt="Buildings: base (farthest level)/prison (public)/function"></a>
+  <div class="data">
+    <h3>prison (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>22</dd><dt>Vertices</dt><dd>20</dd>
+      <dt>Levels</dt><dd>L0 22</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2832-Buildings-base-farthest-level-prison-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/church (public)/function">
+  <a href="../images/2837-Buildings-base-farthest-level-church-public-function.png"><img loading="lazy" src="../images/2837-Buildings-base-farthest-level-church-public-function.png" alt="Buildings: base (farthest level)/church (public)/function"></a>
+  <div class="data">
+    <h3>church (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>22</dd><dt>Vertices</dt><dd>20</dd>
+      <dt>Levels</dt><dd>L0 22</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2837-Buildings-base-farthest-level-church-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/tower (preset)/preset">
+  <a href="../images/2717-Buildings-base-farthest-level-tower-preset-preset.png"><img loading="lazy" src="../images/2717-Buildings-base-farthest-level-tower-preset-preset.png" alt="Buildings: base (farthest level)/tower (preset)/preset"></a>
+  <div class="data">
+    <h3>tower (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2717-Buildings-base-farthest-level-tower-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/factory (preset)/preset">
+  <a href="../images/2747-Buildings-base-farthest-level-factory-preset-preset.png"><img loading="lazy" src="../images/2747-Buildings-base-farthest-level-factory-preset-preset.png" alt="Buildings: base (farthest level)/factory (preset)/preset"></a>
+  <div class="data">
+    <h3>factory (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2747-Buildings-base-farthest-level-factory-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residentialTower (homes)/function">
+  <a href="../images/2767-Buildings-base-farthest-level-residentialTower-homes-function.png"><img loading="lazy" src="../images/2767-Buildings-base-farthest-level-residentialTower-homes-function.png" alt="Buildings: base (farthest level)/residentialTower (homes)/function"></a>
+  <div class="data">
+    <h3>residentialTower (homes) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2767-Buildings-base-farthest-level-residentialTower-homes-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/fireStation (public)/function">
+  <a href="../images/2797-Buildings-base-farthest-level-fireStation-public-function.png"><img loading="lazy" src="../images/2797-Buildings-base-farthest-level-fireStation-public-function.png" alt="Buildings: base (farthest level)/fireStation (public)/function"></a>
+  <div class="data">
+    <h3>fireStation (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2797-Buildings-base-farthest-level-fireStation-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/hospital (public)/function">
+  <a href="../images/2802-Buildings-base-farthest-level-hospital-public-function.png"><img loading="lazy" src="../images/2802-Buildings-base-farthest-level-hospital-public-function.png" alt="Buildings: base (farthest level)/hospital (public)/function"></a>
+  <div class="data">
+    <h3>hospital (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2802-Buildings-base-farthest-level-hospital-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/mall (commerce)/function">
+  <a href="../images/2862-Buildings-base-farthest-level-mall-commerce-function.png"><img loading="lazy" src="../images/2862-Buildings-base-farthest-level-mall-commerce-function.png" alt="Buildings: base (farthest level)/mall (commerce)/function"></a>
+  <div class="data">
+    <h3>mall (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2862-Buildings-base-farthest-level-mall-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential low (small lot 12 x 16 m (house))/made to measure">
+  <a href="../images/2958-Buildings-base-farthest-level-residential-low-small-lot-12-x-16-m-house-made-to-.png"><img loading="lazy" src="../images/2958-Buildings-base-farthest-level-residential-low-small-lot-12-x-16-m-house-made-to-.png" alt="Buildings: base (farthest level)/residential low (small lot 12 x 16 m (house))/made to measure"></a>
+  <div class="data">
+    <h3>residential low (small lot 12 x 16 m (house)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li><li>Remove its 5 hidden triangles: faces inside another part or pressed face to face, never seen.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>5</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2958-Buildings-base-farthest-level-residential-low-small-lot-12-x-16-m-house-made-to-.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential low (medium lot 24 x 26 m (house))/made to measure">
+  <a href="../images/2963-Buildings-base-farthest-level-residential-low-medium-lot-24-x-26-m-house-made-to.png"><img loading="lazy" src="../images/2963-Buildings-base-farthest-level-residential-low-medium-lot-24-x-26-m-house-made-to.png" alt="Buildings: base (farthest level)/residential low (medium lot 24 x 26 m (house))/made to measure"></a>
+  <div class="data">
+    <h3>residential low (medium lot 24 x 26 m (house)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2963-Buildings-base-farthest-level-residential-low-medium-lot-24-x-26-m-house-made-to.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential low (large lot 40 x 36 m (house))/made to measure">
+  <a href="../images/2968-Buildings-base-farthest-level-residential-low-large-lot-40-x-36-m-house-made-to-.png"><img loading="lazy" src="../images/2968-Buildings-base-farthest-level-residential-low-large-lot-40-x-36-m-house-made-to-.png" alt="Buildings: base (farthest level)/residential low (large lot 40 x 36 m (house))/made to measure"></a>
+  <div class="data">
+    <h3>residential low (large lot 40 x 36 m (house)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2968-Buildings-base-farthest-level-residential-low-large-lot-40-x-36-m-house-made-to-.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential medium (medium lot 24 x 26 m (apartments))/made to measure">
+  <a href="../images/2978-Buildings-base-farthest-level-residential-medium-medium-lot-24-x-26-m-apartments.png"><img loading="lazy" src="../images/2978-Buildings-base-farthest-level-residential-medium-medium-lot-24-x-26-m-apartments.png" alt="Buildings: base (farthest level)/residential medium (medium lot 24 x 26 m (apartments))/made to measure"></a>
+  <div class="data">
+    <h3>residential medium (medium lot 24 x 26 m (apartments)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2978-Buildings-base-farthest-level-residential-medium-medium-lot-24-x-26-m-apartments.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential medium (large lot 40 x 36 m (apartments))/made to measure">
+  <a href="../images/2983-Buildings-base-farthest-level-residential-medium-large-lot-40-x-36-m-apartments-.png"><img loading="lazy" src="../images/2983-Buildings-base-farthest-level-residential-medium-large-lot-40-x-36-m-apartments-.png" alt="Buildings: base (farthest level)/residential medium (large lot 40 x 36 m (apartments))/made to measure"></a>
+  <div class="data">
+    <h3>residential medium (large lot 40 x 36 m (apartments)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2983-Buildings-base-farthest-level-residential-medium-large-lot-40-x-36-m-apartments-.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial low (medium lot 24 x 26 m (shop))/made to measure">
+  <a href="../images/3008-Buildings-base-farthest-level-commercial-low-medium-lot-24-x-26-m-shop-made-to-m.png"><img loading="lazy" src="../images/3008-Buildings-base-farthest-level-commercial-low-medium-lot-24-x-26-m-shop-made-to-m.png" alt="Buildings: base (farthest level)/commercial low (medium lot 24 x 26 m (shop))/made to measure"></a>
+  <div class="data">
+    <h3>commercial low (medium lot 24 x 26 m (shop)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3008-Buildings-base-farthest-level-commercial-low-medium-lot-24-x-26-m-shop-made-to-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial low (large lot 40 x 36 m (shop))/made to measure">
+  <a href="../images/3013-Buildings-base-farthest-level-commercial-low-large-lot-40-x-36-m-shop-made-to-me.png"><img loading="lazy" src="../images/3013-Buildings-base-farthest-level-commercial-low-large-lot-40-x-36-m-shop-made-to-me.png" alt="Buildings: base (farthest level)/commercial low (large lot 40 x 36 m (shop))/made to measure"></a>
+  <div class="data">
+    <h3>commercial low (large lot 40 x 36 m (shop)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3013-Buildings-base-farthest-level-commercial-low-large-lot-40-x-36-m-shop-made-to-me.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial medium (medium lot 24 x 26 m (shop))/made to measure">
+  <a href="../images/3023-Buildings-base-farthest-level-commercial-medium-medium-lot-24-x-26-m-shop-made-t.png"><img loading="lazy" src="../images/3023-Buildings-base-farthest-level-commercial-medium-medium-lot-24-x-26-m-shop-made-t.png" alt="Buildings: base (farthest level)/commercial medium (medium lot 24 x 26 m (shop))/made to measure"></a>
+  <div class="data">
+    <h3>commercial medium (medium lot 24 x 26 m (shop)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3023-Buildings-base-farthest-level-commercial-medium-medium-lot-24-x-26-m-shop-made-t.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial medium (large lot 40 x 36 m (shop))/made to measure">
+  <a href="../images/3028-Buildings-base-farthest-level-commercial-medium-large-lot-40-x-36-m-shop-made-to.png"><img loading="lazy" src="../images/3028-Buildings-base-farthest-level-commercial-medium-large-lot-40-x-36-m-shop-made-to.png" alt="Buildings: base (farthest level)/commercial medium (large lot 40 x 36 m (shop))/made to measure"></a>
+  <div class="data">
+    <h3>commercial medium (large lot 40 x 36 m (shop)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3028-Buildings-base-farthest-level-commercial-medium-large-lot-40-x-36-m-shop-made-to.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial high (medium lot 24 x 26 m (office))/made to measure">
+  <a href="../images/3038-Buildings-base-farthest-level-commercial-high-medium-lot-24-x-26-m-office-made-t.png"><img loading="lazy" src="../images/3038-Buildings-base-farthest-level-commercial-high-medium-lot-24-x-26-m-office-made-t.png" alt="Buildings: base (farthest level)/commercial high (medium lot 24 x 26 m (office))/made to measure"></a>
+  <div class="data">
+    <h3>commercial high (medium lot 24 x 26 m (office)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3038-Buildings-base-farthest-level-commercial-high-medium-lot-24-x-26-m-office-made-t.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial high (large lot 40 x 36 m (office))/made to measure">
+  <a href="../images/3043-Buildings-base-farthest-level-commercial-high-large-lot-40-x-36-m-office-made-to.png"><img loading="lazy" src="../images/3043-Buildings-base-farthest-level-commercial-high-large-lot-40-x-36-m-office-made-to.png" alt="Buildings: base (farthest level)/commercial high (large lot 40 x 36 m (office))/made to measure"></a>
+  <div class="data">
+    <h3>commercial high (large lot 40 x 36 m (office)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3043-Buildings-base-farthest-level-commercial-high-large-lot-40-x-36-m-office-made-to.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial low (medium lot 24 x 26 m (warehouse))/made to measure">
+  <a href="../images/3053-Buildings-base-farthest-level-industrial-low-medium-lot-24-x-26-m-warehouse-made.png"><img loading="lazy" src="../images/3053-Buildings-base-farthest-level-industrial-low-medium-lot-24-x-26-m-warehouse-made.png" alt="Buildings: base (farthest level)/industrial low (medium lot 24 x 26 m (warehouse))/made to measure"></a>
+  <div class="data">
+    <h3>industrial low (medium lot 24 x 26 m (warehouse)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3053-Buildings-base-farthest-level-industrial-low-medium-lot-24-x-26-m-warehouse-made.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial low (large lot 40 x 36 m (warehouse))/made to measure">
+  <a href="../images/3058-Buildings-base-farthest-level-industrial-low-large-lot-40-x-36-m-warehouse-made-.png"><img loading="lazy" src="../images/3058-Buildings-base-farthest-level-industrial-low-large-lot-40-x-36-m-warehouse-made-.png" alt="Buildings: base (farthest level)/industrial low (large lot 40 x 36 m (warehouse))/made to measure"></a>
+  <div class="data">
+    <h3>industrial low (large lot 40 x 36 m (warehouse)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3058-Buildings-base-farthest-level-industrial-low-large-lot-40-x-36-m-warehouse-made-.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial medium (medium lot 24 x 26 m (factory))/made to measure">
+  <a href="../images/3068-Buildings-base-farthest-level-industrial-medium-medium-lot-24-x-26-m-factory-mad.png"><img loading="lazy" src="../images/3068-Buildings-base-farthest-level-industrial-medium-medium-lot-24-x-26-m-factory-mad.png" alt="Buildings: base (farthest level)/industrial medium (medium lot 24 x 26 m (factory))/made to measure"></a>
+  <div class="data">
+    <h3>industrial medium (medium lot 24 x 26 m (factory)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3068-Buildings-base-farthest-level-industrial-medium-medium-lot-24-x-26-m-factory-mad.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial medium (large lot 40 x 36 m (factory))/made to measure">
+  <a href="../images/3073-Buildings-base-farthest-level-industrial-medium-large-lot-40-x-36-m-factory-made.png"><img loading="lazy" src="../images/3073-Buildings-base-farthest-level-industrial-medium-large-lot-40-x-36-m-factory-made.png" alt="Buildings: base (farthest level)/industrial medium (large lot 40 x 36 m (factory))/made to measure"></a>
+  <div class="data">
+    <h3>industrial medium (large lot 40 x 36 m (factory)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3073-Buildings-base-farthest-level-industrial-medium-large-lot-40-x-36-m-factory-made.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial high (medium lot 24 x 26 m (factory))/made to measure">
+  <a href="../images/3083-Buildings-base-farthest-level-industrial-high-medium-lot-24-x-26-m-factory-made-.png"><img loading="lazy" src="../images/3083-Buildings-base-farthest-level-industrial-high-medium-lot-24-x-26-m-factory-made-.png" alt="Buildings: base (farthest level)/industrial high (medium lot 24 x 26 m (factory))/made to measure"></a>
+  <div class="data">
+    <h3>industrial high (medium lot 24 x 26 m (factory)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3083-Buildings-base-farthest-level-industrial-high-medium-lot-24-x-26-m-factory-made-.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial high (large lot 40 x 36 m (factory))/made to measure">
+  <a href="../images/3088-Buildings-base-farthest-level-industrial-high-large-lot-40-x-36-m-factory-made-t.png"><img loading="lazy" src="../images/3088-Buildings-base-farthest-level-industrial-high-large-lot-40-x-36-m-factory-made-t.png" alt="Buildings: base (farthest level)/industrial high (large lot 40 x 36 m (factory))/made to measure"></a>
+  <div class="data">
+    <h3>industrial high (large lot 40 x 36 m (factory)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3088-Buildings-base-farthest-level-industrial-high-large-lot-40-x-36-m-factory-made-t.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/club (leisure)/function">
+  <a href="../images/2917-Buildings-base-farthest-level-club-leisure-function.png"><img loading="lazy" src="../images/2917-Buildings-base-farthest-level-club-leisure-function.png" alt="Buildings: base (farthest level)/club (leisure)/function"></a>
+  <div class="data">
+    <h3>club (leisure) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 14</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2917-Buildings-base-farthest-level-club-leisure-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/police (public)/function">
+  <a href="../images/2792-Buildings-base-farthest-level-police-public-function.png"><img loading="lazy" src="../images/2792-Buildings-base-farthest-level-police-public-function.png" alt="Buildings: base (farthest level)/police (public)/function"></a>
+  <div class="data">
+    <h3>police (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>12</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2792-Buildings-base-farthest-level-police-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/library (public)/function">
+  <a href="../images/2822-Buildings-base-farthest-level-library-public-function.png"><img loading="lazy" src="../images/2822-Buildings-base-farthest-level-library-public-function.png" alt="Buildings: base (farthest level)/library (public)/function"></a>
+  <div class="data">
+    <h3>library (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>12</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2822-Buildings-base-farthest-level-library-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/busStation (public)/function">
+  <a href="../images/2847-Buildings-base-farthest-level-busStation-public-function.png"><img loading="lazy" src="../images/2847-Buildings-base-farthest-level-busStation-public-function.png" alt="Buildings: base (farthest level)/busStation (public)/function"></a>
+  <div class="data">
+    <h3>busStation (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>12</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2847-Buildings-base-farthest-level-busStation-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/supermarket (commerce)/function">
+  <a href="../images/2857-Buildings-base-farthest-level-supermarket-commerce-function.png"><img loading="lazy" src="../images/2857-Buildings-base-farthest-level-supermarket-commerce-function.png" alt="Buildings: base (farthest level)/supermarket (commerce)/function"></a>
+  <div class="data">
+    <h3>supermarket (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>12</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2857-Buildings-base-farthest-level-supermarket-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/gasStation (commerce)/function">
+  <a href="../images/2922-Buildings-base-farthest-level-gasStation-commerce-function.png"><img loading="lazy" src="../images/2922-Buildings-base-farthest-level-gasStation-commerce-function.png" alt="Buildings: base (farthest level)/gasStation (commerce)/function"></a>
+  <div class="data">
+    <h3>gasStation (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>12</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2922-Buildings-base-farthest-level-gasStation-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/warehouse (work)/function">
+  <a href="../images/2937-Buildings-base-farthest-level-warehouse-work-function.png"><img loading="lazy" src="../images/2937-Buildings-base-farthest-level-warehouse-work-function.png" alt="Buildings: base (farthest level)/warehouse (work)/function"></a>
+  <div class="data">
+    <h3>warehouse (work) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>12</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2937-Buildings-base-farthest-level-warehouse-work-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/block (preset)/preset">
+  <a href="../images/2697-Buildings-base-farthest-level-block-preset-preset.png"><img loading="lazy" src="../images/2697-Buildings-base-farthest-level-block-preset-preset.png" alt="Buildings: base (farthest level)/block (preset)/preset"></a>
+  <div class="data">
+    <h3>block (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2697-Buildings-base-farthest-level-block-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/house (preset)/preset">
+  <a href="../images/2702-Buildings-base-farthest-level-house-preset-preset.png"><img loading="lazy" src="../images/2702-Buildings-base-farthest-level-house-preset-preset.png" alt="Buildings: base (farthest level)/house (preset)/preset"></a>
+  <div class="data">
+    <h3>house (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2702-Buildings-base-farthest-level-house-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/rowhouse (preset)/preset">
+  <a href="../images/2707-Buildings-base-farthest-level-rowhouse-preset-preset.png"><img loading="lazy" src="../images/2707-Buildings-base-farthest-level-rowhouse-preset-preset.png" alt="Buildings: base (farthest level)/rowhouse (preset)/preset"></a>
+  <div class="data">
+    <h3>rowhouse (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2707-Buildings-base-farthest-level-rowhouse-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/apartments (preset)/preset">
+  <a href="../images/2712-Buildings-base-farthest-level-apartments-preset-preset.png"><img loading="lazy" src="../images/2712-Buildings-base-farthest-level-apartments-preset-preset.png" alt="Buildings: base (farthest level)/apartments (preset)/preset"></a>
+  <div class="data">
+    <h3>apartments (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2712-Buildings-base-farthest-level-apartments-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/shop (preset)/preset">
+  <a href="../images/2722-Buildings-base-farthest-level-shop-preset-preset.png"><img loading="lazy" src="../images/2722-Buildings-base-farthest-level-shop-preset-preset.png" alt="Buildings: base (farthest level)/shop (preset)/preset"></a>
+  <div class="data">
+    <h3>shop (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2722-Buildings-base-farthest-level-shop-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/office (preset)/preset">
+  <a href="../images/2727-Buildings-base-farthest-level-office-preset-preset.png"><img loading="lazy" src="../images/2727-Buildings-base-farthest-level-office-preset-preset.png" alt="Buildings: base (farthest level)/office (preset)/preset"></a>
+  <div class="data">
+    <h3>office (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2727-Buildings-base-farthest-level-office-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/mixed (preset)/preset">
+  <a href="../images/2732-Buildings-base-farthest-level-mixed-preset-preset.png"><img loading="lazy" src="../images/2732-Buildings-base-farthest-level-mixed-preset-preset.png" alt="Buildings: base (farthest level)/mixed (preset)/preset"></a>
+  <div class="data">
+    <h3>mixed (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2732-Buildings-base-farthest-level-mixed-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/warehouse (preset)/preset">
+  <a href="../images/2742-Buildings-base-farthest-level-warehouse-preset-preset.png"><img loading="lazy" src="../images/2742-Buildings-base-farthest-level-warehouse-preset-preset.png" alt="Buildings: base (farthest level)/warehouse (preset)/preset"></a>
+  <div class="data">
+    <h3>warehouse (preset) <small>preset</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2742-Buildings-base-farthest-level-warehouse-preset-preset.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/house (homes)/function">
+  <a href="../images/2752-Buildings-base-farthest-level-house-homes-function.png"><img loading="lazy" src="../images/2752-Buildings-base-farthest-level-house-homes-function.png" alt="Buildings: base (farthest level)/house (homes)/function"></a>
+  <div class="data">
+    <h3>house (homes) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2752-Buildings-base-farthest-level-house-homes-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/townhouse (homes)/function">
+  <a href="../images/2757-Buildings-base-farthest-level-townhouse-homes-function.png"><img loading="lazy" src="../images/2757-Buildings-base-farthest-level-townhouse-homes-function.png" alt="Buildings: base (farthest level)/townhouse (homes)/function"></a>
+  <div class="data">
+    <h3>townhouse (homes) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2757-Buildings-base-farthest-level-townhouse-homes-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/apartments (homes)/function">
+  <a href="../images/2762-Buildings-base-farthest-level-apartments-homes-function.png"><img loading="lazy" src="../images/2762-Buildings-base-farthest-level-apartments-homes-function.png" alt="Buildings: base (farthest level)/apartments (homes)/function"></a>
+  <div class="data">
+    <h3>apartments (homes) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2762-Buildings-base-farthest-level-apartments-homes-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/courthouse (public)/function">
+  <a href="../images/2782-Buildings-base-farthest-level-courthouse-public-function.png"><img loading="lazy" src="../images/2782-Buildings-base-farthest-level-courthouse-public-function.png" alt="Buildings: base (farthest level)/courthouse (public)/function"></a>
+  <div class="data">
+    <h3>courthouse (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2782-Buildings-base-farthest-level-courthouse-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/postOffice (public)/function">
+  <a href="../images/2787-Buildings-base-farthest-level-postOffice-public-function.png"><img loading="lazy" src="../images/2787-Buildings-base-farthest-level-postOffice-public-function.png" alt="Buildings: base (farthest level)/postOffice (public)/function"></a>
+  <div class="data">
+    <h3>postOffice (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2787-Buildings-base-farthest-level-postOffice-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/clinic (public)/function">
+  <a href="../images/2807-Buildings-base-farthest-level-clinic-public-function.png"><img loading="lazy" src="../images/2807-Buildings-base-farthest-level-clinic-public-function.png" alt="Buildings: base (farthest level)/clinic (public)/function"></a>
+  <div class="data">
+    <h3>clinic (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2807-Buildings-base-farthest-level-clinic-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/museum (public)/function">
+  <a href="../images/2827-Buildings-base-farthest-level-museum-public-function.png"><img loading="lazy" src="../images/2827-Buildings-base-farthest-level-museum-public-function.png" alt="Buildings: base (farthest level)/museum (public)/function"></a>
+  <div class="data">
+    <h3>museum (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2827-Buildings-base-farthest-level-museum-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/cemetery (public)/function">
+  <a href="../images/2842-Buildings-base-farthest-level-cemetery-public-function.png"><img loading="lazy" src="../images/2842-Buildings-base-farthest-level-cemetery-public-function.png" alt="Buildings: base (farthest level)/cemetery (public)/function"></a>
+  <div class="data">
+    <h3>cemetery (public) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2842-Buildings-base-farthest-level-cemetery-public-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/shop (commerce)/function">
+  <a href="../images/2852-Buildings-base-farthest-level-shop-commerce-function.png"><img loading="lazy" src="../images/2852-Buildings-base-farthest-level-shop-commerce-function.png" alt="Buildings: base (farthest level)/shop (commerce)/function"></a>
+  <div class="data">
+    <h3>shop (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2852-Buildings-base-farthest-level-shop-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/bank (commerce)/function">
+  <a href="../images/2867-Buildings-base-farthest-level-bank-commerce-function.png"><img loading="lazy" src="../images/2867-Buildings-base-farthest-level-bank-commerce-function.png" alt="Buildings: base (farthest level)/bank (commerce)/function"></a>
+  <div class="data">
+    <h3>bank (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2867-Buildings-base-farthest-level-bank-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/pharmacy (commerce)/function">
+  <a href="../images/2872-Buildings-base-farthest-level-pharmacy-commerce-function.png"><img loading="lazy" src="../images/2872-Buildings-base-farthest-level-pharmacy-commerce-function.png" alt="Buildings: base (farthest level)/pharmacy (commerce)/function"></a>
+  <div class="data">
+    <h3>pharmacy (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2872-Buildings-base-farthest-level-pharmacy-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/bakery (commerce)/function">
+  <a href="../images/2877-Buildings-base-farthest-level-bakery-commerce-function.png"><img loading="lazy" src="../images/2877-Buildings-base-farthest-level-bakery-commerce-function.png" alt="Buildings: base (farthest level)/bakery (commerce)/function"></a>
+  <div class="data">
+    <h3>bakery (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2877-Buildings-base-farthest-level-bakery-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/restaurant (commerce)/function">
+  <a href="../images/2882-Buildings-base-farthest-level-restaurant-commerce-function.png"><img loading="lazy" src="../images/2882-Buildings-base-farthest-level-restaurant-commerce-function.png" alt="Buildings: base (farthest level)/restaurant (commerce)/function"></a>
+  <div class="data">
+    <h3>restaurant (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2882-Buildings-base-farthest-level-restaurant-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/snackBar (commerce)/function">
+  <a href="../images/2887-Buildings-base-farthest-level-snackBar-commerce-function.png"><img loading="lazy" src="../images/2887-Buildings-base-farthest-level-snackBar-commerce-function.png" alt="Buildings: base (farthest level)/snackBar (commerce)/function"></a>
+  <div class="data">
+    <h3>snackBar (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2887-Buildings-base-farthest-level-snackBar-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/bar (commerce)/function">
+  <a href="../images/2892-Buildings-base-farthest-level-bar-commerce-function.png"><img loading="lazy" src="../images/2892-Buildings-base-farthest-level-bar-commerce-function.png" alt="Buildings: base (farthest level)/bar (commerce)/function"></a>
+  <div class="data">
+    <h3>bar (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2892-Buildings-base-farthest-level-bar-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/nightclub (commerce)/function">
+  <a href="../images/2897-Buildings-base-farthest-level-nightclub-commerce-function.png"><img loading="lazy" src="../images/2897-Buildings-base-farthest-level-nightclub-commerce-function.png" alt="Buildings: base (farthest level)/nightclub (commerce)/function"></a>
+  <div class="data">
+    <h3>nightclub (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2897-Buildings-base-farthest-level-nightclub-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/cinema (commerce)/function">
+  <a href="../images/2902-Buildings-base-farthest-level-cinema-commerce-function.png"><img loading="lazy" src="../images/2902-Buildings-base-farthest-level-cinema-commerce-function.png" alt="Buildings: base (farthest level)/cinema (commerce)/function"></a>
+  <div class="data">
+    <h3>cinema (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2902-Buildings-base-farthest-level-cinema-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/hotel (commerce)/function">
+  <a href="../images/2907-Buildings-base-farthest-level-hotel-commerce-function.png"><img loading="lazy" src="../images/2907-Buildings-base-farthest-level-hotel-commerce-function.png" alt="Buildings: base (farthest level)/hotel (commerce)/function"></a>
+  <div class="data">
+    <h3>hotel (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2907-Buildings-base-farthest-level-hotel-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/gym (commerce)/function">
+  <a href="../images/2912-Buildings-base-farthest-level-gym-commerce-function.png"><img loading="lazy" src="../images/2912-Buildings-base-farthest-level-gym-commerce-function.png" alt="Buildings: base (farthest level)/gym (commerce)/function"></a>
+  <div class="data">
+    <h3>gym (commerce) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2912-Buildings-base-farthest-level-gym-commerce-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/office (work)/function">
+  <a href="../images/2927-Buildings-base-farthest-level-office-work-function.png"><img loading="lazy" src="../images/2927-Buildings-base-farthest-level-office-work-function.png" alt="Buildings: base (farthest level)/office (work)/function"></a>
+  <div class="data">
+    <h3>office (work) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2927-Buildings-base-farthest-level-office-work-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/residential medium (small lot 12 x 16 m (apartments))/made to measure">
+  <a href="../images/2973-Buildings-base-farthest-level-residential-medium-small-lot-12-x-16-m-apartments-.png"><img loading="lazy" src="../images/2973-Buildings-base-farthest-level-residential-medium-small-lot-12-x-16-m-apartments-.png" alt="Buildings: base (farthest level)/residential medium (small lot 12 x 16 m (apartments))/made to measure"></a>
+  <div class="data">
+    <h3>residential medium (small lot 12 x 16 m (apartments)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2973-Buildings-base-farthest-level-residential-medium-small-lot-12-x-16-m-apartments-.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial low (small lot 12 x 16 m (shop))/made to measure">
+  <a href="../images/3003-Buildings-base-farthest-level-commercial-low-small-lot-12-x-16-m-shop-made-to-me.png"><img loading="lazy" src="../images/3003-Buildings-base-farthest-level-commercial-low-small-lot-12-x-16-m-shop-made-to-me.png" alt="Buildings: base (farthest level)/commercial low (small lot 12 x 16 m (shop))/made to measure"></a>
+  <div class="data">
+    <h3>commercial low (small lot 12 x 16 m (shop)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3003-Buildings-base-farthest-level-commercial-low-small-lot-12-x-16-m-shop-made-to-me.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial medium (small lot 12 x 16 m (shop))/made to measure">
+  <a href="../images/3018-Buildings-base-farthest-level-commercial-medium-small-lot-12-x-16-m-shop-made-to.png"><img loading="lazy" src="../images/3018-Buildings-base-farthest-level-commercial-medium-small-lot-12-x-16-m-shop-made-to.png" alt="Buildings: base (farthest level)/commercial medium (small lot 12 x 16 m (shop))/made to measure"></a>
+  <div class="data">
+    <h3>commercial medium (small lot 12 x 16 m (shop)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3018-Buildings-base-farthest-level-commercial-medium-small-lot-12-x-16-m-shop-made-to.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/commercial high (small lot 12 x 16 m (office))/made to measure">
+  <a href="../images/3033-Buildings-base-farthest-level-commercial-high-small-lot-12-x-16-m-office-made-to.png"><img loading="lazy" src="../images/3033-Buildings-base-farthest-level-commercial-high-small-lot-12-x-16-m-office-made-to.png" alt="Buildings: base (farthest level)/commercial high (small lot 12 x 16 m (office))/made to measure"></a>
+  <div class="data">
+    <h3>commercial high (small lot 12 x 16 m (office)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3033-Buildings-base-farthest-level-commercial-high-small-lot-12-x-16-m-office-made-to.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial low (small lot 12 x 16 m (warehouse))/made to measure">
+  <a href="../images/3048-Buildings-base-farthest-level-industrial-low-small-lot-12-x-16-m-warehouse-made-.png"><img loading="lazy" src="../images/3048-Buildings-base-farthest-level-industrial-low-small-lot-12-x-16-m-warehouse-made-.png" alt="Buildings: base (farthest level)/industrial low (small lot 12 x 16 m (warehouse))/made to measure"></a>
+  <div class="data">
+    <h3>industrial low (small lot 12 x 16 m (warehouse)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3048-Buildings-base-farthest-level-industrial-low-small-lot-12-x-16-m-warehouse-made-.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial medium (small lot 12 x 16 m (factory))/made to measure">
+  <a href="../images/3063-Buildings-base-farthest-level-industrial-medium-small-lot-12-x-16-m-factory-made.png"><img loading="lazy" src="../images/3063-Buildings-base-farthest-level-industrial-medium-small-lot-12-x-16-m-factory-made.png" alt="Buildings: base (farthest level)/industrial medium (small lot 12 x 16 m (factory))/made to measure"></a>
+  <div class="data">
+    <h3>industrial medium (small lot 12 x 16 m (factory)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3063-Buildings-base-farthest-level-industrial-medium-small-lot-12-x-16-m-factory-made.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/industrial high (small lot 12 x 16 m (factory))/made to measure">
+  <a href="../images/3078-Buildings-base-farthest-level-industrial-high-small-lot-12-x-16-m-factory-made-t.png"><img loading="lazy" src="../images/3078-Buildings-base-farthest-level-industrial-high-small-lot-12-x-16-m-factory-made-t.png" alt="Buildings: base (farthest level)/industrial high (small lot 12 x 16 m (factory))/made to measure"></a>
+  <div class="data">
+    <h3>industrial high (small lot 12 x 16 m (factory)) <small>made to measure</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>8</dd>
+      <dt>Levels</dt><dd>L0 10</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/3078-Buildings-base-farthest-level-industrial-high-small-lot-12-x-16-m-factory-made-t.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/square (leisure)/function">
+  <a href="../images/2943-Buildings-base-farthest-level-square-leisure-function.png"><img loading="lazy" src="../images/2943-Buildings-base-farthest-level-square-leisure-function.png" alt="Buildings: base (farthest level)/square (leisure)/function"></a>
+  <div class="data">
+    <h3>square (leisure) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2943-Buildings-base-farthest-level-square-leisure-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/playground (leisure)/function">
+  <a href="../images/2948-Buildings-base-farthest-level-playground-leisure-function.png"><img loading="lazy" src="../images/2948-Buildings-base-farthest-level-playground-leisure-function.png" alt="Buildings: base (farthest level)/playground (leisure)/function"></a>
+  <div class="data">
+    <h3>playground (leisure) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2948-Buildings-base-farthest-level-playground-leisure-function.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: base (farthest level)/sportsCourt (leisure)/function">
+  <a href="../images/2953-Buildings-base-farthest-level-sportsCourt-leisure-function.png"><img loading="lazy" src="../images/2953-Buildings-base-farthest-level-sportsCourt-leisure-function.png" alt="Buildings: base (farthest level)/sportsCourt (leisure)/function"></a>
+  <div class="data">
+    <h3>sportsCourt (leisure) <small>function</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/massBase.ts (emitBase)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2953-Buildings-base-farthest-level-sportsCourt-leisure-function.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

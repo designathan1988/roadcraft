@@ -1,0 +1,81 @@
+{
+ "id": "Buildings: far facade (L1)/fireStation (public)/function",
+ "group": "Buildings: far facade (L1)",
+ "name": "fireStation (public)",
+ "variation": "function",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitChunk far, assembleBuildingMeshes)",
+ "build": "merged",
+ "triangles": 1474,
+ "vertices": 2497,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B facadeSize:2xUint16=4B facadeCell:4xInt16=8B facadeOpening:4xUint8=4B facadeTrim:4xUint8=4B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B",
+ "bytesPerVertex": 64,
+ "geometryBytes": 56860,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 56860,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-facade\" [building-shell-v2-weathered-laid-none-far-lots-own-walls-facade-level-v7] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in building-shell-v2-weathered-laid-none-far-lots-own-walls-facade-level-v7 | patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1474,
+   "vertices": 2497
+  }
+ ],
+ "solids": "83 solids: 43 other, 14 open prism, 4 quad, 22 box",
+ "hiddenTriangles": 4,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2793-Buildings-far-facade-L1-fireStation-public-function.png",
+ "model": "models/2793-Buildings-far-facade-L1-fireStation-public-function.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 1190,
+   "vertices": 1929,
+   "bytes": 53436,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-shell",
+   "triangles": 20,
+   "vertices": 40,
+   "bytes": 1880,
+   "material": "MeshStandardMaterial \"building-facade\" [building-shell-v2-weathered-laid-none-far-lots-own-walls-facade-level-v7] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-concrete x22",
+   "triangles": 264,
+   "vertices": 528,
+   "bytes": 1544,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "the bays laid as runs, their windows drawn by the facade shader (facadeLevel.ts); what is set into an opening left to the shader"
+ ],
+ "countKey": "building-l1:fireStation (public)",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 200 triangles (1,474 today, 7.4 times the budget): the blocks as boxes and the facade shader alone: no parts, the balconies and railings painted (Cidade Otimizada does it past 240 m).",
+  "Picture: the far level still carries every balcony, railing bar, unit and roof drum of the near level; at this distance the masses level (boxes) with the facade texture is what shows.",
+  "Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "14 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 200
+}

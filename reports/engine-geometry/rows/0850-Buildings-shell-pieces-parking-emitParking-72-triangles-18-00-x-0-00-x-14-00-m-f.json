@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/parking/emitParking, 72 triangles, 18.00 x 0.00 x 14.00 m, from function supermarket",
+ "group": "Buildings: shell pieces",
+ "name": "parking",
+ "variation": "emitParking, 72 triangles, 18.00 x 0.00 x 14.00 m, from function supermarket",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitParking)",
+ "build": "merged",
+ "triangles": 72,
+ "vertices": 216,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 7776,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 7776,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 72,
+   "vertices": 216
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/0850-Buildings-shell-pieces-parking-emitParking-72-triangles-18-00-x-0-00-x-14-00-m-f.png",
+ "model": "models/0850-Buildings-shell-pieces-parking-emitParking-72-triangles-18-00-x-0-00-x-14-00-m-f.glb",
+ "pieces": [
+  {
+   "label": "emitParking",
+   "triangles": 72,
+   "vertices": 216,
+   "bytes": 7776,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: concrete",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (72 today, 36.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: the parking is a grid of quads; one quad with the bays painted.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

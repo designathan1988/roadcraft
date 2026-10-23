@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/roof terrace/emitTerrace, 180 triangles, 5.56 x 0.50 x 11.13 m, from residential medium medium lot",
+ "group": "Buildings: shell pieces",
+ "name": "roof terrace",
+ "variation": "emitTerrace, 180 triangles, 5.56 x 0.50 x 11.13 m, from residential medium medium lot",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitTerrace)",
+ "build": "merged",
+ "triangles": 180,
+ "vertices": 540,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 19440,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 19440,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 180,
+   "vertices": 540
+  }
+ ],
+ "solids": "6 solids: 6 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1235-Buildings-shell-pieces-roof-terrace-emitTerrace-180-triangles-5-56-x-0-50-x-11-1.png",
+ "model": "models/1235-Buildings-shell-pieces-roof-terrace-emitTerrace-180-triangles-5-56-x-0-50-x-11-1.glb",
+ "pieces": [
+  {
+   "label": "emitTerrace",
+   "triangles": 180,
+   "vertices": 540,
+   "bytes": 19440,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: ceramic, plaster",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (180 today, 90.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: faces split along every bay and storey line (long slivers in the wireframe); one polygon a face, the lines in the facade shader.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

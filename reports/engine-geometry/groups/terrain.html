@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terrain</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Terrain</h1><p class="muted">4 objects, 3,312 triangles one of each.</p></header>
+<main><article class="row" id="Terrain/far patch/one plate, its four skirts">
+  <a href="../images/2648-Terrain-far-patch-one-plate-its-four-skirts.png"><img loading="lazy" src="../images/2648-Terrain-far-patch-one-plate-its-four-skirts.png" alt="Terrain/far patch/one plate, its four skirts"></a>
+  <div class="data">
+    <h3>far patch <small>one plate, its four skirts</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: a flat plate of 2,560 triangles; where the ground is flat a 2-triangle plate (vertices only where the height changes).</li><li>Remove its 256 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>11 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,560</dd><dt>Vertices</dt><dd>1,221</dd>
+      <dt>Levels</dt><dd>L0 2,560</dd>
+      <dt>Memory</dt><dd>10,966 KB (geometry 44 KB, textures 10,923 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v35-lots-vTerrainAtlas</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>256</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>src/render/flatAtlas.ts (createFlatFar, writeFarPatch, farIndexInto)</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2648-Terrain-far-patch-one-plate-its-four-skirts.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Terrain/edge slab/round one plate">
+  <a href="../images/2649-Terrain-edge-slab-round-one-plate.png"><img loading="lazy" src="../images/2649-Terrain-edge-slab-round-one-plate.png" alt="Terrain/edge slab/round one plate"></a>
+  <div class="data">
+    <h3>edge slab <small>round one plate</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>48 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>512</dd><dt>Vertices</dt><dd>1,536</dd>
+      <dt>Levels</dt><dd>L0 512</dd>
+      <dt>Memory</dt><dd>413 KB (geometry 72 KB, textures 341 KB)</dd>
+      <dt>Per vertex</dt><dd>48 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aBelow:1xFloat32=4B</dd>
+      <dt>Drawn as</dt><dd>individual</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-walls-v7] (vertex colours, roughness 1, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-walls-v7</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map DataTexture 256x256 RGBA 8-bit, 9 levels, 349524 B</dd>
+      <dt>Source</dt><dd><code>src/render/terrain.ts (slabGeometry)</code> (kit)</dd>
+      <dt>Notes</dt><dd>the cut sides round the map's far ring, from the land down to the bedrock; in the game it runs round the whole map</dd>
+    </dl>
+    <a class="file" href="../models/2649-Terrain-edge-slab-round-one-plate.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Terrain/near patch/10 x 10 cells (level 0: 6.4 m a cell, each level twice as wide)">
+  <a href="../images/2646-Terrain-near-patch-10-x-10-cells-level-0-6-4-m-a-cell-each-level-twice-as-wide.png"><img loading="lazy" src="../images/2646-Terrain-near-patch-10-x-10-cells-level-0-6-4-m-a-cell-each-level-twice-as-wide.png" alt="Terrain/near patch/10 x 10 cells (level 0: 6.4 m a cell, each level twice as wide)"></a>
+  <div class="data">
+    <h3>near patch <small>10 x 10 cells (level 0: 6.4 m a cell, each level twice as wide)</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>11 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>200</dd><dt>Vertices</dt><dd>400</dd>
+      <dt>Levels</dt><dd>L0 200</dd>
+      <dt>Memory</dt><dd>10,941 KB (geometry 18 KB, textures 10,923 KB)</dd>
+      <dt>Per vertex</dt><dd>3 B: position:3xUint8=3B aLodPatch/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v35-lots-vTerrainAtlas</dd>
+      <dt>Solids</dt><dd>100 solids: 100 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>src/render/terrainLod.ts (LandLod, patchCells)</code> (kit)</dd>
+      <dt>Notes</dt><dd>one instance a patch the camera needs (CDLOD, Strugar 2010), its corners read from the land texture in the vertex shader: the picture places them on flat land as the shader does</dd>
+    </dl>
+    <a class="file" href="../models/2646-Terrain-near-patch-10-x-10-cells-level-0-6-4-m-a-cell-each-level-twice-as-wide.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Terrain/near patch rim/one side, both ways round">
+  <a href="../images/2647-Terrain-near-patch-rim-one-side-both-ways-round.png"><img loading="lazy" src="../images/2647-Terrain-near-patch-rim-one-side-both-ways-round.png" alt="Terrain/near patch rim/one side, both ways round"></a>
+  <div class="data">
+    <h3>near patch rim <small>one side, both ways round</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Remove its 20 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>11 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40</dd><dt>Vertices</dt><dd>22</dd>
+      <dt>Levels</dt><dd>L0 40</dd>
+      <dt>Memory</dt><dd>10,925 KB (geometry 2 KB, textures 10,923 KB)</dd>
+      <dt>Per vertex</dt><dd>3 B: position:3xUint8=3B aLodPatch/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v35-lots-vTerrainAtlas</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>20</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>src/render/terrainLod.ts (LandLod, patchRim)</code> (kit)</dd>
+      <dt>Notes</dt><dd>one instance a side of a patch on a plate's edge that hangs a skirt (30 m down)</dd>
+    </dl>
+    <a class="file" href="../models/2647-Terrain-near-patch-rim-one-side-both-ways-round.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

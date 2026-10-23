@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: cast (cooked)</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: cast (cooked)</h1><p class="muted">16 objects, 528,559 triangles one of each.</p></header>
+<main><article class="row" id="People: cast (cooked)/mh_45">
+  <a href="../images/2632-People-cast-cooked-mh-45.png"><img loading="lazy" src="../images/2632-People-cast-cooked-mh-45.png" alt="People: cast (cooked)/mh_45"></a>
+  <div class="data">
+    <h3>mh_45</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (45,256 today, 15.1 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 22 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (3918 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>45,256</dd><dt>Vertices</dt><dd>25,720</dd>
+      <dt>Levels</dt><dd>L0 45,256 / L1 15,744 / L2 6,204 / L3 1,144</dd>
+      <dt>Memory</dt><dd>12,893 KB (geometry 12,893 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>135 solids: 135 other</dd><dt>Hidden triangles</dt><dd>22</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (3,918 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_45.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2632-People-cast-cooked-mh-45.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_48">
+  <a href="../images/2625-People-cast-cooked-mh-48.png"><img loading="lazy" src="../images/2625-People-cast-cooked-mh-48.png" alt="People: cast (cooked)/mh_48"></a>
+  <div class="data">
+    <h3>mh_48</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (37,217 today, 12.4 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 52 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (3611 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>37,217</dd><dt>Vertices</dt><dd>23,700</dd>
+      <dt>Levels</dt><dd>L0 37,217 / L1 14,197 / L2 7,905 / L3 3,512</dd>
+      <dt>Memory</dt><dd>11,905 KB (geometry 11,905 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>68 solids: 68 other</dd><dt>Hidden triangles</dt><dd>52</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (3,611 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_48.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2625-People-cast-cooked-mh-48.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_59">
+  <a href="../images/2631-People-cast-cooked-mh-59.png"><img loading="lazy" src="../images/2631-People-cast-cooked-mh-59.png" alt="People: cast (cooked)/mh_59"></a>
+  <div class="data">
+    <h3>mh_59</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (36,162 today, 12.1 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 69 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (4449 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>36,162</dd><dt>Vertices</dt><dd>29,206</dd>
+      <dt>Levels</dt><dd>L0 36,162 / L1 17,614 / L2 12,518 / L3 9,875</dd>
+      <dt>Memory</dt><dd>14,713 KB (geometry 14,713 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>25 solids: 23 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>69</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (4,449 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_59.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2631-People-cast-cooked-mh-59.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_64">
+  <a href="../images/2627-People-cast-cooked-mh-64.png"><img loading="lazy" src="../images/2627-People-cast-cooked-mh-64.png" alt="People: cast (cooked)/mh_64"></a>
+  <div class="data">
+    <h3>mh_64</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (36,020 today, 12.0 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 214 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (3563 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>36,020</dd><dt>Vertices</dt><dd>23,390</dd>
+      <dt>Levels</dt><dd>L0 36,020 / L1 14,129 / L2 7,986 / L3 2,680</dd>
+      <dt>Memory</dt><dd>11,740 KB (geometry 11,740 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>89 solids: 74 other, 1 open prism, 4 closed cylinder, 10 box</dd><dt>Hidden triangles</dt><dd>214</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (3,563 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_64.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2627-People-cast-cooked-mh-64.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_14">
+  <a href="../images/2626-People-cast-cooked-mh-14.png"><img loading="lazy" src="../images/2626-People-cast-cooked-mh-14.png" alt="People: cast (cooked)/mh_14"></a>
+  <div class="data">
+    <h3>mh_14</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (34,051 today, 11.4 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 74 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (3332 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>34,051</dd><dt>Vertices</dt><dd>21,874</dd>
+      <dt>Levels</dt><dd>L0 34,051 / L1 13,693 / L2 7,619 / L3 3,214</dd>
+      <dt>Memory</dt><dd>10,997 KB (geometry 10,997 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>69 solids: 69 other</dd><dt>Hidden triangles</dt><dd>74</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (3,332 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_14.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2626-People-cast-cooked-mh-14.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_51">
+  <a href="../images/2633-People-cast-cooked-mh-51.png"><img loading="lazy" src="../images/2633-People-cast-cooked-mh-51.png" alt="People: cast (cooked)/mh_51"></a>
+  <div class="data">
+    <h3>mh_51</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (33,606 today, 11.2 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 93 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2993 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>33,606</dd><dt>Vertices</dt><dd>19,644</dd>
+      <dt>Levels</dt><dd>L0 33,606 / L1 10,764 / L2 4,328 / L3 1,371</dd>
+      <dt>Memory</dt><dd>9,828 KB (geometry 9,828 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>65 solids: 63 other, 2 open prism</dd><dt>Hidden triangles</dt><dd>93</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,993 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_51.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2633-People-cast-cooked-mh-51.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_55">
+  <a href="../images/2623-People-cast-cooked-mh-55.png"><img loading="lazy" src="../images/2623-People-cast-cooked-mh-55.png" alt="People: cast (cooked)/mh_55"></a>
+  <div class="data">
+    <h3>mh_55</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (33,497 today, 11.2 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 28 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (3364 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>33,497</dd><dt>Vertices</dt><dd>22,082</dd>
+      <dt>Levels</dt><dd>L0 33,497 / L1 13,125 / L2 7,207 / L3 3,304</dd>
+      <dt>Memory</dt><dd>11,083 KB (geometry 11,083 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>59 solids: 58 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>28</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (3,364 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_55.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2623-People-cast-cooked-mh-55.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_08">
+  <a href="../images/2629-People-cast-cooked-mh-08.png"><img loading="lazy" src="../images/2629-People-cast-cooked-mh-08.png" alt="People: cast (cooked)/mh_08"></a>
+  <div class="data">
+    <h3>mh_08</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (33,387 today, 11.1 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 65 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (3273 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>33,387</dd><dt>Vertices</dt><dd>21,485</dd>
+      <dt>Levels</dt><dd>L0 33,387 / L1 13,213 / L2 7,415 / L3 3,168</dd>
+      <dt>Memory</dt><dd>10,797 KB (geometry 10,797 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>67 solids: 67 other</dd><dt>Hidden triangles</dt><dd>65</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (3,273 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_08.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2629-People-cast-cooked-mh-08.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_00">
+  <a href="../images/2628-People-cast-cooked-mh-00.png"><img loading="lazy" src="../images/2628-People-cast-cooked-mh-00.png" alt="People: cast (cooked)/mh_00"></a>
+  <div class="data">
+    <h3>mh_00</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (32,024 today, 10.7 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 102 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2947 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>32,024</dd><dt>Vertices</dt><dd>19,342</dd>
+      <dt>Levels</dt><dd>L0 32,024 / L1 11,547 / L2 5,997 / L3 1,083</dd>
+      <dt>Memory</dt><dd>9,699 KB (geometry 9,699 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>71 solids: 70 other, 1 open prism</dd><dt>Hidden triangles</dt><dd>102</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,947 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_00.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2628-People-cast-cooked-mh-00.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_38">
+  <a href="../images/2630-People-cast-cooked-mh-38.png"><img loading="lazy" src="../images/2630-People-cast-cooked-mh-38.png" alt="People: cast (cooked)/mh_38"></a>
+  <div class="data">
+    <h3>mh_38</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (30,916 today, 10.3 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 54 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2718 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>30,916</dd><dt>Vertices</dt><dd>17,844</dd>
+      <dt>Levels</dt><dd>L0 30,916 / L1 9,928 / L2 4,106 / L3 872</dd>
+      <dt>Memory</dt><dd>8,929 KB (geometry 8,929 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>95 solids: 95 other</dd><dt>Hidden triangles</dt><dd>54</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,718 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_38.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2630-People-cast-cooked-mh-38.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_67">
+  <a href="../images/2635-People-cast-cooked-mh-67.png"><img loading="lazy" src="../images/2635-People-cast-cooked-mh-67.png" alt="People: cast (cooked)/mh_67"></a>
+  <div class="data">
+    <h3>mh_67</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (30,320 today, 10.1 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 34 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2730 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>30,320</dd><dt>Vertices</dt><dd>17,922</dd>
+      <dt>Levels</dt><dd>L0 30,320 / L1 11,684 / L2 4,976 / L3 1,188</dd>
+      <dt>Memory</dt><dd>8,998 KB (geometry 8,998 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>135 solids: 135 other</dd><dt>Hidden triangles</dt><dd>34</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,730 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_67.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2635-People-cast-cooked-mh-67.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_34">
+  <a href="../images/2622-People-cast-cooked-mh-34.png"><img loading="lazy" src="../images/2622-People-cast-cooked-mh-34.png" alt="People: cast (cooked)/mh_34"></a>
+  <div class="data">
+    <h3>mh_34</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (30,166 today, 10.1 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 251 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2579 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>30,166</dd><dt>Vertices</dt><dd>16,931</dd>
+      <dt>Levels</dt><dd>L0 30,166 / L1 9,216 / L2 3,214 / L3 518</dd>
+      <dt>Memory</dt><dd>8,463 KB (geometry 8,463 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>21 solids: 21 other</dd><dt>Hidden triangles</dt><dd>251</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,579 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_34.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2622-People-cast-cooked-mh-34.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_44">
+  <a href="../images/2624-People-cast-cooked-mh-44.png"><img loading="lazy" src="../images/2624-People-cast-cooked-mh-44.png" alt="People: cast (cooked)/mh_44"></a>
+  <div class="data">
+    <h3>mh_44</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (29,493 today, 9.8 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 68 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2939 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>29,493</dd><dt>Vertices</dt><dd>19,290</dd>
+      <dt>Levels</dt><dd>L0 29,493 / L1 11,461 / L2 6,347 / L3 2,612</dd>
+      <dt>Memory</dt><dd>9,680 KB (geometry 9,680 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>55 solids: 55 other</dd><dt>Hidden triangles</dt><dd>68</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,939 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_44.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2624-People-cast-cooked-mh-44.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_11">
+  <a href="../images/2637-People-cast-cooked-mh-11.png"><img loading="lazy" src="../images/2637-People-cast-cooked-mh-11.png" alt="People: cast (cooked)/mh_11"></a>
+  <div class="data">
+    <h3>mh_11</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (28,876 today, 9.6 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 60 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2470 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>28,876</dd><dt>Vertices</dt><dd>16,215</dd>
+      <dt>Levels</dt><dd>L0 28,876 / L1 8,772 / L2 3,288 / L3 897</dd>
+      <dt>Memory</dt><dd>8,112 KB (geometry 8,112 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>20 solids: 20 other</dd><dt>Hidden triangles</dt><dd>60</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,470 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_11.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2637-People-cast-cooked-mh-11.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_18">
+  <a href="../images/2634-People-cast-cooked-mh-18.png"><img loading="lazy" src="../images/2634-People-cast-cooked-mh-18.png" alt="People: cast (cooked)/mh_18"></a>
+  <div class="data">
+    <h3>mh_18</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (28,832 today, 9.6 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 101 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2622 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>28,832</dd><dt>Vertices</dt><dd>17,214</dd>
+      <dt>Levels</dt><dd>L0 28,832 / L1 9,814 / L2 4,546 / L3 1,776</dd>
+      <dt>Memory</dt><dd>8,629 KB (geometry 8,629 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>52 solids: 52 other</dd><dt>Hidden triangles</dt><dd>101</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,622 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_18.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2634-People-cast-cooked-mh-18.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: cast (cooked)/mh_04">
+  <a href="../images/2636-People-cast-cooked-mh-04.png"><img loading="lazy" src="../images/2636-People-cast-cooked-mh-04.png" alt="People: cast (cooked)/mh_04"></a>
+  <div class="data">
+    <h3>mh_04</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 3,000 triangles (28,736 today, 9.6 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.</li><li>Remove its 101 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>13 shape targets (2519 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>28,736</dd><dt>Vertices</dt><dd>16,535</dd>
+      <dt>Levels</dt><dd>L0 28,736 / L1 9,192 / L2 3,908 / L3 753</dd>
+      <dt>Memory</dt><dd>8,275 KB (geometry 8,275 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>84 B: uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton; 13 morph targets</dd>
+      <dt>Solids</dt><dd>94 solids: 94 other</dd><dt>Hidden triangles</dt><dd>101</dd>
+      <dt>Shadow</dt><dd>casts: coarser level for the shadow (castCoarse)</dd><dt>Bones</dt><dd>53</dd><dt>Shape targets</dt><dd>13 (2,519 KB)</dd>
+      
+      
+      <dt>Source</dt><dd><code>cooked/people/mh_04.bin (src/render/people/cookedLoad.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2636-People-cast-cooked-mh-04.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

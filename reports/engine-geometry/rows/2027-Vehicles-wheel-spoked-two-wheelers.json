@@ -1,0 +1,72 @@
+{
+ "id": "Vehicles/wheel/spoked (two-wheelers)",
+ "group": "Vehicles",
+ "name": "wheel",
+ "variation": "spoked (two-wheelers)",
+ "origin": "kit",
+ "source": "src/render/vehicleModels.ts",
+ "build": "instanced",
+ "triangles": 672,
+ "vertices": 714,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 29124,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 29124,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 672,
+   "vertices": 714
+  }
+ ],
+ "solids": "11 solids: 10 other, 1 closed cylinder",
+ "hiddenTriangles": 32,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2027-Vehicles-wheel-spoked-two-wheelers.png",
+ "model": "models/2027-Vehicles-wheel-spoked-two-wheelers.glb",
+ "pieces": [
+  {
+   "label": "tyre",
+   "triangles": 256,
+   "vertices": 153,
+   "bytes": 6432,
+   "material": ""
+  },
+  {
+   "label": "spoked rim",
+   "triangles": 416,
+   "vertices": 561,
+   "bytes": 22692,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "wheels:bike",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Tyre and rim as one 6-8 sided prism with the rim painted.",
+  "Picture: the tyre is a rounded drum of 400-670 triangles with spokes; a few pixels on screen, a 6-8 sided prism with the rim painted.",
+  "Remove its 32 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1000
+}

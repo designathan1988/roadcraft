@@ -31,6 +31,7 @@ const card = (r, up = '') => `<article class="row" id="${esc(r.id)}">
   ${r.sheet ? `<a href="${up}${esc(r.sheet)}"><img loading="lazy" src="${up}${esc(r.sheet)}" alt="${esc(r.id)}"></a>` : '<div class="none">no sheet</div>'}
   <div class="data">
     <h3>${esc(r.name)}${r.variation ? ` <small>${esc(r.variation)}</small>` : ''}</h3>
+    ${r.advice?.length ? `<div class="advice"><b>What to change</b><ul>${r.advice.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
     <dl>
       <dt>Triangles</dt><dd>${n(r.triangles)}</dd><dt>Vertices</dt><dd>${n(r.vertices)}</dd>
       <dt>Levels</dt><dd>${esc(r.levels.map((l) => `L${l.level} ${n(l.triangles)}`).join(' / '))}</dd>
@@ -63,6 +64,7 @@ dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; 
 .file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
 @media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
 a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
 </style>`;
 const head = (title) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -79,6 +81,7 @@ const html = `${head('Engine Geometry Catalogue')}
 <h1>Engine Geometry Catalogue</h1>
 <p class="muted">Every object the engine's builders make, each built alone (no city). ${n(rows.length)} objects so far, updated ${esc(data.generated)}${status ? ` - ${esc(status)}` : ''}. Each picture: the object rendered (left) and its hidden-line wireframe (right).</p>
 <p class="muted">${esc(data.hiddenTriangles ?? '')}</p>
+<p><a href="optimization.html"><b>Geometry Optimization: what to change in every object, and why</b></a></p>
 <h2>Groups</h2>
 <table class="sum"><tr><th>Group</th><th>Objects</th><th>Triangles (one of each)</th></tr>
 ${order.map((o) => `<tr><td><a href="groups/${slug(o.g)}.html">${esc(o.g)}</a></td><td>${o.list.length}</td><td>${n(o.triangles)}</td></tr>`).join('\n')}

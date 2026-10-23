@@ -1,0 +1,68 @@
+{
+ "id": "People: hair/punkduck_alpha7_long",
+ "group": "People: hair",
+ "name": "punkduck_alpha7_long",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/punkduck_alpha7_long.bin",
+ "build": "skinned",
+ "triangles": 3888,
+ "vertices": 2348,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 121792,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 121792,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 3888,
+   "vertices": 2348
+  }
+ ],
+ "solids": "14 solids: 14 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2432-People-hair-punkduck-alpha7-long.png",
+ "model": "models/2432-People-hair-punkduck-alpha7-long.glb",
+ "pieces": [
+  {
+   "label": "hair",
+   "triangles": 3888,
+   "vertices": 2348,
+   "bytes": 121792,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map punkduck_alpha7_long.webp 512x512 WebP, 108922 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture punkduck_alpha7_long.webp"
+ ],
+ "countKey": "proxy:punkduck_alpha7_long",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 400 triangles (3,888 today, 9.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.",
+  "Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 400
+}

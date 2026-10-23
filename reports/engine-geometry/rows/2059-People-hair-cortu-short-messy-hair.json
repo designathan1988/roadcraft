@@ -1,0 +1,68 @@
+{
+ "id": "People: hair/cortu_short_messy_hair",
+ "group": "People: hair",
+ "name": "cortu_short_messy_hair",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/cortu_short_messy_hair.bin",
+ "build": "skinned",
+ "triangles": 1092,
+ "vertices": 832,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 39728,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 39728,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1092,
+   "vertices": 832
+  }
+ ],
+ "solids": "26 solids: 26 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2059-People-hair-cortu-short-messy-hair.png",
+ "model": "models/2059-People-hair-cortu-short-messy-hair.glb",
+ "pieces": [
+  {
+   "label": "hair",
+   "triangles": 1092,
+   "vertices": 832,
+   "bytes": 39728,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map cortu_short_messy_hair.webp 512x512 WebP, 107106 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture cortu_short_messy_hair.webp"
+ ],
+ "countKey": "proxy:cortu_short_messy_hair",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 400 triangles (1,092 today, 2.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.",
+  "Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 400
+}

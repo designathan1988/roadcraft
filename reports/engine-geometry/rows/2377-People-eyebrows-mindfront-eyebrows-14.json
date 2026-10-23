@@ -1,0 +1,66 @@
+{
+ "id": "People: eyebrows/mindfront_eyebrows_14",
+ "group": "People: eyebrows",
+ "name": "mindfront_eyebrows_14",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/mindfront_eyebrows_14.bin",
+ "build": "skinned",
+ "triangles": 42300,
+ "vertices": 28482,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 1419024,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1419024,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 42300,
+   "vertices": 28482
+  }
+ ],
+ "solids": "2103 solids: 2089 other, 14 box",
+ "hiddenTriangles": 268,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2377-People-eyebrows-mindfront-eyebrows-14.png",
+ "model": "models/2377-People-eyebrows-mindfront-eyebrows-14.glb",
+ "pieces": [
+  {
+   "label": "eyebrows",
+   "triangles": 42300,
+   "vertices": 28482,
+   "bytes": 1419024,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "hides 0 base-body vertices under it"
+ ],
+ "countKey": "proxy:mindfront_eyebrows_14",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (42,300 today): painted into the head's texture: no geometry of its own.",
+  "Picture: strand-by-strand brows or lashes (14,000-42,000 triangles) beside the 192-triangle strips of the same pieces; the strip with a texture, or painted on the head.",
+  "Remove its 268 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

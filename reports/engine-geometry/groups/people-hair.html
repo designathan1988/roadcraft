@@ -1,0 +1,1489 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: hair</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: hair</h1><p class="muted">70 objects, 857,077 triangles one of each.</p></header>
+<main><article class="row" id="People: hair/o4saken_curly01">
+  <a href="../images/2426-People-hair-o4saken-curly01.png"><img loading="lazy" src="../images/2426-People-hair-o4saken-curly01.png" alt="People: hair/o4saken_curly01"></a>
+  <div class="data">
+    <h3>o4saken_curly01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (120,022 today, 300.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 18 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>120,022</dd><dt>Vertices</dt><dd>122,901</dd>
+      <dt>Levels</dt><dd>L0 120,022</dd>
+      <dt>Memory</dt><dd>5,247 KB (geometry 5,247 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1574 solids: 1574 other</dd><dt>Hidden triangles</dt><dd>18</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map o4saken_curly01.webp 512x512 WebP, 52070 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/o4saken_curly01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture o4saken_curly01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2426-People-hair-o4saken-curly01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_short_side_do">
+  <a href="../images/2249-People-hair-elvs-short-side-do.png"><img loading="lazy" src="../images/2249-People-hair-elvs-short-side-do.png" alt="People: hair/elvs_short_side_do"></a>
+  <div class="data">
+    <h3>elvs_short_side_do</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (98,660 today, 246.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 127 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>98,660</dd><dt>Vertices</dt><dd>70,146</dd>
+      <dt>Levels</dt><dd>L0 98,660</dd>
+      <dt>Memory</dt><dd>3,348 KB (geometry 3,348 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>8 solids: 8 other</dd><dt>Hidden triangles</dt><dd>127</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_short_side_do.webp 512x512 WebP, 18490 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_short_side_do.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 145 base-body vertices under it<br>texture elvs_short_side_do.webp</dd>
+    </dl>
+    <a class="file" href="../models/2249-People-hair-elvs-short-side-do.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/learning_anime_hair">
+  <a href="../images/2332-People-hair-learning-anime-hair.png"><img loading="lazy" src="../images/2332-People-hair-learning-anime-hair.png" alt="People: hair/learning_anime_hair"></a>
+  <div class="data">
+    <h3>learning_anime_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (91,392 today, 228.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 6,142 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>91,392</dd><dt>Vertices</dt><dd>49,728</dd>
+      <dt>Levels</dt><dd>L0 91,392</dd>
+      <dt>Memory</dt><dd>2,625 KB (geometry 2,625 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>62 solids: 50 closed cylinder, 12 other</dd><dt>Hidden triangles</dt><dd>6,142</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map learning_anime_hair.webp 512x512 WebP, 20994 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/learning_anime_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture learning_anime_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2332-People-hair-learning-anime-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_12">
+  <a href="../images/2077-People-hair-culturalibre-hair-12.png"><img loading="lazy" src="../images/2077-People-hair-culturalibre-hair-12.png" alt="People: hair/culturalibre_hair_12"></a>
+  <div class="data">
+    <h3>culturalibre_hair_12</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (45,584 today, 114.0 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 57 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>45,584</dd><dt>Vertices</dt><dd>27,417</dd>
+      <dt>Levels</dt><dd>L0 45,584</dd>
+      <dt>Memory</dt><dd>1,391 KB (geometry 1,391 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>57</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_12.webp 512x512 WebP, 528 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_12.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_12.webp</dd>
+    </dl>
+    <a class="file" href="../models/2077-People-hair-culturalibre-hair-12.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_11">
+  <a href="../images/2076-People-hair-culturalibre-hair-11.png"><img loading="lazy" src="../images/2076-People-hair-culturalibre-hair-11.png" alt="People: hair/culturalibre_hair_11"></a>
+  <div class="data">
+    <h3>culturalibre_hair_11</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (44,046 today, 110.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 35 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>44,046</dd><dt>Vertices</dt><dd>27,400</dd>
+      <dt>Levels</dt><dd>L0 44,046</dd>
+      <dt>Memory</dt><dd>1,372 KB (geometry 1,372 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>35</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_11.webp 512x512 WebP, 21160 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_11.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_11.webp</dd>
+    </dl>
+    <a class="file" href="../models/2076-People-hair-culturalibre-hair-11.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_braided_rows">
+  <a href="../images/2154-People-hair-elvs-braided-rows.png"><img loading="lazy" src="../images/2154-People-hair-elvs-braided-rows.png" alt="People: hair/elvs_braided_rows"></a>
+  <div class="data">
+    <h3>elvs_braided_rows</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (40,928 today, 102.3 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 2,342 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40,928</dd><dt>Vertices</dt><dd>22,988</dd>
+      <dt>Levels</dt><dd>L0 40,928</dd>
+      <dt>Memory</dt><dd>1,198 KB (geometry 1,198 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>106 solids: 106 other</dd><dt>Hidden triangles</dt><dd>2,342</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_braided_rows.webp 512x512 WebP, 40980 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_braided_rows.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 130 base-body vertices under it<br>texture elvs_braided_rows.webp</dd>
+    </dl>
+    <a class="file" href="../models/2154-People-hair-elvs-braided-rows.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_13">
+  <a href="../images/2078-People-hair-culturalibre-hair-13.png"><img loading="lazy" src="../images/2078-People-hair-culturalibre-hair-13.png" alt="People: hair/culturalibre_hair_13"></a>
+  <div class="data">
+    <h3>culturalibre_hair_13</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (34,425 today, 86.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>34,425</dd><dt>Vertices</dt><dd>35,174</dd>
+      <dt>Levels</dt><dd>L0 34,425</dd>
+      <dt>Memory</dt><dd>1,503 KB (geometry 1,503 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 6 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_13.webp 512x512 WebP, 744 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_13.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_13.webp</dd>
+    </dl>
+    <a class="file" href="../models/2078-People-hair-culturalibre-hair-13.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_lara_hair">
+  <a href="../images/2218-People-hair-elvs-lara-hair.png"><img loading="lazy" src="../images/2218-People-hair-elvs-lara-hair.png" alt="People: hair/elvs_lara_hair"></a>
+  <div class="data">
+    <h3>elvs_lara_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (27,816 today, 69.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>27,816</dd><dt>Vertices</dt><dd>17,360</dd>
+      <dt>Levels</dt><dd>L0 27,816</dd>
+      <dt>Memory</dt><dd>868 KB (geometry 868 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>76 solids: 76 other</dd><dt>Hidden triangles</dt><dd>10</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_lara_hair.webp 512x512 WebP, 66618 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_lara_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_lara_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2218-People-hair-elvs-lara-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_14">
+  <a href="../images/2079-People-hair-culturalibre-hair-14.png"><img loading="lazy" src="../images/2079-People-hair-culturalibre-hair-14.png" alt="People: hair/culturalibre_hair_14"></a>
+  <div class="data">
+    <h3>culturalibre_hair_14</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (23,491 today, 58.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 783 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>23,491</dd><dt>Vertices</dt><dd>37,075</dd>
+      <dt>Levels</dt><dd>L0 23,491</dd>
+      <dt>Memory</dt><dd>1,434 KB (geometry 1,434 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>14 solids: 9 other, 5 closed cylinder</dd><dt>Hidden triangles</dt><dd>783</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_14.webp 512x512 WebP, 528 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_14.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_14.webp</dd>
+    </dl>
+    <a class="file" href="../models/2079-People-hair-culturalibre-hair-14.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_braid_bun">
+  <a href="../images/2153-People-hair-elvs-braid-bun.png"><img loading="lazy" src="../images/2153-People-hair-elvs-braid-bun.png" alt="People: hair/elvs_braid_bun"></a>
+  <div class="data">
+    <h3>elvs_braid_bun</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (21,016 today, 52.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>21,016</dd><dt>Vertices</dt><dd>11,029</dd>
+      <dt>Levels</dt><dd>L0 21,016</dd>
+      <dt>Memory</dt><dd>591 KB (geometry 591 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_braid_bun.webp 512x512 WebP, 81788 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_braid_bun.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_braid_bun.webp</dd>
+    </dl>
+    <a class="file" href="../models/2153-People-hair-elvs-braid-bun.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_06">
+  <a href="../images/2075-People-hair-culturalibre-hair-06.png"><img loading="lazy" src="../images/2075-People-hair-culturalibre-hair-06.png" alt="People: hair/culturalibre_hair_06"></a>
+  <div class="data">
+    <h3>culturalibre_hair_06</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (14,688 today, 36.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 2,816 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,688</dd><dt>Vertices</dt><dd>12,256</dd>
+      <dt>Levels</dt><dd>L0 14,688</dd>
+      <dt>Memory</dt><dd>555 KB (geometry 555 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>112 solids: 1 box, 61 closed cylinder, 50 other</dd><dt>Hidden triangles</dt><dd>2,816</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_06.webp 512x512 WebP, 1378 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_06.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_06.webp</dd>
+    </dl>
+    <a class="file" href="../models/2075-People-hair-culturalibre-hair-06.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_17">
+  <a href="../images/2080-People-hair-culturalibre-hair-17.png"><img loading="lazy" src="../images/2080-People-hair-culturalibre-hair-17.png" alt="People: hair/culturalibre_hair_17"></a>
+  <div class="data">
+    <h3>culturalibre_hair_17</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (13,392 today, 33.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 364 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>13,392</dd><dt>Vertices</dt><dd>8,985</dd>
+      <dt>Levels</dt><dd>L0 13,392</dd>
+      <dt>Memory</dt><dd>438 KB (geometry 438 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>27 solids: 9 other, 18 closed cylinder</dd><dt>Hidden triangles</dt><dd>364</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_17.webp 512x512 WebP, 12010 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_17.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_17.webp</dd>
+    </dl>
+    <a class="file" href="../models/2080-People-hair-culturalibre-hair-17.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/o4saken_long01">
+  <a href="../images/2428-People-hair-o4saken-long01.png"><img loading="lazy" src="../images/2428-People-hair-o4saken-long01.png" alt="People: hair/o4saken_long01"></a>
+  <div class="data">
+    <h3>o4saken_long01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (13,268 today, 33.2 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 326 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>13,268</dd><dt>Vertices</dt><dd>15,033</dd>
+      <dt>Levels</dt><dd>L0 13,268</dd>
+      <dt>Memory</dt><dd>625 KB (geometry 625 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1018 solids: 1016 other, 2 quad</dd><dt>Hidden triangles</dt><dd>326</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map o4saken_long01.webp 512x512 WebP, 68220 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/o4saken_long01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture o4saken_long01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2428-People-hair-o4saken-long01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_grump_hair">
+  <a href="../images/2198-People-hair-elvs-grump-hair.png"><img loading="lazy" src="../images/2198-People-hair-elvs-grump-hair.png" alt="People: hair/elvs_grump_hair"></a>
+  <div class="data">
+    <h3>elvs_grump_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (12,332 today, 30.8 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12,332</dd><dt>Vertices</dt><dd>9,522</dd>
+      <dt>Levels</dt><dd>L0 12,332</dd>
+      <dt>Memory</dt><dd>442 KB (geometry 442 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>91 solids: 91 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_grump_hair.webp 512x512 WebP, 96964 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_grump_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_grump_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2198-People-hair-elvs-grump-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/punkduck_alpha7_curly">
+  <a href="../images/2430-People-hair-punkduck-alpha7-curly.png"><img loading="lazy" src="../images/2430-People-hair-punkduck-alpha7-curly.png" alt="People: hair/punkduck_alpha7_curly"></a>
+  <div class="data">
+    <h3>punkduck_alpha7_curly</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (11,304 today, 28.3 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>11,304</dd><dt>Vertices</dt><dd>7,061</dd>
+      <dt>Levels</dt><dd>L0 11,304</dd>
+      <dt>Memory</dt><dd>353 KB (geometry 353 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>64 solids: 64 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_alpha7_curly.webp 512x512 WebP, 95150 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_alpha7_curly.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_alpha7_curly.webp</dd>
+    </dl>
+    <a class="file" href="../models/2430-People-hair-punkduck-alpha7-curly.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/o4saken_chinesebob01">
+  <a href="../images/2425-People-hair-o4saken-chinesebob01.png"><img loading="lazy" src="../images/2425-People-hair-o4saken-chinesebob01.png" alt="People: hair/o4saken_chinesebob01"></a>
+  <div class="data">
+    <h3>o4saken_chinesebob01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (10,108 today, 25.3 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 5,329 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10,108</dd><dt>Vertices</dt><dd>12,547</dd>
+      <dt>Levels</dt><dd>L0 10,108</dd>
+      <dt>Memory</dt><dd>511 KB (geometry 511 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1355 solids: 1191 other, 164 quad</dd><dt>Hidden triangles</dt><dd>5,329</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map o4saken_chinesebob01.webp 512x512 WebP, 68220 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/o4saken_chinesebob01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture o4saken_chinesebob01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2425-People-hair-o4saken-chinesebob01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_double_mh_braid">
+  <a href="../images/2172-People-hair-elvs-double-mh-braid.png"><img loading="lazy" src="../images/2172-People-hair-elvs-double-mh-braid.png" alt="People: hair/elvs_double_mh_braid"></a>
+  <div class="data">
+    <h3>elvs_double_mh_braid</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (9,866 today, 24.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>9,866</dd><dt>Vertices</dt><dd>8,491</dd>
+      <dt>Levels</dt><dd>L0 9,866</dd>
+      <dt>Memory</dt><dd>381 KB (geometry 381 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>185 solids: 177 other, 2 open prism, 6 quad</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_double_mh_braid.webp 512x512 WebP, 19466 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_double_mh_braid.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_double_mh_braid.webp</dd>
+    </dl>
+    <a class="file" href="../models/2172-People-hair-elvs-double-mh-braid.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_adrienne_hair">
+  <a href="../images/2144-People-hair-elvs-adrienne-hair.png"><img loading="lazy" src="../images/2144-People-hair-elvs-adrienne-hair.png" alt="People: hair/elvs_adrienne_hair"></a>
+  <div class="data">
+    <h3>elvs_adrienne_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (9,381 today, 23.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>9,381</dd><dt>Vertices</dt><dd>9,352</dd>
+      <dt>Levels</dt><dd>L0 9,381</dd>
+      <dt>Memory</dt><dd>402 KB (geometry 402 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>30 solids: 30 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_adrienne_hair.webp 512x512 WebP, 106048 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_adrienne_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_adrienne_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2144-People-hair-elvs-adrienne-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_island_princess_hair">
+  <a href="../images/2207-People-hair-elvs-island-princess-hair.png"><img loading="lazy" src="../images/2207-People-hair-elvs-island-princess-hair.png" alt="People: hair/elvs_island_princess_hair"></a>
+  <div class="data">
+    <h3>elvs_island_princess_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (8,954 today, 22.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,954</dd><dt>Vertices</dt><dd>7,234</dd>
+      <dt>Levels</dt><dd>L0 8,954</dd>
+      <dt>Memory</dt><dd>331 KB (geometry 331 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>37 solids: 36 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_island_princess_hair.webp 512x512 WebP, 89110 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_island_princess_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_island_princess_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2207-People-hair-elvs-island-princess-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/sonntag78_junglebook_hair">
+  <a href="../images/2542-People-hair-sonntag78-junglebook-hair.png"><img loading="lazy" src="../images/2542-People-hair-sonntag78-junglebook-hair.png" alt="People: hair/sonntag78_junglebook_hair"></a>
+  <div class="data">
+    <h3>sonntag78_junglebook_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (8,576 today, 21.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,576</dd><dt>Vertices</dt><dd>4,966</dd>
+      <dt>Levels</dt><dd>L0 8,576</dd>
+      <dt>Memory</dt><dd>256 KB (geometry 256 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>13 solids: 13 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map sonntag78_junglebook_hair.webp 512x512 WebP, 42560 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/sonntag78_junglebook_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture sonntag78_junglebook_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2542-People-hair-sonntag78-junglebook-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/bob01">
+  <a href="../images/2050-People-hair-bob01.png"><img loading="lazy" src="../images/2050-People-hair-bob01.png" alt="People: hair/bob01"></a>
+  <div class="data">
+    <h3>bob01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (8,474 today, 21.2 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,474</dd><dt>Vertices</dt><dd>5,961</dd>
+      <dt>Levels</dt><dd>L0 8,474</dd>
+      <dt>Memory</dt><dd>286 KB (geometry 286 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>16 solids: 16 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map bob01.webp 512x512 WebP, 45736 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/bob01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture bob01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2050-People-hair-bob01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_ashley_may_hair">
+  <a href="../images/2146-People-hair-elvs-ashley-may-hair.png"><img loading="lazy" src="../images/2146-People-hair-elvs-ashley-may-hair.png" alt="People: hair/elvs_ashley_may_hair"></a>
+  <div class="data">
+    <h3>elvs_ashley_may_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (8,467 today, 21.2 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,467</dd><dt>Vertices</dt><dd>8,208</dd>
+      <dt>Levels</dt><dd>L0 8,467</dd>
+      <dt>Memory</dt><dd>356 KB (geometry 356 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>77 solids: 77 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_ashley_may_hair.webp 512x512 WebP, 106968 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_ashley_may_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_ashley_may_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2146-People-hair-elvs-ashley-may-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_unkempt_french_braid">
+  <a href="../images/2260-People-hair-elvs-unkempt-french-braid.png"><img loading="lazy" src="../images/2260-People-hair-elvs-unkempt-french-braid.png" alt="People: hair/elvs_unkempt_french_braid"></a>
+  <div class="data">
+    <h3>elvs_unkempt_french_braid</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (8,200 today, 20.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 11 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,200</dd><dt>Vertices</dt><dd>6,956</dd>
+      <dt>Levels</dt><dd>L0 8,200</dd>
+      <dt>Memory</dt><dd>313 KB (geometry 313 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>144 solids: 133 other, 9 quad, 2 open prism</dd><dt>Hidden triangles</dt><dd>11</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_unkempt_french_braid.webp 512x512 WebP, 14612 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_unkempt_french_braid.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_unkempt_french_braid.webp</dd>
+    </dl>
+    <a class="file" href="../models/2260-People-hair-elvs-unkempt-french-braid.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_french_braid_variation">
+  <a href="../images/2183-People-hair-elvs-french-braid-variation.png"><img loading="lazy" src="../images/2183-People-hair-elvs-french-braid-variation.png" alt="People: hair/elvs_french_braid_variation"></a>
+  <div class="data">
+    <h3>elvs_french_braid_variation</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (8,152 today, 20.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,152</dd><dt>Vertices</dt><dd>6,902</dd>
+      <dt>Levels</dt><dd>L0 8,152</dd>
+      <dt>Memory</dt><dd>311 KB (geometry 311 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>142 solids: 131 other, 9 quad, 2 open prism</dd><dt>Hidden triangles</dt><dd>10</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_french_braid_variation.webp 512x512 WebP, 22730 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_french_braid_variation.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_french_braid_variation.webp</dd>
+    </dl>
+    <a class="file" href="../models/2183-People-hair-elvs-french-braid-variation.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_18">
+  <a href="../images/2081-People-hair-culturalibre-hair-18.png"><img loading="lazy" src="../images/2081-People-hair-culturalibre-hair-18.png" alt="People: hair/culturalibre_hair_18"></a>
+  <div class="data">
+    <h3>culturalibre_hair_18</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (7,992 today, 20.0 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 2,485 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,992</dd><dt>Vertices</dt><dd>5,572</dd>
+      <dt>Levels</dt><dd>L0 7,992</dd>
+      <dt>Memory</dt><dd>268 KB (geometry 268 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 3 other, 3 closed cylinder</dd><dt>Hidden triangles</dt><dd>2,485</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_18.webp 512x512 WebP, 11172 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_18.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_18.webp</dd>
+    </dl>
+    <a class="file" href="../models/2081-People-hair-culturalibre-hair-18.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_reverse_french_braid_bun">
+  <a href="../images/2244-People-hair-elvs-reverse-french-braid-bun.png"><img loading="lazy" src="../images/2244-People-hair-elvs-reverse-french-braid-bun.png" alt="People: hair/elvs_reverse_french_braid_bun"></a>
+  <div class="data">
+    <h3>elvs_reverse_french_braid_bun</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (7,622 today, 19.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 325 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,622</dd><dt>Vertices</dt><dd>6,174</dd>
+      <dt>Levels</dt><dd>L0 7,622</dd>
+      <dt>Memory</dt><dd>282 KB (geometry 282 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>91 solids: 82 other, 7 quad, 2 open prism</dd><dt>Hidden triangles</dt><dd>325</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_reverse_french_braid_bun.webp 512x512 WebP, 13114 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_reverse_french_braid_bun.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_reverse_french_braid_bun.webp</dd>
+    </dl>
+    <a class="file" href="../models/2244-People-hair-elvs-reverse-french-braid-bun.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_daisy_hair">
+  <a href="../images/2163-People-hair-elvs-daisy-hair.png"><img loading="lazy" src="../images/2163-People-hair-elvs-daisy-hair.png" alt="People: hair/elvs_daisy_hair"></a>
+  <div class="data">
+    <h3>elvs_daisy_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (6,639 today, 16.6 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,639</dd><dt>Vertices</dt><dd>6,721</dd>
+      <dt>Levels</dt><dd>L0 6,639</dd>
+      <dt>Memory</dt><dd>288 KB (geometry 288 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>48 solids: 48 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_daisy_hair.webp 512x512 WebP, 88452 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_daisy_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_daisy_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2163-People-hair-elvs-daisy-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/punkduck_alpha7_curly2">
+  <a href="../images/2431-People-hair-punkduck-alpha7-curly2.png"><img loading="lazy" src="../images/2431-People-hair-punkduck-alpha7-curly2.png" alt="People: hair/punkduck_alpha7_curly2"></a>
+  <div class="data">
+    <h3>punkduck_alpha7_curly2</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (6,026 today, 15.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,026</dd><dt>Vertices</dt><dd>4,068</dd>
+      <dt>Levels</dt><dd>L0 6,026</dd>
+      <dt>Memory</dt><dd>198 KB (geometry 198 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>72 solids: 72 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_alpha7_curly2.webp 512x512 WebP, 141318 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_alpha7_curly2.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_alpha7_curly2.webp</dd>
+    </dl>
+    <a class="file" href="../models/2431-People-hair-punkduck-alpha7-curly2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_that_80s_babe_hair">
+  <a href="../images/2257-People-hair-elvs-that-80s-babe-hair.png"><img loading="lazy" src="../images/2257-People-hair-elvs-that-80s-babe-hair.png" alt="People: hair/elvs_that_80s_babe_hair"></a>
+  <div class="data">
+    <h3>elvs_that_80s_babe_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (6,004 today, 15.0 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,004</dd><dt>Vertices</dt><dd>5,968</dd>
+      <dt>Levels</dt><dd>L0 6,004</dd>
+      <dt>Memory</dt><dd>257 KB (geometry 257 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>47 solids: 47 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_that_80s_babe_hair.webp 512x512 WebP, 54358 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_that_80s_babe_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_that_80s_babe_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2257-People-hair-elvs-that-80s-babe-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/braid01">
+  <a href="../images/2052-People-hair-braid01.png"><img loading="lazy" src="../images/2052-People-hair-braid01.png" alt="People: hair/braid01"></a>
+  <div class="data">
+    <h3>braid01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (5,518 today, 13.8 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,518</dd><dt>Vertices</dt><dd>4,771</dd>
+      <dt>Levels</dt><dd>L0 5,518</dd>
+      <dt>Memory</dt><dd>214 KB (geometry 214 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>76 solids: 71 other, 5 open prism</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map braid01.webp 512x512 WebP, 18138 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/braid01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture braid01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2052-People-hair-braid01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/grinsegold_wig_bun_blonde_braids">
+  <a href="../images/2310-People-hair-grinsegold-wig-bun-blonde-braids.png"><img loading="lazy" src="../images/2310-People-hair-grinsegold-wig-bun-blonde-braids.png" alt="People: hair/grinsegold_wig_bun_blonde_braids"></a>
+  <div class="data">
+    <h3>grinsegold_wig_bun_blonde_braids</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (5,372 today, 13.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 26 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,372</dd><dt>Vertices</dt><dd>3,794</dd>
+      <dt>Levels</dt><dd>L0 5,372</dd>
+      <dt>Memory</dt><dd>182 KB (geometry 182 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>20 solids: 20 other</dd><dt>Hidden triangles</dt><dd>26</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map grinsegold_wig_bun_blonde_braids.webp 512x512 WebP, 47076 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/grinsegold_wig_bun_blonde_braids.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture grinsegold_wig_bun_blonde_braids.webp</dd>
+    </dl>
+    <a class="file" href="../models/2310-People-hair-grinsegold-wig-bun-blonde-braids.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/ponytail01">
+  <a href="../images/2429-People-hair-ponytail01.png"><img loading="lazy" src="../images/2429-People-hair-ponytail01.png" alt="People: hair/ponytail01"></a>
+  <div class="data">
+    <h3>ponytail01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (5,352 today, 13.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,352</dd><dt>Vertices</dt><dd>4,049</dd>
+      <dt>Levels</dt><dd>L0 5,352</dd>
+      <dt>Memory</dt><dd>189 KB (geometry 189 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>27 solids: 27 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map ponytail01.webp 512x512 WebP, 81772 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/ponytail01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture ponytail01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2429-People-hair-ponytail01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_katherine_hair">
+  <a href="../images/2210-People-hair-elvs-katherine-hair.png"><img loading="lazy" src="../images/2210-People-hair-elvs-katherine-hair.png" alt="People: hair/elvs_katherine_hair"></a>
+  <div class="data">
+    <h3>elvs_katherine_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (5,041 today, 12.6 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,041</dd><dt>Vertices</dt><dd>5,050</dd>
+      <dt>Levels</dt><dd>L0 5,041</dd>
+      <dt>Memory</dt><dd>217 KB (geometry 217 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>29 solids: 29 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_katherine_hair.webp 512x512 WebP, 52498 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_katherine_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_katherine_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2210-People-hair-elvs-katherine-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_lady_hippy_hair">
+  <a href="../images/2217-People-hair-elvs-lady-hippy-hair.png"><img loading="lazy" src="../images/2217-People-hair-elvs-lady-hippy-hair.png" alt="People: hair/elvs_lady_hippy_hair"></a>
+  <div class="data">
+    <h3>elvs_lady_hippy_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (5,020 today, 12.6 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,020</dd><dt>Vertices</dt><dd>4,418</dd>
+      <dt>Levels</dt><dd>L0 5,020</dd>
+      <dt>Memory</dt><dd>197 KB (geometry 197 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>52 solids: 51 other, 1 open prism</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_lady_hippy_hair.webp 512x512 WebP, 76966 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_lady_hippy_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_lady_hippy_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2217-People-hair-elvs-lady-hippy-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/toigo_inverted_bob_with_bangs">
+  <a href="../images/2580-People-hair-toigo-inverted-bob-with-bangs.png"><img loading="lazy" src="../images/2580-People-hair-toigo-inverted-bob-with-bangs.png" alt="People: hair/toigo_inverted_bob_with_bangs"></a>
+  <div class="data">
+    <h3>toigo_inverted_bob_with_bangs</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,996 today, 12.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 5 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,996</dd><dt>Vertices</dt><dd>3,031</dd>
+      <dt>Levels</dt><dd>L0 4,996</dd>
+      <dt>Memory</dt><dd>153 KB (geometry 153 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>5</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_inverted_bob_with_bangs.webp 512x512 WebP, 34508 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_inverted_bob_with_bangs.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_inverted_bob_with_bangs.webp</dd>
+    </dl>
+    <a class="file" href="../models/2580-People-hair-toigo-inverted-bob-with-bangs.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/toigo_blunt_bob_with_bangs">
+  <a href="../images/2557-People-hair-toigo-blunt-bob-with-bangs.png"><img loading="lazy" src="../images/2557-People-hair-toigo-blunt-bob-with-bangs.png" alt="People: hair/toigo_blunt_bob_with_bangs"></a>
+  <div class="data">
+    <h3>toigo_blunt_bob_with_bangs</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,976 today, 12.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 14 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,976</dd><dt>Vertices</dt><dd>3,113</dd>
+      <dt>Levels</dt><dd>L0 4,976</dd>
+      <dt>Memory</dt><dd>156 KB (geometry 156 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>14</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_blunt_bob_with_bangs.webp 512x512 WebP, 75608 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_blunt_bob_with_bangs.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_blunt_bob_with_bangs.webp</dd>
+    </dl>
+    <a class="file" href="../models/2557-People-hair-toigo-blunt-bob-with-bangs.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/toigo_curled_under_bob_with_bangs">
+  <a href="../images/2563-People-hair-toigo-curled-under-bob-with-bangs.png"><img loading="lazy" src="../images/2563-People-hair-toigo-curled-under-bob-with-bangs.png" alt="People: hair/toigo_curled_under_bob_with_bangs"></a>
+  <div class="data">
+    <h3>toigo_curled_under_bob_with_bangs</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,976 today, 12.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 11 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,976</dd><dt>Vertices</dt><dd>2,806</dd>
+      <dt>Levels</dt><dd>L0 4,976</dd>
+      <dt>Memory</dt><dd>146 KB (geometry 146 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>11</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_curled_under_bob_with_bangs.webp 512x512 WebP, 79230 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_curled_under_bob_with_bangs.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_curled_under_bob_with_bangs.webp</dd>
+    </dl>
+    <a class="file" href="../models/2563-People-hair-toigo-curled-under-bob-with-bangs.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_05">
+  <a href="../images/2074-People-hair-culturalibre-hair-05.png"><img loading="lazy" src="../images/2074-People-hair-culturalibre-hair-05.png" alt="People: hair/culturalibre_hair_05"></a>
+  <div class="data">
+    <h3>culturalibre_hair_05</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,948 today, 12.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,948</dd><dt>Vertices</dt><dd>4,713</dd>
+      <dt>Levels</dt><dd>L0 4,948</dd>
+      <dt>Memory</dt><dd>205 KB (geometry 205 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>64 solids: 63 closed cylinder, 1 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_05.webp 512x512 WebP, 1010 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_05.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 60 base-body vertices under it<br>texture culturalibre_hair_05.webp</dd>
+    </dl>
+    <a class="file" href="../models/2074-People-hair-culturalibre-hair-05.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/rehmanpolanski_hair_bun_brown">
+  <a href="../images/2519-People-hair-rehmanpolanski-hair-bun-brown.png"><img loading="lazy" src="../images/2519-People-hair-rehmanpolanski-hair-bun-brown.png" alt="People: hair/rehmanpolanski_hair_bun_brown"></a>
+  <div class="data">
+    <h3>rehmanpolanski_hair_bun_brown</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,432 today, 11.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,432</dd><dt>Vertices</dt><dd>2,756</dd>
+      <dt>Levels</dt><dd>L0 4,432</dd>
+      <dt>Memory</dt><dd>138 KB (geometry 138 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>12 solids: 12 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map rehmanpolanski_hair_bun_brown.webp 512x512 WebP, 51374 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/rehmanpolanski_hair_bun_brown.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture rehmanpolanski_hair_bun_brown.webp</dd>
+    </dl>
+    <a class="file" href="../models/2519-People-hair-rehmanpolanski-hair-bun-brown.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_keylth_hair">
+  <a href="../images/2211-People-hair-elvs-keylth-hair.png"><img loading="lazy" src="../images/2211-People-hair-elvs-keylth-hair.png" alt="People: hair/elvs_keylth_hair"></a>
+  <div class="data">
+    <h3>elvs_keylth_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,334 today, 10.8 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,334</dd><dt>Vertices</dt><dd>3,776</dd>
+      <dt>Levels</dt><dd>L0 4,334</dd>
+      <dt>Memory</dt><dd>169 KB (geometry 169 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>44 solids: 44 other</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_keylth_hair.webp 512x512 WebP, 55418 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_keylth_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_keylth_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2211-People-hair-elvs-keylth-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_wavy_bob">
+  <a href="../images/2262-People-hair-elvs-wavy-bob.png"><img loading="lazy" src="../images/2262-People-hair-elvs-wavy-bob.png" alt="People: hair/elvs_wavy_bob"></a>
+  <div class="data">
+    <h3>elvs_wavy_bob</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,288 today, 10.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 9 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,288</dd><dt>Vertices</dt><dd>4,914</dd>
+      <dt>Levels</dt><dd>L0 4,288</dd>
+      <dt>Memory</dt><dd>204 KB (geometry 204 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>9</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_wavy_bob.webp 512x512 WebP, 8816 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_wavy_bob.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_wavy_bob.webp</dd>
+    </dl>
+    <a class="file" href="../models/2262-People-hair-elvs-wavy-bob.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_01">
+  <a href="../images/2072-People-hair-culturalibre-hair-01.png"><img loading="lazy" src="../images/2072-People-hair-culturalibre-hair-01.png" alt="People: hair/culturalibre_hair_01"></a>
+  <div class="data">
+    <h3>culturalibre_hair_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,228 today, 10.6 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,228</dd><dt>Vertices</dt><dd>3,406</dd>
+      <dt>Levels</dt><dd>L0 4,228</dd>
+      <dt>Memory</dt><dd>156 KB (geometry 156 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>19 solids: 19 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_01.webp 512x512 WebP, 91242 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2072-People-hair-culturalibre-hair-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_hazel_hair">
+  <a href="../images/2204-People-hair-elvs-hazel-hair.png"><img loading="lazy" src="../images/2204-People-hair-elvs-hazel-hair.png" alt="People: hair/elvs_hazel_hair"></a>
+  <div class="data">
+    <h3>elvs_hazel_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,181 today, 10.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,181</dd><dt>Vertices</dt><dd>4,891</dd>
+      <dt>Levels</dt><dd>L0 4,181</dd>
+      <dt>Memory</dt><dd>202 KB (geometry 202 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>35 solids: 35 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_hazel_hair.webp 512x512 WebP, 64902 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_hazel_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_hazel_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2204-People-hair-elvs-hazel-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/long01">
+  <a href="../images/2336-People-hair-long01.png"><img loading="lazy" src="../images/2336-People-hair-long01.png" alt="People: hair/long01"></a>
+  <div class="data">
+    <h3>long01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (4,108 today, 10.3 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,108</dd><dt>Vertices</dt><dd>3,314</dd>
+      <dt>Levels</dt><dd>L0 4,108</dd>
+      <dt>Memory</dt><dd>152 KB (geometry 152 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>13 solids: 13 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map long01.webp 512x512 WebP, 37658 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/long01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture long01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2336-People-hair-long01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/punkduck_alpha7_long">
+  <a href="../images/2432-People-hair-punkduck-alpha7-long.png"><img loading="lazy" src="../images/2432-People-hair-punkduck-alpha7-long.png" alt="People: hair/punkduck_alpha7_long"></a>
+  <div class="data">
+    <h3>punkduck_alpha7_long</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (3,888 today, 9.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,888</dd><dt>Vertices</dt><dd>2,348</dd>
+      <dt>Levels</dt><dd>L0 3,888</dd>
+      <dt>Memory</dt><dd>119 KB (geometry 119 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>14 solids: 14 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_alpha7_long.webp 512x512 WebP, 108922 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_alpha7_long.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_alpha7_long.webp</dd>
+    </dl>
+    <a class="file" href="../models/2432-People-hair-punkduck-alpha7-long.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/short01">
+  <a href="../images/2534-People-hair-short01.png"><img loading="lazy" src="../images/2534-People-hair-short01.png" alt="People: hair/short01"></a>
+  <div class="data">
+    <h3>short01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (3,678 today, 9.2 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 49 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,678</dd><dt>Vertices</dt><dd>3,177</dd>
+      <dt>Levels</dt><dd>L0 3,678</dd>
+      <dt>Memory</dt><dd>142 KB (geometry 142 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>200 solids: 200 other</dd><dt>Hidden triangles</dt><dd>49</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map short01.webp 512x512 WebP, 103364 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/short01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture short01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2534-People-hair-short01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/punkduck_alpha7_long2">
+  <a href="../images/2433-People-hair-punkduck-alpha7-long2.png"><img loading="lazy" src="../images/2433-People-hair-punkduck-alpha7-long2.png" alt="People: hair/punkduck_alpha7_long2"></a>
+  <div class="data">
+    <h3>punkduck_alpha7_long2</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (3,596 today, 9.0 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,596</dd><dt>Vertices</dt><dd>2,586</dd>
+      <dt>Levels</dt><dd>L0 3,596</dd>
+      <dt>Memory</dt><dd>123 KB (geometry 123 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>57 solids: 57 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_alpha7_long2.webp 512x512 WebP, 86458 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_alpha7_long2.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_alpha7_long2.webp</dd>
+    </dl>
+    <a class="file" href="../models/2433-People-hair-punkduck-alpha7-long2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_short_daisy_hair">
+  <a href="../images/2248-People-hair-elvs-short-daisy-hair.png"><img loading="lazy" src="../images/2248-People-hair-elvs-short-daisy-hair.png" alt="People: hair/elvs_short_daisy_hair"></a>
+  <div class="data">
+    <h3>elvs_short_daisy_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (3,571 today, 8.9 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,571</dd><dt>Vertices</dt><dd>3,673</dd>
+      <dt>Levels</dt><dd>L0 3,571</dd>
+      <dt>Memory</dt><dd>157 KB (geometry 157 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>29 solids: 29 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_short_daisy_hair.webp 512x512 WebP, 88452 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_short_daisy_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_short_daisy_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2248-People-hair-elvs-short-daisy-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/culturalibre_hair_02">
+  <a href="../images/2073-People-hair-culturalibre-hair-02.png"><img loading="lazy" src="../images/2073-People-hair-culturalibre-hair-02.png" alt="People: hair/culturalibre_hair_02"></a>
+  <div class="data">
+    <h3>culturalibre_hair_02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (3,460 today, 8.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 12 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,460</dd><dt>Vertices</dt><dd>2,541</dd>
+      <dt>Levels</dt><dd>L0 3,460</dd>
+      <dt>Memory</dt><dd>120 KB (geometry 120 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>75 solids: 75 other</dd><dt>Hidden triangles</dt><dd>12</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hair_02.webp 512x512 WebP, 102624 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hair_02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hair_02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2073-People-hair-culturalibre-hair-02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/short02">
+  <a href="../images/2535-People-hair-short02.png"><img loading="lazy" src="../images/2535-People-hair-short02.png" alt="People: hair/short02"></a>
+  <div class="data">
+    <h3>short02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (3,344 today, 8.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,344</dd><dt>Vertices</dt><dd>2,061</dd>
+      <dt>Levels</dt><dd>L0 3,344</dd>
+      <dt>Memory</dt><dd>104 KB (geometry 104 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map short02.webp 512x512 WebP, 40190 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/short02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture short02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2535-People-hair-short02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_inverted_curly_bob">
+  <a href="../images/2206-People-hair-elvs-inverted-curly-bob.png"><img loading="lazy" src="../images/2206-People-hair-elvs-inverted-curly-bob.png" alt="People: hair/elvs_inverted_curly_bob"></a>
+  <div class="data">
+    <h3>elvs_inverted_curly_bob</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,980 today, 7.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,980</dd><dt>Vertices</dt><dd>2,340</dd>
+      <dt>Levels</dt><dd>L0 2,980</dd>
+      <dt>Memory</dt><dd>108 KB (geometry 108 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>35 solids: 35 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_inverted_curly_bob.webp 512x512 WebP, 37286 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_inverted_curly_bob.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_inverted_curly_bob.webp</dd>
+    </dl>
+    <a class="file" href="../models/2206-People-hair-elvs-inverted-curly-bob.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/toigo_blunt_bob">
+  <a href="../images/2556-People-hair-toigo-blunt-bob.png"><img loading="lazy" src="../images/2556-People-hair-toigo-blunt-bob.png" alt="People: hair/toigo_blunt_bob"></a>
+  <div class="data">
+    <h3>toigo_blunt_bob</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,858 today, 7.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,858</dd><dt>Vertices</dt><dd>1,837</dd>
+      <dt>Levels</dt><dd>L0 2,858</dd>
+      <dt>Memory</dt><dd>91 KB (geometry 91 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_blunt_bob.webp 512x512 WebP, 96396 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_blunt_bob.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_blunt_bob.webp</dd>
+    </dl>
+    <a class="file" href="../models/2556-People-hair-toigo-blunt-bob.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/toigo_inverted_bob">
+  <a href="../images/2579-People-hair-toigo-inverted-bob.png"><img loading="lazy" src="../images/2579-People-hair-toigo-inverted-bob.png" alt="People: hair/toigo_inverted_bob"></a>
+  <div class="data">
+    <h3>toigo_inverted_bob</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,856 today, 7.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,856</dd><dt>Vertices</dt><dd>1,836</dd>
+      <dt>Levels</dt><dd>L0 2,856</dd>
+      <dt>Memory</dt><dd>91 KB (geometry 91 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_inverted_bob.webp 512x512 WebP, 66682 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_inverted_bob.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_inverted_bob.webp</dd>
+    </dl>
+    <a class="file" href="../models/2579-People-hair-toigo-inverted-bob.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/toigo_curled_under_bob">
+  <a href="../images/2562-People-hair-toigo-curled-under-bob.png"><img loading="lazy" src="../images/2562-People-hair-toigo-curled-under-bob.png" alt="People: hair/toigo_curled_under_bob"></a>
+  <div class="data">
+    <h3>toigo_curled_under_bob</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,852 today, 7.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,852</dd><dt>Vertices</dt><dd>1,517</dd>
+      <dt>Levels</dt><dd>L0 2,852</dd>
+      <dt>Memory</dt><dd>81 KB (geometry 81 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_curled_under_bob.webp 512x512 WebP, 70574 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_curled_under_bob.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_curled_under_bob.webp</dd>
+    </dl>
+    <a class="file" href="../models/2562-People-hair-toigo-curled-under-bob.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/littleright_bobcut_hair">
+  <a href="../images/2335-People-hair-littleright-bobcut-hair.png"><img loading="lazy" src="../images/2335-People-hair-littleright-bobcut-hair.png" alt="People: hair/littleright_bobcut_hair"></a>
+  <div class="data">
+    <h3>littleright_bobcut_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,692 today, 6.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,692</dd><dt>Vertices</dt><dd>1,919</dd>
+      <dt>Levels</dt><dd>L0 2,692</dd>
+      <dt>Memory</dt><dd>92 KB (geometry 92 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>49 solids: 49 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map littleright_bobcut_hair.webp 512x512 WebP, 32336 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/littleright_bobcut_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture littleright_bobcut_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2335-People-hair-littleright-bobcut-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_50s_updo">
+  <a href="../images/2143-People-hair-elvs-50s-updo.png"><img loading="lazy" src="../images/2143-People-hair-elvs-50s-updo.png" alt="People: hair/elvs_50s_updo"></a>
+  <div class="data">
+    <h3>elvs_50s_updo</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,677 today, 6.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,677</dd><dt>Vertices</dt><dd>2,763</dd>
+      <dt>Levels</dt><dd>L0 2,677</dd>
+      <dt>Memory</dt><dd>118 KB (geometry 118 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_50s_updo.webp 512x512 WebP, 55750 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_50s_updo.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_50s_updo.webp</dd>
+    </dl>
+    <a class="file" href="../models/2143-People-hair-elvs-50s-updo.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/bob02">
+  <a href="../images/2051-People-hair-bob02.png"><img loading="lazy" src="../images/2051-People-hair-bob02.png" alt="People: hair/bob02"></a>
+  <div class="data">
+    <h3>bob02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,248 today, 5.6 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,248</dd><dt>Vertices</dt><dd>1,759</dd>
+      <dt>Levels</dt><dd>L0 2,248</dd>
+      <dt>Memory</dt><dd>81 KB (geometry 81 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 6 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map bob02.webp 512x512 WebP, 45036 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/bob02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture bob02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2051-People-hair-bob02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/afro01">
+  <a href="../images/2049-People-hair-afro01.png"><img loading="lazy" src="../images/2049-People-hair-afro01.png" alt="People: hair/afro01"></a>
+  <div class="data">
+    <h3>afro01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,192 today, 5.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,192</dd><dt>Vertices</dt><dd>2,276</dd>
+      <dt>Levels</dt><dd>L0 2,192</dd>
+      <dt>Memory</dt><dd>97 KB (geometry 97 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>341 solids: 3 other, 338 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map afro01.webp 512x512 WebP, 134328 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/afro01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture afro01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2049-People-hair-afro01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/sonntag78_blond_with_headband">
+  <a href="../images/2541-People-hair-sonntag78-blond-with-headband.png"><img loading="lazy" src="../images/2541-People-hair-sonntag78-blond-with-headband.png" alt="People: hair/sonntag78_blond_with_headband"></a>
+  <div class="data">
+    <h3>sonntag78_blond_with_headband</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (2,054 today, 5.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,054</dd><dt>Vertices</dt><dd>1,486</dd>
+      <dt>Levels</dt><dd>L0 2,054</dd>
+      <dt>Memory</dt><dd>71 KB (geometry 71 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>19 solids: 18 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map sonntag78_blond_with_headband.webp 512x512 WebP, 68780 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/sonntag78_blond_with_headband.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture sonntag78_blond_with_headband.webp</dd>
+    </dl>
+    <a class="file" href="../models/2541-People-hair-sonntag78-blond-with-headband.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/short03">
+  <a href="../images/2536-People-hair-short03.png"><img loading="lazy" src="../images/2536-People-hair-short03.png" alt="People: hair/short03"></a>
+  <div class="data">
+    <h3>short03</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,922 today, 4.8 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,922</dd><dt>Vertices</dt><dd>1,071</dd>
+      <dt>Levels</dt><dd>L0 1,922</dd>
+      <dt>Memory</dt><dd>56 KB (geometry 56 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map short03.webp 512x512 WebP, 32718 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/short03.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture short03.webp</dd>
+    </dl>
+    <a class="file" href="../models/2536-People-hair-short03.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_micky_afro">
+  <a href="../images/2237-People-hair-elvs-micky-afro.png"><img loading="lazy" src="../images/2237-People-hair-elvs-micky-afro.png" alt="People: hair/elvs_micky_afro"></a>
+  <div class="data">
+    <h3>elvs_micky_afro</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,675 today, 4.2 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,675</dd><dt>Vertices</dt><dd>1,864</dd>
+      <dt>Levels</dt><dd>L0 1,675</dd>
+      <dt>Memory</dt><dd>78 KB (geometry 78 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_micky_afro.webp 512x512 WebP, 109090 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_micky_afro.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_micky_afro.webp</dd>
+    </dl>
+    <a class="file" href="../models/2237-People-hair-elvs-micky-afro.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_witchy_lil_bob">
+  <a href="../images/2265-People-hair-elvs-witchy-lil-bob.png"><img loading="lazy" src="../images/2265-People-hair-elvs-witchy-lil-bob.png" alt="People: hair/elvs_witchy_lil_bob"></a>
+  <div class="data">
+    <h3>elvs_witchy_lil_bob</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,513 today, 3.8 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,513</dd><dt>Vertices</dt><dd>1,679</dd>
+      <dt>Levels</dt><dd>L0 1,513</dd>
+      <dt>Memory</dt><dd>70 KB (geometry 70 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>10 solids: 10 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_witchy_lil_bob.webp 512x512 WebP, 85968 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_witchy_lil_bob.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_witchy_lil_bob.webp</dd>
+    </dl>
+    <a class="file" href="../models/2265-People-hair-elvs-witchy-lil-bob.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/elvs_maxwell_hair">
+  <a href="../images/2236-People-hair-elvs-maxwell-hair.png"><img loading="lazy" src="../images/2236-People-hair-elvs-maxwell-hair.png" alt="People: hair/elvs_maxwell_hair"></a>
+  <div class="data">
+    <h3>elvs_maxwell_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,468 today, 3.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,468</dd><dt>Vertices</dt><dd>1,174</dd>
+      <dt>Levels</dt><dd>L0 1,468</dd>
+      <dt>Memory</dt><dd>54 KB (geometry 54 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_maxwell_hair.webp 512x512 WebP, 44084 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_maxwell_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_maxwell_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2236-People-hair-elvs-maxwell-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/cortu_shaggy_green_hair">
+  <a href="../images/2058-People-hair-cortu-shaggy-green-hair.png"><img loading="lazy" src="../images/2058-People-hair-cortu-shaggy-green-hair.png" alt="People: hair/cortu_shaggy_green_hair"></a>
+  <div class="data">
+    <h3>cortu_shaggy_green_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,284 today, 3.2 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,284</dd><dt>Vertices</dt><dd>968</dd>
+      <dt>Levels</dt><dd>L0 1,284</dd>
+      <dt>Memory</dt><dd>45 KB (geometry 45 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>28 solids: 28 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map cortu_shaggy_green_hair.webp 512x512 WebP, 25940 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/cortu_shaggy_green_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture cortu_shaggy_green_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2058-People-hair-cortu-shaggy-green-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/cortu_straight_bangs">
+  <a href="../images/2060-People-hair-cortu-straight-bangs.png"><img loading="lazy" src="../images/2060-People-hair-cortu-straight-bangs.png" alt="People: hair/cortu_straight_bangs"></a>
+  <div class="data">
+    <h3>cortu_straight_bangs</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,128 today, 2.8 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,128</dd><dt>Vertices</dt><dd>848</dd>
+      <dt>Levels</dt><dd>L0 1,128</dd>
+      <dt>Memory</dt><dd>40 KB (geometry 40 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>23 solids: 23 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map cortu_straight_bangs.webp 512x512 WebP, 60874 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/cortu_straight_bangs.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture cortu_straight_bangs.webp</dd>
+    </dl>
+    <a class="file" href="../models/2060-People-hair-cortu-straight-bangs.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/cortu_short_messy_hair">
+  <a href="../images/2059-People-hair-cortu-short-messy-hair.png"><img loading="lazy" src="../images/2059-People-hair-cortu-short-messy-hair.png" alt="People: hair/cortu_short_messy_hair"></a>
+  <div class="data">
+    <h3>cortu_short_messy_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,092 today, 2.7 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,092</dd><dt>Vertices</dt><dd>832</dd>
+      <dt>Levels</dt><dd>L0 1,092</dd>
+      <dt>Memory</dt><dd>39 KB (geometry 39 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>26 solids: 26 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map cortu_short_messy_hair.webp 512x512 WebP, 107106 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/cortu_short_messy_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture cortu_short_messy_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2059-People-hair-cortu-short-messy-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/short04">
+  <a href="../images/2537-People-hair-short04.png"><img loading="lazy" src="../images/2537-People-hair-short04.png" alt="People: hair/short04"></a>
+  <div class="data">
+    <h3>short04</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,050 today, 2.6 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,050</dd><dt>Vertices</dt><dd>991</dd>
+      <dt>Levels</dt><dd>L0 1,050</dd>
+      <dt>Memory</dt><dd>43 KB (geometry 43 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>22 solids: 22 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map short04.webp 512x512 WebP, 62274 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/short04.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture short04.webp</dd>
+    </dl>
+    <a class="file" href="../models/2537-People-hair-short04.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/grinsegold_wig_bow_tie">
+  <a href="../images/2309-People-hair-grinsegold-wig-bow-tie.png"><img loading="lazy" src="../images/2309-People-hair-grinsegold-wig-bow-tie.png" alt="People: hair/grinsegold_wig_bow_tie"></a>
+  <div class="data">
+    <h3>grinsegold_wig_bow_tie</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (992 today, 2.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>992</dd><dt>Vertices</dt><dd>727</dd>
+      <dt>Levels</dt><dd>L0 992</dd>
+      <dt>Memory</dt><dd>34 KB (geometry 34 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>15 solids: 15 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map grinsegold_wig_bow_tie.webp 512x512 WebP, 86792 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/grinsegold_wig_bow_tie.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 263 base-body vertices under it<br>texture grinsegold_wig_bow_tie.webp</dd>
+    </dl>
+    <a class="file" href="../models/2309-People-hair-grinsegold-wig-bow-tie.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/faydaen_hair_1">
+  <a href="../images/2290-People-hair-faydaen-hair-1.png"><img loading="lazy" src="../images/2290-People-hair-faydaen-hair-1.png" alt="People: hair/faydaen_hair_1"></a>
+  <div class="data">
+    <h3>faydaen_hair_1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (836 today, 2.1 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>836</dd><dt>Vertices</dt><dd>647</dd>
+      <dt>Levels</dt><dd>L0 836</dd>
+      <dt>Memory</dt><dd>30 KB (geometry 30 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 6 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map faydaen_hair_1.webp 512x512 WebP, 62270 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/faydaen_hair_1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture faydaen_hair_1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2290-People-hair-faydaen-hair-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: hair/cortu_strawberry_cloud_hair">
+  <a href="../images/2061-People-hair-cortu-strawberry-cloud-hair.png"><img loading="lazy" src="../images/2061-People-hair-cortu-strawberry-cloud-hair.png" alt="People: hair/cortu_strawberry_cloud_hair"></a>
+  <div class="data">
+    <h3>cortu_strawberry_cloud_hair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (576 today, 1.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.</li><li>Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>576</dd><dt>Vertices</dt><dd>480</dd>
+      <dt>Levels</dt><dd>L0 576</dd>
+      <dt>Memory</dt><dd>22 KB (geometry 22 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>15 solids: 15 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map cortu_strawberry_cloud_hair.webp 512x512 WebP, 122996 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/cortu_strawberry_cloud_hair.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture cortu_strawberry_cloud_hair.webp</dd>
+    </dl>
+    <a class="file" href="../models/2061-People-hair-cortu-strawberry-cloud-hair.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

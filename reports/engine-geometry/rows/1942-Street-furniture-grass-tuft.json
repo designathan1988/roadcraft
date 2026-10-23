@@ -1,0 +1,62 @@
+{
+ "id": "Street furniture/grass tuft",
+ "group": "Street furniture",
+ "name": "grass tuft",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/scenery.ts",
+ "build": "instanced",
+ "triangles": 35,
+ "vertices": 49,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 1974,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1974,
+ "materials": "MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, double-sided, roughness 0.95, metalness 0, opacity 1)",
+ "shader": "patched built-in wind-nearfade|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 35,
+   "vertices": 49
+  }
+ ],
+ "solids": "7 solids: 7 other",
+ "hiddenTriangles": 19,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1942-Street-furniture-grass-tuft.png",
+ "model": "models/1942-Street-furniture-grass-tuft.glb",
+ "pieces": [
+  {
+   "label": "grass tuft",
+   "triangles": 35,
+   "vertices": 49,
+   "bytes": 1974,
+   "material": "MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, double-sided, roughness 0.95, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Alpha-tested cards; drop past ~30 m.",
+  "Remove its 19 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

@@ -1,0 +1,64 @@
+{
+ "id": "Buildings: part models/chair",
+ "group": "Buildings: part models",
+ "name": "chair",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 78,
+ "vertices": 156,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 6084,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 6084,
+ "materials": "MeshStandardMaterial \"building-part-chair\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.6, metalness 0, opacity 1)",
+ "shader": "patched built-in thin-part-prefiltered-v3-cards|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 78,
+   "vertices": 156
+  }
+ ],
+ "solids": "8 solids: 3 box, 1 other, 4 open prism",
+ "hiddenTriangles": 4,
+ "shadow": "does not cast (small part)",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1736-Buildings-part-models-chair.png",
+ "model": "models/1736-Buildings-part-models-chair.glb",
+ "pieces": [
+  {
+   "label": "chair",
+   "triangles": 78,
+   "vertices": 156,
+   "bytes": 6084,
+   "material": "MeshStandardMaterial \"building-part-chair\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.6, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:chair",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (78 today, 3.3 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.",
+  "Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

@@ -1,0 +1,108 @@
+{
+ "id": "Vehicles/van/van",
+ "group": "Vehicles",
+ "name": "van",
+ "variation": "van",
+ "origin": "kit",
+ "source": "src/render/carBody.ts",
+ "build": "instanced",
+ "triangles": 13600,
+ "vertices": 15132,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 616560,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 616560,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 13600,
+   "vertices": 15132
+  },
+  {
+   "level": 1,
+   "triangles": 36,
+   "vertices": 72
+  }
+ ],
+ "solids": "55 solids: 8 other, 32 box, 15 closed cylinder",
+ "hiddenTriangles": 49,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2021-Vehicles-van-van.png",
+ "model": "models/2021-Vehicles-van-van.glb",
+ "pieces": [
+  {
+   "label": "shell",
+   "triangles": 8568,
+   "vertices": 5407,
+   "bytes": 246060,
+   "material": ""
+  },
+  {
+   "label": "glass",
+   "triangles": 840,
+   "vertices": 542,
+   "bytes": 24552,
+   "material": ""
+  },
+  {
+   "label": "trim",
+   "triangles": 460,
+   "vertices": 720,
+   "bytes": 28680,
+   "material": ""
+  },
+  {
+   "label": "interior",
+   "triangles": 1092,
+   "vertices": 1742,
+   "bytes": 69264,
+   "material": ""
+  },
+  {
+   "label": "roof",
+   "triangles": 2100,
+   "vertices": 6300,
+   "bytes": 226800,
+   "material": ""
+  },
+  {
+   "label": "steering wheel",
+   "triangles": 540,
+   "vertices": 421,
+   "bytes": 18396,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches",
+  "2 doors drawn apart only while they move"
+ ],
+ "countKey": "vehicle:van:van",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,000 triangles (13,600 today, 13.6 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).",
+  "Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.",
+  "Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.",
+  "Remove its 49 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1000
+}

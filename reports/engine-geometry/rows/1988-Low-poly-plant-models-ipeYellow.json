@@ -1,0 +1,70 @@
+{
+ "id": "Low-poly plant models/ipeYellow",
+ "group": "Low-poly plant models",
+ "name": "ipeYellow",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/lowPolyTrees.ts",
+ "build": "instanced",
+ "triangles": 240,
+ "vertices": 612,
+ "attributes": "position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B",
+ "bytesPerVertex": 52,
+ "geometryBytes": 26136,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 26136,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 240,
+   "vertices": 612
+  }
+ ],
+ "solids": "60 solids: 5 open prism, 1 closed cylinder, 54 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1988-Low-poly-plant-models-ipeYellow.png",
+ "model": "models/1988-Low-poly-plant-models-ipeYellow.glb",
+ "pieces": [
+  {
+   "label": "body",
+   "triangles": 132,
+   "vertices": 396,
+   "bytes": 14256,
+   "material": ""
+  },
+  {
+   "label": "foliage cards",
+   "triangles": 108,
+   "vertices": 216,
+   "bytes": 11880,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "the model every street and forest tree of this kind is grown from (seeded); material set by the layer that draws it"
+ ],
+ "countKey": "source",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 250
+}

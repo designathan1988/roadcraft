@@ -1,0 +1,62 @@
+{
+ "id": "People: held props/umbrella",
+ "group": "People: held props",
+ "name": "umbrella",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/people/heldProps.ts",
+ "build": "instanced",
+ "triangles": 40,
+ "vertices": 120,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 4320,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 4320,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.7, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 40,
+   "vertices": 120
+  }
+ ],
+ "solids": "2 solids: 1 closed cylinder, 1 other",
+ "hiddenTriangles": 6,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2033-People-held-props-umbrella.png",
+ "model": "models/2033-People-held-props-umbrella.glb",
+ "pieces": [
+  {
+   "label": "held-umbrella",
+   "triangles": 40,
+   "vertices": 120,
+   "bytes": 4320,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.7, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "people:held",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (40 today, 1.7 times the budget): a box or a 4-sided prism, painted.",
+  "Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

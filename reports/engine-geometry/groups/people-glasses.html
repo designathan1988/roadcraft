@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: glasses</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: glasses</h1><p class="muted">15 objects, 90,814 triangles one of each.</p></header>
+<main><article class="row" id="People: glasses/elvs_ladies_sunglass1">
+  <a href="../images/2215-People-glasses-elvs-ladies-sunglass1.png"><img loading="lazy" src="../images/2215-People-glasses-elvs-ladies-sunglass1.png" alt="People: glasses/elvs_ladies_sunglass1"></a>
+  <div class="data">
+    <h3>elvs_ladies_sunglass1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (37,550 today, 938.8 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 2,308 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>37,550</dd><dt>Vertices</dt><dd>30,591</dd>
+      <dt>Levels</dt><dd>L0 37,550</dd>
+      <dt>Memory</dt><dd>1,396 KB (geometry 1,396 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>12 solids: 11 other, 1 quad</dd><dt>Hidden triangles</dt><dd>2,308</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_ladies_sunglass1.webp 512x512 WebP, 53450 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_ladies_sunglass1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_ladies_sunglass1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2215-People-glasses-elvs-ladies-sunglass1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/culturalibre_doc_ock_glasses">
+  <a href="../images/2068-People-glasses-culturalibre-doc-ock-glasses.png"><img loading="lazy" src="../images/2068-People-glasses-culturalibre-doc-ock-glasses.png" alt="People: glasses/culturalibre_doc_ock_glasses"></a>
+  <div class="data">
+    <h3>culturalibre_doc_ock_glasses</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (20,224 today, 505.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20,224</dd><dt>Vertices</dt><dd>10,522</dd>
+      <dt>Levels</dt><dd>L0 20,224</dd>
+      <dt>Memory</dt><dd>566 KB (geometry 566 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_doc_ock_glasses.webp 256x256 WebP, 2614 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_doc_ock_glasses.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_doc_ock_glasses.webp</dd>
+    </dl>
+    <a class="file" href="../models/2068-People-glasses-culturalibre-doc-ock-glasses.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/kwnet_at_optical_glasses">
+  <a href="../images/2330-People-glasses-kwnet-at-optical-glasses.png"><img loading="lazy" src="../images/2330-People-glasses-kwnet-at-optical-glasses.png" alt="People: glasses/kwnet_at_optical_glasses"></a>
+  <div class="data">
+    <h3>kwnet_at_optical_glasses</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (6,196 today, 154.9 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 613 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,196</dd><dt>Vertices</dt><dd>3,671</dd>
+      <dt>Levels</dt><dd>L0 6,196</dd>
+      <dt>Memory</dt><dd>187 KB (geometry 187 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 1 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>613</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map kwnet_at_optical_glasses.webp 256x256 WebP, 800 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/kwnet_at_optical_glasses.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture kwnet_at_optical_glasses.webp</dd>
+    </dl>
+    <a class="file" href="../models/2330-People-glasses-kwnet-at-optical-glasses.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/punkduck_glasses_modern_form">
+  <a href="../images/2465-People-glasses-punkduck-glasses-modern-form.png"><img loading="lazy" src="../images/2465-People-glasses-punkduck-glasses-modern-form.png" alt="People: glasses/punkduck_glasses_modern_form"></a>
+  <div class="data">
+    <h3>punkduck_glasses_modern_form</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,520 today, 113.0 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 13 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,520</dd><dt>Vertices</dt><dd>2,651</dd>
+      <dt>Levels</dt><dd>L0 4,520</dd>
+      <dt>Memory</dt><dd>136 KB (geometry 136 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 3 other, 4 closed cylinder</dd><dt>Hidden triangles</dt><dd>13</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_glasses_modern_form.webp 512x512 WebP, 21772 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_glasses_modern_form.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_glasses_modern_form.webp</dd>
+    </dl>
+    <a class="file" href="../models/2465-People-glasses-punkduck-glasses-modern-form.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/toigo_round_glasses_leopard">
+  <a href="../images/2593-People-glasses-toigo-round-glasses-leopard.png"><img loading="lazy" src="../images/2593-People-glasses-toigo-round-glasses-leopard.png" alt="People: glasses/toigo_round_glasses_leopard"></a>
+  <div class="data">
+    <h3>toigo_round_glasses_leopard</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,396 today, 109.9 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 108 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,396</dd><dt>Vertices</dt><dd>4,030</dd>
+      <dt>Levels</dt><dd>L0 4,396</dd>
+      <dt>Memory</dt><dd>177 KB (geometry 177 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>108</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_round_glasses_leopard.webp 256x256 WebP, 27208 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_round_glasses_leopard.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_round_glasses_leopard.webp</dd>
+    </dl>
+    <a class="file" href="../models/2593-People-glasses-toigo-round-glasses-leopard.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/spamrakuen_sagerfrogs_glasses_03">
+  <a href="../images/2545-People-glasses-spamrakuen-sagerfrogs-glasses-03.png"><img loading="lazy" src="../images/2545-People-glasses-spamrakuen-sagerfrogs-glasses-03.png" alt="People: glasses/spamrakuen_sagerfrogs_glasses_03"></a>
+  <div class="data">
+    <h3>spamrakuen_sagerfrogs_glasses_03</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (3,284 today, 82.1 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 532 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,284</dd><dt>Vertices</dt><dd>5,797</dd>
+      <dt>Levels</dt><dd>L0 3,284</dd>
+      <dt>Memory</dt><dd>220 KB (geometry 220 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>9 solids: 3 other, 6 closed cylinder</dd><dt>Hidden triangles</dt><dd>532</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map spamrakuen_sagerfrogs_glasses_03.webp 256x256 WebP, 1036 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/spamrakuen_sagerfrogs_glasses_03.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture spamrakuen_sagerfrogs_glasses_03.webp</dd>
+    </dl>
+    <a class="file" href="../models/2545-People-glasses-spamrakuen-sagerfrogs-glasses-03.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/elvs_covid_goggles1">
+  <a href="../images/2158-People-glasses-elvs-covid-goggles1.png"><img loading="lazy" src="../images/2158-People-glasses-elvs-covid-goggles1.png" alt="People: glasses/elvs_covid_goggles1"></a>
+  <div class="data">
+    <h3>elvs_covid_goggles1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (2,880 today, 72.0 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,880</dd><dt>Vertices</dt><dd>1,686</dd>
+      <dt>Levels</dt><dd>L0 2,880</dd>
+      <dt>Memory</dt><dd>86 KB (geometry 86 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_covid_goggles1.webp 512x512 WebP, 17340 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_covid_goggles1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_covid_goggles1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2158-People-glasses-elvs-covid-goggles1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/punkduck_sport-sunglasses">
+  <a href="../images/2495-People-glasses-punkduck-sport-sunglasses.png"><img loading="lazy" src="../images/2495-People-glasses-punkduck-sport-sunglasses.png" alt="People: glasses/punkduck_sport-sunglasses"></a>
+  <div class="data">
+    <h3>punkduck_sport-sunglasses</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (2,872 today, 71.8 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,872</dd><dt>Vertices</dt><dd>1,692</dd>
+      <dt>Levels</dt><dd>L0 2,872</dd>
+      <dt>Memory</dt><dd>87 KB (geometry 87 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 1 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_sport-sunglasses.webp 512x512 WebP, 6570 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_sport-sunglasses.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_sport-sunglasses.webp</dd>
+    </dl>
+    <a class="file" href="../models/2495-People-glasses-punkduck-sport-sunglasses.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/punkduck_goggles">
+  <a href="../images/2466-People-glasses-punkduck-goggles.png"><img loading="lazy" src="../images/2466-People-glasses-punkduck-goggles.png" alt="People: glasses/punkduck_goggles"></a>
+  <div class="data">
+    <h3>punkduck_goggles</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (2,060 today, 51.5 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,060</dd><dt>Vertices</dt><dd>1,375</dd>
+      <dt>Levels</dt><dd>L0 2,060</dd>
+      <dt>Memory</dt><dd>67 KB (geometry 67 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_goggles.webp 512x512 WebP, 4772 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_goggles.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_goggles.webp</dd>
+    </dl>
+    <a class="file" href="../models/2466-People-glasses-punkduck-goggles.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/spamrakuen_sagerfrogs_glasses_04">
+  <a href="../images/2546-People-glasses-spamrakuen-sagerfrogs-glasses-04.png"><img loading="lazy" src="../images/2546-People-glasses-spamrakuen-sagerfrogs-glasses-04.png" alt="People: glasses/spamrakuen_sagerfrogs_glasses_04"></a>
+  <div class="data">
+    <h3>spamrakuen_sagerfrogs_glasses_04</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (1,736 today, 43.4 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 82 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,736</dd><dt>Vertices</dt><dd>2,315</dd>
+      <dt>Levels</dt><dd>L0 1,736</dd>
+      <dt>Memory</dt><dd>93 KB (geometry 93 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 4 other, 3 closed cylinder</dd><dt>Hidden triangles</dt><dd>82</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map spamrakuen_sagerfrogs_glasses_04.webp 256x256 WebP, 1036 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/spamrakuen_sagerfrogs_glasses_04.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture spamrakuen_sagerfrogs_glasses_04.webp</dd>
+    </dl>
+    <a class="file" href="../models/2546-People-glasses-spamrakuen-sagerfrogs-glasses-04.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/spamrakuen_sagerfrogs_glasses_02">
+  <a href="../images/2544-People-glasses-spamrakuen-sagerfrogs-glasses-02.png"><img loading="lazy" src="../images/2544-People-glasses-spamrakuen-sagerfrogs-glasses-02.png" alt="People: glasses/spamrakuen_sagerfrogs_glasses_02"></a>
+  <div class="data">
+    <h3>spamrakuen_sagerfrogs_glasses_02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (1,452 today, 36.3 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 119 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,452</dd><dt>Vertices</dt><dd>2,530</dd>
+      <dt>Levels</dt><dd>L0 1,452</dd>
+      <dt>Memory</dt><dd>96 KB (geometry 96 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>15 solids: 4 closed cylinder, 10 box, 1 other</dd><dt>Hidden triangles</dt><dd>119</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map spamrakuen_sagerfrogs_glasses_02.webp 256x256 WebP, 1036 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/spamrakuen_sagerfrogs_glasses_02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture spamrakuen_sagerfrogs_glasses_02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2544-People-glasses-spamrakuen-sagerfrogs-glasses-02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/frankyaye_glasses_library_male">
+  <a href="../images/2297-People-glasses-frankyaye-glasses-library-male.png"><img loading="lazy" src="../images/2297-People-glasses-frankyaye-glasses-library-male.png" alt="People: glasses/frankyaye_glasses_library_male"></a>
+  <div class="data">
+    <h3>frankyaye_glasses_library_male</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (1,412 today, 35.3 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 55 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,412</dd><dt>Vertices</dt><dd>1,377</dd>
+      <dt>Levels</dt><dd>L0 1,412</dd>
+      <dt>Memory</dt><dd>60 KB (geometry 60 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 6 other</dd><dt>Hidden triangles</dt><dd>55</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map frankyaye_glasses_library_male.webp 256x256 WebP, 1162 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/frankyaye_glasses_library_male.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture frankyaye_glasses_library_male.webp</dd>
+    </dl>
+    <a class="file" href="../models/2297-People-glasses-frankyaye-glasses-library-male.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/spamrakuen_sagerfrogs_glasses_01">
+  <a href="../images/2543-People-glasses-spamrakuen-sagerfrogs-glasses-01.png"><img loading="lazy" src="../images/2543-People-glasses-spamrakuen-sagerfrogs-glasses-01.png" alt="People: glasses/spamrakuen_sagerfrogs_glasses_01"></a>
+  <div class="data">
+    <h3>spamrakuen_sagerfrogs_glasses_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (1,284 today, 32.1 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 36 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,284</dd><dt>Vertices</dt><dd>2,278</dd>
+      <dt>Levels</dt><dd>L0 1,284</dd>
+      <dt>Memory</dt><dd>86 KB (geometry 86 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 3 other, 4 closed cylinder</dd><dt>Hidden triangles</dt><dd>36</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map spamrakuen_sagerfrogs_glasses_01.webp 256x256 WebP, 1036 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/spamrakuen_sagerfrogs_glasses_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture spamrakuen_sagerfrogs_glasses_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2543-People-glasses-spamrakuen-sagerfrogs-glasses-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/spamrakuen_tbm_glasses_frames_01">
+  <a href="../images/2547-People-glasses-spamrakuen-tbm-glasses-frames-01.png"><img loading="lazy" src="../images/2547-People-glasses-spamrakuen-tbm-glasses-frames-01.png" alt="People: glasses/spamrakuen_tbm_glasses_frames_01"></a>
+  <div class="data">
+    <h3>spamrakuen_tbm_glasses_frames_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (808 today, 20.2 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>808</dd><dt>Vertices</dt><dd>723</dd>
+      <dt>Levels</dt><dd>L0 808</dd>
+      <dt>Memory</dt><dd>32 KB (geometry 32 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map spamrakuen_tbm_glasses_frames_01.webp 256x256 WebP, 664 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/spamrakuen_tbm_glasses_frames_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture spamrakuen_tbm_glasses_frames_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2547-People-glasses-spamrakuen-tbm-glasses-frames-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: glasses/ews_3d_glasses">
+  <a href="../images/2267-People-glasses-ews-3d-glasses.png"><img loading="lazy" src="../images/2267-People-glasses-ews-3d-glasses.png" alt="People: glasses/ews_3d_glasses"></a>
+  <div class="data">
+    <h3>ews_3d_glasses</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (140 today, 3.5 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>140</dd><dt>Vertices</dt><dd>108</dd>
+      <dt>Levels</dt><dd>L0 140</dd>
+      <dt>Memory</dt><dd>5 KB (geometry 5 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map ews_3d_glasses.webp 256x256 WebP, 1662 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/ews_3d_glasses.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture ews_3d_glasses.webp</dd>
+    </dl>
+    <a class="file" href="../models/2267-People-glasses-ews-3d-glasses.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

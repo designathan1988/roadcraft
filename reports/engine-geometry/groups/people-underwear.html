@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: underwear</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: underwear</h1><p class="muted">58 objects, 331,833 triangles one of each.</p></header>
+<main><article class="row" id="People: underwear/elvs_all_tied_up_bikini">
+  <a href="../images/2145-People-underwear-elvs-all-tied-up-bikini.png"><img loading="lazy" src="../images/2145-People-underwear-elvs-all-tied-up-bikini.png" alt="People: underwear/elvs_all_tied_up_bikini"></a>
+  <div class="data">
+    <h3>elvs_all_tied_up_bikini</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (155,930 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 2,844 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>155,930</dd><dt>Vertices</dt><dd>106,732</dd>
+      <dt>Levels</dt><dd>L0 155,930</dd>
+      <dt>Memory</dt><dd>5,163 KB (geometry 5,163 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>9 solids: 9 other</dd><dt>Hidden triangles</dt><dd>2,844</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_all_tied_up_bikini.webp 256x256 WebP, 24334 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_all_tied_up_bikini.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 99 base-body vertices under it<br>texture elvs_all_tied_up_bikini.webp</dd>
+    </dl>
+    <a class="file" href="../models/2145-People-underwear-elvs-all-tied-up-bikini.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_camisole1">
+  <a href="../images/2156-People-underwear-elvs-camisole1.png"><img loading="lazy" src="../images/2156-People-underwear-elvs-camisole1.png" alt="People: underwear/elvs_camisole1"></a>
+  <div class="data">
+    <h3>elvs_camisole1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (26,091 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 70 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26,091</dd><dt>Vertices</dt><dd>25,853</dd>
+      <dt>Levels</dt><dd>L0 26,091</dd>
+      <dt>Memory</dt><dd>1,114 KB (geometry 1,114 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>21 solids: 21 other</dd><dt>Hidden triangles</dt><dd>70</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_camisole1.webp 512x512 WebP, 86624 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_camisole1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_camisole1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2156-People-underwear-elvs-camisole1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_bandeau_swimwear_top_1">
+  <a href="../images/2148-People-underwear-elvs-bandeau-swimwear-top-1.png"><img loading="lazy" src="../images/2148-People-underwear-elvs-bandeau-swimwear-top-1.png" alt="People: underwear/elvs_bandeau_swimwear_top_1"></a>
+  <div class="data">
+    <h3>elvs_bandeau_swimwear_top_1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (23,320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 5 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>23,320</dd><dt>Vertices</dt><dd>21,847</dd>
+      <dt>Levels</dt><dd>L0 23,320</dd>
+      <dt>Memory</dt><dd>956 KB (geometry 956 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>5</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_bandeau_swimwear_top_1.webp 512x512 WebP, 34250 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_bandeau_swimwear_top_1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_bandeau_swimwear_top_1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2148-People-underwear-elvs-bandeau-swimwear-top-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_bow_front_bra">
+  <a href="../images/2152-People-underwear-elvs-bow-front-bra.png"><img loading="lazy" src="../images/2152-People-underwear-elvs-bow-front-bra.png" alt="People: underwear/elvs_bow_front_bra"></a>
+  <div class="data">
+    <h3>elvs_bow_front_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (9,116 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 76 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>9,116</dd><dt>Vertices</dt><dd>8,936</dd>
+      <dt>Levels</dt><dd>L0 9,116</dd>
+      <dt>Memory</dt><dd>386 KB (geometry 386 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>32 solids: 27 other, 5 closed cylinder</dd><dt>Hidden triangles</dt><dd>76</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_bow_front_bra.webp 256x256 WebP, 12036 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_bow_front_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_bow_front_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2152-People-underwear-elvs-bow-front-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/mindfront_f_one-piece_swimsuit_01">
+  <a href="../images/2395-People-underwear-mindfront-f-one-piece-swimsuit-01.png"><img loading="lazy" src="../images/2395-People-underwear-mindfront-f-one-piece-swimsuit-01.png" alt="People: underwear/mindfront_f_one-piece_swimsuit_01"></a>
+  <div class="data">
+    <h3>mindfront_f_one-piece_swimsuit_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (6,676 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 18 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,676</dd><dt>Vertices</dt><dd>4,023</dd>
+      <dt>Levels</dt><dd>L0 6,676</dd>
+      <dt>Memory</dt><dd>204 KB (geometry 204 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>18</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map mindfront_f_one-piece_swimsuit_01.webp 256x256 WebP, 4382 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_f_one-piece_swimsuit_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 906 base-body vertices under it<br>texture mindfront_f_one-piece_swimsuit_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2395-People-underwear-mindfront-f-one-piece-swimsuit-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_lace_panty">
+  <a href="../images/2213-People-underwear-elvs-lace-panty.png"><img loading="lazy" src="../images/2213-People-underwear-elvs-lace-panty.png" alt="People: underwear/elvs_lace_panty"></a>
+  <div class="data">
+    <h3>elvs_lace_panty</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (6,496 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 99 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,496</dd><dt>Vertices</dt><dd>6,371</dd>
+      <dt>Levels</dt><dd>L0 6,496</dd>
+      <dt>Memory</dt><dd>275 KB (geometry 275 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>99</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_lace_panty.webp 512x512 WebP, 135904 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_lace_panty.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_lace_panty.webp</dd>
+    </dl>
+    <a class="file" href="../models/2213-People-underwear-elvs-lace-panty.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/joepal_plain_bra">
+  <a href="../images/2326-People-underwear-joepal-plain-bra.png"><img loading="lazy" src="../images/2326-People-underwear-joepal-plain-bra.png" alt="People: underwear/joepal_plain_bra"></a>
+  <div class="data">
+    <h3>joepal_plain_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,916 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,916</dd><dt>Vertices</dt><dd>2,664</dd>
+      <dt>Levels</dt><dd>L0 4,916</dd>
+      <dt>Memory</dt><dd>141 KB (geometry 141 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map joepal_plain_bra.webp 256x256 WebP, 1208 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/joepal_plain_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 189 base-body vertices under it<br>texture joepal_plain_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2326-People-underwear-joepal-plain-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/kwnet_at_pantyhose01">
+  <a href="../images/2331-People-underwear-kwnet-at-pantyhose01.png"><img loading="lazy" src="../images/2331-People-underwear-kwnet-at-pantyhose01.png" alt="People: underwear/kwnet_at_pantyhose01"></a>
+  <div class="data">
+    <h3>kwnet_at_pantyhose01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,654 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,654</dd><dt>Vertices</dt><dd>2,807</dd>
+      <dt>Levels</dt><dd>L0 4,654</dd>
+      <dt>Memory</dt><dd>142 KB (geometry 142 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map kwnet_at_pantyhose01.webp 256x256 WebP, 3012 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/kwnet_at_pantyhose01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture kwnet_at_pantyhose01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2331-People-underwear-kwnet-at-pantyhose01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_brazilian_bikini_bra">
+  <a href="../images/2443-People-underwear-punkduck-brazilian-bikini-bra.png"><img loading="lazy" src="../images/2443-People-underwear-punkduck-brazilian-bikini-bra.png" alt="People: underwear/punkduck_brazilian_bikini_bra"></a>
+  <div class="data">
+    <h3>punkduck_brazilian_bikini_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,296 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,296</dd><dt>Vertices</dt><dd>2,925</dd>
+      <dt>Levels</dt><dd>L0 4,296</dd>
+      <dt>Memory</dt><dd>142 KB (geometry 142 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>26 solids: 20 other, 6 closed cylinder</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_brazilian_bikini_bra.webp 256x256 WebP, 32240 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_brazilian_bikini_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 182 base-body vertices under it<br>texture punkduck_brazilian_bikini_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2443-People-underwear-punkduck-brazilian-bikini-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_swimwear_micro_shorts">
+  <a href="../images/2256-People-underwear-elvs-swimwear-micro-shorts.png"><img loading="lazy" src="../images/2256-People-underwear-elvs-swimwear-micro-shorts.png" alt="People: underwear/elvs_swimwear_micro_shorts"></a>
+  <div class="data">
+    <h3>elvs_swimwear_micro_shorts</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,161 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 117 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,161</dd><dt>Vertices</dt><dd>4,421</dd>
+      <dt>Levels</dt><dd>L0 4,161</dd>
+      <dt>Memory</dt><dd>187 KB (geometry 187 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>117</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_swimwear_micro_shorts.webp 512x512 WebP, 17946 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_swimwear_micro_shorts.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_swimwear_micro_shorts.webp</dd>
+    </dl>
+    <a class="file" href="../models/2256-People-underwear-elvs-swimwear-micro-shorts.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_bikini02_bra">
+  <a href="../images/2439-People-underwear-punkduck-bikini02-bra.png"><img loading="lazy" src="../images/2439-People-underwear-punkduck-bikini02-bra.png" alt="People: underwear/punkduck_bikini02_bra"></a>
+  <div class="data">
+    <h3>punkduck_bikini02_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,024 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,024</dd><dt>Vertices</dt><dd>2,856</dd>
+      <dt>Levels</dt><dd>L0 4,024</dd>
+      <dt>Memory</dt><dd>136 KB (geometry 136 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>11 solids: 11 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_bikini02_bra.webp 256x256 WebP, 23114 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_bikini02_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 184 base-body vertices under it<br>texture punkduck_bikini02_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2439-People-underwear-punkduck-bikini02-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_french_lingerie_stockings">
+  <a href="../images/2460-People-underwear-punkduck-french-lingerie-stockings.png"><img loading="lazy" src="../images/2460-People-underwear-punkduck-french-lingerie-stockings.png" alt="People: underwear/punkduck_french_lingerie_stockings"></a>
+  <div class="data">
+    <h3>punkduck_french_lingerie_stockings</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,904 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,904</dd><dt>Vertices</dt><dd>2,348</dd>
+      <dt>Levels</dt><dd>L0 3,904</dd>
+      <dt>Memory</dt><dd>119 KB (geometry 119 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_french_lingerie_stockings.webp 256x256 WebP, 8584 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_french_lingerie_stockings.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_french_lingerie_stockings.webp</dd>
+    </dl>
+    <a class="file" href="../models/2460-People-underwear-punkduck-french-lingerie-stockings.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_bow_bottom_panty">
+  <a href="../images/2151-People-underwear-elvs-bow-bottom-panty.png"><img loading="lazy" src="../images/2151-People-underwear-elvs-bow-bottom-panty.png" alt="People: underwear/elvs_bow_bottom_panty"></a>
+  <div class="data">
+    <h3>elvs_bow_bottom_panty</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,863 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 17 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,863</dd><dt>Vertices</dt><dd>4,003</dd>
+      <dt>Levels</dt><dd>L0 3,863</dd>
+      <dt>Memory</dt><dd>170 KB (geometry 170 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>5 solids: 5 other</dd><dt>Hidden triangles</dt><dd>17</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_bow_bottom_panty.webp 256x256 WebP, 25194 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_bow_bottom_panty.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_bow_bottom_panty.webp</dd>
+    </dl>
+    <a class="file" href="../models/2151-People-underwear-elvs-bow-bottom-panty.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/mindfront_bikini_01">
+  <a href="../images/2362-People-underwear-mindfront-bikini-01.png"><img loading="lazy" src="../images/2362-People-underwear-mindfront-bikini-01.png" alt="People: underwear/mindfront_bikini_01"></a>
+  <div class="data">
+    <h3>mindfront_bikini_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,404 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,404</dd><dt>Vertices</dt><dd>2,023</dd>
+      <dt>Levels</dt><dd>L0 3,404</dd>
+      <dt>Memory</dt><dd>103 KB (geometry 103 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map mindfront_bikini_01.webp 256x256 WebP, 1996 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_bikini_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 588 base-body vertices under it<br>texture mindfront_bikini_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2362-People-underwear-mindfront-bikini-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_teddy_erotic_lingerie">
+  <a href="../images/2505-People-underwear-punkduck-teddy-erotic-lingerie.png"><img loading="lazy" src="../images/2505-People-underwear-punkduck-teddy-erotic-lingerie.png" alt="People: underwear/punkduck_teddy_erotic_lingerie"></a>
+  <div class="data">
+    <h3>punkduck_teddy_erotic_lingerie</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,386 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 9 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,386</dd><dt>Vertices</dt><dd>2,077</dd>
+      <dt>Levels</dt><dd>L0 3,386</dd>
+      <dt>Memory</dt><dd>105 KB (geometry 105 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>10 solids: 10 other</dd><dt>Hidden triangles</dt><dd>9</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_teddy_erotic_lingerie.webp 256x256 WebP, 19770 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_teddy_erotic_lingerie.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 393 base-body vertices under it<br>texture punkduck_teddy_erotic_lingerie.webp</dd>
+    </dl>
+    <a class="file" href="../models/2505-People-underwear-punkduck-teddy-erotic-lingerie.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_french_lingerie_suspender_belt">
+  <a href="../images/2461-People-underwear-punkduck-french-lingerie-suspender-belt.png"><img loading="lazy" src="../images/2461-People-underwear-punkduck-french-lingerie-suspender-belt.png" alt="People: underwear/punkduck_french_lingerie_suspender_belt"></a>
+  <div class="data">
+    <h3>punkduck_french_lingerie_suspender_belt</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,324 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,324</dd><dt>Vertices</dt><dd>2,164</dd>
+      <dt>Levels</dt><dd>L0 3,324</dd>
+      <dt>Memory</dt><dd>107 KB (geometry 107 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>21 solids: 21 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_french_lingerie_suspender_belt.webp 256x256 WebP, 23034 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_french_lingerie_suspender_belt.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_french_lingerie_suspender_belt.webp</dd>
+    </dl>
+    <a class="file" href="../models/2461-People-underwear-punkduck-french-lingerie-suspender-belt.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_halterneck_romper">
+  <a href="../images/2467-People-underwear-punkduck-halterneck-romper.png"><img loading="lazy" src="../images/2467-People-underwear-punkduck-halterneck-romper.png" alt="People: underwear/punkduck_halterneck_romper"></a>
+  <div class="data">
+    <h3>punkduck_halterneck_romper</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,998 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,998</dd><dt>Vertices</dt><dd>1,859</dd>
+      <dt>Levels</dt><dd>L0 2,998</dd>
+      <dt>Memory</dt><dd>93 KB (geometry 93 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_halterneck_romper.webp 256x256 WebP, 9450 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_halterneck_romper.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 818 base-body vertices under it<br>texture punkduck_halterneck_romper.webp</dd>
+    </dl>
+    <a class="file" href="../models/2467-People-underwear-punkduck-halterneck-romper.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_female_strapless_bodysuit">
+  <a href="../images/2455-People-underwear-punkduck-female-strapless-bodysuit.png"><img loading="lazy" src="../images/2455-People-underwear-punkduck-female-strapless-bodysuit.png" alt="People: underwear/punkduck_female_strapless_bodysuit"></a>
+  <div class="data">
+    <h3>punkduck_female_strapless_bodysuit</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,984 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,984</dd><dt>Vertices</dt><dd>1,744</dd>
+      <dt>Levels</dt><dd>L0 2,984</dd>
+      <dt>Memory</dt><dd>89 KB (geometry 89 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_female_strapless_bodysuit.webp 256x256 WebP, 5170 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_female_strapless_bodysuit.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 1020 base-body vertices under it<br>texture punkduck_female_strapless_bodysuit.webp</dd>
+    </dl>
+    <a class="file" href="../models/2455-People-underwear-punkduck-female-strapless-bodysuit.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_one_piece_bikini01">
+  <a href="../images/2481-People-underwear-punkduck-one-piece-bikini01.png"><img loading="lazy" src="../images/2481-People-underwear-punkduck-one-piece-bikini01.png" alt="People: underwear/punkduck_one_piece_bikini01"></a>
+  <div class="data">
+    <h3>punkduck_one_piece_bikini01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,874 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,874</dd><dt>Vertices</dt><dd>1,924</dd>
+      <dt>Levels</dt><dd>L0 2,874</dd>
+      <dt>Memory</dt><dd>94 KB (geometry 94 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_one_piece_bikini01.webp 256x256 WebP, 2440 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_one_piece_bikini01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 854 base-body vertices under it<br>texture punkduck_one_piece_bikini01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2481-People-underwear-punkduck-one-piece-bikini01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/jaldmic_stockings">
+  <a href="../images/2316-People-underwear-jaldmic-stockings.png"><img loading="lazy" src="../images/2316-People-underwear-jaldmic-stockings.png" alt="People: underwear/jaldmic_stockings"></a>
+  <div class="data">
+    <h3>jaldmic_stockings</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,680 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,680</dd><dt>Vertices</dt><dd>2,101</dd>
+      <dt>Levels</dt><dd>L0 2,680</dd>
+      <dt>Memory</dt><dd>97 KB (geometry 97 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 4 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map jaldmic_stockings.webp 256x256 WebP, 15174 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/jaldmic_stockings.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture jaldmic_stockings.webp</dd>
+    </dl>
+    <a class="file" href="../models/2316-People-underwear-jaldmic-stockings.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/wolgade_female_top_01">
+  <a href="../images/2621-People-underwear-wolgade-female-top-01.png"><img loading="lazy" src="../images/2621-People-underwear-wolgade-female-top-01.png" alt="People: underwear/wolgade_female_top_01"></a>
+  <div class="data">
+    <h3>wolgade_female_top_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,156 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,156</dd><dt>Vertices</dt><dd>1,278</dd>
+      <dt>Levels</dt><dd>L0 2,156</dd>
+      <dt>Memory</dt><dd>65 KB (geometry 65 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map wolgade_female_top_01.webp 256x256 WebP, 7684 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/wolgade_female_top_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 358 base-body vertices under it<br>texture wolgade_female_top_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2621-People-underwear-wolgade-female-top-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_babydoll">
+  <a href="../images/2434-People-underwear-punkduck-babydoll.png"><img loading="lazy" src="../images/2434-People-underwear-punkduck-babydoll.png" alt="People: underwear/punkduck_babydoll"></a>
+  <div class="data">
+    <h3>punkduck_babydoll</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,128 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,128</dd><dt>Vertices</dt><dd>1,297</dd>
+      <dt>Levels</dt><dd>L0 2,128</dd>
+      <dt>Memory</dt><dd>65 KB (geometry 65 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 7 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_babydoll.webp 256x256 WebP, 14146 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_babydoll.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_babydoll.webp</dd>
+    </dl>
+    <a class="file" href="../models/2434-People-underwear-punkduck-babydoll.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_bikini02_slip">
+  <a href="../images/2440-People-underwear-punkduck-bikini02-slip.png"><img loading="lazy" src="../images/2440-People-underwear-punkduck-bikini02-slip.png" alt="People: underwear/punkduck_bikini02_slip"></a>
+  <div class="data">
+    <h3>punkduck_bikini02_slip</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,108 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,108</dd><dt>Vertices</dt><dd>1,542</dd>
+      <dt>Levels</dt><dd>L0 2,108</dd>
+      <dt>Memory</dt><dd>73 KB (geometry 73 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>12 solids: 12 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_bikini02_slip.webp 256x256 WebP, 17116 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_bikini02_slip.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 81 base-body vertices under it<br>texture punkduck_bikini02_slip.webp</dd>
+    </dl>
+    <a class="file" href="../models/2440-People-underwear-punkduck-bikini02-slip.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_stockings_black_fishnet_large">
+  <a href="../images/2611-People-underwear-v0rt3x-stockings-black-fishnet-large.png"><img loading="lazy" src="../images/2611-People-underwear-v0rt3x-stockings-black-fishnet-large.png" alt="People: underwear/v0rt3x_stockings_black_fishnet_large"></a>
+  <div class="data">
+    <h3>v0rt3x_stockings_black_fishnet_large</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,088 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,088</dd><dt>Vertices</dt><dd>1,484</dd>
+      <dt>Levels</dt><dd>L0 2,088</dd>
+      <dt>Memory</dt><dd>71 KB (geometry 71 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_stockings_black_fishnet_large.webp 256x256 WebP, 50442 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_stockings_black_fishnet_large.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_stockings_black_fishnet_large.webp</dd>
+    </dl>
+    <a class="file" href="../models/2611-People-underwear-v0rt3x-stockings-black-fishnet-large.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_stockings_black_fishnet_medium">
+  <a href="../images/2612-People-underwear-v0rt3x-stockings-black-fishnet-medium.png"><img loading="lazy" src="../images/2612-People-underwear-v0rt3x-stockings-black-fishnet-medium.png" alt="People: underwear/v0rt3x_stockings_black_fishnet_medium"></a>
+  <div class="data">
+    <h3>v0rt3x_stockings_black_fishnet_medium</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,088 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_stockings_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,088</dd><dt>Vertices</dt><dd>1,484</dd>
+      <dt>Levels</dt><dd>L0 2,088</dd>
+      <dt>Memory</dt><dd>71 KB (geometry 71 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_stockings_black_fishnet_medium.webp 256x256 WebP, 77052 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_stockings_black_fishnet_medium.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_stockings_black_fishnet_medium.webp</dd>
+    </dl>
+    <a class="file" href="../models/2612-People-underwear-v0rt3x-stockings-black-fishnet-medium.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_stockings_black_fishnet_small">
+  <a href="../images/2613-People-underwear-v0rt3x-stockings-black-fishnet-small.png"><img loading="lazy" src="../images/2613-People-underwear-v0rt3x-stockings-black-fishnet-small.png" alt="People: underwear/v0rt3x_stockings_black_fishnet_small"></a>
+  <div class="data">
+    <h3>v0rt3x_stockings_black_fishnet_small</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,088 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_stockings_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,088</dd><dt>Vertices</dt><dd>1,484</dd>
+      <dt>Levels</dt><dd>L0 2,088</dd>
+      <dt>Memory</dt><dd>71 KB (geometry 71 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_stockings_black_fishnet_small.webp 256x256 WebP, 26790 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_stockings_black_fishnet_small.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_stockings_black_fishnet_small.webp</dd>
+    </dl>
+    <a class="file" href="../models/2613-People-underwear-v0rt3x-stockings-black-fishnet-small.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_stockings_white_fishnet_large">
+  <a href="../images/2614-People-underwear-v0rt3x-stockings-white-fishnet-large.png"><img loading="lazy" src="../images/2614-People-underwear-v0rt3x-stockings-white-fishnet-large.png" alt="People: underwear/v0rt3x_stockings_white_fishnet_large"></a>
+  <div class="data">
+    <h3>v0rt3x_stockings_white_fishnet_large</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,088 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_stockings_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,088</dd><dt>Vertices</dt><dd>1,484</dd>
+      <dt>Levels</dt><dd>L0 2,088</dd>
+      <dt>Memory</dt><dd>71 KB (geometry 71 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_stockings_white_fishnet_large.webp 256x256 WebP, 50644 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_stockings_white_fishnet_large.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_stockings_white_fishnet_large.webp</dd>
+    </dl>
+    <a class="file" href="../models/2614-People-underwear-v0rt3x-stockings-white-fishnet-large.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_stockings_white_fishnet_medium">
+  <a href="../images/2615-People-underwear-v0rt3x-stockings-white-fishnet-medium.png"><img loading="lazy" src="../images/2615-People-underwear-v0rt3x-stockings-white-fishnet-medium.png" alt="People: underwear/v0rt3x_stockings_white_fishnet_medium"></a>
+  <div class="data">
+    <h3>v0rt3x_stockings_white_fishnet_medium</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,088 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_stockings_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,088</dd><dt>Vertices</dt><dd>1,484</dd>
+      <dt>Levels</dt><dd>L0 2,088</dd>
+      <dt>Memory</dt><dd>71 KB (geometry 71 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_stockings_white_fishnet_medium.webp 256x256 WebP, 75550 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_stockings_white_fishnet_medium.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_stockings_white_fishnet_medium.webp</dd>
+    </dl>
+    <a class="file" href="../models/2615-People-underwear-v0rt3x-stockings-white-fishnet-medium.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_stockings_white_fishnet_small">
+  <a href="../images/2616-People-underwear-v0rt3x-stockings-white-fishnet-small.png"><img loading="lazy" src="../images/2616-People-underwear-v0rt3x-stockings-white-fishnet-small.png" alt="People: underwear/v0rt3x_stockings_white_fishnet_small"></a>
+  <div class="data">
+    <h3>v0rt3x_stockings_white_fishnet_small</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,088 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_stockings_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,088</dd><dt>Vertices</dt><dd>1,484</dd>
+      <dt>Levels</dt><dd>L0 2,088</dd>
+      <dt>Memory</dt><dd>71 KB (geometry 71 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_stockings_white_fishnet_small.webp 256x256 WebP, 26880 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_stockings_white_fishnet_small.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_stockings_white_fishnet_small.webp</dd>
+    </dl>
+    <a class="file" href="../models/2616-People-underwear-v0rt3x-stockings-white-fishnet-small.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_vintage_swimwear1_50s_strapless">
+  <a href="../images/2261-People-underwear-elvs-vintage-swimwear1-50s-strapless.png"><img loading="lazy" src="../images/2261-People-underwear-elvs-vintage-swimwear1-50s-strapless.png" alt="People: underwear/elvs_vintage_swimwear1_50s_strapless"></a>
+  <div class="data">
+    <h3>elvs_vintage_swimwear1_50s_strapless</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,984 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,984</dd><dt>Vertices</dt><dd>1,405</dd>
+      <dt>Levels</dt><dd>L0 1,984</dd>
+      <dt>Memory</dt><dd>67 KB (geometry 67 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_vintage_swimwear1_50s_strapless.webp 256x256 WebP, 272 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_vintage_swimwear1_50s_strapless.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_vintage_swimwear1_50s_strapless.webp</dd>
+    </dl>
+    <a class="file" href="../models/2261-People-underwear-elvs-vintage-swimwear1-50s-strapless.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_brazilian_bikini_slip">
+  <a href="../images/2444-People-underwear-punkduck-brazilian-bikini-slip.png"><img loading="lazy" src="../images/2444-People-underwear-punkduck-brazilian-bikini-slip.png" alt="People: underwear/punkduck_brazilian_bikini_slip"></a>
+  <div class="data">
+    <h3>punkduck_brazilian_bikini_slip</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,956 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,956</dd><dt>Vertices</dt><dd>1,386</dd>
+      <dt>Levels</dt><dd>L0 1,956</dd>
+      <dt>Memory</dt><dd>66 KB (geometry 66 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>15 solids: 15 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_brazilian_bikini_slip.webp 256x256 WebP, 25854 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_brazilian_bikini_slip.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 106 base-body vertices under it<br>texture punkduck_brazilian_bikini_slip.webp</dd>
+    </dl>
+    <a class="file" href="../models/2444-People-underwear-punkduck-brazilian-bikini-slip.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_bandeau_bikini_bra">
+  <a href="../images/2435-People-underwear-punkduck-bandeau-bikini-bra.png"><img loading="lazy" src="../images/2435-People-underwear-punkduck-bandeau-bikini-bra.png" alt="People: underwear/punkduck_bandeau_bikini_bra"></a>
+  <div class="data">
+    <h3>punkduck_bandeau_bikini_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,906 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,906</dd><dt>Vertices</dt><dd>1,176</dd>
+      <dt>Levels</dt><dd>L0 1,906</dd>
+      <dt>Memory</dt><dd>59 KB (geometry 59 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>6 solids: 5 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_bandeau_bikini_bra.webp 256x256 WebP, 22412 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_bandeau_bikini_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 236 base-body vertices under it<br>texture punkduck_bandeau_bikini_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2435-People-underwear-punkduck-bandeau-bikini-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_sport_bra">
+  <a href="../images/2496-People-underwear-punkduck-sport-bra.png"><img loading="lazy" src="../images/2496-People-underwear-punkduck-sport-bra.png" alt="People: underwear/punkduck_sport_bra"></a>
+  <div class="data">
+    <h3>punkduck_sport_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,836 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,836</dd><dt>Vertices</dt><dd>1,310</dd>
+      <dt>Levels</dt><dd>L0 1,836</dd>
+      <dt>Memory</dt><dd>62 KB (geometry 62 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_sport_bra.webp 256x256 WebP, 1836 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_sport_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 300 base-body vertices under it<br>texture punkduck_sport_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2496-People-underwear-punkduck-sport-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_french_lingerie_bra">
+  <a href="../images/2458-People-underwear-punkduck-french-lingerie-bra.png"><img loading="lazy" src="../images/2458-People-underwear-punkduck-french-lingerie-bra.png" alt="People: underwear/punkduck_french_lingerie_bra"></a>
+  <div class="data">
+    <h3>punkduck_french_lingerie_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,774 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,774</dd><dt>Vertices</dt><dd>1,456</dd>
+      <dt>Levels</dt><dd>L0 1,774</dd>
+      <dt>Memory</dt><dd>66 KB (geometry 66 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>14 solids: 14 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_french_lingerie_bra.webp 256x256 WebP, 27432 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_french_lingerie_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_french_lingerie_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2458-People-underwear-punkduck-french-lingerie-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/marco_105_stocking01">
+  <a href="../images/2354-People-underwear-marco-105-stocking01.png"><img loading="lazy" src="../images/2354-People-underwear-marco-105-stocking01.png" alt="People: underwear/marco_105_stocking01"></a>
+  <div class="data">
+    <h3>marco_105_stocking01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,676 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,676</dd><dt>Vertices</dt><dd>992</dd>
+      <dt>Levels</dt><dd>L0 1,676</dd>
+      <dt>Memory</dt><dd>51 KB (geometry 51 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map marco_105_stocking01.webp 256x256 WebP, 17816 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/marco_105_stocking01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture marco_105_stocking01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2354-People-underwear-marco-105-stocking01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/marco_105_stocking02">
+  <a href="../images/2355-People-underwear-marco-105-stocking02.png"><img loading="lazy" src="../images/2355-People-underwear-marco-105-stocking02.png" alt="People: underwear/marco_105_stocking02"></a>
+  <div class="data">
+    <h3>marco_105_stocking02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,676 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,676</dd><dt>Vertices</dt><dd>1,008</dd>
+      <dt>Levels</dt><dd>L0 1,676</dd>
+      <dt>Memory</dt><dd>51 KB (geometry 51 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map marco_105_stocking02.webp 256x256 WebP, 10284 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/marco_105_stocking02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture marco_105_stocking02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2355-People-underwear-marco-105-stocking02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/wolgade_female_panties_01">
+  <a href="../images/2620-People-underwear-wolgade-female-panties-01.png"><img loading="lazy" src="../images/2620-People-underwear-wolgade-female-panties-01.png" alt="People: underwear/wolgade_female_panties_01"></a>
+  <div class="data">
+    <h3>wolgade_female_panties_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,518 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,518</dd><dt>Vertices</dt><dd>996</dd>
+      <dt>Levels</dt><dd>L0 1,518</dd>
+      <dt>Memory</dt><dd>49 KB (geometry 49 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map wolgade_female_panties_01.webp 256x256 WebP, 4936 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/wolgade_female_panties_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 28 base-body vertices under it<br>texture wolgade_female_panties_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2620-People-underwear-wolgade-female-panties-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_frill_bikini_bottom">
+  <a href="../images/2463-People-underwear-punkduck-frill-bikini-bottom.png"><img loading="lazy" src="../images/2463-People-underwear-punkduck-frill-bikini-bottom.png" alt="People: underwear/punkduck_frill_bikini_bottom"></a>
+  <div class="data">
+    <h3>punkduck_frill_bikini_bottom</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,438 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,438</dd><dt>Vertices</dt><dd>957</dd>
+      <dt>Levels</dt><dd>L0 1,438</dd>
+      <dt>Memory</dt><dd>47 KB (geometry 47 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_frill_bikini_bottom.webp 256x256 WebP, 13600 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_frill_bikini_bottom.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 149 base-body vertices under it<br>texture punkduck_frill_bikini_bottom.webp</dd>
+    </dl>
+    <a class="file" href="../models/2463-People-underwear-punkduck-frill-bikini-bottom.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_shapewear">
+  <a href="../images/2488-People-underwear-punkduck-shapewear.png"><img loading="lazy" src="../images/2488-People-underwear-punkduck-shapewear.png" alt="People: underwear/punkduck_shapewear"></a>
+  <div class="data">
+    <h3>punkduck_shapewear</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,428 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,428</dd><dt>Vertices</dt><dd>852</dd>
+      <dt>Levels</dt><dd>L0 1,428</dd>
+      <dt>Memory</dt><dd>43 KB (geometry 43 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_shapewear.webp 256x256 WebP, 17286 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_shapewear.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 573 base-body vertices under it<br>texture punkduck_shapewear.webp</dd>
+    </dl>
+    <a class="file" href="../models/2488-People-underwear-punkduck-shapewear.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_frill_bikini_top">
+  <a href="../images/2464-People-underwear-punkduck-frill-bikini-top.png"><img loading="lazy" src="../images/2464-People-underwear-punkduck-frill-bikini-top.png" alt="People: underwear/punkduck_frill_bikini_top"></a>
+  <div class="data">
+    <h3>punkduck_frill_bikini_top</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,424 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,424</dd><dt>Vertices</dt><dd>916</dd>
+      <dt>Levels</dt><dd>L0 1,424</dd>
+      <dt>Memory</dt><dd>45 KB (geometry 45 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_frill_bikini_top.webp 256x256 WebP, 16442 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_frill_bikini_top.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 306 base-body vertices under it<br>texture punkduck_frill_bikini_top.webp</dd>
+    </dl>
+    <a class="file" href="../models/2464-People-underwear-punkduck-frill-bikini-top.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_bandeau_bra">
+  <a href="../images/2437-People-underwear-punkduck-bandeau-bra.png"><img loading="lazy" src="../images/2437-People-underwear-punkduck-bandeau-bra.png" alt="People: underwear/punkduck_bandeau_bra"></a>
+  <div class="data">
+    <h3>punkduck_bandeau_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,410 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,410</dd><dt>Vertices</dt><dd>1,111</dd>
+      <dt>Levels</dt><dd>L0 1,410</dd>
+      <dt>Memory</dt><dd>51 KB (geometry 51 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_bandeau_bra.webp 256x256 WebP, 28268 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_bandeau_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_bandeau_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2437-People-underwear-punkduck-bandeau-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_transparent_bra">
+  <a href="../images/2509-People-underwear-punkduck-transparent-bra.png"><img loading="lazy" src="../images/2509-People-underwear-punkduck-transparent-bra.png" alt="People: underwear/punkduck_transparent_bra"></a>
+  <div class="data">
+    <h3>punkduck_transparent_bra</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,232 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,232</dd><dt>Vertices</dt><dd>799</dd>
+      <dt>Levels</dt><dd>L0 1,232</dd>
+      <dt>Memory</dt><dd>39 KB (geometry 39 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 7 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_transparent_bra.webp 256x256 WebP, 15108 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_transparent_bra.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_transparent_bra.webp</dd>
+    </dl>
+    <a class="file" href="../models/2509-People-underwear-punkduck-transparent-bra.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_bandeau_bikini_slip">
+  <a href="../images/2436-People-underwear-punkduck-bandeau-bikini-slip.png"><img loading="lazy" src="../images/2436-People-underwear-punkduck-bandeau-bikini-slip.png" alt="People: underwear/punkduck_bandeau_bikini_slip"></a>
+  <div class="data">
+    <h3>punkduck_bandeau_bikini_slip</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,144 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,144</dd><dt>Vertices</dt><dd>694</dd>
+      <dt>Levels</dt><dd>L0 1,144</dd>
+      <dt>Memory</dt><dd>35 KB (geometry 35 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 7 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_bandeau_bikini_slip.webp 256x256 WebP, 18152 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_bandeau_bikini_slip.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 106 base-body vertices under it<br>texture punkduck_bandeau_bikini_slip.webp</dd>
+    </dl>
+    <a class="file" href="../models/2436-People-underwear-punkduck-bandeau-bikini-slip.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_string_5">
+  <a href="../images/2502-People-underwear-punkduck-string-5.png"><img loading="lazy" src="../images/2502-People-underwear-punkduck-string-5.png" alt="People: underwear/punkduck_string_5"></a>
+  <div class="data">
+    <h3>punkduck_string_5</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,084 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,084</dd><dt>Vertices</dt><dd>773</dd>
+      <dt>Levels</dt><dd>L0 1,084</dd>
+      <dt>Memory</dt><dd>37 KB (geometry 37 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_string_5.webp 256x256 WebP, 17096 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_string_5.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 123 base-body vertices under it<br>texture punkduck_string_5.webp</dd>
+    </dl>
+    <a class="file" href="../models/2502-People-underwear-punkduck-string-5.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_string_4">
+  <a href="../images/2501-People-underwear-punkduck-string-4.png"><img loading="lazy" src="../images/2501-People-underwear-punkduck-string-4.png" alt="People: underwear/punkduck_string_4"></a>
+  <div class="data">
+    <h3>punkduck_string_4</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,050 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,050</dd><dt>Vertices</dt><dd>759</dd>
+      <dt>Levels</dt><dd>L0 1,050</dd>
+      <dt>Memory</dt><dd>36 KB (geometry 36 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>5 solids: 5 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_string_4.webp 256x256 WebP, 23944 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_string_4.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_string_4.webp</dd>
+    </dl>
+    <a class="file" href="../models/2501-People-underwear-punkduck-string-4.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_strappy_lace_thong">
+  <a href="../images/2499-People-underwear-punkduck-strappy-lace-thong.png"><img loading="lazy" src="../images/2499-People-underwear-punkduck-strappy-lace-thong.png" alt="People: underwear/punkduck_strappy_lace_thong"></a>
+  <div class="data">
+    <h3>punkduck_strappy_lace_thong</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,044 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,044</dd><dt>Vertices</dt><dd>864</dd>
+      <dt>Levels</dt><dd>L0 1,044</dd>
+      <dt>Memory</dt><dd>39 KB (geometry 39 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_strappy_lace_thong.webp 256x256 WebP, 14138 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_strappy_lace_thong.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_strappy_lace_thong.webp</dd>
+    </dl>
+    <a class="file" href="../models/2499-People-underwear-punkduck-strappy-lace-thong.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_french_lingerie_mini_briefs">
+  <a href="../images/2459-People-underwear-punkduck-french-lingerie-mini-briefs.png"><img loading="lazy" src="../images/2459-People-underwear-punkduck-french-lingerie-mini-briefs.png" alt="People: underwear/punkduck_french_lingerie_mini_briefs"></a>
+  <div class="data">
+    <h3>punkduck_french_lingerie_mini_briefs</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (966 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>966</dd><dt>Vertices</dt><dd>726</dd>
+      <dt>Levels</dt><dd>L0 966</dd>
+      <dt>Memory</dt><dd>34 KB (geometry 34 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>5 solids: 5 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_french_lingerie_mini_briefs.webp 256x256 WebP, 26950 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_french_lingerie_mini_briefs.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_french_lingerie_mini_briefs.webp</dd>
+    </dl>
+    <a class="file" href="../models/2459-People-underwear-punkduck-french-lingerie-mini-briefs.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_sport_briefs">
+  <a href="../images/2497-People-underwear-punkduck-sport-briefs.png"><img loading="lazy" src="../images/2497-People-underwear-punkduck-sport-briefs.png" alt="People: underwear/punkduck_sport_briefs"></a>
+  <div class="data">
+    <h3>punkduck_sport_briefs</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (756 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>756</dd><dt>Vertices</dt><dd>528</dd>
+      <dt>Levels</dt><dd>L0 756</dd>
+      <dt>Memory</dt><dd>25 KB (geometry 25 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_sport_briefs.webp 256x256 WebP, 7382 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_sport_briefs.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 184 base-body vertices under it<br>texture punkduck_sport_briefs.webp</dd>
+    </dl>
+    <a class="file" href="../models/2497-People-underwear-punkduck-sport-briefs.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_armsleeves_black_fishnet_large">
+  <a href="../images/2605-People-underwear-v0rt3x-armsleeves-black-fishnet-large.png"><img loading="lazy" src="../images/2605-People-underwear-v0rt3x-armsleeves-black-fishnet-large.png" alt="People: underwear/v0rt3x_armsleeves_black_fishnet_large"></a>
+  <div class="data">
+    <h3>v0rt3x_armsleeves_black_fishnet_large</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (720 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>720</dd><dt>Vertices</dt><dd>552</dd>
+      <dt>Levels</dt><dd>L0 720</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_armsleeves_black_fishnet_large.webp 256x256 WebP, 49944 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_armsleeves_black_fishnet_large.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_armsleeves_black_fishnet_large.webp</dd>
+    </dl>
+    <a class="file" href="../models/2605-People-underwear-v0rt3x-armsleeves-black-fishnet-large.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_armsleeves_black_fishnet_medium">
+  <a href="../images/2606-People-underwear-v0rt3x-armsleeves-black-fishnet-medium.png"><img loading="lazy" src="../images/2606-People-underwear-v0rt3x-armsleeves-black-fishnet-medium.png" alt="People: underwear/v0rt3x_armsleeves_black_fishnet_medium"></a>
+  <div class="data">
+    <h3>v0rt3x_armsleeves_black_fishnet_medium</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (720 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_armsleeves_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>720</dd><dt>Vertices</dt><dd>552</dd>
+      <dt>Levels</dt><dd>L0 720</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_armsleeves_black_fishnet_medium.webp 256x256 WebP, 77564 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_armsleeves_black_fishnet_medium.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_armsleeves_black_fishnet_medium.webp</dd>
+    </dl>
+    <a class="file" href="../models/2606-People-underwear-v0rt3x-armsleeves-black-fishnet-medium.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_armsleeves_black_fishnet_small">
+  <a href="../images/2607-People-underwear-v0rt3x-armsleeves-black-fishnet-small.png"><img loading="lazy" src="../images/2607-People-underwear-v0rt3x-armsleeves-black-fishnet-small.png" alt="People: underwear/v0rt3x_armsleeves_black_fishnet_small"></a>
+  <div class="data">
+    <h3>v0rt3x_armsleeves_black_fishnet_small</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (720 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_armsleeves_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>720</dd><dt>Vertices</dt><dd>552</dd>
+      <dt>Levels</dt><dd>L0 720</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_armsleeves_black_fishnet_small.webp 256x256 WebP, 27076 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_armsleeves_black_fishnet_small.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_armsleeves_black_fishnet_small.webp</dd>
+    </dl>
+    <a class="file" href="../models/2607-People-underwear-v0rt3x-armsleeves-black-fishnet-small.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_armsleeves_white_fishnet_large">
+  <a href="../images/2608-People-underwear-v0rt3x-armsleeves-white-fishnet-large.png"><img loading="lazy" src="../images/2608-People-underwear-v0rt3x-armsleeves-white-fishnet-large.png" alt="People: underwear/v0rt3x_armsleeves_white_fishnet_large"></a>
+  <div class="data">
+    <h3>v0rt3x_armsleeves_white_fishnet_large</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (720 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_armsleeves_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>720</dd><dt>Vertices</dt><dd>552</dd>
+      <dt>Levels</dt><dd>L0 720</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_armsleeves_white_fishnet_large.webp 256x256 WebP, 50366 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_armsleeves_white_fishnet_large.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_armsleeves_white_fishnet_large.webp</dd>
+    </dl>
+    <a class="file" href="../models/2608-People-underwear-v0rt3x-armsleeves-white-fishnet-large.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_armsleeves_white_fishnet_medium">
+  <a href="../images/2609-People-underwear-v0rt3x-armsleeves-white-fishnet-medium.png"><img loading="lazy" src="../images/2609-People-underwear-v0rt3x-armsleeves-white-fishnet-medium.png" alt="People: underwear/v0rt3x_armsleeves_white_fishnet_medium"></a>
+  <div class="data">
+    <h3>v0rt3x_armsleeves_white_fishnet_medium</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (720 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_armsleeves_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>720</dd><dt>Vertices</dt><dd>552</dd>
+      <dt>Levels</dt><dd>L0 720</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_armsleeves_white_fishnet_medium.webp 256x256 WebP, 76010 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_armsleeves_white_fishnet_medium.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_armsleeves_white_fishnet_medium.webp</dd>
+    </dl>
+    <a class="file" href="../models/2609-People-underwear-v0rt3x-armsleeves-white-fishnet-medium.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/v0rt3x_armsleeves_white_fishnet_small">
+  <a href="../images/2610-People-underwear-v0rt3x-armsleeves-white-fishnet-small.png"><img loading="lazy" src="../images/2610-People-underwear-v0rt3x-armsleeves-white-fishnet-small.png" alt="People: underwear/v0rt3x_armsleeves_white_fishnet_small"></a>
+  <div class="data">
+    <h3>v0rt3x_armsleeves_white_fishnet_small</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (720 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as v0rt3x_armsleeves_black_fishnet_large : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>720</dd><dt>Vertices</dt><dd>552</dd>
+      <dt>Levels</dt><dd>L0 720</dd>
+      <dt>Memory</dt><dd>26 KB (geometry 26 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map v0rt3x_armsleeves_white_fishnet_small.webp 256x256 WebP, 27134 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/v0rt3x_armsleeves_white_fishnet_small.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture v0rt3x_armsleeves_white_fishnet_small.webp</dd>
+    </dl>
+    <a class="file" href="../models/2610-People-underwear-v0rt3x-armsleeves-white-fishnet-small.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_french_lingerie_thong">
+  <a href="../images/2462-People-underwear-punkduck-french-lingerie-thong.png"><img loading="lazy" src="../images/2462-People-underwear-punkduck-french-lingerie-thong.png" alt="People: underwear/punkduck_french_lingerie_thong"></a>
+  <div class="data">
+    <h3>punkduck_french_lingerie_thong</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (700 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>700</dd><dt>Vertices</dt><dd>532</dd>
+      <dt>Levels</dt><dd>L0 700</dd>
+      <dt>Memory</dt><dd>25 KB (geometry 25 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>10 solids: 10 other</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_french_lingerie_thong.webp 256x256 WebP, 25914 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_french_lingerie_thong.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_french_lingerie_thong.webp</dd>
+    </dl>
+    <a class="file" href="../models/2462-People-underwear-punkduck-french-lingerie-thong.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/marco_105_armsleeve02">
+  <a href="../images/2353-People-underwear-marco-105-armsleeve02.png"><img loading="lazy" src="../images/2353-People-underwear-marco-105-armsleeve02.png" alt="People: underwear/marco_105_armsleeve02"></a>
+  <div class="data">
+    <h3>marco_105_armsleeve02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (528 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>528</dd><dt>Vertices</dt><dd>322</dd>
+      <dt>Levels</dt><dd>L0 528</dd>
+      <dt>Memory</dt><dd>16 KB (geometry 16 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map marco_105_armsleeve02.webp 256x256 WebP, 10284 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/marco_105_armsleeve02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture marco_105_armsleeve02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2353-People-underwear-marco-105-armsleeve02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/punkduck_string_2">
+  <a href="../images/2500-People-underwear-punkduck-string-2.png"><img loading="lazy" src="../images/2500-People-underwear-punkduck-string-2.png" alt="People: underwear/punkduck_string_2"></a>
+  <div class="data">
+    <h3>punkduck_string_2</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (506 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>506</dd><dt>Vertices</dt><dd>327</dd>
+      <dt>Levels</dt><dd>L0 506</dd>
+      <dt>Memory</dt><dd>16 KB (geometry 16 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_string_2.webp 256x256 WebP, 8660 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_string_2.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_string_2.webp</dd>
+    </dl>
+    <a class="file" href="../models/2500-People-underwear-punkduck-string-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: underwear/elvs_crude_bootyshorts">
+  <a href="../images/2161-People-underwear-elvs-crude-bootyshorts.png"><img loading="lazy" src="../images/2161-People-underwear-elvs-crude-bootyshorts.png" alt="People: underwear/elvs_crude_bootyshorts"></a>
+  <div class="data">
+    <h3>elvs_crude_bootyshorts</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (460 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>460</dd><dt>Vertices</dt><dd>316</dd>
+      <dt>Levels</dt><dd>L0 460</dd>
+      <dt>Memory</dt><dd>15 KB (geometry 15 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_crude_bootyshorts.webp 256x256 WebP, 50924 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_crude_bootyshorts.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_crude_bootyshorts.webp</dd>
+    </dl>
+    <a class="file" href="../models/2161-People-underwear-elvs-crude-bootyshorts.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

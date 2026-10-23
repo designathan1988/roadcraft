@@ -1,0 +1,62 @@
+{
+ "id": "Effects/lightning",
+ "group": "Effects",
+ "name": "lightning",
+ "variation": "",
+ "origin": "effect",
+ "source": "src/render/lightning.ts",
+ "build": "lines",
+ "triangles": 0,
+ "vertices": 8,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B instanceStart:3xFloat32=12B instanceEnd:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 220,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 220,
+ "materials": "LineMaterial (transparent, opacity 1)",
+ "shader": "written",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 0,
+   "vertices": 8
+  }
+ ],
+ "solids": "",
+ "hiddenTriangles": null,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": true,
+ "sceneCopy": false,
+ "sheet": "images/2040-Effects-lightning.png",
+ "model": "models/2040-Effects-lightning.glb",
+ "pieces": [
+  {
+   "label": "LineSegments2",
+   "triangles": 6,
+   "vertices": 8,
+   "bytes": 220,
+   "material": "LineMaterial (transparent, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "4 line segments"
+ ],
+ "countKey": "one",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": null
+}

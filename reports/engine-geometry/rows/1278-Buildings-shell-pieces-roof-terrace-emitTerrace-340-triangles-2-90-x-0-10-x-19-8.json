@@ -1,0 +1,66 @@
+{
+ "id": "Buildings: shell pieces/roof terrace/emitTerrace, 340 triangles, 2.90 x 0.10 x 19.88 m, from residential medium large lot",
+ "group": "Buildings: shell pieces",
+ "name": "roof terrace",
+ "variation": "emitTerrace, 340 triangles, 2.90 x 0.10 x 19.88 m, from residential medium large lot",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitTerrace)",
+ "build": "merged",
+ "triangles": 340,
+ "vertices": 1020,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 36720,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 36720,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 340,
+   "vertices": 1020
+  }
+ ],
+ "solids": "34 solids: 34 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1278-Buildings-shell-pieces-roof-terrace-emitTerrace-340-triangles-2-90-x-0-10-x-19-8.png",
+ "model": "models/1278-Buildings-shell-pieces-roof-terrace-emitTerrace-340-triangles-2-90-x-0-10-x-19-8.glb",
+ "pieces": [
+  {
+   "label": "emitTerrace",
+   "triangles": 340,
+   "vertices": 1020,
+   "bytes": 36720,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: wood",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (340 today, 170.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: faces split along every bay and storey line (long slivers in the wireframe); one polygon a face, the lines in the facade shader.",
+  "Same triangles and vertices as facade bay (wall round an opening, reveals, sill, head) emitBay, 340 triangles, 18.00 x 25.30 x 15.00 m, from preset office: load one mesh and change its colour, not a second copy.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

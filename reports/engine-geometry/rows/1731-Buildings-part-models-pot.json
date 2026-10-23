@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: part models/pot",
+ "group": "Buildings: part models",
+ "name": "pot",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 112,
+ "vertices": 163,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 6540,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 6540,
+ "materials": "MeshStandardMaterial \"building-part-pot\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 112,
+   "vertices": 163
+  }
+ ],
+ "solids": "3 solids: 2 other, 1 closed cylinder",
+ "hiddenTriangles": 42,
+ "shadow": "casts: 1 box pieces under a shadow texel, else its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1731-Buildings-part-models-pot.png",
+ "model": "models/1731-Buildings-part-models-pot.glb",
+ "pieces": [
+  {
+   "label": "pot",
+   "triangles": 112,
+   "vertices": 163,
+   "bytes": 6540,
+   "material": "MeshStandardMaterial \"building-part-pot\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:pot",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (112 today, 4.7 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.",
+  "Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.",
+  "Remove its 42 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

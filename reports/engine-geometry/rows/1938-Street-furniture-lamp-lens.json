@@ -1,0 +1,60 @@
+{
+ "id": "Street furniture/lamp lens",
+ "group": "Street furniture",
+ "name": "lamp lens",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/scenery.ts",
+ "build": "instanced",
+ "triangles": 2,
+ "vertices": 4,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 156,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 156,
+ "materials": "MeshBasicMaterial (opacity 1)",
+ "shader": "three MeshBasicMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2,
+   "vertices": 4
+  }
+ ],
+ "solids": "1 solids: 1 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1938-Street-furniture-lamp-lens.png",
+ "model": "models/1938-Street-furniture-lamp-lens.glb",
+ "pieces": [
+  {
+   "label": "lamp lens",
+   "triangles": 2,
+   "vertices": 4,
+   "bytes": 156,
+   "material": "MeshBasicMaterial (opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:lamp",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

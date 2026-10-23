@@ -1,0 +1,105 @@
+{
+ "id": "Vehicles/truck",
+ "group": "Vehicles",
+ "name": "truck",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/vehicleModels.ts",
+ "build": "instanced",
+ "triangles": 2464,
+ "vertices": 4471,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 183228,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 183228,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2464,
+   "vertices": 4471
+  },
+  {
+   "level": 1,
+   "triangles": 96,
+   "vertices": 192
+  }
+ ],
+ "solids": "83 solids: 23 closed cylinder, 50 box, 8 quad, 2 other",
+ "hiddenTriangles": 202,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2023-Vehicles-truck.png",
+ "model": "models/2023-Vehicles-truck.glb",
+ "pieces": [
+  {
+   "label": "shell",
+   "triangles": 456,
+   "vertices": 936,
+   "bytes": 36432,
+   "material": ""
+  },
+  {
+   "label": "glass",
+   "triangles": 28,
+   "vertices": 46,
+   "bytes": 1824,
+   "material": ""
+  },
+  {
+   "label": "trim",
+   "triangles": 1072,
+   "vertices": 2028,
+   "bytes": 79440,
+   "material": ""
+  },
+  {
+   "label": "interior",
+   "triangles": 552,
+   "vertices": 1098,
+   "bytes": 42840,
+   "material": ""
+  },
+  {
+   "label": "accent",
+   "triangles": 40,
+   "vertices": 80,
+   "bytes": 3120,
+   "material": ""
+  },
+  {
+   "label": "steering wheel",
+   "triangles": 316,
+   "vertices": 283,
+   "bytes": 12084,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches"
+ ],
+ "countKey": "vehicle:truck",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,000 triangles (2,464 today, 2.5 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).",
+  "Remove its 202 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "23 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1000
+}

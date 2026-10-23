@@ -1,0 +1,80 @@
+{
+ "id": "Buildings: functions/sportsCourt/leisure (1 floors)",
+ "group": "Buildings: functions",
+ "name": "sportsCourt",
+ "variation": "leisure (1 floors)",
+ "origin": "kit",
+ "source": "src/world/buildings/cityBuildings.ts (CITY_BUILDINGS)",
+ "build": "merged",
+ "triangles": 2134,
+ "vertices": 3992,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B shellFinish:1xFloat32=4B aDecay:1xFloat32=4B shellGround:1xFloat32=4B",
+ "bytesPerVertex": 88,
+ "geometryBytes": 16600,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 16600,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2134,
+   "vertices": 3992
+  }
+ ],
+ "solids": "214 solids: 107 other, 107 open prism",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 1,
+ "trianglesPerFloor": 2134,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1842-Buildings-functions-sportsCourt-leisure-1-floors.png",
+ "model": "models/1842-Buildings-functions-sportsCourt-leisure-1-floors.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 226,
+   "vertices": 176,
+   "bytes": 5580,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-lotBox x106",
+   "triangles": 1060,
+   "vertices": 2120,
+   "bytes": 5604,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-lotRail x106",
+   "triangles": 848,
+   "vertices": 1696,
+   "bytes": 5416,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built alone at its detail level (L0) by buildBuildingMeshes, every part with it; its far levels (facade L1, masses) are the building layer's cells"
+ ],
+ "countKey": "building:Buildings: functions:sportsCourt:leisure",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,500 triangles (2,134 today, 1.4 times the budget): blocks as boxes (10 triangles each) with the facade shader (windows, frames, sills, slabs, shopfronts, doors, fake interiors), roof and props as geometry near only.",
+  "Picture: the paved ground of the lot is a grid of quads round the building; one quad with the paving painted.",
+  "107 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "88 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1500
+}

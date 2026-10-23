@@ -1,0 +1,70 @@
+{
+ "id": "Barriers/guardrail/70 m run",
+ "group": "Barriers",
+ "name": "guardrail",
+ "variation": "70 m run",
+ "origin": "kit",
+ "source": "src/render/barriers.ts (createBarriers, sync)",
+ "build": "instanced",
+ "triangles": 648,
+ "vertices": 1296,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B",
+ "bytesPerVertex": 64,
+ "geometryBytes": 5776,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 5776,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.4, metalness 0.75, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.32, metalness 0.8, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 648,
+   "vertices": 1296
+  }
+ ],
+ "solids": "54 solids: 54 box",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2665-Barriers-guardrail-70-m-run.png",
+ "model": "models/2665-Barriers-guardrail-70-m-run.glb",
+ "pieces": [
+  {
+   "label": "barrier-guardrail-post x36",
+   "triangles": 432,
+   "vertices": 864,
+   "bytes": 2888,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.4, metalness 0.75, opacity 1)"
+  },
+  {
+   "label": "barrier-guardrail-beam x18",
+   "triangles": 216,
+   "vertices": 432,
+   "bytes": 2888,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.32, metalness 0.8, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "barrier:guardrail",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (648 today, 16.2 times the budget): one plane a run with its bars or boards cut out of a texture (2 triangles a 25 m run in Cidade Otimizada), posts painted.",
+  "Cut-out plane a run.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

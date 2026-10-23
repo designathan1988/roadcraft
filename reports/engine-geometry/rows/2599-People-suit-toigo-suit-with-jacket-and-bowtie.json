@@ -1,0 +1,68 @@
+{
+ "id": "People: suit/toigo_suit_with_jacket_and_bowtie",
+ "group": "People: suit",
+ "name": "toigo_suit_with_jacket_and_bowtie",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/toigo_suit_with_jacket_and_bowtie.bin",
+ "build": "skinned",
+ "triangles": 24654,
+ "vertices": 14115,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 747528,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 747528,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 24654,
+   "vertices": 14115
+  }
+ ],
+ "solids": "16 solids: 16 other",
+ "hiddenTriangles": 25,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2599-People-suit-toigo-suit-with-jacket-and-bowtie.png",
+ "model": "models/2599-People-suit-toigo-suit-with-jacket-and-bowtie.glb",
+ "pieces": [
+  {
+   "label": "suit",
+   "triangles": 24654,
+   "vertices": 14115,
+   "bytes": 747528,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map toigo_suit_with_jacket_and_bowtie.webp 512x512 WebP, 29056 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 3592 base-body vertices under it",
+  "texture toigo_suit_with_jacket_and_bowtie.webp"
+ ],
+ "countKey": "proxy:toigo_suit_with_jacket_and_bowtie",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (24,654 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Remove its 25 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

@@ -1,0 +1,64 @@
+{
+ "id": "Buildings: shell pieces/roof/emitRoof, 8 triangles, 30.90 x 5.47 x 24.90 m, from function warehouse",
+ "group": "Buildings: shell pieces",
+ "name": "roof",
+ "variation": "emitRoof, 8 triangles, 30.90 x 5.47 x 24.90 m, from function warehouse",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitRoof)",
+ "build": "merged",
+ "triangles": 8,
+ "vertices": 24,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 864,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 864,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 8,
+   "vertices": 24
+  }
+ ],
+ "solids": "1 solids: 1 open prism",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1072-Buildings-shell-pieces-roof-emitRoof-8-triangles-30-90-x-5-47-x-24-90-m-from-fun.png",
+ "model": "models/1072-Buildings-shell-pieces-roof-emitRoof-8-triangles-30-90-x-5-47-x-24-90-m-from-fun.glb",
+ "pieces": [
+  {
+   "label": "emitRoof",
+   "triangles": 8,
+   "vertices": 24,
+   "bytes": 864,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: plaster",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (8 today, 4.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

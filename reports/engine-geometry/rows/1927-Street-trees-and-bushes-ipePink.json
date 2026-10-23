@@ -1,0 +1,71 @@
+{
+ "id": "Street trees and bushes/ipePink",
+ "group": "Street trees and bushes",
+ "name": "ipePink",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/propGeometry.ts (treeParts)",
+ "build": "instanced",
+ "triangles": 240,
+ "vertices": 612,
+ "attributes": "position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B",
+ "bytesPerVertex": 52,
+ "geometryBytes": 26136,
+ "textureBytes": 4194304,
+ "extraBytes": 0,
+ "totalBytes": 4220440,
+ "materials": "MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, flat shading, roughness 0.85, metalness 0, opacity 1) | MeshStandardMaterial [wind-nearfade-billboard-coverage-near|pose-yaw] (vertex colours, double-sided, alpha test 0.5, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "patched built-in wind-nearfade|pose-yaw | patched built-in wind-nearfade-billboard-coverage-near|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 240,
+   "vertices": 612
+  }
+ ],
+ "solids": "60 solids: 5 open prism, 1 closed cylinder, 54 other",
+ "hiddenTriangles": 0,
+ "shadow": "casts: body by its depth material, cards by theirs (alpha cut)",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1927-Street-trees-and-bushes-ipePink.png",
+ "model": "models/1927-Street-trees-and-bushes-ipePink.glb",
+ "pieces": [
+  {
+   "label": "body",
+   "triangles": 132,
+   "vertices": 396,
+   "bytes": 14256,
+   "material": "MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, flat shading, roughness 0.85, metalness 0, opacity 1)"
+  },
+  {
+   "label": "foliage cards",
+   "triangles": 108,
+   "vertices": 216,
+   "bytes": 11880,
+   "material": "MeshStandardMaterial [wind-nearfade-billboard-coverage-near|pose-yaw] (vertex colours, double-sided, alpha test 0.5, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 1536x512 RGBA 8-bit, 11 levels, 4194304 B"
+ ],
+ "notes": [],
+ "countKey": "landscape:tree:ipePink",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Same triangles and vertices as ipeYellow : load one mesh and change its colour, not a second copy.",
+  "6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 250
+}

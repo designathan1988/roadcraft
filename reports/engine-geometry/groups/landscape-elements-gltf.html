@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landscape elements (glTF)</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Landscape elements (glTF)</h1><p class="muted">23 objects, 11,622 triangles one of each.</p></header>
+<main><article class="row" id="Landscape elements (glTF)/mushrooms/2">
+  <a href="../images/2014-Landscape-elements-glTF-mushrooms-2.png"><img loading="lazy" src="../images/2014-Landscape-elements-glTF-mushrooms-2.png" alt="Landscape elements (glTF)/mushrooms/2"></a>
+  <div class="data">
+    <h3>mushrooms <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (3,216 today, 53.6 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>Picture: each cap or blossom a closed dense mesh (880-3,216 triangles a clump); cut-out cards.</li><li>6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,216</dd><dt>Vertices</dt><dd>1,806</dd>
+      <dt>Levels</dt><dd>L0 3,216</dd>
+      <dt>Memory</dt><dd>5,555 KB (geometry 94 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>6 solids: 6 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2014-Landscape-elements-glTF-mushrooms-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/flowers/2">
+  <a href="../images/2012-Landscape-elements-glTF-flowers-2.png"><img loading="lazy" src="../images/2012-Landscape-elements-glTF-flowers-2.png" alt="Landscape elements (glTF)/flowers/2"></a>
+  <div class="data">
+    <h3>flowers <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (1,690 today, 28.2 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>Picture: each cap or blossom a closed dense mesh (880-3,216 triangles a clump); cut-out cards.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>26 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,690</dd><dt>Vertices</dt><dd>1,302</dd>
+      <dt>Levels</dt><dd>L0 1,690</dd>
+      <dt>Memory</dt><dd>27,069 KB (geometry 76 KB, textures 26,994 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>48 solids: 48 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B<br>map Texture 1008x981 RGBA 8-bit, 10 levels, 5271908 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2012-Landscape-elements-glTF-flowers-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/mushrooms/1">
+  <a href="../images/2013-Landscape-elements-glTF-mushrooms-1.png"><img loading="lazy" src="../images/2013-Landscape-elements-glTF-mushrooms-1.png" alt="Landscape elements (glTF)/mushrooms/1"></a>
+  <div class="data">
+    <h3>mushrooms <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (880 today, 14.7 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>Picture: each cap or blossom a closed dense mesh (880-3,216 triangles a clump); cut-out cards.</li><li>5 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>880</dd><dt>Vertices</dt><dd>555</dd>
+      <dt>Levels</dt><dd>L0 880</dd>
+      <dt>Memory</dt><dd>5,489 KB (geometry 28 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>10 solids: 5 closed cylinder, 5 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2013-Landscape-elements-glTF-mushrooms-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/flowers/1">
+  <a href="../images/2011-Landscape-elements-glTF-flowers-1.png"><img loading="lazy" src="../images/2011-Landscape-elements-glTF-flowers-1.png" alt="Landscape elements (glTF)/flowers/1"></a>
+  <div class="data">
+    <h3>flowers <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (755 today, 12.6 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>26 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>755</dd><dt>Vertices</dt><dd>581</dd>
+      <dt>Levels</dt><dd>L0 755</dd>
+      <dt>Memory</dt><dd>27,027 KB (geometry 34 KB, textures 26,994 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>22 solids: 22 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B<br>map Texture 1008x981 RGBA 8-bit, 10 levels, 5271908 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2011-Landscape-elements-glTF-flowers-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/tallGrass/2">
+  <a href="../images/2005-Landscape-elements-glTF-tallGrass-2.png"><img loading="lazy" src="../images/2005-Landscape-elements-glTF-tallGrass-2.png" alt="Landscape elements (glTF)/tallGrass/2"></a>
+  <div class="data">
+    <h3>tallGrass <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (622 today, 10.4 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>622</dd><dt>Vertices</dt><dd>644</dd>
+      <dt>Levels</dt><dd>L0 622</dd>
+      <dt>Memory</dt><dd>1,400 KB (geometry 35 KB, textures 1,365 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>26 solids: 26 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2005-Landscape-elements-glTF-tallGrass-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/clover/2">
+  <a href="../images/2010-Landscape-elements-glTF-clover-2.png"><img loading="lazy" src="../images/2010-Landscape-elements-glTF-clover-2.png" alt="Landscape elements (glTF)/clover/2"></a>
+  <div class="data">
+    <h3>clover <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (615 today, 10.3 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>615</dd><dt>Vertices</dt><dd>433</dd>
+      <dt>Levels</dt><dd>L0 615</dd>
+      <dt>Memory</dt><dd>21,871 KB (geometry 26 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>21 solids: 21 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2010-Landscape-elements-glTF-clover-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/stones/3">
+  <a href="../images/1995-Landscape-elements-glTF-stones-3.png"><img loading="lazy" src="../images/1995-Landscape-elements-glTF-stones-3.png" alt="Landscape elements (glTF)/stones/3"></a>
+  <div class="data">
+    <h3>stones <small>3</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (522 today, 8.7 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>522</dd><dt>Vertices</dt><dd>531</dd>
+      <dt>Levels</dt><dd>L0 522</dd>
+      <dt>Memory</dt><dd>21,868 KB (geometry 23 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1995-Landscape-elements-glTF-stones-3.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/grass/2">
+  <a href="../images/2003-Landscape-elements-glTF-grass-2.png"><img loading="lazy" src="../images/2003-Landscape-elements-glTF-grass-2.png" alt="Landscape elements (glTF)/grass/2"></a>
+  <div class="data">
+    <h3>grass <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (494 today, 8.2 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>494</dd><dt>Vertices</dt><dd>559</dd>
+      <dt>Levels</dt><dd>L0 494</dd>
+      <dt>Memory</dt><dd>1,395 KB (geometry 30 KB, textures 1,365 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>21 solids: 21 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2003-Landscape-elements-glTF-grass-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/clover/1">
+  <a href="../images/2009-Landscape-elements-glTF-clover-1.png"><img loading="lazy" src="../images/2009-Landscape-elements-glTF-clover-1.png" alt="Landscape elements (glTF)/clover/1"></a>
+  <div class="data">
+    <h3>clover <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (379 today, 6.3 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>379</dd><dt>Vertices</dt><dd>267</dd>
+      <dt>Levels</dt><dd>L0 379</dd>
+      <dt>Memory</dt><dd>21,861 KB (geometry 16 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>13 solids: 13 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2009-Landscape-elements-glTF-clover-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/scrub/2">
+  <a href="../images/2007-Landscape-elements-glTF-scrub-2.png"><img loading="lazy" src="../images/2007-Landscape-elements-glTF-scrub-2.png" alt="Landscape elements (glTF)/scrub/2"></a>
+  <div class="data">
+    <h3>scrub <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (360 today, 6.0 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>360</dd><dt>Vertices</dt><dd>360</dd>
+      <dt>Levels</dt><dd>L0 360</dd>
+      <dt>Memory</dt><dd>21,865 KB (geometry 20 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>18 solids: 18 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2007-Landscape-elements-glTF-scrub-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/stones/1">
+  <a href="../images/1993-Landscape-elements-glTF-stones-1.png"><img loading="lazy" src="../images/1993-Landscape-elements-glTF-stones-1.png" alt="Landscape elements (glTF)/stones/1"></a>
+  <div class="data">
+    <h3>stones <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (342 today, 5.7 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>342</dd><dt>Vertices</dt><dd>351</dd>
+      <dt>Levels</dt><dd>L0 342</dd>
+      <dt>Memory</dt><dd>21,860 KB (geometry 15 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1993-Landscape-elements-glTF-stones-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/tallGrass/1">
+  <a href="../images/2004-Landscape-elements-glTF-tallGrass-1.png"><img loading="lazy" src="../images/2004-Landscape-elements-glTF-tallGrass-1.png" alt="Landscape elements (glTF)/tallGrass/1"></a>
+  <div class="data">
+    <h3>tallGrass <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (326 today, 5.4 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>326</dd><dt>Vertices</dt><dd>303</dd>
+      <dt>Levels</dt><dd>L0 326</dd>
+      <dt>Memory</dt><dd>1,382 KB (geometry 17 KB, textures 1,365 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>14 solids: 14 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2004-Landscape-elements-glTF-tallGrass-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/fern/1">
+  <a href="../images/2008-Landscape-elements-glTF-fern-1.png"><img loading="lazy" src="../images/2008-Landscape-elements-glTF-fern-1.png" alt="Landscape elements (glTF)/fern/1"></a>
+  <div class="data">
+    <h3>fern <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (288 today, 4.8 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>288</dd><dt>Vertices</dt><dd>243</dd>
+      <dt>Levels</dt><dd>L0 288</dd>
+      <dt>Memory</dt><dd>21,859 KB (geometry 14 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>9 solids: 9 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2008-Landscape-elements-glTF-fern-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/stones/2">
+  <a href="../images/1994-Landscape-elements-glTF-stones-2.png"><img loading="lazy" src="../images/1994-Landscape-elements-glTF-stones-2.png" alt="Landscape elements (glTF)/stones/2"></a>
+  <div class="data">
+    <h3>stones <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (244 today, 4.1 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>244</dd><dt>Vertices</dt><dd>249</dd>
+      <dt>Levels</dt><dd>L0 244</dd>
+      <dt>Memory</dt><dd>21,856 KB (geometry 11 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1994-Landscape-elements-glTF-stones-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/grass/1">
+  <a href="../images/2002-Landscape-elements-glTF-grass-1.png"><img loading="lazy" src="../images/2002-Landscape-elements-glTF-grass-1.png" alt="Landscape elements (glTF)/grass/1"></a>
+  <div class="data">
+    <h3>grass <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (155 today, 2.6 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>155</dd><dt>Vertices</dt><dd>153</dd>
+      <dt>Levels</dt><dd>L0 155</dd>
+      <dt>Memory</dt><dd>1,374 KB (geometry 8 KB, textures 1,365 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>9 solids: 9 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2002-Landscape-elements-glTF-grass-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/pebbles/1">
+  <a href="../images/1996-Landscape-elements-glTF-pebbles-1.png"><img loading="lazy" src="../images/1996-Landscape-elements-glTF-pebbles-1.png" alt="Landscape elements (glTF)/pebbles/1"></a>
+  <div class="data">
+    <h3>pebbles <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (136 today, 2.3 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>136</dd><dt>Vertices</dt><dd>292</dd>
+      <dt>Levels</dt><dd>L0 136</dd>
+      <dt>Memory</dt><dd>5,472 KB (geometry 11 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1996-Landscape-elements-glTF-pebbles-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/pebbles/3">
+  <a href="../images/1998-Landscape-elements-glTF-pebbles-3.png"><img loading="lazy" src="../images/1998-Landscape-elements-glTF-pebbles-3.png" alt="Landscape elements (glTF)/pebbles/3"></a>
+  <div class="data">
+    <h3>pebbles <small>3</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (128 today, 2.1 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>128</dd><dt>Vertices</dt><dd>244</dd>
+      <dt>Levels</dt><dd>L0 128</dd>
+      <dt>Memory</dt><dd>5,470 KB (geometry 9 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1998-Landscape-elements-glTF-pebbles-3.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/scrub/1">
+  <a href="../images/2006-Landscape-elements-glTF-scrub-1.png"><img loading="lazy" src="../images/2006-Landscape-elements-glTF-scrub-1.png" alt="Landscape elements (glTF)/scrub/1"></a>
+  <div class="data">
+    <h3>scrub <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (120 today, 2.0 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Alpha-tested cards; drop past ~30 m.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>120</dd><dt>Vertices</dt><dd>120</dd>
+      <dt>Levels</dt><dd>L0 120</dd>
+      <dt>Memory</dt><dd>21,852 KB (geometry 7 KB, textures 21,845 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>6 solids: 6 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2006-Landscape-elements-glTF-scrub-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/pebbles/2">
+  <a href="../images/1997-Landscape-elements-glTF-pebbles-2.png"><img loading="lazy" src="../images/1997-Landscape-elements-glTF-pebbles-2.png" alt="Landscape elements (glTF)/pebbles/2"></a>
+  <div class="data">
+    <h3>pebbles <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (114 today, 1.9 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>114</dd><dt>Vertices</dt><dd>212</dd>
+      <dt>Levels</dt><dd>L0 114</dd>
+      <dt>Memory</dt><dd>5,469 KB (geometry 8 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1997-Landscape-elements-glTF-pebbles-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/gravel/1">
+  <a href="../images/1999-Landscape-elements-glTF-gravel-1.png"><img loading="lazy" src="../images/1999-Landscape-elements-glTF-gravel-1.png" alt="Landscape elements (glTF)/gravel/1"></a>
+  <div class="data">
+    <h3>gravel <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (104 today, 1.7 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>104</dd><dt>Vertices</dt><dd>216</dd>
+      <dt>Levels</dt><dd>L0 104</dd>
+      <dt>Memory</dt><dd>5,469 KB (geometry 8 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1999-Landscape-elements-glTF-gravel-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/gravel/2">
+  <a href="../images/2000-Landscape-elements-glTF-gravel-2.png"><img loading="lazy" src="../images/2000-Landscape-elements-glTF-gravel-2.png" alt="Landscape elements (glTF)/gravel/2"></a>
+  <div class="data">
+    <h3>gravel <small>2</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 60 triangles (78 today, 1.3 times the budget): a few crossed alpha-tested cards; gone past a short distance.</li><li>Painted on the ground at any distance but the closest; a decal.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>78</dd><dt>Vertices</dt><dd>162</dd>
+      <dt>Levels</dt><dd>L0 78</dd>
+      <dt>Memory</dt><dd>5,467 KB (geometry 6 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2000-Landscape-elements-glTF-gravel-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/gravel/3">
+  <a href="../images/2001-Landscape-elements-glTF-gravel-3.png"><img loading="lazy" src="../images/2001-Landscape-elements-glTF-gravel-3.png" alt="Landscape elements (glTF)/gravel/3"></a>
+  <div class="data">
+    <h3>gravel <small>3</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Painted on the ground at any distance but the closest; a decal.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>52</dd><dt>Vertices</dt><dd>108</dd>
+      <dt>Levels</dt><dd>L0 52</dd>
+      <dt>Memory</dt><dd>5,465 KB (geometry 4 KB, textures 5,461 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B</dd>
+      <dt>Source</dt><dd><code>public/models/elements/*.gltf (src/render/elements.ts)</code> (file)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2001-Landscape-elements-glTF-gravel-3.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Landscape elements (glTF)/leaves/1">
+  <a href="../images/2015-Landscape-elements-glTF-leaves-1.png"><img loading="lazy" src="../images/2015-Landscape-elements-glTF-leaves-1.png" alt="Landscape elements (glTF)/leaves/1"></a>
+  <div class="data">
+    <h3>leaves <small>1</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>1,365 KB (geometry 0 KB, textures 1,365 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.95, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/elements.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2015-Landscape-elements-glTF-leaves-1.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: jewelry</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: jewelry</h1><p class="muted">14 objects, 125,834 triangles one of each.</p></header>
+<main><article class="row" id="People: jewelry/toigo_pearl_necklace">
+  <a href="../images/2592-People-jewelry-toigo-pearl-necklace.png"><img loading="lazy" src="../images/2592-People-jewelry-toigo-pearl-necklace.png" alt="People: jewelry/toigo_pearl_necklace"></a>
+  <div class="data">
+    <h3>toigo_pearl_necklace</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (56,064 today, 1401.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 201 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>56,064</dd><dt>Vertices</dt><dd>30,514</dd>
+      <dt>Levels</dt><dd>L0 56,064</dd>
+      <dt>Memory</dt><dd>1,611 KB (geometry 1,611 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>201</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_pearl_necklace.webp 256x256 WebP, 6148 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_pearl_necklace.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_pearl_necklace.webp</dd>
+    </dl>
+    <a class="file" href="../models/2592-People-jewelry-toigo-pearl-necklace.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/toigo_diamond_ring_and_wedding_band">
+  <a href="../images/2565-People-jewelry-toigo-diamond-ring-and-wedding-band.png"><img loading="lazy" src="../images/2565-People-jewelry-toigo-diamond-ring-and-wedding-band.png" alt="People: jewelry/toigo_diamond_ring_and_wedding_band"></a>
+  <div class="data">
+    <h3>toigo_diamond_ring_and_wedding_band</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (34,656 today, 866.4 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 245 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>34,656</dd><dt>Vertices</dt><dd>17,430</dd>
+      <dt>Levels</dt><dd>L0 34,656</dd>
+      <dt>Memory</dt><dd>951 KB (geometry 951 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>245</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_diamond_ring_and_wedding_band.webp 256x256 WebP, 7080 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_diamond_ring_and_wedding_band.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_diamond_ring_and_wedding_band.webp</dd>
+    </dl>
+    <a class="file" href="../models/2565-People-jewelry-toigo-diamond-ring-and-wedding-band.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/wolgade_diamond_ring_01">
+  <a href="../images/2619-People-jewelry-wolgade-diamond-ring-01.png"><img loading="lazy" src="../images/2619-People-jewelry-wolgade-diamond-ring-01.png" alt="People: jewelry/wolgade_diamond_ring_01"></a>
+  <div class="data">
+    <h3>wolgade_diamond_ring_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (18,400 today, 460.0 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 228 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>18,400</dd><dt>Vertices</dt><dd>9,302</dd>
+      <dt>Levels</dt><dd>L0 18,400</dd>
+      <dt>Memory</dt><dd>506 KB (geometry 506 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>228</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map wolgade_diamond_ring_01.webp 256x256 WebP, 4528 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/wolgade_diamond_ring_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture wolgade_diamond_ring_01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2619-People-jewelry-wolgade-diamond-ring-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/learning_slave_collar_chain">
+  <a href="../images/2334-People-jewelry-learning-slave-collar-chain.png"><img loading="lazy" src="../images/2334-People-jewelry-learning-slave-collar-chain.png" alt="People: jewelry/learning_slave_collar_chain"></a>
+  <div class="data">
+    <h3>learning_slave_collar_chain</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (8,448 today, 211.2 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,448</dd><dt>Vertices</dt><dd>15,048</dd>
+      <dt>Levels</dt><dd>L0 8,448</dd>
+      <dt>Memory</dt><dd>569 KB (geometry 569 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>11 solids: 11 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map learning_slave_collar_chain.webp 256x256 WebP, 8944 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/learning_slave_collar_chain.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture learning_slave_collar_chain.webp</dd>
+    </dl>
+    <a class="file" href="../models/2334-People-jewelry-learning-slave-collar-chain.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/toigo_pearl_earrings">
+  <a href="../images/2591-People-jewelry-toigo-pearl-earrings.png"><img loading="lazy" src="../images/2591-People-jewelry-toigo-pearl-earrings.png" alt="People: jewelry/toigo_pearl_earrings"></a>
+  <div class="data">
+    <h3>toigo_pearl_earrings</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (3,184 today, 79.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,184</dd><dt>Vertices</dt><dd>1,724</dd>
+      <dt>Levels</dt><dd>L0 3,184</dd>
+      <dt>Memory</dt><dd>91 KB (geometry 91 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_pearl_earrings.webp 256x256 WebP, 3088 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_pearl_earrings.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_pearl_earrings.webp</dd>
+    </dl>
+    <a class="file" href="../models/2591-People-jewelry-toigo-pearl-earrings.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/culturalibre_heroine_lightning_earrings">
+  <a href="../images/2111-People-jewelry-culturalibre-heroine-lightning-earrings.png"><img loading="lazy" src="../images/2111-People-jewelry-culturalibre-heroine-lightning-earrings.png" alt="People: jewelry/culturalibre_heroine_lightning_earrings"></a>
+  <div class="data">
+    <h3>culturalibre_heroine_lightning_earrings</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (2,016 today, 50.4 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 9 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,016</dd><dt>Vertices</dt><dd>2,599</dd>
+      <dt>Levels</dt><dd>L0 2,016</dd>
+      <dt>Memory</dt><dd>105 KB (geometry 105 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 2 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>9</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_heroine_lightning_earrings.webp 256x256 WebP, 4982 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_heroine_lightning_earrings.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_heroine_lightning_earrings.webp</dd>
+    </dl>
+    <a class="file" href="../models/2111-People-jewelry-culturalibre-heroine-lightning-earrings.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/punkduck_lace-choker">
+  <a href="../images/2473-People-jewelry-punkduck-lace-choker.png"><img loading="lazy" src="../images/2473-People-jewelry-punkduck-lace-choker.png" alt="People: jewelry/punkduck_lace-choker"></a>
+  <div class="data">
+    <h3>punkduck_lace-choker</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (714 today, 17.9 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 44 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>714</dd><dt>Vertices</dt><dd>542</dd>
+      <dt>Levels</dt><dd>L0 714</dd>
+      <dt>Memory</dt><dd>25 KB (geometry 25 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>5 solids: 5 other</dd><dt>Hidden triangles</dt><dd>44</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map punkduck_lace-choker.webp 256x256 WebP, 2570 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/punkduck_lace-choker.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture punkduck_lace-choker.webp</dd>
+    </dl>
+    <a class="file" href="../models/2473-People-jewelry-punkduck-lace-choker.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/joachip_ring_1">
+  <a href="../images/2320-People-jewelry-joachip-ring-1.png"><img loading="lazy" src="../images/2320-People-jewelry-joachip-ring-1.png" alt="People: jewelry/joachip_ring_1"></a>
+  <div class="data">
+    <h3>joachip_ring_1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (664 today, 16.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>664</dd><dt>Vertices</dt><dd>389</dd>
+      <dt>Levels</dt><dd>L0 664</dd>
+      <dt>Memory</dt><dd>20 KB (geometry 20 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map joachip_ring_1.webp 256x256 WebP, 2220 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/joachip_ring_1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture joachip_ring_1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2320-People-jewelry-joachip-ring-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/toigo_wedding_ring">
+  <a href="../images/2603-People-jewelry-toigo-wedding-ring.png"><img loading="lazy" src="../images/2603-People-jewelry-toigo-wedding-ring.png" alt="People: jewelry/toigo_wedding_ring"></a>
+  <div class="data">
+    <h3>toigo_wedding_ring</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (560 today, 14.0 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 165 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>560</dd><dt>Vertices</dt><dd>330</dd>
+      <dt>Levels</dt><dd>L0 560</dd>
+      <dt>Memory</dt><dd>17 KB (geometry 17 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>165</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_wedding_ring.webp 256x256 WebP, 810 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_wedding_ring.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture toigo_wedding_ring.webp</dd>
+    </dl>
+    <a class="file" href="../models/2603-People-jewelry-toigo-wedding-ring.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/ews_hoop_earrings">
+  <a href="../images/2268-People-jewelry-ews-hoop-earrings.png"><img loading="lazy" src="../images/2268-People-jewelry-ews-hoop-earrings.png" alt="People: jewelry/ews_hoop_earrings"></a>
+  <div class="data">
+    <h3>ews_hoop_earrings</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (544 today, 13.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>544</dd><dt>Vertices</dt><dd>818</dd>
+      <dt>Levels</dt><dd>L0 544</dd>
+      <dt>Memory</dt><dd>32 KB (geometry 32 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map ews_hoop_earrings.webp 256x256 WebP, 14624 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/ews_hoop_earrings.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3 base-body vertices under it<br>texture ews_hoop_earrings.webp</dd>
+    </dl>
+    <a class="file" href="../models/2268-People-jewelry-ews-hoop-earrings.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/culturalibre_hero_gem">
+  <a href="../images/2095-People-jewelry-culturalibre-hero-gem.png"><img loading="lazy" src="../images/2095-People-jewelry-culturalibre-hero-gem.png" alt="People: jewelry/culturalibre_hero_gem"></a>
+  <div class="data">
+    <h3>culturalibre_hero_gem</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (192 today, 4.8 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>192</dd><dt>Vertices</dt><dd>156</dd>
+      <dt>Levels</dt><dd>L0 192</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_gem.webp 256x256 WebP, 7346 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_gem.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hero_gem.webp</dd>
+    </dl>
+    <a class="file" href="../models/2095-People-jewelry-culturalibre-hero-gem.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/ews_septum_ring">
+  <a href="../images/2271-People-jewelry-ews-septum-ring.png"><img loading="lazy" src="../images/2271-People-jewelry-ews-septum-ring.png" alt="People: jewelry/ews_septum_ring"></a>
+  <div class="data">
+    <h3>ews_septum_ring</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (192 today, 4.8 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 7 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>192</dd><dt>Vertices</dt><dd>126</dd>
+      <dt>Levels</dt><dd>L0 192</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>7</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map ews_septum_ring.webp 256x256 WebP, 14624 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/ews_septum_ring.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture ews_septum_ring.webp</dd>
+    </dl>
+    <a class="file" href="../models/2271-People-jewelry-ews-septum-ring.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/ews_industrial_piercing_left_ear_">
+  <a href="../images/2269-People-jewelry-ews-industrial-piercing-left-ear.png"><img loading="lazy" src="../images/2269-People-jewelry-ews-industrial-piercing-left-ear.png" alt="People: jewelry/ews_industrial_piercing_left_ear_"></a>
+  <div class="data">
+    <h3>ews_industrial_piercing_left_ear_</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (100 today, 2.5 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>100</dd><dt>Vertices</dt><dd>193</dd>
+      <dt>Levels</dt><dd>L0 100</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map ews_industrial_piercing_left_ear_.webp 256x256 WebP, 14624 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/ews_industrial_piercing_left_ear_.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture ews_industrial_piercing_left_ear_.webp</dd>
+    </dl>
+    <a class="file" href="../models/2269-People-jewelry-ews-industrial-piercing-left-ear.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: jewelry/ews_industrial_piercing_right_ear_">
+  <a href="../images/2270-People-jewelry-ews-industrial-piercing-right-ear.png"><img loading="lazy" src="../images/2270-People-jewelry-ews-industrial-piercing-right-ear.png" alt="People: jewelry/ews_industrial_piercing_right_ear_"></a>
+  <div class="data">
+    <h3>ews_industrial_piercing_right_ear_</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (100 today, 2.5 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>100</dd><dt>Vertices</dt><dd>193</dd>
+      <dt>Levels</dt><dd>L0 100</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map ews_industrial_piercing_right_ear_.webp 256x256 WebP, 14624 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/ews_industrial_piercing_right_ear_.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture ews_industrial_piercing_right_ear_.webp</dd>
+    </dl>
+    <a class="file" href="../models/2270-People-jewelry-ews-industrial-piercing-right-ear.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

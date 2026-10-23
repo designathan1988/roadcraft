@@ -1,0 +1,67 @@
+{
+ "id": "People: top/punkduck_high_neck_crop_top",
+ "group": "People: top",
+ "name": "punkduck_high_neck_crop_top",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/punkduck_high_neck_crop_top.bin",
+ "build": "skinned",
+ "triangles": 2282,
+ "vertices": 1443,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 73560,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 73560,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2282,
+   "vertices": 1443
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2470-People-top-punkduck-high-neck-crop-top.png",
+ "model": "models/2470-People-top-punkduck-high-neck-crop-top.glb",
+ "pieces": [
+  {
+   "label": "top",
+   "triangles": 2282,
+   "vertices": 1443,
+   "bytes": 73560,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map punkduck_high_neck_crop_top.webp 512x512 WebP, 32988 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 1070 base-body vertices under it",
+  "texture punkduck_high_neck_crop_top.webp"
+ ],
+ "countKey": "proxy:punkduck_high_neck_crop_top",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (2,282 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buildings: part models</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Buildings: part models</h1><p class="muted">31 objects, 2,082 triangles one of each.</p></header>
+<main><article class="row" id="Buildings: part models/bike">
+  <a href="../images/1735-Buildings-part-models-bike.png"><img loading="lazy" src="../images/1735-Buildings-part-models-bike.png" alt="Buildings: part models/bike"></a>
+  <div class="data">
+    <h3>bike</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (240 today, 10.0 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>A cut-out card or a 2-3 box silhouette near only.</li><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>Remove its 18 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>240</dd><dt>Vertices</dt><dd>344</dd>
+      <dt>Levels</dt><dd>L0 240</dd>
+      <dt>Memory</dt><dd>14 KB (geometry 14 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-bike&quot; [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, double-sided, roughness 0.4, metalness 0.3, opacity 1)</dd><dt>Shader</dt><dd>patched built-in thin-part-prefiltered-v3-cards|part-pose</dd>
+      <dt>Solids</dt><dd>12 solids: 4 open prism, 8 box</dd><dt>Hidden triangles</dt><dd>18</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1735-Buildings-part-models-bike.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/railing">
+  <a href="../images/1718-Buildings-part-models-railing.png"><img loading="lazy" src="../images/1718-Buildings-part-models-railing.png" alt="Buildings: part models/railing"></a>
+  <div class="data">
+    <h3>railing</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (222 today, 9.3 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>One plane with the bars cut out of a texture in the shader (alphaTest), not a cylinder or a box a bar.</li><li>Remove its 11 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>222</dd><dt>Vertices</dt><dd>444</dd>
+      <dt>Levels</dt><dd>L0 222 / L1 12</dd>
+      <dt>Memory</dt><dd>16 KB (geometry 16 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-railing&quot; [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1)</dd><dt>Shader</dt><dd>patched built-in thin-part-prefiltered-v3-cards|part-pose</dd>
+      <dt>Solids</dt><dd>21 solids: 6 box, 15 other</dd><dt>Hidden triangles</dt><dd>11</dd>
+      <dt>Shadow</dt><dd>casts: 3 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1718-Buildings-part-models-railing.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/foliage">
+  <a href="../images/1732-Buildings-part-models-foliage.png"><img loading="lazy" src="../images/1732-Buildings-part-models-foliage.png" alt="Buildings: part models/foliage"></a>
+  <div class="data">
+    <h3>foliage</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (192 today, 8.0 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.</li><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>Remove its 125 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>192</dd><dt>Vertices</dt><dd>380</dd>
+      <dt>Levels</dt><dd>L0 192</dd>
+      <dt>Memory</dt><dd>14 KB (geometry 14 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-foliage&quot; [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.75, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>93 solids: 93 other</dd><dt>Hidden triangles</dt><dd>125</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1732-Buildings-part-models-foliage.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/bush">
+  <a href="../images/1733-Buildings-part-models-bush.png"><img loading="lazy" src="../images/1733-Buildings-part-models-bush.png" alt="Buildings: part models/bush"></a>
+  <div class="data">
+    <h3>bush</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (168 today, 7.0 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.</li><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>168</dd><dt>Vertices</dt><dd>372</dd>
+      <dt>Levels</dt><dd>L0 168</dd>
+      <dt>Memory</dt><dd>14 KB (geometry 14 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-bush&quot; [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>100 solids: 100 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1733-Buildings-part-models-bush.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/airer">
+  <a href="../images/1738-Buildings-part-models-airer.png"><img loading="lazy" src="../images/1738-Buildings-part-models-airer.png" alt="Buildings: part models/airer"></a>
+  <div class="data">
+    <h3>airer</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (168 today, 7.0 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>One plane with the bars cut out of a texture in the shader (alphaTest), not a cylinder or a box a bar.</li><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>Remove its 20 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>168</dd><dt>Vertices</dt><dd>336</dd>
+      <dt>Levels</dt><dd>L0 168</dd>
+      <dt>Memory</dt><dd>13 KB (geometry 13 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-airer&quot; [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in thin-part-prefiltered-v3-cards|part-pose</dd>
+      <dt>Solids</dt><dd>14 solids: 14 box</dd><dt>Hidden triangles</dt><dd>20</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1738-Buildings-part-models-airer.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/table">
+  <a href="../images/1737-Buildings-part-models-table.png"><img loading="lazy" src="../images/1737-Buildings-part-models-table.png" alt="Buildings: part models/table"></a>
+  <div class="data">
+    <h3>table</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (146 today, 6.1 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>146</dd><dt>Vertices</dt><dd>223</dd>
+      <dt>Levels</dt><dd>L0 146</dd>
+      <dt>Memory</dt><dd>9 KB (geometry 9 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-table&quot; [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.55, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in thin-part-prefiltered-v3-cards|part-pose</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1737-Buildings-part-models-table.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/dish">
+  <a href="../images/1739-Buildings-part-models-dish.png"><img loading="lazy" src="../images/1739-Buildings-part-models-dish.png" alt="Buildings: part models/dish"></a>
+  <div class="data">
+    <h3>dish</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (146 today, 6.1 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>A 6-sided cone and a stick.</li><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>Remove its 3 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>146</dd><dt>Vertices</dt><dd>171</dd>
+      <dt>Levels</dt><dd>L0 146</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-dish&quot; [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.5, metalness 0.2, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>5 solids: 1 other, 4 box</dd><dt>Hidden triangles</dt><dd>3</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1739-Buildings-part-models-dish.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/pot">
+  <a href="../images/1731-Buildings-part-models-pot.png"><img loading="lazy" src="../images/1731-Buildings-part-models-pot.png" alt="Buildings: part models/pot"></a>
+  <div class="data">
+    <h3>pot</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (112 today, 4.7 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.</li><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>Remove its 42 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>112</dd><dt>Vertices</dt><dd>163</dd>
+      <dt>Levels</dt><dd>L0 112</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-pot&quot; [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>42</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1731-Buildings-part-models-pot.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/roofRailing">
+  <a href="../images/1719-Buildings-part-models-roofRailing.png"><img loading="lazy" src="../images/1719-Buildings-part-models-roofRailing.png" alt="Buildings: part models/roofRailing"></a>
+  <div class="data">
+    <h3>roofRailing</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (78 today, 3.3 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>78</dd><dt>Vertices</dt><dd>156</dd>
+      <dt>Levels</dt><dd>L0 78 / L1 4</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-roofRailing&quot; [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.45, metalness 0.55, opacity 1)</dd><dt>Shader</dt><dd>patched built-in thin-part-prefiltered-v3-cards|part-pose</dd>
+      <dt>Solids</dt><dd>7 solids: 4 box, 3 other</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>casts: 2 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1719-Buildings-part-models-roofRailing.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/chair">
+  <a href="../images/1736-Buildings-part-models-chair.png"><img loading="lazy" src="../images/1736-Buildings-part-models-chair.png" alt="Buildings: part models/chair"></a>
+  <div class="data">
+    <h3>chair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (78 today, 3.3 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>78</dd><dt>Vertices</dt><dd>156</dd>
+      <dt>Levels</dt><dd>L0 78</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-chair&quot; [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.6, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in thin-part-prefiltered-v3-cards|part-pose</dd>
+      <dt>Solids</dt><dd>8 solids: 3 box, 1 other, 4 open prism</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1736-Buildings-part-models-chair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/acUnit">
+  <a href="../images/1730-Buildings-part-models-acUnit.png"><img loading="lazy" src="../images/1730-Buildings-part-models-acUnit.png" alt="Buildings: part models/acUnit"></a>
+  <div class="data">
+    <h3>acUnit</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (74 today, 3.1 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>One box (10 triangles): the grille and fan painted (Cidade Otimizada: 10).</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>74</dd><dt>Vertices</dt><dd>136</dd>
+      <dt>Levels</dt><dd>L0 74 / L1 30</dd>
+      <dt>Memory</dt><dd>8 KB (geometry 8 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-acUnit&quot; [facade-ac-front|part-pose] (vertex colours, roughness 0.55, metalness 0.15, opacity 1)</dd><dt>Shader</dt><dd>patched built-in facade-ac-front|part-pose</dd>
+      <dt>Solids</dt><dd>9 solids: 3 other, 2 box, 2 quad, 2 open prism</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1730-Buildings-part-models-acUnit.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/lounger">
+  <a href="../images/1734-Buildings-part-models-lounger.png"><img loading="lazy" src="../images/1734-Buildings-part-models-lounger.png" alt="Buildings: part models/lounger"></a>
+  <div class="data">
+    <h3>lounger</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (66 today, 2.8 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>66</dd><dt>Vertices</dt><dd>132</dd>
+      <dt>Levels</dt><dd>L0 66</dd>
+      <dt>Memory</dt><dd>5 KB (geometry 5 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-lounger&quot; [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.75, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>7 solids: 2 box, 1 other, 4 open prism</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1734-Buildings-part-models-lounger.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/door">
+  <a href="../images/1716-Buildings-part-models-door.png"><img loading="lazy" src="../images/1716-Buildings-part-models-door.png" alt="Buildings: part models/door"></a>
+  <div class="data">
+    <h3>door</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (62 today, 2.6 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>62</dd><dt>Vertices</dt><dd>124</dd>
+      <dt>Levels</dt><dd>L0 62 / L1 12</dd>
+      <dt>Memory</dt><dd>5 KB (geometry 5 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-door&quot; [onBeforeCompile() {}|part-pose] (roughness 0.55, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>6 solids: 1 box, 5 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1716-Buildings-part-models-door.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/brise">
+  <a href="../images/1729-Buildings-part-models-brise.png"><img loading="lazy" src="../images/1729-Buildings-part-models-brise.png" alt="Buildings: part models/brise"></a>
+  <div class="data">
+    <h3>brise</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (60 today, 2.5 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>60</dd><dt>Vertices</dt><dd>144</dd>
+      <dt>Levels</dt><dd>L0 60 / L1 24</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-brise&quot; [onBeforeCompile() {}|part-pose] (roughness 0.75, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>6 solids: 6 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1729-Buildings-part-models-brise.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/frame">
+  <a href="../images/1714-Buildings-part-models-frame.png"><img loading="lazy" src="../images/1714-Buildings-part-models-frame.png" alt="Buildings: part models/frame"></a>
+  <div class="data">
+    <h3>frame</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (56 today, 2.3 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>56</dd><dt>Vertices</dt><dd>144</dd>
+      <dt>Levels</dt><dd>L0 56 / L1 2</dd>
+      <dt>Memory</dt><dd>5 KB (geometry 5 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-frame&quot; [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1)</dd><dt>Shader</dt><dd>patched built-in thin-part-prefiltered-v3-cards|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 1 other, 2 open prism</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>casts: 2 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1714-Buildings-part-models-frame.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/louvre">
+  <a href="../images/1727-Buildings-part-models-louvre.png"><img loading="lazy" src="../images/1727-Buildings-part-models-louvre.png" alt="Buildings: part models/louvre"></a>
+  <div class="data">
+    <h3>louvre</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 24 triangles (52 today, 2.2 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>52</dd><dt>Vertices</dt><dd>144</dd>
+      <dt>Levels</dt><dd>L0 52 / L1 12</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-louvre&quot; [louvre-slats|part-pose] (roughness 0.65, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in louvre-slats|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 1 other, 1 open prism, 2 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1727-Buildings-part-models-louvre.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/awning">
+  <a href="../images/1720-Buildings-part-models-awning.png"><img loading="lazy" src="../images/1720-Buildings-part-models-awning.png" alt="Buildings: part models/awning"></a>
+  <div class="data">
+    <h3>awning</h3>
+    <div class="advice"><b>What to change</b><ul><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>24</dd><dt>Vertices</dt><dd>48</dd>
+      <dt>Levels</dt><dd>L0 24</dd>
+      <dt>Memory</dt><dd>2 KB (geometry 2 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-awning&quot; [onBeforeCompile() {}|part-pose] (roughness 0.92, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>2 solids: 2 box</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1720-Buildings-part-models-awning.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/column">
+  <a href="../images/1721-Buildings-part-models-column.png"><img loading="lazy" src="../images/1721-Buildings-part-models-column.png" alt="Buildings: part models/column"></a>
+  <div class="data">
+    <h3>column</h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>24</dd><dt>Vertices</dt><dd>26</dd>
+      <dt>Levels</dt><dd>L0 24</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-column&quot; [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 open prism</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1721-Buildings-part-models-column.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/concrete">
+  <a href="../images/1715-Buildings-part-models-concrete.png"><img loading="lazy" src="../images/1715-Buildings-part-models-concrete.png" alt="Buildings: part models/concrete"></a>
+  <div class="data">
+    <h3>concrete</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 12 / L1 2</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-column&quot; [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1715-Buildings-part-models-concrete.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/shutter">
+  <a href="../images/1717-Buildings-part-models-shutter.png"><img loading="lazy" src="../images/1717-Buildings-part-models-shutter.png" alt="Buildings: part models/shutter"></a>
+  <div class="data">
+    <h3>shutter</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-shutter&quot; [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1717-Buildings-part-models-shutter.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/water">
+  <a href="../images/1723-Buildings-part-models-water.png"><img loading="lazy" src="../images/1723-Buildings-part-models-water.png" alt="Buildings: part models/water"></a>
+  <div class="data">
+    <h3>water</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 12 / L1 2</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-water&quot; [onBeforeCompile() {}|part-pose] (transparent, roughness 0.03, metalness 0.15, opacity 0.62)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1723-Buildings-part-models-water.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/lamp">
+  <a href="../images/1724-Buildings-part-models-lamp.png"><img loading="lazy" src="../images/1724-Buildings-part-models-lamp.png" alt="Buildings: part models/lamp"></a>
+  <div class="data">
+    <h3>lamp</h3>
+    <div class="advice"><b>What to change</b><ul><li>A 6-sided column and a box head, glow emissive (Cidade Otimizada: 34).</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-lamp&quot; [outside-lamp-lot|part-pose] (roughness 0.35, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in outside-lamp-lot|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1724-Buildings-part-models-lamp.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/fin">
+  <a href="../images/1726-Buildings-part-models-fin.png"><img loading="lazy" src="../images/1726-Buildings-part-models-fin.png" alt="Buildings: part models/fin"></a>
+  <div class="data">
+    <h3>fin</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 12 / L1 2</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-fin&quot; [onBeforeCompile() {}|part-pose] (roughness 0.7, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1726-Buildings-part-models-fin.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/glassRail">
+  <a href="../images/1728-Buildings-part-models-glassRail.png"><img loading="lazy" src="../images/1728-Buildings-part-models-glassRail.png" alt="Buildings: part models/glassRail"></a>
+  <div class="data">
+    <h3>glassRail</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-glassRail&quot; [onBeforeCompile() {}|part-pose] (transparent, roughness 0.05, metalness 0.2, opacity 0.42)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1728-Buildings-part-models-glassRail.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/lotBox">
+  <a href="../images/1740-Buildings-part-models-lotBox.png"><img loading="lazy" src="../images/1740-Buildings-part-models-lotBox.png" alt="Buildings: part models/lotBox"></a>
+  <div class="data">
+    <h3>lotBox</h3>
+    <div class="advice"><b>What to change</b><ul><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>20</dd>
+      <dt>Levels</dt><dd>L0 10 / L1 2</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-shell&quot; [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1740-Buildings-part-models-lotBox.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/lotSlab">
+  <a href="../images/1742-Buildings-part-models-lotSlab.png"><img loading="lazy" src="../images/1742-Buildings-part-models-lotSlab.png" alt="Buildings: part models/lotSlab"></a>
+  <div class="data">
+    <h3>lotSlab</h3>
+    <div class="advice"><b>What to change</b><ul><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10</dd><dt>Vertices</dt><dd>20</dd>
+      <dt>Levels</dt><dd>L0 10 / L1 2</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-shell&quot; [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1742-Buildings-part-models-lotSlab.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/lotRail">
+  <a href="../images/1741-Buildings-part-models-lotRail.png"><img loading="lazy" src="../images/1741-Buildings-part-models-lotRail.png" alt="Buildings: part models/lotRail"></a>
+  <div class="data">
+    <h3>lotRail</h3>
+    <div class="advice"><b>What to change</b><ul><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 8 / L1 2</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-shell&quot; [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 open prism</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1741-Buildings-part-models-lotRail.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/lotSides">
+  <a href="../images/1743-Buildings-part-models-lotSides.png"><img loading="lazy" src="../images/1743-Buildings-part-models-lotSides.png" alt="Buildings: part models/lotSides"></a>
+  <div class="data">
+    <h3>lotSides</h3>
+    <div class="advice"><b>What to change</b><ul><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8</dd><dt>Vertices</dt><dd>16</dd>
+      <dt>Levels</dt><dd>L0 8 / L1 0</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-shell&quot; [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 open prism</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1743-Buildings-part-models-lotSides.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/glass">
+  <a href="../images/1713-Buildings-part-models-glass.png"><img loading="lazy" src="../images/1713-Buildings-part-models-glass.png" alt="Buildings: part models/glass"></a>
+  <div class="data">
+    <h3>glass</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-glass&quot; [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in room-lights-awake-interior-v15-recess|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1713-Buildings-part-models-glass.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/glassDark">
+  <a href="../images/1722-Buildings-part-models-glassDark.png"><img loading="lazy" src="../images/1722-Buildings-part-models-glassDark.png" alt="Buildings: part models/glassDark"></a>
+  <div class="data">
+    <h3>glassDark</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-part-glassDark&quot; [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in room-lights-awake-interior-v15-recess|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>casts: 1 box pieces under a shadow texel, else its model</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1722-Buildings-part-models-glassDark.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Buildings: part models/wash">
+  <a href="../images/1725-Buildings-part-models-wash.png"><img loading="lazy" src="../images/1725-Buildings-part-models-wash.png" alt="Buildings: part models/wash"></a>
+  <div class="data">
+    <h3>wash</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>16 KB (geometry 0 KB, textures 16 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshBasicMaterial &quot;building-part-wash&quot; [outside-wash-lot|part-pose] (transparent, opacity 0)</dd><dt>Shader</dt><dd>patched built-in outside-wash-lot|part-pose</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>does not cast (small part)</dd>
+      
+      <dt>Textures</dt><dd>map DataTexture 64x64 RGBA 8-bit, 1 levels, 16384 B</dd>
+      <dt>Source</dt><dd><code>src/render/buildings/kit.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1725-Buildings-part-models-wash.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

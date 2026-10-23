@@ -1,0 +1,60 @@
+{
+ "id": "People: held props/bag",
+ "group": "People: held props",
+ "name": "bag",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/people/heldProps.ts",
+ "build": "instanced",
+ "triangles": 24,
+ "vertices": 72,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 2592,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 2592,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.7, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 24,
+   "vertices": 72
+  }
+ ],
+ "solids": "2 solids: 2 box",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2032-People-held-props-bag.png",
+ "model": "models/2032-People-held-props-bag.glb",
+ "pieces": [
+  {
+   "label": "held-bag",
+   "triangles": 24,
+   "vertices": 72,
+   "bytes": 2592,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.7, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "people:held",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

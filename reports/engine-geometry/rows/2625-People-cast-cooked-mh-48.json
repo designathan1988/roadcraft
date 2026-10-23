@@ -1,0 +1,78 @@
+{
+ "id": "People: cast (cooked)/mh_48",
+ "group": "People: cast (cooked)",
+ "name": "mh_48",
+ "variation": "",
+ "origin": "file",
+ "source": "cooked/people/mh_48.bin (src/render/people/cookedLoad.ts)",
+ "build": "skinned",
+ "triangles": 37217,
+ "vertices": 23700,
+ "attributes": "uv:2xFloat32=8B skinMask:1xFloat32=4B hairMask:1xFloat32=4B eyeMask:1xFloat32=4B garmentSlot:1xFloat32=4B position:3xFloat32=12B color:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B normal:3xFloat32=12B",
+ "bytesPerVertex": 84,
+ "geometryBytes": 12191070,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 12191070,
+ "materials": "MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton; 13 morph targets",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 37217,
+   "vertices": 23700
+  },
+  {
+   "level": 1,
+   "triangles": 14197,
+   "vertices": 23700
+  },
+  {
+   "level": 2,
+   "triangles": 7905,
+   "vertices": 23700
+  },
+  {
+   "level": 3,
+   "triangles": 3512,
+   "vertices": 23700
+  }
+ ],
+ "solids": "68 solids: 68 other",
+ "hiddenTriangles": 52,
+ "shadow": "casts: coarser level for the shadow (castCoarse)",
+ "bones": 53,
+ "morphTargets": 13,
+ "morphBytes": 3697200,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2625-People-cast-cooked-mh-48.png",
+ "model": "models/2625-People-cast-cooked-mh-48.glb",
+ "pieces": [
+  {
+   "label": "person",
+   "triangles": 37217,
+   "vertices": 23700,
+   "bytes": 5911302,
+   "material": "MeshStandardMaterial (vertex colours, double-sided, roughness 0.82, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "cast:mh_48",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 3,000 triangles (37,217 today, 12.4 times the budget): one skinned mesh a body, clothes and hair baked in (GTA-style), LODs ~3,000 / 1,000 / 300 / an impostor.",
+  "Remove its 52 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "84 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "13 shape targets (3611 KB): bake the shape the body wears; keep only the face's few expressions, or none past the near distance."
+ ],
+ "target": 3000
+}

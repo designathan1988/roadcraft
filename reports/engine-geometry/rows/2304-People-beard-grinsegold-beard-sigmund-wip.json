@@ -1,0 +1,67 @@
+{
+ "id": "People: beard/grinsegold_beard_sigmund_wip",
+ "group": "People: beard",
+ "name": "grinsegold_beard_sigmund_wip",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/grinsegold_beard_sigmund_wip.bin",
+ "build": "skinned",
+ "triangles": 878,
+ "vertices": 535,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 27656,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 27656,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 878,
+   "vertices": 535
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2304-People-beard-grinsegold-beard-sigmund-wip.png",
+ "model": "models/2304-People-beard-grinsegold-beard-sigmund-wip.glb",
+ "pieces": [
+  {
+   "label": "beard",
+   "triangles": 878,
+   "vertices": 535,
+   "bytes": 27656,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map grinsegold_beard_sigmund_wip.webp 512x512 WebP, 34758 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture grinsegold_beard_sigmund_wip.webp"
+ ],
+ "countKey": "proxy:grinsegold_beard_sigmund_wip",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (878 today, 21.9 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 40
+}

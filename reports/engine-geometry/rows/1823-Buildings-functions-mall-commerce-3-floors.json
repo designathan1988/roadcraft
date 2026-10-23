@@ -1,0 +1,80 @@
+{
+ "id": "Buildings: functions/mall/commerce (3 floors)",
+ "group": "Buildings: functions",
+ "name": "mall",
+ "variation": "commerce (3 floors)",
+ "origin": "kit",
+ "source": "src/world/buildings/cityBuildings.ts (CITY_BUILDINGS)",
+ "build": "merged",
+ "triangles": 7050,
+ "vertices": 11836,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B litSlot/instance:1xFloat32=4B roomA:4xUint16=8B roomB:4xUint16=8B roomC:4xUint16=8B roomD:4xUint16=8B roomE:4xUint16=8B",
+ "bytesPerVertex": 104,
+ "geometryBytes": 247256,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 247256,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-awning\" [onBeforeCompile() {}|part-pose] (roughness 0.92, metalness 0, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in room-lights-awake-interior-v15-recess|part-pose | patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 7050,
+   "vertices": 11836
+  }
+ ],
+ "solids": "411 solids: 201 other, 4 open prism, 82 quad, 124 box",
+ "hiddenTriangles": 264,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 3,
+ "trianglesPerFloor": 2350,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1823-Buildings-functions-mall-commerce-3-floors.png",
+ "model": "models/1823-Buildings-functions-mall-commerce-3-floors.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 5402,
+   "vertices": 8540,
+   "bytes": 237372,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-glass x80",
+   "triangles": 160,
+   "vertices": 320,
+   "bytes": 6220,
+   "material": "MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-awning x62",
+   "triangles": 1488,
+   "vertices": 2976,
+   "bytes": 3664,
+   "material": "MeshStandardMaterial \"building-part-awning\" [onBeforeCompile() {}|part-pose] (roughness 0.92, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built alone at its detail level (L0) by buildBuildingMeshes, every part with it; its far levels (facade L1, masses) are the building layer's cells"
+ ],
+ "countKey": "building:Buildings: functions:mall:commerce",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,500 triangles (7,050 today, 4.7 times the budget): blocks as boxes (10 triangles each) with the facade shader (windows, frames, sills, slabs, shopfronts, doors, fake interiors), roof and props as geometry near only.",
+  "Remove its 264 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "104 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1500
+}

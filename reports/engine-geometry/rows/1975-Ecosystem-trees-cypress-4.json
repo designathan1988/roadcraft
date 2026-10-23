@@ -1,0 +1,73 @@
+{
+ "id": "Ecosystem trees/cypress/4",
+ "group": "Ecosystem trees",
+ "name": "cypress",
+ "variation": "4",
+ "origin": "kit",
+ "source": "src/render/natureTrees.ts",
+ "build": "instanced",
+ "triangles": 158,
+ "vertices": 334,
+ "attributes": "position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aCorner:2xFloat32=8B",
+ "bytesPerVertex": 52,
+ "geometryBytes": 17344,
+ "textureBytes": 4194304,
+ "extraBytes": 0,
+ "totalBytes": 4211648,
+ "materials": "MeshStandardMaterial [wind-nearfade|pose-tree] (vertex colours, flat shading, roughness 0.85, metalness 0, opacity 1) | MeshStandardMaterial [wind-nearfade-billboard-coverage-near|pose-tree] (vertex colours, double-sided, alpha test 0.5, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "patched built-in wind-nearfade|pose-tree | patched built-in wind-nearfade-billboard-coverage-near|pose-tree",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 158,
+   "vertices": 334
+  }
+ ],
+ "solids": "72 solids: 1 open prism, 71 other",
+ "hiddenTriangles": 0,
+ "shadow": "casts: body by its depth material",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1975-Ecosystem-trees-cypress-4.png",
+ "model": "models/1975-Ecosystem-trees-cypress-4.glb",
+ "pieces": [
+  {
+   "label": "body",
+   "triangles": 18,
+   "vertices": 54,
+   "bytes": 1944,
+   "material": "MeshStandardMaterial [wind-nearfade|pose-tree] (vertex colours, flat shading, roughness 0.85, metalness 0, opacity 1)"
+  },
+  {
+   "label": "foliage cards",
+   "triangles": 140,
+   "vertices": 280,
+   "bytes": 15400,
+   "material": "MeshStandardMaterial [wind-nearfade-billboard-coverage-near|pose-tree] (vertex colours, double-sided, alpha test 0.5, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 1536x512 RGBA 8-bit, 11 levels, 4194304 B"
+ ],
+ "notes": [
+  "one model at every distance; past it the far picture (impostor)"
+ ],
+ "countKey": "nature:trees",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Same triangles and vertices as cypress 3: load one mesh and change its colour, not a second copy.",
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "52 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 250
+}

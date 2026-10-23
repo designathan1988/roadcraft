@@ -1,0 +1,64 @@
+{
+ "id": "People: hat/jujube_newsboy_cap",
+ "group": "People: hat",
+ "name": "jujube_newsboy_cap",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/jujube_newsboy_cap.bin",
+ "build": "skinned",
+ "triangles": 996,
+ "vertices": 572,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 30256,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 30256,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 996,
+   "vertices": 572
+  }
+ ],
+ "solids": "2 solids: 1 other, 1 closed cylinder",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2329-People-hat-jujube-newsboy-cap.png",
+ "model": "models/2329-People-hat-jujube-newsboy-cap.glb",
+ "pieces": [
+  {
+   "label": "hat",
+   "triangles": 996,
+   "vertices": 572,
+   "bytes": 30256,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "hides 0 base-body vertices under it"
+ ],
+ "countKey": "proxy:jujube_newsboy_cap",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (996 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

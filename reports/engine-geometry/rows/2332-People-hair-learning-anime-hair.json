@@ -1,0 +1,69 @@
+{
+ "id": "People: hair/learning_anime_hair",
+ "group": "People: hair",
+ "name": "learning_anime_hair",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/learning_anime_hair.bin",
+ "build": "skinned",
+ "triangles": 91392,
+ "vertices": 49728,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 2688000,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 2688000,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 91392,
+   "vertices": 49728
+  }
+ ],
+ "solids": "62 solids: 50 closed cylinder, 12 other",
+ "hiddenTriangles": 6142,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2332-People-hair-learning-anime-hair.png",
+ "model": "models/2332-People-hair-learning-anime-hair.glb",
+ "pieces": [
+  {
+   "label": "hair",
+   "triangles": 91392,
+   "vertices": 49728,
+   "bytes": 2688000,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map learning_anime_hair.webp 512x512 WebP, 20994 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture learning_anime_hair.webp"
+ ],
+ "countKey": "proxy:learning_anime_hair",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 400 triangles (91,392 today, 228.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.",
+  "Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.",
+  "Remove its 6,142 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 400
+}

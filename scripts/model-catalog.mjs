@@ -172,8 +172,8 @@ try {
   // Every row's sheet and 3D file under its rank (`--sheets=N`: the costliest N of the running game only); a batch of them a call, drawn by one renderer.
   const digits = String(result.rows.length).length;
   const fileOf = (row) => `${String(result.rows.indexOf(row) + 1).padStart(digits, '0')}-${row.id.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 80)}`;
-  // Each object was saved as it was made (`run.ts` saveRow): only one that has no picture or 3D file yet is tried again here.
-  const chosen = result.rows.filter((r) => !r.sheet || (!noModels && !r.model));
+  // Each object was saved as it was made (`run.ts` saveRow): its picture, 3D file and numbers are in the folder already; nothing is drawn again here.
+  const chosen = [];
   const BATCH = 25;
   for (let start = 0; start < chosen.length; start += BATCH) {
     const batch = chosen.slice(start, start + BATCH);
@@ -243,7 +243,8 @@ const json = {
 };
 writeFileSync(join(out, 'catalog.json'), JSON.stringify(json, null, 1));
 writeFileSync(join(out, 'gaps.json'), JSON.stringify(json.gaps, null, 1));
-for (const r of rows) writeFileSync(join(out, 'rows', `${r.sheet ? r.sheet.slice(7, -4) : r.model ? r.model.slice(7, -4) : r.id.replace(/[^a-z0-9]+/gi, '-')}.json`), JSON.stringify(r, null, 1));
+// Each row written again under its own name with what the run learnt of it since (its copies, its cost).
+for (const r of rows) if (r.sheet || r.model) writeFileSync(join(out, 'rows', `${(r.sheet || r.model).slice(7, -4)}.json`), JSON.stringify(r, null, 1));
 writeReport(out, 'finished');
 writeFileSync(join(out, 'gaps.md'), ['# What the catalogue could not measure, and why', '', ...json.gaps.map((g) => `- ${g}`), '', '## How hidden triangles are counted', '', HIDDEN].join('\n'));
 // Every building of the test city, built alone and measured: what each kind's size bands sum.

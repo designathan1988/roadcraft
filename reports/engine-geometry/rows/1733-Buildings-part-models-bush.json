@@ -1,0 +1,63 @@
+{
+ "id": "Buildings: part models/bush",
+ "group": "Buildings: part models",
+ "name": "bush",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 168,
+ "vertices": 372,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 14400,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 14400,
+ "materials": "MeshStandardMaterial \"building-part-bush\" [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 168,
+   "vertices": 372
+  }
+ ],
+ "solids": "100 solids: 100 other",
+ "hiddenTriangles": 0,
+ "shadow": "casts: 1 box pieces under a shadow texel, else its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1733-Buildings-part-models-bush.png",
+ "model": "models/1733-Buildings-part-models-bush.glb",
+ "pieces": [
+  {
+   "label": "bush",
+   "triangles": 168,
+   "vertices": 372,
+   "bytes": 14400,
+   "material": "MeshStandardMaterial \"building-part-bush\" [onBeforeCompile() {}|part-pose] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:bush",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (168 today, 7.0 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.",
+  "Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

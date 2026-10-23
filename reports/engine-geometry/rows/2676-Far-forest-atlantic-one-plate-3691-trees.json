@@ -1,0 +1,62 @@
+{
+ "id": "Far forest/atlantic/one plate, 3691 trees",
+ "group": "Far forest",
+ "name": "atlantic",
+ "variation": "one plate, 3691 trees",
+ "origin": "kit",
+ "source": "src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)",
+ "build": "instanced",
+ "triangles": 7382,
+ "vertices": 14764,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 118220,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 118220,
+ "materials": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)",
+ "shader": "patched built-in far-forest-impostor",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 7382,
+   "vertices": 14764
+  }
+ ],
+ "solids": "3691 solids: 3691 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2676-Far-forest-atlantic-one-plate-3691-trees.png",
+ "model": "models/2676-Far-forest-atlantic-one-plate-3691-trees.glb",
+ "pieces": [
+  {
+   "label": "tree quad x3691",
+   "triangles": 7382,
+   "vertices": 14764,
+   "bytes": 118220,
+   "material": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget"
+ ],
+ "countKey": "far-forest:atlantic",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels."
+ ],
+ "target": null
+}

@@ -1,0 +1,64 @@
+{
+ "id": "Water/river/160 m course, 16 m wide",
+ "group": "Water",
+ "name": "river",
+ "variation": "160 m course, 16 m wide",
+ "origin": "kit",
+ "source": "src/render/terrain.ts (unifiedWaterGeometry)",
+ "build": "merged",
+ "triangles": 864,
+ "vertices": 2592,
+ "attributes": "position:3xFloat32=12B aDepth:1xFloat32=4B aFlow:2xFloat32=8B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 114048,
+ "textureBytes": 349524,
+ "extraBytes": 0,
+ "totalBytes": 463572,
+ "materials": "MeshStandardMaterial [water-flow-waves-v6] (transparent, roughness 0.15, metalness 0, opacity 1)",
+ "shader": "patched built-in water-flow-waves-v6",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 864,
+   "vertices": 2592
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2674-Water-river-160-m-course-16-m-wide.png",
+ "model": "models/2674-Water-river-160-m-course-16-m-wide.glb",
+ "pieces": [
+  {
+   "label": "water",
+   "triangles": 864,
+   "vertices": 2592,
+   "bytes": 114048,
+   "material": "MeshStandardMaterial [water-flow-waves-v6] (transparent, roughness 0.15, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "normalMap water-normal 256x256 RGBA 8-bit, 9 levels, 349524 B"
+ ],
+ "notes": [
+  "its waves, foam and current drawn by the water shader over the time (water.ts)"
+ ],
+ "countKey": "water:river",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": null
+}

@@ -1,0 +1,1027 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roads</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Roads</h1><p class="muted">48 objects, 219,539 triangles one of each.</p></header>
+<main><article class="row" id="Roads/boulevard junction/four ways">
+  <a href="../images/1897-Roads-boulevard-junction-four-ways.png"><img loading="lazy" src="../images/1897-Roads-boulevard-junction-four-ways.png" alt="Roads/boulevard junction/four ways"></a>
+  <div class="data">
+    <h3>boulevard junction <small>four ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (12,228 today, 20.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12,228</dd><dt>Vertices</dt><dd>11,193</dd>
+      <dt>Levels</dt><dd>L0 12,228 / L1 2,410</dd>
+      <dt>Memory</dt><dd>37,273 KB (geometry 750 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>164 solids: 44 other, 120 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1897-Roads-boulevard-junction-four-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue junction/four ways">
+  <a href="../images/1896-Roads-avenue-junction-four-ways.png"><img loading="lazy" src="../images/1896-Roads-avenue-junction-four-ways.png" alt="Roads/avenue junction/four ways"></a>
+  <div class="data">
+    <h3>avenue junction <small>four ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (10,428 today, 17.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>10,428</dd><dt>Vertices</dt><dd>9,389</dd>
+      <dt>Levels</dt><dd>L0 10,428 / L1 1,741</dd>
+      <dt>Memory</dt><dd>33,060 KB (geometry 634 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>162 solids: 32 other, 130 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1896-Roads-avenue-junction-four-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway junction/four ways">
+  <a href="../images/1898-Roads-highway-junction-four-ways.png"><img loading="lazy" src="../images/1898-Roads-highway-junction-four-ways.png" alt="Roads/highway junction/four ways"></a>
+  <div class="data">
+    <h3>highway junction <small>four ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (9,188 today, 15.3 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>9,188</dd><dt>Vertices</dt><dd>8,821</dd>
+      <dt>Levels</dt><dd>L0 9,188 / L1 2,108</dd>
+      <dt>Memory</dt><dd>37,093 KB (geometry 570 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>96 solids: 32 other, 64 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1898-Roads-highway-junction-four-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/boulevard junction/three ways">
+  <a href="../images/1891-Roads-boulevard-junction-three-ways.png"><img loading="lazy" src="../images/1891-Roads-boulevard-junction-three-ways.png" alt="Roads/boulevard junction/three ways"></a>
+  <div class="data">
+    <h3>boulevard junction <small>three ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (9,130 today, 15.2 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>9,130</dd><dt>Vertices</dt><dd>8,154</dd>
+      <dt>Levels</dt><dd>L0 9,130 / L1 1,433</dd>
+      <dt>Memory</dt><dd>37,048 KB (geometry 525 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>127 solids: 37 other, 90 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1891-Roads-boulevard-junction-three-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban junction/four ways">
+  <a href="../images/1895-Roads-urban-junction-four-ways.png"><img loading="lazy" src="../images/1895-Roads-urban-junction-four-ways.png" alt="Roads/urban junction/four ways"></a>
+  <div class="data">
+    <h3>urban junction <small>four ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (7,798 today, 13.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,798</dd><dt>Vertices</dt><dd>7,579</dd>
+      <dt>Levels</dt><dd>L0 7,798 / L1 1,427</dd>
+      <dt>Memory</dt><dd>32,931 KB (geometry 504 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>102 solids: 24 other, 78 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1895-Roads-urban-junction-four-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue junction/three ways">
+  <a href="../images/1890-Roads-avenue-junction-three-ways.png"><img loading="lazy" src="../images/1890-Roads-avenue-junction-three-ways.png" alt="Roads/avenue junction/three ways"></a>
+  <div class="data">
+    <h3>avenue junction <small>three ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (7,697 today, 12.8 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,697</dd><dt>Vertices</dt><dd>6,827</dd>
+      <dt>Levels</dt><dd>L0 7,697 / L1 1,073</dd>
+      <dt>Memory</dt><dd>32,874 KB (geometry 448 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>125 solids: 28 other, 97 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1890-Roads-avenue-junction-three-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local junction/four ways">
+  <a href="../images/1894-Roads-local-junction-four-ways.png"><img loading="lazy" src="../images/1894-Roads-local-junction-four-ways.png" alt="Roads/local junction/four ways"></a>
+  <div class="data">
+    <h3>local junction <small>four ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (7,420 today, 12.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,420</dd><dt>Vertices</dt><dd>7,406</dd>
+      <dt>Levels</dt><dd>L0 7,420 / L1 1,518</dd>
+      <dt>Memory</dt><dd>32,924 KB (geometry 498 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>54 solids: 24 other, 30 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1894-Roads-local-junction-four-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway junction/three ways">
+  <a href="../images/1892-Roads-highway-junction-three-ways.png"><img loading="lazy" src="../images/1892-Roads-highway-junction-three-ways.png" alt="Roads/highway junction/three ways"></a>
+  <div class="data">
+    <h3>highway junction <small>three ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (6,805 today, 11.3 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,805</dd><dt>Vertices</dt><dd>6,358</dd>
+      <dt>Levels</dt><dd>L0 6,805 / L1 1,171</dd>
+      <dt>Memory</dt><dd>36,911 KB (geometry 389 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>76 solids: 28 other, 48 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1892-Roads-highway-junction-three-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/boulevard bend/two roads at a right angle">
+  <a href="../images/1885-Roads-boulevard-bend-two-roads-at-a-right-angle.png"><img loading="lazy" src="../images/1885-Roads-boulevard-bend-two-roads-at-a-right-angle.png" alt="Roads/boulevard bend/two roads at a right angle"></a>
+  <div class="data">
+    <h3>boulevard bend <small>two roads at a right angle</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (6,461 today, 10.8 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,461</dd><dt>Vertices</dt><dd>5,817</dd>
+      <dt>Levels</dt><dd>L0 6,461 / L1 815</dd>
+      <dt>Memory</dt><dd>36,882 KB (geometry 359 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>92 solids: 28 other, 64 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1885-Roads-boulevard-bend-two-roads-at-a-right-angle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban junction/three ways">
+  <a href="../images/1889-Roads-urban-junction-three-ways.png"><img loading="lazy" src="../images/1889-Roads-urban-junction-three-ways.png" alt="Roads/urban junction/three ways"></a>
+  <div class="data">
+    <h3>urban junction <small>three ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (5,775 today, 9.6 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,775</dd><dt>Vertices</dt><dd>5,540</dd>
+      <dt>Levels</dt><dd>L0 5,775 / L1 881</dd>
+      <dt>Memory</dt><dd>32,785 KB (geometry 359 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>80 solids: 22 other, 58 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1889-Roads-urban-junction-three-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local junction/three ways">
+  <a href="../images/1888-Roads-local-junction-three-ways.png"><img loading="lazy" src="../images/1888-Roads-local-junction-three-ways.png" alt="Roads/local junction/three ways"></a>
+  <div class="data">
+    <h3>local junction <small>three ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (5,423 today, 9.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,423</dd><dt>Vertices</dt><dd>5,320</dd>
+      <dt>Levels</dt><dd>L0 5,423 / L1 863</dd>
+      <dt>Memory</dt><dd>32,770 KB (geometry 344 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>44 solids: 22 other, 22 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1888-Roads-local-junction-three-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue bend/two roads at a right angle">
+  <a href="../images/1884-Roads-avenue-bend-two-roads-at-a-right-angle.png"><img loading="lazy" src="../images/1884-Roads-avenue-bend-two-roads-at-a-right-angle.png" alt="Roads/avenue bend/two roads at a right angle"></a>
+  <div class="data">
+    <h3>avenue bend <small>two roads at a right angle</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (5,376 today, 9.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,376</dd><dt>Vertices</dt><dd>4,827</dd>
+      <dt>Levels</dt><dd>L0 5,376 / L1 618</dd>
+      <dt>Memory</dt><dd>32,730 KB (geometry 303 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>90 solids: 22 other, 68 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1884-Roads-avenue-bend-two-roads-at-a-right-angle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp junction/four ways">
+  <a href="../images/1899-Roads-ramp-junction-four-ways.png"><img loading="lazy" src="../images/1899-Roads-ramp-junction-four-ways.png" alt="Roads/ramp junction/four ways"></a>
+  <div class="data">
+    <h3>ramp junction <small>four ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (5,248 today, 8.7 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,248</dd><dt>Vertices</dt><dd>5,546</dd>
+      <dt>Levels</dt><dd>L0 5,248 / L1 1,136</dd>
+      <dt>Memory</dt><dd>32,772 KB (geometry 346 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>56 solids: 16 other, 40 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1899-Roads-ramp-junction-four-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/boulevard tunnel/140 m">
+  <a href="../images/1915-Roads-boulevard-tunnel-140-m.png"><img loading="lazy" src="../images/1915-Roads-boulevard-tunnel-140-m.png" alt="Roads/boulevard tunnel/140 m"></a>
+  <div class="data">
+    <h3>boulevard tunnel <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (5,116 today, 8.5 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>40 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,116</dd><dt>Vertices</dt><dd>4,608</dd>
+      <dt>Levels</dt><dd>L0 5,116 / L1 672</dd>
+      <dt>Memory</dt><dd>40,881 KB (geometry 263 KB, textures 40,619 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>76 solids: 16 other, 8 open prism, 44 quad, 8 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1915-Roads-boulevard-tunnel-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/boulevard straight/140 m">
+  <a href="../images/1873-Roads-boulevard-straight-140-m.png"><img loading="lazy" src="../images/1873-Roads-boulevard-straight-140-m.png" alt="Roads/boulevard straight/140 m"></a>
+  <div class="data">
+    <h3>boulevard straight <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (5,020 today, 8.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,020</dd><dt>Vertices</dt><dd>4,248</dd>
+      <dt>Levels</dt><dd>L0 5,020 / L1 571</dd>
+      <dt>Memory</dt><dd>36,768 KB (geometry 245 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>68 solids: 16 other, 8 open prism, 44 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1873-Roads-boulevard-straight-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway bend/two roads at a right angle">
+  <a href="../images/1886-Roads-highway-bend-two-roads-at-a-right-angle.png"><img loading="lazy" src="../images/1886-Roads-highway-bend-two-roads-at-a-right-angle.png" alt="Roads/highway bend/two roads at a right angle"></a>
+  <div class="data">
+    <h3>highway bend <small>two roads at a right angle</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,881 today, 8.1 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,881</dd><dt>Vertices</dt><dd>4,594</dd>
+      <dt>Levels</dt><dd>L0 4,881 / L1 625</dd>
+      <dt>Memory</dt><dd>36,787 KB (geometry 264 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>60 solids: 24 other, 36 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1886-Roads-highway-bend-two-roads-at-a-right-angle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway tunnel/140 m">
+  <a href="../images/1916-Roads-highway-tunnel-140-m.png"><img loading="lazy" src="../images/1916-Roads-highway-tunnel-140-m.png" alt="Roads/highway tunnel/140 m"></a>
+  <div class="data">
+    <h3>highway tunnel <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,552 today, 7.6 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>40 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,552</dd><dt>Vertices</dt><dd>4,180</dd>
+      <dt>Levels</dt><dd>L0 4,552 / L1 156</dd>
+      <dt>Memory</dt><dd>40,822 KB (geometry 204 KB, textures 40,619 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>76 solids: 16 other, 8 open prism, 44 quad, 8 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1916-Roads-highway-tunnel-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway straight/140 m">
+  <a href="../images/1874-Roads-highway-straight-140-m.png"><img loading="lazy" src="../images/1874-Roads-highway-straight-140-m.png" alt="Roads/highway straight/140 m"></a>
+  <div class="data">
+    <h3>highway straight <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,456 today, 7.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,456</dd><dt>Vertices</dt><dd>3,820</dd>
+      <dt>Levels</dt><dd>L0 4,456 / L1 152</dd>
+      <dt>Memory</dt><dd>36,717 KB (geometry 194 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>68 solids: 16 other, 8 open prism, 44 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1874-Roads-highway-straight-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue tunnel/140 m">
+  <a href="../images/1914-Roads-avenue-tunnel-140-m.png"><img loading="lazy" src="../images/1914-Roads-avenue-tunnel-140-m.png" alt="Roads/avenue tunnel/140 m"></a>
+  <div class="data">
+    <h3>avenue tunnel <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,232 today, 7.1 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,232</dd><dt>Vertices</dt><dd>3,742</dd>
+      <dt>Levels</dt><dd>L0 4,232 / L1 655</dd>
+      <dt>Memory</dt><dd>36,750 KB (geometry 227 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>70 solids: 18 other, 44 quad, 8 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1914-Roads-avenue-tunnel-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/boulevard one way/140 m">
+  <a href="../images/1879-Roads-boulevard-one-way-140-m.png"><img loading="lazy" src="../images/1879-Roads-boulevard-one-way-140-m.png" alt="Roads/boulevard one way/140 m"></a>
+  <div class="data">
+    <h3>boulevard one way <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,190 today, 7.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,190</dd><dt>Vertices</dt><dd>3,475</dd>
+      <dt>Levels</dt><dd>L0 4,190 / L1 558</dd>
+      <dt>Memory</dt><dd>32,641 KB (geometry 214 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>82 solids: 16 other, 66 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1879-Roads-boulevard-one-way-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue straight/140 m">
+  <a href="../images/1872-Roads-avenue-straight-140-m.png"><img loading="lazy" src="../images/1872-Roads-avenue-straight-140-m.png" alt="Roads/avenue straight/140 m"></a>
+  <div class="data">
+    <h3>avenue straight <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,136 today, 6.9 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,136</dd><dt>Vertices</dt><dd>3,418</dd>
+      <dt>Levels</dt><dd>L0 4,136 / L1 554</dd>
+      <dt>Memory</dt><dd>32,638 KB (geometry 211 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>62 solids: 18 other, 44 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1872-Roads-avenue-straight-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue one way/140 m">
+  <a href="../images/1878-Roads-avenue-one-way-140-m.png"><img loading="lazy" src="../images/1878-Roads-avenue-one-way-140-m.png" alt="Roads/avenue one way/140 m"></a>
+  <div class="data">
+    <h3>avenue one way <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,116 today, 6.9 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,116</dd><dt>Vertices</dt><dd>3,438</dd>
+      <dt>Levels</dt><dd>L0 4,116 / L1 554</dd>
+      <dt>Memory</dt><dd>32,638 KB (geometry 212 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>82 solids: 16 other, 66 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1878-Roads-avenue-one-way-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban bend/two roads at a right angle">
+  <a href="../images/1883-Roads-urban-bend-two-roads-at-a-right-angle.png"><img loading="lazy" src="../images/1883-Roads-urban-bend-two-roads-at-a-right-angle.png" alt="Roads/urban bend/two roads at a right angle"></a>
+  <div class="data">
+    <h3>urban bend <small>two roads at a right angle</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (4,009 today, 6.7 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,009</dd><dt>Vertices</dt><dd>3,918</dd>
+      <dt>Levels</dt><dd>L0 4,009 / L1 519</dd>
+      <dt>Memory</dt><dd>32,670 KB (geometry 244 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>56 solids: 19 other, 1 open prism, 36 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1883-Roads-urban-bend-two-roads-at-a-right-angle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp junction/three ways">
+  <a href="../images/1893-Roads-ramp-junction-three-ways.png"><img loading="lazy" src="../images/1893-Roads-ramp-junction-three-ways.png" alt="Roads/ramp junction/three ways"></a>
+  <div class="data">
+    <h3>ramp junction <small>three ways</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,809 today, 6.3 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,809</dd><dt>Vertices</dt><dd>3,941</dd>
+      <dt>Levels</dt><dd>L0 3,809 / L1 631</dd>
+      <dt>Memory</dt><dd>32,660 KB (geometry 233 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>46 solids: 16 other, 30 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1893-Roads-ramp-junction-three-ways.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local bend/two roads at a right angle">
+  <a href="../images/1882-Roads-local-bend-two-roads-at-a-right-angle.png"><img loading="lazy" src="../images/1882-Roads-local-bend-two-roads-at-a-right-angle.png" alt="Roads/local bend/two roads at a right angle"></a>
+  <div class="data">
+    <h3>local bend <small>two roads at a right angle</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,766 today, 6.3 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,766</dd><dt>Vertices</dt><dd>3,767</dd>
+      <dt>Levels</dt><dd>L0 3,766 / L1 482</dd>
+      <dt>Memory</dt><dd>32,658 KB (geometry 232 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>32 solids: 20 other, 12 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1882-Roads-local-bend-two-roads-at-a-right-angle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/boulevard raised/140 m elevated">
+  <a href="../images/1903-Roads-boulevard-raised-140-m-elevated.png"><img loading="lazy" src="../images/1903-Roads-boulevard-raised-140-m-elevated.png" alt="Roads/boulevard raised/140 m elevated"></a>
+  <div class="data">
+    <h3>boulevard raised <small>140 m elevated</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,760 today, 6.3 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>29 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,760</dd><dt>Vertices</dt><dd>5,294</dd>
+      <dt>Levels</dt><dd>L0 3,760</dd>
+      <dt>Memory</dt><dd>29,893 KB (geometry 197 KB, textures 29,696 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>81 solids: 8 open prism, 24 other, 44 quad, 5 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1903-Roads-boulevard-raised-140-m-elevated.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/boulevard bridge/140 m">
+  <a href="../images/1909-Roads-boulevard-bridge-140-m.png"><img loading="lazy" src="../images/1909-Roads-boulevard-bridge-140-m.png" alt="Roads/boulevard bridge/140 m"></a>
+  <div class="data">
+    <h3>boulevard bridge <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,652 today, 6.1 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>29 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,652</dd><dt>Vertices</dt><dd>5,140</dd>
+      <dt>Levels</dt><dd>L0 3,652</dd>
+      <dt>Memory</dt><dd>29,893 KB (geometry 197 KB, textures 29,696 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>78 solids: 8 open prism, 22 other, 44 quad, 4 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1909-Roads-boulevard-bridge-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway one way/140 m">
+  <a href="../images/1880-Roads-highway-one-way-140-m.png"><img loading="lazy" src="../images/1880-Roads-highway-one-way-140-m.png" alt="Roads/highway one way/140 m"></a>
+  <div class="data">
+    <h3>highway one way <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,626 today, 6.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,626</dd><dt>Vertices</dt><dd>3,047</dd>
+      <dt>Levels</dt><dd>L0 3,626 / L1 142</dd>
+      <dt>Memory</dt><dd>32,589 KB (geometry 163 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>82 solids: 16 other, 66 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1880-Roads-highway-one-way-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue raised/140 m elevated">
+  <a href="../images/1902-Roads-avenue-raised-140-m-elevated.png"><img loading="lazy" src="../images/1902-Roads-avenue-raised-140-m-elevated.png" alt="Roads/avenue raised/140 m elevated"></a>
+  <div class="data">
+    <h3>avenue raised <small>140 m elevated</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,392 today, 5.7 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,392</dd><dt>Vertices</dt><dd>4,898</dd>
+      <dt>Levels</dt><dd>L0 3,392</dd>
+      <dt>Memory</dt><dd>25,781 KB (geometry 182 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>75 solids: 8 open prism, 18 other, 44 quad, 5 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1902-Roads-avenue-raised-140-m-elevated.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway raised/140 m elevated">
+  <a href="../images/1904-Roads-highway-raised-140-m-elevated.png"><img loading="lazy" src="../images/1904-Roads-highway-raised-140-m-elevated.png" alt="Roads/highway raised/140 m elevated"></a>
+  <div class="data">
+    <h3>highway raised <small>140 m elevated</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,336 today, 5.6 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>12 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>29 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,336</dd><dt>Vertices</dt><dd>4,934</dd>
+      <dt>Levels</dt><dd>L0 3,336</dd>
+      <dt>Memory</dt><dd>29,870 KB (geometry 174 KB, textures 29,696 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>81 solids: 12 open prism, 20 other, 44 quad, 5 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1904-Roads-highway-raised-140-m-elevated.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/avenue bridge/140 m">
+  <a href="../images/1908-Roads-avenue-bridge-140-m.png"><img loading="lazy" src="../images/1908-Roads-avenue-bridge-140-m.png" alt="Roads/avenue bridge/140 m"></a>
+  <div class="data">
+    <h3>avenue bridge <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,284 today, 5.5 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,284</dd><dt>Vertices</dt><dd>4,744</dd>
+      <dt>Levels</dt><dd>L0 3,284</dd>
+      <dt>Memory</dt><dd>25,782 KB (geometry 182 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>72 solids: 8 open prism, 16 other, 44 quad, 4 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1908-Roads-avenue-bridge-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/highway bridge/140 m">
+  <a href="../images/1910-Roads-highway-bridge-140-m.png"><img loading="lazy" src="../images/1910-Roads-highway-bridge-140-m.png" alt="Roads/highway bridge/140 m"></a>
+  <div class="data">
+    <h3>highway bridge <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,228 today, 5.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>12 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>29 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,228</dd><dt>Vertices</dt><dd>4,780</dd>
+      <dt>Levels</dt><dd>L0 3,228</dd>
+      <dt>Memory</dt><dd>29,871 KB (geometry 175 KB, textures 29,696 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>78 solids: 12 open prism, 18 other, 44 quad, 4 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1910-Roads-highway-bridge-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban raised/140 m elevated">
+  <a href="../images/1901-Roads-urban-raised-140-m-elevated.png"><img loading="lazy" src="../images/1901-Roads-urban-raised-140-m-elevated.png" alt="Roads/urban raised/140 m elevated"></a>
+  <div class="data">
+    <h3>urban raised <small>140 m elevated</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,132 today, 5.2 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,132</dd><dt>Vertices</dt><dd>4,650</dd>
+      <dt>Levels</dt><dd>L0 3,132</dd>
+      <dt>Memory</dt><dd>25,770 KB (geometry 170 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>51 solids: 8 open prism, 16 other, 22 quad, 5 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1901-Roads-urban-raised-140-m-elevated.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local raised/140 m elevated">
+  <a href="../images/1900-Roads-local-raised-140-m-elevated.png"><img loading="lazy" src="../images/1900-Roads-local-raised-140-m-elevated.png" alt="Roads/local raised/140 m elevated"></a>
+  <div class="data">
+    <h3>local raised <small>140 m elevated</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,088 today, 5.1 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,088</dd><dt>Vertices</dt><dd>4,562</dd>
+      <dt>Levels</dt><dd>L0 3,088</dd>
+      <dt>Memory</dt><dd>25,767 KB (geometry 167 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>29 solids: 8 open prism, 16 other, 5 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1900-Roads-local-raised-140-m-elevated.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban tunnel/140 m">
+  <a href="../images/1913-Roads-urban-tunnel-140-m.png"><img loading="lazy" src="../images/1913-Roads-urban-tunnel-140-m.png" alt="Roads/urban tunnel/140 m"></a>
+  <div class="data">
+    <h3>urban tunnel <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,026 today, 5.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,026</dd><dt>Vertices</dt><dd>3,009</dd>
+      <dt>Levels</dt><dd>L0 3,026 / L1 638</dd>
+      <dt>Memory</dt><dd>36,705 KB (geometry 183 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>46 solids: 16 other, 22 quad, 8 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1913-Roads-urban-tunnel-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban bridge/140 m">
+  <a href="../images/1907-Roads-urban-bridge-140-m.png"><img loading="lazy" src="../images/1907-Roads-urban-bridge-140-m.png" alt="Roads/urban bridge/140 m"></a>
+  <div class="data">
+    <h3>urban bridge <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (3,024 today, 5.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,024</dd><dt>Vertices</dt><dd>4,492</dd>
+      <dt>Levels</dt><dd>L0 3,024</dd>
+      <dt>Memory</dt><dd>25,770 KB (geometry 170 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>48 solids: 8 open prism, 14 other, 22 quad, 4 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1907-Roads-urban-bridge-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local bridge/140 m">
+  <a href="../images/1906-Roads-local-bridge-140-m.png"><img loading="lazy" src="../images/1906-Roads-local-bridge-140-m.png" alt="Roads/local bridge/140 m"></a>
+  <div class="data">
+    <h3>local bridge <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,980 today, 5.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>8 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,980</dd><dt>Vertices</dt><dd>4,404</dd>
+      <dt>Levels</dt><dd>L0 2,980</dd>
+      <dt>Memory</dt><dd>25,767 KB (geometry 167 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>26 solids: 8 open prism, 14 other, 4 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1906-Roads-local-bridge-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban straight/140 m">
+  <a href="../images/1871-Roads-urban-straight-140-m.png"><img loading="lazy" src="../images/1871-Roads-urban-straight-140-m.png" alt="Roads/urban straight/140 m"></a>
+  <div class="data">
+    <h3>urban straight <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,930 today, 4.9 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,930</dd><dt>Vertices</dt><dd>2,709</dd>
+      <dt>Levels</dt><dd>L0 2,930 / L1 520</dd>
+      <dt>Memory</dt><dd>32,594 KB (geometry 167 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>38 solids: 16 other, 22 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1871-Roads-urban-straight-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/urban one way/140 m">
+  <a href="../images/1877-Roads-urban-one-way-140-m.png"><img loading="lazy" src="../images/1877-Roads-urban-one-way-140-m.png" alt="Roads/urban one way/140 m"></a>
+  <div class="data">
+    <h3>urban one way <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,930 today, 4.9 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>Same triangles and vertices as urban straight 140 m: load one mesh and change its colour, not a second copy.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,930</dd><dt>Vertices</dt><dd>2,709</dd>
+      <dt>Levels</dt><dd>L0 2,930 / L1 520</dd>
+      <dt>Memory</dt><dd>32,594 KB (geometry 167 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>38 solids: 16 other, 22 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1877-Roads-urban-one-way-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp raised/140 m elevated">
+  <a href="../images/1905-Roads-ramp-raised-140-m-elevated.png"><img loading="lazy" src="../images/1905-Roads-ramp-raised-140-m-elevated.png" alt="Roads/ramp raised/140 m elevated"></a>
+  <div class="data">
+    <h3>ramp raised <small>140 m elevated</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,756 today, 4.6 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>12 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,756</dd><dt>Vertices</dt><dd>4,314</dd>
+      <dt>Levels</dt><dd>L0 2,756</dd>
+      <dt>Memory</dt><dd>25,750 KB (geometry 150 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>51 solids: 12 open prism, 12 other, 22 quad, 5 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1905-Roads-ramp-raised-140-m-elevated.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local tunnel/140 m">
+  <a href="../images/1912-Roads-local-tunnel-140-m.png"><img loading="lazy" src="../images/1912-Roads-local-tunnel-140-m.png" alt="Roads/local tunnel/140 m"></a>
+  <div class="data">
+    <h3>local tunnel <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,694 today, 4.5 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,694</dd><dt>Vertices</dt><dd>2,761</dd>
+      <dt>Levels</dt><dd>L0 2,694 / L1 515</dd>
+      <dt>Memory</dt><dd>36,683 KB (geometry 160 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>24 solids: 16 other, 8 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1912-Roads-local-tunnel-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp bend/two roads at a right angle">
+  <a href="../images/1887-Roads-ramp-bend-two-roads-at-a-right-angle.png"><img loading="lazy" src="../images/1887-Roads-ramp-bend-two-roads-at-a-right-angle.png" alt="Roads/ramp bend/two roads at a right angle"></a>
+  <div class="data">
+    <h3>ramp bend <small>two roads at a right angle</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,673 today, 4.5 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,673</dd><dt>Vertices</dt><dd>2,814</dd>
+      <dt>Levels</dt><dd>L0 2,673 / L1 342</dd>
+      <dt>Memory</dt><dd>32,584 KB (geometry 157 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>36 solids: 16 other, 20 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1887-Roads-ramp-bend-two-roads-at-a-right-angle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp bridge/140 m">
+  <a href="../images/1911-Roads-ramp-bridge-140-m.png"><img loading="lazy" src="../images/1911-Roads-ramp-bridge-140-m.png" alt="Roads/ramp bridge/140 m"></a>
+  <div class="data">
+    <h3>ramp bridge <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,648 today, 4.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>12 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>25 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,648</dd><dt>Vertices</dt><dd>4,156</dd>
+      <dt>Levels</dt><dd>L0 2,648</dd>
+      <dt>Memory</dt><dd>25,750 KB (geometry 150 KB, textures 25,600 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [detail] (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in detail-lots-own | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial | patched built-in detail</dd>
+      <dt>Solids</dt><dd>48 solids: 12 open prism, 10 other, 22 quad, 4 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt-raised:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1911-Roads-ramp-bridge-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local one way/140 m">
+  <a href="../images/1876-Roads-local-one-way-140-m.png"><img loading="lazy" src="../images/1876-Roads-local-one-way-140-m.png" alt="Roads/local one way/140 m"></a>
+  <div class="data">
+    <h3>local one way <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,642 today, 4.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,642</dd><dt>Vertices</dt><dd>2,561</dd>
+      <dt>Levels</dt><dd>L0 2,642 / L1 416</dd>
+      <dt>Memory</dt><dd>32,578 KB (geometry 151 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>38 solids: 16 other, 22 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1876-Roads-local-one-way-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/local straight/140 m">
+  <a href="../images/1870-Roads-local-straight-140-m.png"><img loading="lazy" src="../images/1870-Roads-local-straight-140-m.png" alt="Roads/local straight/140 m"></a>
+  <div class="data">
+    <h3>local straight <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,598 today, 4.3 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,598</dd><dt>Vertices</dt><dd>2,473</dd>
+      <dt>Levels</dt><dd>L0 2,598 / L1 416</dd>
+      <dt>Memory</dt><dd>32,574 KB (geometry 148 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own</dd>
+      <dt>Solids</dt><dd>16 solids: 16 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1870-Roads-local-straight-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp tunnel/140 m">
+  <a href="../images/1917-Roads-ramp-tunnel-140-m.png"><img loading="lazy" src="../images/1917-Roads-ramp-tunnel-140-m.png" alt="Roads/ramp tunnel/140 m"></a>
+  <div class="data">
+    <h3>ramp tunnel <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,468 today, 4.1 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,468</dd><dt>Vertices</dt><dd>2,584</dd>
+      <dt>Levels</dt><dd>L0 2,468 / L1 124</dd>
+      <dt>Memory</dt><dd>36,647 KB (geometry 124 KB, textures 36,523 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1) | MeshStandardMaterial (roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>46 solids: 16 other, 22 quad, 8 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>map deck:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap deck:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap deck:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1917-Roads-ramp-tunnel-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp straight/140 m">
+  <a href="../images/1875-Roads-ramp-straight-140-m.png"><img loading="lazy" src="../images/1875-Roads-ramp-straight-140-m.png" alt="Roads/ramp straight/140 m"></a>
+  <div class="data">
+    <h3>ramp straight <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,372 today, 4.0 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,372</dd><dt>Vertices</dt><dd>2,284</dd>
+      <dt>Levels</dt><dd>L0 2,372 / L1 104</dd>
+      <dt>Memory</dt><dd>32,543 KB (geometry 116 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa</dd>
+      <dt>Solids</dt><dd>38 solids: 16 other, 22 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1875-Roads-ramp-straight-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Roads/ramp one way/140 m">
+  <a href="../images/1881-Roads-ramp-one-way-140-m.png"><img loading="lazy" src="../images/1881-Roads-ramp-one-way-140-m.png" alt="Roads/ramp one way/140 m"></a>
+  <div class="data">
+    <h3>ramp one way <small>140 m</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 600 triangles (2,040 today, 3.4 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).</li><li>Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>32 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,040</dd><dt>Vertices</dt><dd>2,048</dd>
+      <dt>Levels</dt><dd>L0 2,040</dd>
+      <dt>Memory</dt><dd>32,523 KB (geometry 97 KB, textures 32,427 KB)</dd>
+      <dt>Per vertex</dt><dd>56 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1)</dd><dt>Shader</dt><dd>patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own</dd>
+      <dt>Solids</dt><dd>16 solids: 16 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B<br>map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B<br>normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B<br>roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B<br>map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B<br>roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B</dd>
+      <dt>Source</dt><dd><code>src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)</code> (kit)</dd>
+      <dt>Notes</dt><dd>built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)</dd>
+    </dl>
+    <a class="file" href="../models/1881-Roads-ramp-one-way-140-m.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

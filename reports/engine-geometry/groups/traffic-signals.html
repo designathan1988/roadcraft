@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traffic signals</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Traffic signals</h1><p class="muted">1 objects, 1,648 triangles one of each.</p></header>
+<main><article class="row" id="Traffic signals/signalised junction/4 heads (post, arm, housing, visors, lenses, halos)">
+  <a href="../images/2668-Traffic-signals-signalised-junction-4-heads-post-arm-housing-visors-lenses-halos.png"><img loading="lazy" src="../images/2668-Traffic-signals-signalised-junction-4-heads-post-arm-housing-visors-lenses-halos.png" alt="Traffic signals/signalised junction/4 heads (post, arm, housing, visors, lenses, halos)"></a>
+  <div class="data">
+    <h3>signalised junction <small>4 heads (post, arm, housing, visors, lenses, halos)</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (1,648 today, 4.1 times the budget): about 100 a head: post and arm as 6-sided prisms, housing a box, lenses and visors painted on its face (emissive).</li><li>About 100 triangles a head.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>72 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,648</dd><dt>Vertices</dt><dd>2,516</dd>
+      <dt>Levels</dt><dd>L0 1,648</dd>
+      <dt>Memory</dt><dd>11 KB (geometry 11 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>72 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aSurface:2xFloat32=8B aSwayPart:4xFloat32=16B aCastReach:1xFloat32=4B aLensGlow/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [(shader, renderer) =&gt; {] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshBasicMaterial [(shader, renderer) =&gt; {] (transparent, opacity 0.28) | MeshStandardMaterial [(shader, renderer) =&gt; {] (roughness 0.78, metalness 0.1, opacity 1) | MeshStandardMaterial [(shader, renderer) =&gt; {] (roughness 0.35, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in (shader, renderer) =&gt; { · wind sway (vertex)</dd>
+      <dt>Solids</dt><dd>68 solids: 36 other, 4 open prism, 28 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/signals.ts (createSignalHeads, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>one head on each approach of a signal group, where the world stands its post (signalPostPlace); the frame (post, arm, housing) one geometry an instance</dd>
+    </dl>
+    <a class="file" href="../models/2668-Traffic-signals-signalised-junction-4-heads-post-arm-housing-visors-lenses-halos.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

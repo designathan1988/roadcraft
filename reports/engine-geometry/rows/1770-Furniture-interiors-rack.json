@@ -1,0 +1,64 @@
+{
+ "id": "Furniture (interiors)/rack",
+ "group": "Furniture (interiors)",
+ "name": "rack",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 240,
+ "vertices": 480,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 47520,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 47520,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 240,
+   "vertices": 480
+  }
+ ],
+ "solids": "21 solids: 6 other, 15 box",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1770-Furniture-interiors-rack.png",
+ "model": "models/1770-Furniture-interiors-rack.glb",
+ "pieces": [
+  {
+   "label": "rack",
+   "triangles": 240,
+   "vertices": 480,
+   "bytes": 47520,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 21 box (21 parts)"
+ ],
+ "countKey": "furniture:rack",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (240 today, 6.0 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.",
+  "One box whose front shows the shelves and goods by parallax or an alpha-cut texture, not a box a plank.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

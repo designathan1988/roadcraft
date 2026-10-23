@@ -1,0 +1,68 @@
+{
+ "id": "People: jewelry/toigo_pearl_earrings",
+ "group": "People: jewelry",
+ "name": "toigo_pearl_earrings",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/toigo_pearl_earrings.bin",
+ "build": "skinned",
+ "triangles": 3184,
+ "vertices": 1724,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 93376,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 93376,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 3184,
+   "vertices": 1724
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2591-People-jewelry-toigo-pearl-earrings.png",
+ "model": "models/2591-People-jewelry-toigo-pearl-earrings.glb",
+ "pieces": [
+  {
+   "label": "jewelry",
+   "triangles": 3184,
+   "vertices": 1724,
+   "bytes": 93376,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map toigo_pearl_earrings.webp 256x256 WebP, 3088 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture toigo_pearl_earrings.webp"
+ ],
+ "countKey": "proxy:toigo_pearl_earrings",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (3,184 today, 79.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
+  "Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 40
+}

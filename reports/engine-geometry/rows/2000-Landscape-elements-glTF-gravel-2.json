@@ -1,0 +1,65 @@
+{
+ "id": "Landscape elements (glTF)/gravel/2",
+ "group": "Landscape elements (glTF)",
+ "name": "gravel",
+ "variation": "2",
+ "origin": "file",
+ "source": "public/models/elements/*.gltf (src/render/elements.ts)",
+ "build": "instanced",
+ "triangles": 78,
+ "vertices": 162,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 6120,
+ "textureBytes": 5592404,
+ "extraBytes": 0,
+ "totalBytes": 5598524,
+ "materials": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 78,
+   "vertices": 162
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2000-Landscape-elements-glTF-gravel-2.png",
+ "model": "models/2000-Landscape-elements-glTF-gravel-2.glb",
+ "pieces": [
+  {
+   "label": "part 1",
+   "triangles": 78,
+   "vertices": 162,
+   "bytes": 6120,
+   "material": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map Texture 1024x1024 RGBA 8-bit, 11 levels, 5592404 B"
+ ],
+ "notes": [],
+ "countKey": "element:gravel",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 60 triangles (78 today, 1.3 times the budget): a few crossed alpha-tested cards; gone past a short distance.",
+  "Painted on the ground at any distance but the closest; a decal.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "5 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 60
+}

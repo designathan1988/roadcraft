@@ -1,0 +1,65 @@
+{
+ "id": "Terrain/near patch/10 x 10 cells (level 0: 6.4 m a cell, each level twice as wide)",
+ "group": "Terrain",
+ "name": "near patch",
+ "variation": "10 x 10 cells (level 0: 6.4 m a cell, each level twice as wide)",
+ "origin": "kit",
+ "source": "src/render/terrainLod.ts (LandLod, patchCells)",
+ "build": "instanced",
+ "triangles": 200,
+ "vertices": 400,
+ "attributes": "position:3xUint8=3B aLodPatch/instance:4xFloat32=16B",
+ "bytesPerVertex": 3,
+ "geometryBytes": 18784,
+ "textureBytes": 11184808,
+ "extraBytes": 0,
+ "totalBytes": 11203592,
+ "materials": "MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)",
+ "shader": "patched built-in terrain-splat-v35-lots-vTerrainAtlas",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 200,
+   "vertices": 400
+  }
+ ],
+ "solids": "100 solids: 100 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2646-Terrain-near-patch-10-x-10-cells-level-0-6-4-m-a-cell-each-level-twice-as-wide.png",
+ "model": "models/2646-Terrain-near-patch-10-x-10-cells-level-0-6-4-m-a-cell-each-level-twice-as-wide.glb",
+ "pieces": [
+  {
+   "label": "patch",
+   "triangles": 200,
+   "vertices": 400,
+   "bytes": 18784,
+   "material": "MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B"
+ ],
+ "notes": [
+  "one instance a patch the camera needs (CDLOD, Strugar 2010), its corners read from the land texture in the vertex shader: the picture places them on flat land as the shader does"
+ ],
+ "countKey": "terrain:patches",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "11 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": null
+}

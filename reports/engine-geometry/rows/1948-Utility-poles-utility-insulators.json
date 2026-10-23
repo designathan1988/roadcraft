@@ -1,0 +1,61 @@
+{
+ "id": "Utility poles/utility-insulators",
+ "group": "Utility poles",
+ "name": "utility-insulators",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/utilities.ts (polePartSpecs)",
+ "build": "instanced",
+ "triangles": 30,
+ "vertices": 43,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 1556,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1556,
+ "materials": "MeshStandardMaterial (roughness 0.25, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 30,
+   "vertices": 43
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "casts: its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1948-Utility-poles-utility-insulators.png",
+ "model": "models/1948-Utility-poles-utility-insulators.glb",
+ "pieces": [
+  {
+   "label": "utility-insulators",
+   "triangles": 30,
+   "vertices": 43,
+   "bytes": 1556,
+   "material": "MeshStandardMaterial (roughness 0.25, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "poles",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Picture: 16-24 sided drums, cones and discs on a pole; 6 sides, or painted.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 60
+}

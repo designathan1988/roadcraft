@@ -1,0 +1,246 @@
+{
+ "id": "Roads/highway junction/three ways",
+ "group": "Roads",
+ "name": "highway junction",
+ "variation": "three ways",
+ "origin": "kit",
+ "source": "src/render/roadSurfaces.ts (roadSurfaceSteps) + src/render/structures.ts (buildStructureDetails)",
+ "build": "merged",
+ "triangles": 6805,
+ "vertices": 6358,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B roadSection:3xFloat32=12B",
+ "bytesPerVertex": 56,
+ "geometryBytes": 398080,
+ "textureBytes": 37399192,
+ "extraBytes": 0,
+ "totalBytes": 37797272,
+ "materials": "MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1) | MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1) | MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)",
+ "shader": "patched built-in terrain-splat-v34-verge-lots | patched built-in detail-road-edges-v1-footway-lots-own | patched built-in detail-lots-own | patched built-in detail-road-edges-v1-carriageway-lots-own | patched built-in paint-worn-aa",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 6805,
+   "vertices": 6358
+  },
+  {
+   "level": 1,
+   "triangles": 1171,
+   "vertices": 1828
+  }
+ ],
+ "solids": "76 solids: 28 other, 48 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1892-Roads-highway-junction-three-ways.png",
+ "model": "models/1892-Roads-highway-junction-three-ways.glb",
+ "pieces": [
+  {
+   "label": "verge",
+   "triangles": 138,
+   "vertices": 146,
+   "bytes": 5500,
+   "material": "MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "verge",
+   "triangles": 302,
+   "vertices": 368,
+   "bytes": 13588,
+   "material": "MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "verge",
+   "triangles": 138,
+   "vertices": 146,
+   "bytes": 5500,
+   "material": "MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "verge",
+   "triangles": 302,
+   "vertices": 368,
+   "bytes": 13588,
+   "material": "MeshStandardMaterial [terrain-splat-v34-verge-lots] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "footway+curb-ramp+median-paved",
+   "triangles": 138,
+   "vertices": 152,
+   "bytes": 9340,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "footway+curb-ramp+median-paved",
+   "triangles": 326,
+   "vertices": 413,
+   "bytes": 25084,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "footway+curb-ramp+median-paved",
+   "triangles": 138,
+   "vertices": 147,
+   "bytes": 9060,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "footway+curb-ramp+median-paved",
+   "triangles": 326,
+   "vertices": 413,
+   "bytes": 25084,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-footway-lots-own] (vertex colours, roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "kerb+median-kerb",
+   "triangles": 218,
+   "vertices": 238,
+   "bytes": 8924,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "kerb+median-kerb",
+   "triangles": 498,
+   "vertices": 610,
+   "bytes": 22508,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "kerb+median-kerb",
+   "triangles": 218,
+   "vertices": 234,
+   "bytes": 8796,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "kerb+median-kerb",
+   "triangles": 498,
+   "vertices": 610,
+   "bytes": 22508,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "asphalt",
+   "triangles": 508,
+   "vertices": 308,
+   "bytes": 20296,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1)"
+  },
+  {
+   "label": "asphalt",
+   "triangles": 992,
+   "vertices": 609,
+   "bytes": 40056,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1)"
+  },
+  {
+   "label": "asphalt",
+   "triangles": 491,
+   "vertices": 275,
+   "bytes": 18346,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1)"
+  },
+  {
+   "label": "asphalt",
+   "triangles": 998,
+   "vertices": 601,
+   "bytes": 39644,
+   "material": "MeshStandardMaterial [detail-road-edges-v1-carriageway-lots-own] (vertex colours, roughness 1, metalness 0.02, opacity 1)"
+  },
+  {
+   "label": "median-planting",
+   "triangles": 80,
+   "vertices": 88,
+   "bytes": 3296,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "median-planting",
+   "triangles": 160,
+   "vertices": 176,
+   "bytes": 6592,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "median-planting",
+   "triangles": 80,
+   "vertices": 88,
+   "bytes": 3296,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "median-planting",
+   "triangles": 160,
+   "vertices": 176,
+   "bytes": 6592,
+   "material": "MeshStandardMaterial [detail-lots-own] (roughness 1, metalness 0, opacity 1)"
+  },
+  {
+   "label": "markings-eee8d7",
+   "triangles": 16,
+   "vertices": 32,
+   "bytes": 1120,
+   "material": "MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)"
+  },
+  {
+   "label": "markings-eee8d7",
+   "triangles": 32,
+   "vertices": 64,
+   "bytes": 2240,
+   "material": "MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)"
+  },
+  {
+   "label": "markings-eee8d7",
+   "triangles": 16,
+   "vertices": 32,
+   "bytes": 1120,
+   "material": "MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)"
+  },
+  {
+   "label": "markings-eee8d7",
+   "triangles": 32,
+   "vertices": 64,
+   "bytes": 2240,
+   "material": "MeshStandardMaterial [paint-worn-aa] (transparent, roughness 0.72, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "map footway:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "normalMap footway:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "roughnessMap footway:rough 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "map kerb:map 256x256 RGBA 8-bit, 9 levels, 349524 B",
+  "normalMap kerb:normal 256x256 RGBA 8-bit, 9 levels, 349524 B",
+  "roughnessMap kerb:rough 256x256 RGBA 8-bit, 9 levels, 349524 B",
+  "map asphalt:map 512x512 RGBA 8-bit, 10 levels, 1398100 B",
+  "normalMap asphalt:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B",
+  "roughnessMap asphalt:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B",
+  "map verge:map 512x512 RGBA 8-bit, 10 levels, 1398100 B",
+  "normalMap verge:normal 512x512 RGBA 8-bit, 10 levels, 1398100 B",
+  "roughnessMap verge:rough 512x512 RGBA 8-bit, 10 levels, 1398100 B"
+ ],
+ "notes": [
+  "built by the engine on a layout of its own (no city): each surface a block, its far level made as the road workers make it (coarseArrays)"
+ ],
+ "countKey": "road:highway:junction",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 600 triangles (6,805 today, 11.3 times the budget): the carriageway as a strip with vertices where the road bends or climbs only; markings, kerbs, joints and gutters in the road shader on road-space UVs (Cidade Otimizada draws the whole ground as one plane).",
+  "Picture: the wireframe of a flat, straight carriageway is solid black: an even grid across the whole width and length where two triangles a lane a bend would do; markings and kerbs from the shader.",
+  "56 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "36 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 600
+}

@@ -1,0 +1,60 @@
+{
+ "id": "People: procedural crowd/procedural-people-shadows",
+ "group": "People: procedural crowd",
+ "name": "procedural-people-shadows",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/people/proceduralCrowd.ts",
+ "build": "skinned",
+ "triangles": 10,
+ "vertices": 11,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:4xFloat32=16B",
+ "bytesPerVertex": 40,
+ "geometryBytes": 500,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 500,
+ "materials": "MeshBasicMaterial (vertex colours, transparent, opacity 1)",
+ "shader": "three MeshBasicMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 10,
+   "vertices": 11
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2638-People-procedural-crowd-procedural-people-shadows.png",
+ "model": "models/2638-People-procedural-crowd-procedural-people-shadows.glb",
+ "pieces": [
+  {
+   "label": "procedural-people-shadows",
+   "triangles": 10,
+   "vertices": 11,
+   "bytes": 500,
+   "material": "MeshBasicMaterial (vertex colours, transparent, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "people:procedural",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "40 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 300
+}

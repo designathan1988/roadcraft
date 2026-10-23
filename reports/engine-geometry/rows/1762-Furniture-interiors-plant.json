@@ -1,0 +1,68 @@
+{
+ "id": "Furniture (interiors)/plant",
+ "group": "Furniture (interiors)",
+ "name": "plant",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 462,
+ "vertices": 356,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 36948,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 36948,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 462,
+   "vertices": 356
+  }
+ ],
+ "solids": "4 solids: 1 other, 3 closed cylinder",
+ "hiddenTriangles": 148,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1762-Furniture-interiors-plant.png",
+ "model": "models/1762-Furniture-interiors-plant.glb",
+ "pieces": [
+  {
+   "label": "plant",
+   "triangles": 462,
+   "vertices": 356,
+   "bytes": 36948,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 1 cylinder, 3 sphere (4 parts)"
+ ],
+ "countKey": "furniture:plant",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (462 today, 11.6 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.",
+  "Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.",
+  "Picture: three geodesic spheres of leaves on a 16-sided pot (462 triangles); crossed leaf cards.",
+  "Remove its 148 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "3 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

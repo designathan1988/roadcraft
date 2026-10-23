@@ -1,0 +1,61 @@
+{
+ "id": "People: procedural crowd/male-adult/far/L3",
+ "group": "People: procedural crowd",
+ "name": "male-adult/far/L3",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/people/proceduralCrowd.ts",
+ "build": "skinned",
+ "triangles": 298,
+ "vertices": 238,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B skinIndex:4xUint16=8B skinWeight:4xFloat32=16B aRefs:3xFloat32=12B aRefW:3xFloat32=12B aFar:4xFloat32=16B aPerson/instance:4xFloat32=16B",
+ "bytesPerVertex": 88,
+ "geometryBytes": 22988,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 22988,
+ "materials": "MeshStandardMaterial [procedural-person-far] (double-sided, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "patched built-in procedural-person-far",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 298,
+   "vertices": 238
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 10,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2643-People-procedural-crowd-male-adult-far-L3.png",
+ "model": "models/2643-People-procedural-crowd-male-adult-far-L3.glb",
+ "pieces": [
+  {
+   "label": "male-adult/far/L3",
+   "triangles": 298,
+   "vertices": 238,
+   "bytes": 22988,
+   "material": "MeshStandardMaterial [procedural-person-far] (double-sided, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "people:procedural",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "88 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 300
+}

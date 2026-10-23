@@ -1,0 +1,63 @@
+{
+ "id": "Street furniture/postbox",
+ "group": "Street furniture",
+ "name": "postbox",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/propGeometry.ts",
+ "build": "instanced",
+ "triangles": 92,
+ "vertices": 164,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 6456,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 6456,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 92,
+   "vertices": 164
+  }
+ ],
+ "solids": "4 solids: 2 other, 2 box",
+ "hiddenTriangles": 2,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1935-Street-furniture-postbox.png",
+ "model": "models/1935-Street-furniture-postbox.glb",
+ "pieces": [
+  {
+   "label": "postbox",
+   "triangles": 92,
+   "vertices": 164,
+   "bytes": 6456,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:postbox",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (92 today, 2.3 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "A 6-sided prism or a box, the details painted.",
+  "Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

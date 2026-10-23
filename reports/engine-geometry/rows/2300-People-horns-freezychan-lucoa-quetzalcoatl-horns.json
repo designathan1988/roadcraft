@@ -1,0 +1,69 @@
+{
+ "id": "People: horns/freezychan_lucoa_quetzalcoatl_horns",
+ "group": "People: horns",
+ "name": "freezychan_lucoa_quetzalcoatl_horns",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/freezychan_lucoa_quetzalcoatl_horns.bin",
+ "build": "skinned",
+ "triangles": 1536,
+ "vertices": 1464,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 65280,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 65280,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1536,
+   "vertices": 1464
+  }
+ ],
+ "solids": "2 solids: 2 closed cylinder",
+ "hiddenTriangles": 2,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2300-People-horns-freezychan-lucoa-quetzalcoatl-horns.png",
+ "model": "models/2300-People-horns-freezychan-lucoa-quetzalcoatl-horns.glb",
+ "pieces": [
+  {
+   "label": "horns",
+   "triangles": 1536,
+   "vertices": 1464,
+   "bytes": 65280,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map freezychan_lucoa_quetzalcoatl_horns.webp 256x256 WebP, 11318 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture freezychan_lucoa_quetzalcoatl_horns.webp"
+ ],
+ "countKey": "proxy:freezychan_lucoa_quetzalcoatl_horns",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (1,536 today, 38.4 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
+  "Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.",
+  "Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 40
+}

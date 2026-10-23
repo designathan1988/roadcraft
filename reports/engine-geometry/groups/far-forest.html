@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Far forest</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Far forest</h1><p class="muted">6 objects, 44,152 triangles one of each.</p></header>
+<main><article class="row" id="Far forest/cerrado/one plate, 3713 trees">
+  <a href="../images/2675-Far-forest-cerrado-one-plate-3713-trees.png"><img loading="lazy" src="../images/2675-Far-forest-cerrado-one-plate-3713-trees.png" alt="Far forest/cerrado/one plate, 3713 trees"></a>
+  <div class="data">
+    <h3>cerrado <small>one plate, 3713 trees</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,426</dd><dt>Vertices</dt><dd>14,852</dd>
+      <dt>Levels</dt><dd>L0 7,426</dd>
+      <dt>Memory</dt><dd>116 KB (geometry 116 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in far-forest-impostor</dd>
+      <dt>Solids</dt><dd>3713 solids: 3713 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget</dd>
+    </dl>
+    <a class="file" href="../models/2675-Far-forest-cerrado-one-plate-3713-trees.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Far forest/atlantic/one plate, 3691 trees">
+  <a href="../images/2676-Far-forest-atlantic-one-plate-3691-trees.png"><img loading="lazy" src="../images/2676-Far-forest-atlantic-one-plate-3691-trees.png" alt="Far forest/atlantic/one plate, 3691 trees"></a>
+  <div class="data">
+    <h3>atlantic <small>one plate, 3691 trees</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,382</dd><dt>Vertices</dt><dd>14,764</dd>
+      <dt>Levels</dt><dd>L0 7,382</dd>
+      <dt>Memory</dt><dd>115 KB (geometry 115 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in far-forest-impostor</dd>
+      <dt>Solids</dt><dd>3691 solids: 3691 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget</dd>
+    </dl>
+    <a class="file" href="../models/2676-Far-forest-atlantic-one-plate-3691-trees.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Far forest/amazon/one plate, 3687 trees">
+  <a href="../images/2677-Far-forest-amazon-one-plate-3687-trees.png"><img loading="lazy" src="../images/2677-Far-forest-amazon-one-plate-3687-trees.png" alt="Far forest/amazon/one plate, 3687 trees"></a>
+  <div class="data">
+    <h3>amazon <small>one plate, 3687 trees</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,374</dd><dt>Vertices</dt><dd>14,748</dd>
+      <dt>Levels</dt><dd>L0 7,374</dd>
+      <dt>Memory</dt><dd>115 KB (geometry 115 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in far-forest-impostor</dd>
+      <dt>Solids</dt><dd>3687 solids: 3687 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget</dd>
+    </dl>
+    <a class="file" href="../models/2677-Far-forest-amazon-one-plate-3687-trees.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Far forest/caatinga/one plate, 3680 trees">
+  <a href="../images/2678-Far-forest-caatinga-one-plate-3680-trees.png"><img loading="lazy" src="../images/2678-Far-forest-caatinga-one-plate-3680-trees.png" alt="Far forest/caatinga/one plate, 3680 trees"></a>
+  <div class="data">
+    <h3>caatinga <small>one plate, 3680 trees</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,360</dd><dt>Vertices</dt><dd>14,720</dd>
+      <dt>Levels</dt><dd>L0 7,360</dd>
+      <dt>Memory</dt><dd>115 KB (geometry 115 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in far-forest-impostor</dd>
+      <dt>Solids</dt><dd>3680 solids: 3680 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget</dd>
+    </dl>
+    <a class="file" href="../models/2678-Far-forest-caatinga-one-plate-3680-trees.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Far forest/pantanal/one plate, 3664 trees">
+  <a href="../images/2680-Far-forest-pantanal-one-plate-3664-trees.png"><img loading="lazy" src="../images/2680-Far-forest-pantanal-one-plate-3664-trees.png" alt="Far forest/pantanal/one plate, 3664 trees"></a>
+  <div class="data">
+    <h3>pantanal <small>one plate, 3664 trees</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,328</dd><dt>Vertices</dt><dd>14,656</dd>
+      <dt>Levels</dt><dd>L0 7,328</dd>
+      <dt>Memory</dt><dd>115 KB (geometry 115 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in far-forest-impostor</dd>
+      <dt>Solids</dt><dd>3664 solids: 3664 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget</dd>
+    </dl>
+    <a class="file" href="../models/2680-Far-forest-pantanal-one-plate-3664-trees.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Far forest/pampa/one plate, 3641 trees">
+  <a href="../images/2679-Far-forest-pampa-one-plate-3641-trees.png"><img loading="lazy" src="../images/2679-Far-forest-pampa-one-plate-3641-trees.png" alt="Far forest/pampa/one plate, 3641 trees"></a>
+  <div class="data">
+    <h3>pampa <small>one plate, 3641 trees</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>7,282</dd><dt>Vertices</dt><dd>14,564</dd>
+      <dt>Levels</dt><dd>L0 7,282</dd>
+      <dt>Memory</dt><dd>114 KB (geometry 114 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in far-forest-impostor</dd>
+      <dt>Solids</dt><dd>3641 solids: 3641 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)</code> (kit)</dd>
+      <dt>Notes</dt><dd>each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget</dd>
+    </dl>
+    <a class="file" href="../models/2679-Far-forest-pampa-one-plate-3641-trees.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

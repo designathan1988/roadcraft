@@ -1,0 +1,66 @@
+{
+ "id": "Landscape elements (glTF)/clover/2",
+ "group": "Landscape elements (glTF)",
+ "name": "clover",
+ "variation": "2",
+ "origin": "file",
+ "source": "public/models/elements/*.gltf (src/render/elements.ts)",
+ "build": "instanced",
+ "triangles": 615,
+ "vertices": 433,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 26432,
+ "textureBytes": 22369620,
+ "extraBytes": 0,
+ "totalBytes": 22396052,
+ "materials": "MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 615,
+   "vertices": 433
+  }
+ ],
+ "solids": "21 solids: 21 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2010-Landscape-elements-glTF-clover-2.png",
+ "model": "models/2010-Landscape-elements-glTF-clover-2.glb",
+ "pieces": [
+  {
+   "label": "part 1",
+   "triangles": 615,
+   "vertices": 433,
+   "bytes": 26432,
+   "material": "MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B"
+ ],
+ "notes": [],
+ "countKey": "element:clover",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 60 triangles (615 today, 10.3 times the budget): a few crossed alpha-tested cards; gone past a short distance.",
+  "Alpha-tested cards; drop past ~30 m.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 60
+}

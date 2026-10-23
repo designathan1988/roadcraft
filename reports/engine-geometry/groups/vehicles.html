@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vehicles</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Vehicles</h1><p class="muted">13 objects, 101,522 triangles one of each.</p></header>
+<main><article class="row" id="Vehicles/sedan/sedan">
+  <a href="../images/2017-Vehicles-sedan-sedan.png"><img loading="lazy" src="../images/2017-Vehicles-sedan-sedan.png" alt="Vehicles/sedan/sedan"></a>
+  <div class="data">
+    <h3>sedan <small>sedan</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (15,310 today, 15.3 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.</li><li>Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.</li><li>Remove its 110 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>15,310</dd><dt>Vertices</dt><dd>12,470</dd>
+      <dt>Levels</dt><dd>L0 15,310 / L1 36</dd>
+      <dt>Memory</dt><dd>528 KB (geometry 528 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>72 solids: 16 other, 41 box, 15 closed cylinder</dd><dt>Hidden triangles</dt><dd>110</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/carBody.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches<br>4 doors drawn apart only while they move</dd>
+    </dl>
+    <a class="file" href="../models/2017-Vehicles-sedan-sedan.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/sedan/wagon">
+  <a href="../images/2018-Vehicles-sedan-wagon.png"><img loading="lazy" src="../images/2018-Vehicles-sedan-wagon.png" alt="Vehicles/sedan/wagon"></a>
+  <div class="data">
+    <h3>sedan <small>wagon</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (15,014 today, 15.0 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.</li><li>Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.</li><li>Remove its 121 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>15,014</dd><dt>Vertices</dt><dd>15,234</dd>
+      <dt>Levels</dt><dd>L0 15,014 / L1 36</dd>
+      <dt>Memory</dt><dd>617 KB (geometry 617 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>75 solids: 16 other, 44 box, 15 closed cylinder</dd><dt>Hidden triangles</dt><dd>121</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/carBody.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches<br>4 doors drawn apart only while they move</dd>
+    </dl>
+    <a class="file" href="../models/2018-Vehicles-sedan-wagon.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/suv/suv">
+  <a href="../images/2019-Vehicles-suv-suv.png"><img loading="lazy" src="../images/2019-Vehicles-suv-suv.png" alt="Vehicles/suv/suv"></a>
+  <div class="data">
+    <h3>suv <small>suv</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (14,842 today, 14.8 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.</li><li>Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.</li><li>Remove its 95 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,842</dd><dt>Vertices</dt><dd>15,146</dd>
+      <dt>Levels</dt><dd>L0 14,842 / L1 36</dd>
+      <dt>Memory</dt><dd>613 KB (geometry 613 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>75 solids: 16 other, 44 box, 15 closed cylinder</dd><dt>Hidden triangles</dt><dd>95</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/carBody.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches<br>4 doors drawn apart only while they move</dd>
+    </dl>
+    <a class="file" href="../models/2019-Vehicles-suv-suv.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/hatch/hatch">
+  <a href="../images/2016-Vehicles-hatch-hatch.png"><img loading="lazy" src="../images/2016-Vehicles-hatch-hatch.png" alt="Vehicles/hatch/hatch"></a>
+  <div class="data">
+    <h3>hatch <small>hatch</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (14,838 today, 14.8 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.</li><li>Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.</li><li>Remove its 109 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,838</dd><dt>Vertices</dt><dd>14,940</dd>
+      <dt>Levels</dt><dd>L0 14,838 / L1 36</dd>
+      <dt>Memory</dt><dd>606 KB (geometry 606 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>75 solids: 16 other, 44 box, 15 closed cylinder</dd><dt>Hidden triangles</dt><dd>109</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/carBody.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches<br>4 doors drawn apart only while they move</dd>
+    </dl>
+    <a class="file" href="../models/2016-Vehicles-hatch-hatch.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/suv/pickup">
+  <a href="../images/2020-Vehicles-suv-pickup.png"><img loading="lazy" src="../images/2020-Vehicles-suv-pickup.png" alt="Vehicles/suv/pickup"></a>
+  <div class="data">
+    <h3>suv <small>pickup</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (14,346 today, 14.3 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.</li><li>Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.</li><li>Remove its 97 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,346</dd><dt>Vertices</dt><dd>12,333</dd>
+      <dt>Levels</dt><dd>L0 14,346 / L1 36</dd>
+      <dt>Memory</dt><dd>516 KB (geometry 516 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>71 solids: 15 other, 41 box, 15 closed cylinder</dd><dt>Hidden triangles</dt><dd>97</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/carBody.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches<br>4 doors drawn apart only while they move</dd>
+    </dl>
+    <a class="file" href="../models/2020-Vehicles-suv-pickup.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/van/van">
+  <a href="../images/2021-Vehicles-van-van.png"><img loading="lazy" src="../images/2021-Vehicles-van-van.png" alt="Vehicles/van/van"></a>
+  <div class="data">
+    <h3>van <small>van</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (13,600 today, 13.6 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.</li><li>Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.</li><li>Remove its 49 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>13,600</dd><dt>Vertices</dt><dd>15,132</dd>
+      <dt>Levels</dt><dd>L0 13,600 / L1 36</dd>
+      <dt>Memory</dt><dd>602 KB (geometry 602 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>55 solids: 8 other, 32 box, 15 closed cylinder</dd><dt>Hidden triangles</dt><dd>49</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/carBody.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches<br>2 doors drawn apart only while they move</dd>
+    </dl>
+    <a class="file" href="../models/2021-Vehicles-van-van.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/bus">
+  <a href="../images/2022-Vehicles-bus.png"><img loading="lazy" src="../images/2022-Vehicles-bus.png" alt="Vehicles/bus"></a>
+  <div class="data">
+    <h3>bus</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (8,872 today, 8.9 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Rebuild near 1,500; 62 cylinders and 208 boxes today.</li><li>Remove its 769 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>62 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>8,872</dd><dt>Vertices</dt><dd>18,007</dd>
+      <dt>Levels</dt><dd>L0 8,872 / L1 80</dd>
+      <dt>Memory</dt><dd>691 KB (geometry 691 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>319 solids: 9 other, 62 closed cylinder, 208 box, 40 quad</dd><dt>Hidden triangles</dt><dd>769</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/vehicleModels.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches</dd>
+    </dl>
+    <a class="file" href="../models/2022-Vehicles-bus.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/truck">
+  <a href="../images/2023-Vehicles-truck.png"><img loading="lazy" src="../images/2023-Vehicles-truck.png" alt="Vehicles/truck"></a>
+  <div class="data">
+    <h3>truck</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 1,000 triangles (2,464 today, 2.5 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).</li><li>Remove its 202 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>23 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,464</dd><dt>Vertices</dt><dd>4,471</dd>
+      <dt>Levels</dt><dd>L0 2,464 / L1 96</dd>
+      <dt>Memory</dt><dd>179 KB (geometry 179 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>83 solids: 23 closed cylinder, 50 box, 8 quad, 2 other</dd><dt>Hidden triangles</dt><dd>202</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/vehicleModels.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches</dd>
+    </dl>
+    <a class="file" href="../models/2023-Vehicles-truck.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/motorcycle">
+  <a href="../images/2024-Vehicles-motorcycle.png"><img loading="lazy" src="../images/2024-Vehicles-motorcycle.png" alt="Vehicles/motorcycle"></a>
+  <div class="data">
+    <h3>motorcycle</h3>
+    <div class="advice"><b>What to change</b><ul><li>A few boxes and two 6-sided wheels, near only; a card past it.</li><li>Remove its 52 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>10 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>704</dd><dt>Vertices</dt><dd>1,448</dd>
+      <dt>Levels</dt><dd>L0 704</dd>
+      <dt>Memory</dt><dd>55 KB (geometry 55 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>29 solids: 10 closed cylinder, 18 box, 1 other</dd><dt>Hidden triangles</dt><dd>52</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/vehicleModels.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches</dd>
+    </dl>
+    <a class="file" href="../models/2024-Vehicles-motorcycle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/wheel/spoked (two-wheelers)">
+  <a href="../images/2027-Vehicles-wheel-spoked-two-wheelers.png"><img loading="lazy" src="../images/2027-Vehicles-wheel-spoked-two-wheelers.png" alt="Vehicles/wheel/spoked (two-wheelers)"></a>
+  <div class="data">
+    <h3>wheel <small>spoked (two-wheelers)</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Tyre and rim as one 6-8 sided prism with the rim painted.</li><li>Picture: the tyre is a rounded drum of 400-670 triangles with spokes; a few pixels on screen, a 6-8 sided prism with the rim painted.</li><li>Remove its 32 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>672</dd><dt>Vertices</dt><dd>714</dd>
+      <dt>Levels</dt><dd>L0 672</dd>
+      <dt>Memory</dt><dd>28 KB (geometry 28 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>11 solids: 10 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>32</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/vehicleModels.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2027-Vehicles-wheel-spoked-two-wheelers.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/bicycle">
+  <a href="../images/2025-Vehicles-bicycle.png"><img loading="lazy" src="../images/2025-Vehicles-bicycle.png" alt="Vehicles/bicycle"></a>
+  <div class="data">
+    <h3>bicycle</h3>
+    <div class="advice"><b>What to change</b><ul><li>A few boxes and two 6-sided wheels, near only; a card past it.</li><li>Remove its 23 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>432</dd><dt>Vertices</dt><dd>830</dd>
+      <dt>Levels</dt><dd>L0 432</dd>
+      <dt>Memory</dt><dd>32 KB (geometry 32 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>26 solids: 21 box, 4 closed cylinder, 1 other</dd><dt>Hidden triangles</dt><dd>23</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/vehicleModels.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches</dd>
+    </dl>
+    <a class="file" href="../models/2025-Vehicles-bicycle.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/wheel/tyre + rim">
+  <a href="../images/2026-Vehicles-wheel-tyre-rim.png"><img loading="lazy" src="../images/2026-Vehicles-wheel-tyre-rim.png" alt="Vehicles/wheel/tyre + rim"></a>
+  <div class="data">
+    <h3>wheel <small>tyre + rim</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Tyre and rim as one 6-8 sided prism with the rim painted.</li><li>Picture: the tyre is a rounded drum of 400-670 triangles with spokes; a few pixels on screen, a 6-8 sided prism with the rim painted.</li><li>Remove its 64 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>404</dd><dt>Vertices</dt><dd>413</dd>
+      <dt>Levels</dt><dd>L0 404</dd>
+      <dt>Memory</dt><dd>16 KB (geometry 16 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>8 solids: 1 other, 2 closed cylinder, 5 box</dd><dt>Hidden triangles</dt><dd>64</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/vehicleModels.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2026-Vehicles-wheel-tyre-rim.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Vehicles/far car (far traffic)/4.3 x 1.8 m, body and cabin">
+  <a href="../images/2669-Vehicles-far-car-far-traffic-4-3-x-1-8-m-body-and-cabin.png"><img loading="lazy" src="../images/2669-Vehicles-far-car-far-traffic-4-3-x-1-8-m-body-and-cabin.png" alt="Vehicles/far car (far traffic)/4.3 x 1.8 m, body and cabin"></a>
+  <div class="data">
+    <h3>far car (far traffic) <small>4.3 x 1.8 m, body and cabin</small></h3>
+    
+    <dl>
+      <dt>Triangles</dt><dd>24</dd><dt>Vertices</dt><dd>48</dd>
+      <dt>Levels</dt><dd>L0 24</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.6, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 2 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/densityCars.ts (carGeometry)</code> (kit)</dd>
+      <dt>Notes</dt><dd>one instance a car of the far traffic, placed along its road and given its colour in the vertex shader</dd>
+    </dl>
+    <a class="file" href="../models/2669-Vehicles-far-car-far-traffic-4-3-x-1-8-m-body-and-cabin.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

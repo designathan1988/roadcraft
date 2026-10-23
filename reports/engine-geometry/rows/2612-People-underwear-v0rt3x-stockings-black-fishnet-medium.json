@@ -1,0 +1,68 @@
+{
+ "id": "People: underwear/v0rt3x_stockings_black_fishnet_medium",
+ "group": "People: underwear",
+ "name": "v0rt3x_stockings_black_fishnet_medium",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/v0rt3x_stockings_black_fishnet_medium.bin",
+ "build": "skinned",
+ "triangles": 2088,
+ "vertices": 1484,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 72544,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 72544,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2088,
+   "vertices": 1484
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2612-People-underwear-v0rt3x-stockings-black-fishnet-medium.png",
+ "model": "models/2612-People-underwear-v0rt3x-stockings-black-fishnet-medium.glb",
+ "pieces": [
+  {
+   "label": "underwear",
+   "triangles": 2088,
+   "vertices": 1484,
+   "bytes": 72544,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map v0rt3x_stockings_black_fishnet_medium.webp 256x256 WebP, 77052 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture v0rt3x_stockings_black_fishnet_medium.webp"
+ ],
+ "countKey": "proxy:v0rt3x_stockings_black_fishnet_medium",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (2,088 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Same triangles and vertices as v0rt3x_stockings_black_fishnet_large : load one mesh and change its colour, not a second copy.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

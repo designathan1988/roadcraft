@@ -1,0 +1,65 @@
+{
+ "id": "Terrain/far patch/one plate, its four skirts",
+ "group": "Terrain",
+ "name": "far patch",
+ "variation": "one plate, its four skirts",
+ "origin": "kit",
+ "source": "src/render/flatAtlas.ts (createFlatFar, writeFarPatch, farIndexInto)",
+ "build": "merged",
+ "triangles": 2560,
+ "vertices": 1221,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 44664,
+ "textureBytes": 11184808,
+ "extraBytes": 0,
+ "totalBytes": 11229472,
+ "materials": "MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)",
+ "shader": "patched built-in terrain-splat-v35-lots-vTerrainAtlas",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2560,
+   "vertices": 1221
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 256,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2648-Terrain-far-patch-one-plate-its-four-skirts.png",
+ "model": "models/2648-Terrain-far-patch-one-plate-its-four-skirts.glb",
+ "pieces": [
+  {
+   "label": "far patch",
+   "triangles": 2560,
+   "vertices": 1221,
+   "bytes": 44664,
+   "material": "MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B"
+ ],
+ "notes": [],
+ "countKey": "terrain:far-patches",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Picture: a flat plate of 2,560 triangles; where the ground is flat a 2-triangle plate (vertices only where the height changes).",
+  "Remove its 256 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "11 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": null
+}

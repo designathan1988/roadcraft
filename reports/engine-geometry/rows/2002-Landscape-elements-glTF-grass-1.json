@@ -1,0 +1,64 @@
+{
+ "id": "Landscape elements (glTF)/grass/1",
+ "group": "Landscape elements (glTF)",
+ "name": "grass",
+ "variation": "1",
+ "origin": "file",
+ "source": "public/models/elements/*.gltf (src/render/elements.ts)",
+ "build": "instanced",
+ "triangles": 155,
+ "vertices": 153,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 8592,
+ "textureBytes": 1398100,
+ "extraBytes": 0,
+ "totalBytes": 1406692,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 155,
+   "vertices": 153
+  }
+ ],
+ "solids": "9 solids: 9 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2002-Landscape-elements-glTF-grass-1.png",
+ "model": "models/2002-Landscape-elements-glTF-grass-1.glb",
+ "pieces": [
+  {
+   "label": "part 1",
+   "triangles": 155,
+   "vertices": 153,
+   "bytes": 8592,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map Texture 512x512 RGBA 8-bit, 10 levels, 1398100 B"
+ ],
+ "notes": [],
+ "countKey": "element:grass",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 60 triangles (155 today, 2.6 times the budget): a few crossed alpha-tested cards; gone past a short distance.",
+  "Alpha-tested cards; drop past ~30 m.",
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 60
+}

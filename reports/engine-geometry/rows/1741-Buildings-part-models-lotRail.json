@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: part models/lotRail",
+ "group": "Buildings: part models",
+ "name": "lotRail",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 8,
+ "vertices": 16,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 940,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 940,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 8,
+   "vertices": 16
+  },
+  {
+   "level": 1,
+   "triangles": 2,
+   "vertices": 4
+  }
+ ],
+ "solids": "1 solids: 1 open prism",
+ "hiddenTriangles": 0,
+ "shadow": "casts: 1 box pieces under a shadow texel, else its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1741-Buildings-part-models-lotRail.png",
+ "model": "models/1741-Buildings-part-models-lotRail.glb",
+ "pieces": [
+  {
+   "label": "lotRail",
+   "triangles": 8,
+   "vertices": 16,
+   "bytes": 752,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:lotRail",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

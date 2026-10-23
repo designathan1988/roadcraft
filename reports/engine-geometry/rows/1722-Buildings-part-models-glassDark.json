@@ -1,0 +1,60 @@
+{
+ "id": "Buildings: part models/glassDark",
+ "group": "Buildings: part models",
+ "name": "glassDark",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 2,
+ "vertices": 4,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 140,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 140,
+ "materials": "MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)",
+ "shader": "patched built-in room-lights-awake-interior-v15-recess|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2,
+   "vertices": 4
+  }
+ ],
+ "solids": "1 solids: 1 quad",
+ "hiddenTriangles": 0,
+ "shadow": "casts: 1 box pieces under a shadow texel, else its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1722-Buildings-part-models-glassDark.png",
+ "model": "models/1722-Buildings-part-models-glassDark.glb",
+ "pieces": [
+  {
+   "label": "glassDark",
+   "triangles": 2,
+   "vertices": 4,
+   "bytes": 140,
+   "material": "MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:glassDark",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

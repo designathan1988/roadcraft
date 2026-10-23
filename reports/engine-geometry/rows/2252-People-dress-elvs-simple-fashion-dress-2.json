@@ -1,0 +1,67 @@
+{
+ "id": "People: dress/elvs_simple_fashion_dress_2",
+ "group": "People: dress",
+ "name": "elvs_simple_fashion_dress_2",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/elvs_simple_fashion_dress_2.bin",
+ "build": "skinned",
+ "triangles": 2150,
+ "vertices": 1188,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 63816,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 63816,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2150,
+   "vertices": 1188
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2252-People-dress-elvs-simple-fashion-dress-2.png",
+ "model": "models/2252-People-dress-elvs-simple-fashion-dress-2.glb",
+ "pieces": [
+  {
+   "label": "dress",
+   "triangles": 2150,
+   "vertices": 1188,
+   "bytes": 63816,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map elvs_simple_fashion_dress_2.webp 512x512 WebP, 86754 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 557 base-body vertices under it",
+  "texture elvs_simple_fashion_dress_2.webp"
+ ],
+ "countKey": "proxy:elvs_simple_fashion_dress_2",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (2,150 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

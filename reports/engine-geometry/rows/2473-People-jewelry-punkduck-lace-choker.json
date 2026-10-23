@@ -1,0 +1,69 @@
+{
+ "id": "People: jewelry/punkduck_lace-choker",
+ "group": "People: jewelry",
+ "name": "punkduck_lace-choker",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/punkduck_lace-choker.bin",
+ "build": "skinned",
+ "triangles": 714,
+ "vertices": 542,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 25912,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 25912,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 714,
+   "vertices": 542
+  }
+ ],
+ "solids": "5 solids: 5 other",
+ "hiddenTriangles": 44,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2473-People-jewelry-punkduck-lace-choker.png",
+ "model": "models/2473-People-jewelry-punkduck-lace-choker.glb",
+ "pieces": [
+  {
+   "label": "jewelry",
+   "triangles": 714,
+   "vertices": 542,
+   "bytes": 25912,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map punkduck_lace-choker.webp 256x256 WebP, 2570 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture punkduck_lace-choker.webp"
+ ],
+ "countKey": "proxy:punkduck_lace-choker",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (714 today, 17.9 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
+  "Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.",
+  "Remove its 44 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 40
+}

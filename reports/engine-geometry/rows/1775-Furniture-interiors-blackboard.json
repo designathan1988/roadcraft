@@ -1,0 +1,64 @@
+{
+ "id": "Furniture (interiors)/blackboard",
+ "group": "Furniture (interiors)",
+ "name": "blackboard",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 34,
+ "vertices": 68,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 6732,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 6732,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 34,
+   "vertices": 68
+  }
+ ],
+ "solids": "3 solids: 2 box, 1 other",
+ "hiddenTriangles": 6,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1775-Furniture-interiors-blackboard.png",
+ "model": "models/1775-Furniture-interiors-blackboard.glb",
+ "pieces": [
+  {
+   "label": "blackboard",
+   "triangles": 34,
+   "vertices": 68,
+   "bytes": 6732,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 3 box (3 parts)"
+ ],
+ "countKey": "furniture:blackboard",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "One thin box or a quad: the screen or board is the texture.",
+  "Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/roof (polygon plan)/emitPolygonRoof, 18 triangles, 11.00 x 30.49 x 15.00 m, from residential high small lot",
+ "group": "Buildings: shell pieces",
+ "name": "roof (polygon plan)",
+ "variation": "emitPolygonRoof, 18 triangles, 11.00 x 30.49 x 15.00 m, from residential high small lot",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitPolygonRoof)",
+ "build": "merged",
+ "triangles": 18,
+ "vertices": 54,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 1944,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1944,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 18,
+   "vertices": 54
+  }
+ ],
+ "solids": "3 solids: 3 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1345-Buildings-shell-pieces-roof-polygon-plan-emitPolygonRoof-18-triangles-11-00-x-30.png",
+ "model": "models/1345-Buildings-shell-pieces-roof-polygon-plan-emitPolygonRoof-18-triangles-11-00-x-30.glb",
+ "pieces": [
+  {
+   "label": "emitPolygonRoof",
+   "triangles": 18,
+   "vertices": 54,
+   "bytes": 1944,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: stone, roofing",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (18 today, 9.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: faces split along every bay and storey line (long slivers in the wireframe); one polygon a face, the lines in the facade shader.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

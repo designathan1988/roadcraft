@@ -1,0 +1,62 @@
+{
+ "id": "Far forest/caatinga/one plate, 3680 trees",
+ "group": "Far forest",
+ "name": "caatinga",
+ "variation": "one plate, 3680 trees",
+ "origin": "kit",
+ "source": "src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)",
+ "build": "instanced",
+ "triangles": 7360,
+ "vertices": 14720,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 117868,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 117868,
+ "materials": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)",
+ "shader": "patched built-in far-forest-impostor",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 7360,
+   "vertices": 14720
+  }
+ ],
+ "solids": "3680 solids: 3680 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2678-Far-forest-caatinga-one-plate-3680-trees.png",
+ "model": "models/2678-Far-forest-caatinga-one-plate-3680-trees.glb",
+ "pieces": [
+  {
+   "label": "tree quad x3680",
+   "triangles": 7360,
+   "vertices": 14720,
+   "bytes": 117868,
+   "material": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget"
+ ],
+ "countKey": "far-forest:caatinga",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels."
+ ],
+ "target": null
+}

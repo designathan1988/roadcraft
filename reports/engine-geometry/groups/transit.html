@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transit</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Transit</h1><p class="muted">4 objects, 1,128 triangles one of each.</p></header>
+<main><article class="row" id="Transit/train track and station/140 m of track">
+  <a href="../images/2670-Transit-train-track-and-station-140-m-of-track.png"><img loading="lazy" src="../images/2670-Transit-train-track-and-station-140-m-of-track.png" alt="Transit/train track and station/140 m of track"></a>
+  <div class="data">
+    <h3>train track and station <small>140 m of track</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 400 triangles (996 today, 2.5 times the budget): boxes; sleepers and rails as one textured strip.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>996</dd><dt>Vertices</dt><dd>1,992</dd>
+      <dt>Levels</dt><dd>L0 996</dd>
+      <dt>Memory</dt><dd>22 KB (geometry 22 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.35, metalness 0.8, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.9, metalness 0, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.6, metalness 0.2, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.5, metalness 0.6, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (transparent, roughness 0.1, metalness 0.1, opacity 0.45) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.5, metalness 0, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.85, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>83 solids: 83 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/transit.ts (createTransit, sync)</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2670-Transit-train-track-and-station-140-m-of-track.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Transit/bus stop/on the footway's edge">
+  <a href="../images/2672-Transit-bus-stop-on-the-footway-s-edge.png"><img loading="lazy" src="../images/2672-Transit-bus-stop-on-the-footway-s-edge.png" alt="Transit/bus stop/on the footway's edge"></a>
+  <div class="data">
+    <h3>bus stop <small>on the footway's edge</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>72</dd><dt>Vertices</dt><dd>144</dd>
+      <dt>Levels</dt><dd>L0 72</dd>
+      <dt>Memory</dt><dd>11 KB (geometry 11 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.6, metalness 0.2, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.5, metalness 0.6, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (transparent, roughness 0.1, metalness 0.1, opacity 0.45) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.5, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>6 solids: 6 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/transit.ts (createTransit, sync)</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2672-Transit-bus-stop-on-the-footway-s-edge.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Transit/metro track and station/140 m of track, its way down">
+  <a href="../images/2671-Transit-metro-track-and-station-140-m-of-track-its-way-down.png"><img loading="lazy" src="../images/2671-Transit-metro-track-and-station-140-m-of-track-its-way-down.png" alt="Transit/metro track and station/140 m of track, its way down"></a>
+  <div class="data">
+    <h3>metro track and station <small>140 m of track, its way down</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: nothing visible in the isolated shot (the object draws off its own transform or under the ground plane); check it is drawn at all where placed.</li><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>48</dd><dt>Vertices</dt><dd>96</dd>
+      <dt>Levels</dt><dd>L0 48</dd>
+      <dt>Memory</dt><dd>11 KB (geometry 11 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.6, metalness 0.2, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.5, metalness 0.6, opacity 1) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (transparent, roughness 0.1, metalness 0.1, opacity 0.45) | MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.5, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>4 solids: 4 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/transit.ts (createTransit, sync)</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/2671-Transit-metro-track-and-station-140-m-of-track-its-way-down.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Transit/transit-trains">
+  <a href="../images/2035-Transit-transit-trains.png"><img loading="lazy" src="../images/2035-Transit-transit-trains.png" alt="Transit/transit-trains"></a>
+  <div class="data">
+    <h3>transit-trains</h3>
+    <div class="advice"><b>What to change</b><ul><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>12</dd><dt>Vertices</dt><dd>24</dd>
+      <dt>Levels</dt><dd>L0 12</dd>
+      <dt>Memory</dt><dd>1 KB (geometry 1 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.45, metalness 0.3, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/transit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>the trains' cars; tracks and stations come from the test city</dd>
+    </dl>
+    <a class="file" href="../models/2035-Transit-transit-trains.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

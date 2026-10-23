@@ -1,0 +1,67 @@
+{
+ "id": "Terrain/near patch rim/one side, both ways round",
+ "group": "Terrain",
+ "name": "near patch rim",
+ "variation": "one side, both ways round",
+ "origin": "kit",
+ "source": "src/render/terrainLod.ts (LandLod, patchRim)",
+ "build": "instanced",
+ "triangles": 40,
+ "vertices": 22,
+ "attributes": "position:3xUint8=3B aLodPatch/instance:4xFloat32=16B",
+ "bytesPerVertex": 3,
+ "geometryBytes": 2354,
+ "textureBytes": 11184808,
+ "extraBytes": 0,
+ "totalBytes": 11187162,
+ "materials": "MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)",
+ "shader": "patched built-in terrain-splat-v35-lots-vTerrainAtlas",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 40,
+   "vertices": 22
+  }
+ ],
+ "solids": "1 solids: 1 closed cylinder",
+ "hiddenTriangles": 20,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2647-Terrain-near-patch-rim-one-side-both-ways-round.png",
+ "model": "models/2647-Terrain-near-patch-rim-one-side-both-ways-round.glb",
+ "pieces": [
+  {
+   "label": "rim",
+   "triangles": 40,
+   "vertices": 22,
+   "bytes": 2354,
+   "material": "MeshStandardMaterial [terrain-splat-v35-lots-vTerrainAtlas] (roughness 1, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map terrain-grass:map 1024x1024 RGBA 8-bit, 11 levels, 5592404 B",
+  "normalMap terrain-grass:normal 1024x1024 RGBA 8-bit, 11 levels, 5592404 B"
+ ],
+ "notes": [
+  "one instance a side of a patch on a plate's edge that hangs a skirt (30 m down)"
+ ],
+ "countKey": "terrain:rims",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Remove its 20 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "11 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": null
+}

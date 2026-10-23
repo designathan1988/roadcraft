@@ -1,0 +1,69 @@
+{
+ "id": "People: equipment/punkduck_stethoscope",
+ "group": "People: equipment",
+ "name": "punkduck_stethoscope",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/punkduck_stethoscope.bin",
+ "build": "skinned",
+ "triangles": 4668,
+ "vertices": 2727,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 143280,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 143280,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 4668,
+   "vertices": 2727
+  }
+ ],
+ "solids": "7 solids: 1 closed cylinder, 1 open prism, 5 other",
+ "hiddenTriangles": 4,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2498-People-equipment-punkduck-stethoscope.png",
+ "model": "models/2498-People-equipment-punkduck-stethoscope.glb",
+ "pieces": [
+  {
+   "label": "equipment",
+   "triangles": 4668,
+   "vertices": 2727,
+   "bytes": 143280,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map punkduck_stethoscope.webp 512x512 WebP, 2844 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture punkduck_stethoscope.webp"
+ ],
+ "countKey": "proxy:punkduck_stethoscope",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (4,668 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Picture: a prop (weapon, instrument, tool, horns) no city figure wears; not shipped with the game.",
+  "Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

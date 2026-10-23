@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/plinth/emitPlinth, 16 triangles, 24.24 x 0.96 x 23.24 m, from residential high medium lot",
+ "group": "Buildings: shell pieces",
+ "name": "plinth",
+ "variation": "emitPlinth, 16 triangles, 24.24 x 0.96 x 23.24 m, from residential high medium lot",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitPlinth)",
+ "build": "merged",
+ "triangles": 16,
+ "vertices": 48,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 1728,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1728,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 16,
+   "vertices": 48
+  }
+ ],
+ "solids": "1 solids: 1 open prism",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1353-Buildings-shell-pieces-plinth-emitPlinth-16-triangles-24-24-x-0-96-x-23-24-m-fro.png",
+ "model": "models/1353-Buildings-shell-pieces-plinth-emitPlinth-16-triangles-24-24-x-0-96-x-23-24-m-fro.glb",
+ "pieces": [
+  {
+   "label": "emitPlinth",
+   "triangles": 16,
+   "vertices": 48,
+   "bytes": 1728,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: stone",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (16 today, 8.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: the foundation ring round the lot is cut into many strips (44-164 triangles); one box ring (8-16 triangles) or the lot plane alone.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

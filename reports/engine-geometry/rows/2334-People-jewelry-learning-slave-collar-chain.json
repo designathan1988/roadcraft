@@ -1,0 +1,68 @@
+{
+ "id": "People: jewelry/learning_slave_collar_chain",
+ "group": "People: jewelry",
+ "name": "learning_slave_collar_chain",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/learning_slave_collar_chain.bin",
+ "build": "skinned",
+ "triangles": 8448,
+ "vertices": 15048,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 582912,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 582912,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 8448,
+   "vertices": 15048
+  }
+ ],
+ "solids": "11 solids: 11 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2334-People-jewelry-learning-slave-collar-chain.png",
+ "model": "models/2334-People-jewelry-learning-slave-collar-chain.glb",
+ "pieces": [
+  {
+   "label": "jewelry",
+   "triangles": 8448,
+   "vertices": 15048,
+   "bytes": 582912,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map learning_slave_collar_chain.webp 256x256 WebP, 8944 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture learning_slave_collar_chain.webp"
+ ],
+ "countKey": "proxy:learning_slave_collar_chain",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (8,448 today, 211.2 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
+  "Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 40
+}

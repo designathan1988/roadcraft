@@ -1,0 +1,65 @@
+{
+ "id": "Street furniture/phone",
+ "group": "Street furniture",
+ "name": "phone",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/propGeometry.ts",
+ "build": "instanced",
+ "triangles": 560,
+ "vertices": 401,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 17796,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 17796,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 560,
+   "vertices": 401
+  }
+ ],
+ "solids": "5 solids: 4 other, 1 box",
+ "hiddenTriangles": 240,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1936-Street-furniture-phone.png",
+ "model": "models/1936-Street-furniture-phone.glb",
+ "pieces": [
+  {
+   "label": "phone",
+   "triangles": 560,
+   "vertices": 401,
+   "bytes": 17796,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:phone",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (560 today, 14.0 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "One box with the booth painted: 560 triangles today, 240 of them hidden.",
+  "Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.",
+  "Remove its 240 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

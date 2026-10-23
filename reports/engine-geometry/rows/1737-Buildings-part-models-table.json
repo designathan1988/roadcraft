@@ -1,0 +1,64 @@
+{
+ "id": "Buildings: part models/table",
+ "group": "Buildings: part models",
+ "name": "table",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 146,
+ "vertices": 223,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 8904,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 8904,
+ "materials": "MeshStandardMaterial \"building-part-table\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.55, metalness 0.1, opacity 1)",
+ "shader": "patched built-in thin-part-prefiltered-v3-cards|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 146,
+   "vertices": 223
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 8,
+ "shadow": "does not cast (small part)",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1737-Buildings-part-models-table.png",
+ "model": "models/1737-Buildings-part-models-table.glb",
+ "pieces": [
+  {
+   "label": "table",
+   "triangles": 146,
+   "vertices": 223,
+   "bytes": 8904,
+   "material": "MeshStandardMaterial \"building-part-table\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.55, metalness 0.1, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:table",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (146 today, 6.1 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.",
+  "Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.",
+  "Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

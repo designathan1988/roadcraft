@@ -1,0 +1,68 @@
+{
+ "id": "People: hair/sonntag78_junglebook_hair",
+ "group": "People: hair",
+ "name": "sonntag78_junglebook_hair",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/sonntag78_junglebook_hair.bin",
+ "build": "skinned",
+ "triangles": 8576,
+ "vertices": 4966,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 261824,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 261824,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 8576,
+   "vertices": 4966
+  }
+ ],
+ "solids": "13 solids: 13 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2542-People-hair-sonntag78-junglebook-hair.png",
+ "model": "models/2542-People-hair-sonntag78-junglebook-hair.glb",
+ "pieces": [
+  {
+   "label": "hair",
+   "triangles": 8576,
+   "vertices": 4966,
+   "bytes": 261824,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map sonntag78_junglebook_hair.webp 512x512 WebP, 42560 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture sonntag78_junglebook_hair.webp"
+ ],
+ "countKey": "proxy:sonntag78_junglebook_hair",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 400 triangles (8,576 today, 21.4 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.",
+  "Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 400
+}

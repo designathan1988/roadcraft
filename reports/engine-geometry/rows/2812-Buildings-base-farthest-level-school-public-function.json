@@ -1,0 +1,62 @@
+{
+ "id": "Buildings: base (farthest level)/school (public)/function",
+ "group": "Buildings: base (farthest level)",
+ "name": "school (public)",
+ "variation": "function",
+ "origin": "kit",
+ "source": "src/render/buildings/massBase.ts (emitBase)",
+ "build": "merged",
+ "triangles": 32,
+ "vertices": 28,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 864,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 864,
+ "materials": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 32,
+   "vertices": 28
+  }
+ ],
+ "solids": "2 solids: 1 other, 1 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2812-Buildings-base-farthest-level-school-public-function.png",
+ "model": "models/2812-Buildings-base-farthest-level-school-public-function.glb",
+ "pieces": [
+  {
+   "label": "base",
+   "triangles": 32,
+   "vertices": 28,
+   "bytes": 864,
+   "material": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)"
+ ],
+ "countKey": "building-base:school (public)",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level."
+ ],
+ "target": 40
+}

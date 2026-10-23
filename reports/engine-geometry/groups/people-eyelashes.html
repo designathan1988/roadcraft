@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: eyelashes</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: eyelashes</h1><p class="muted">9 objects, 116,456 triangles one of each.</p></header>
+<main><article class="row" id="People: eyelashes/mindfront_eyelashes_05">
+  <a href="../images/2382-People-eyelashes-mindfront-eyelashes-05.png"><img loading="lazy" src="../images/2382-People-eyelashes-mindfront-eyelashes-05.png" alt="People: eyelashes/mindfront_eyelashes_05"></a>
+  <div class="data">
+    <h3>mindfront_eyelashes_05</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (29,700 today): painted into the head's texture: no geometry of its own.</li><li>Picture: strand-by-strand brows or lashes (14,000-42,000 triangles) beside the 192-triangle strips of the same pieces; the strip with a texture, or painted on the head.</li><li>Remove its 24 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>29,700</dd><dt>Vertices</dt><dd>19,800</dd>
+      <dt>Levels</dt><dd>L0 29,700</dd>
+      <dt>Memory</dt><dd>967 KB (geometry 967 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>775 solids: 766 other, 9 closed cylinder</dd><dt>Hidden triangles</dt><dd>24</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_eyelashes_05.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it</dd>
+    </dl>
+    <a class="file" href="../models/2382-People-eyelashes-mindfront-eyelashes-05.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/mindfront_eyelashes_02">
+  <a href="../images/2379-People-eyelashes-mindfront-eyelashes-02.png"><img loading="lazy" src="../images/2379-People-eyelashes-mindfront-eyelashes-02.png" alt="People: eyelashes/mindfront_eyelashes_02"></a>
+  <div class="data">
+    <h3>mindfront_eyelashes_02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (25,488 today): painted into the head's texture: no geometry of its own.</li><li>Picture: strand-by-strand brows or lashes (14,000-42,000 triangles) beside the 192-triangle strips of the same pieces; the strip with a texture, or painted on the head.</li><li>Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>25,488</dd><dt>Vertices</dt><dd>16,992</dd>
+      <dt>Levels</dt><dd>L0 25,488</dd>
+      <dt>Memory</dt><dd>830 KB (geometry 830 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>131 solids: 130 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>10</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_eyelashes_02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it</dd>
+    </dl>
+    <a class="file" href="../models/2379-People-eyelashes-mindfront-eyelashes-02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/mindfront_eyelashes_04">
+  <a href="../images/2381-People-eyelashes-mindfront-eyelashes-04.png"><img loading="lazy" src="../images/2381-People-eyelashes-mindfront-eyelashes-04.png" alt="People: eyelashes/mindfront_eyelashes_04"></a>
+  <div class="data">
+    <h3>mindfront_eyelashes_04</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (24,372 today): painted into the head's texture: no geometry of its own.</li><li>Picture: strand-by-strand brows or lashes (14,000-42,000 triangles) beside the 192-triangle strips of the same pieces; the strip with a texture, or painted on the head.</li><li>Remove its 44 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>24,372</dd><dt>Vertices</dt><dd>16,248</dd>
+      <dt>Levels</dt><dd>L0 24,372</dd>
+      <dt>Memory</dt><dd>793 KB (geometry 793 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>690 solids: 688 other, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>44</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_eyelashes_04.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it</dd>
+    </dl>
+    <a class="file" href="../models/2381-People-eyelashes-mindfront-eyelashes-04.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/mindfront_eyelashes_03">
+  <a href="../images/2380-People-eyelashes-mindfront-eyelashes-03.png"><img loading="lazy" src="../images/2380-People-eyelashes-mindfront-eyelashes-03.png" alt="People: eyelashes/mindfront_eyelashes_03"></a>
+  <div class="data">
+    <h3>mindfront_eyelashes_03</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (18,792 today): painted into the head's texture: no geometry of its own.</li><li>Picture: strand-by-strand brows or lashes (14,000-42,000 triangles) beside the 192-triangle strips of the same pieces; the strip with a texture, or painted on the head.</li><li>Remove its 39 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>18,792</dd><dt>Vertices</dt><dd>12,528</dd>
+      <dt>Levels</dt><dd>L0 18,792</dd>
+      <dt>Memory</dt><dd>612 KB (geometry 612 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>670 solids: 664 other, 6 closed cylinder</dd><dt>Hidden triangles</dt><dd>39</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_eyelashes_03.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it</dd>
+    </dl>
+    <a class="file" href="../models/2380-People-eyelashes-mindfront-eyelashes-03.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/mindfront_eyelashes_01">
+  <a href="../images/2378-People-eyelashes-mindfront-eyelashes-01.png"><img loading="lazy" src="../images/2378-People-eyelashes-mindfront-eyelashes-01.png" alt="People: eyelashes/mindfront_eyelashes_01"></a>
+  <div class="data">
+    <h3>mindfront_eyelashes_01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (16,632 today): painted into the head's texture: no geometry of its own.</li><li>Picture: strand-by-strand brows or lashes (14,000-42,000 triangles) beside the 192-triangle strips of the same pieces; the strip with a texture, or painted on the head.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>16,632</dd><dt>Vertices</dt><dd>11,088</dd>
+      <dt>Levels</dt><dd>L0 16,632</dd>
+      <dt>Memory</dt><dd>541 KB (geometry 541 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>120 solids: 119 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      
+      <dt>Source</dt><dd><code>public/models/people/proxies/mindfront_eyelashes_01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it</dd>
+    </dl>
+    <a class="file" href="../models/2378-People-eyelashes-mindfront-eyelashes-01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/eyelashes01">
+  <a href="../images/2285-People-eyelashes-eyelashes01.png"><img loading="lazy" src="../images/2285-People-eyelashes-eyelashes01.png" alt="People: eyelashes/eyelashes01"></a>
+  <div class="data">
+    <h3>eyelashes01</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (368 today): painted into the head's texture: no geometry of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>368</dd><dt>Vertices</dt><dd>250</dd>
+      <dt>Levels</dt><dd>L0 368</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map eyelashes01.webp 256x256 WebP, 16886 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/eyelashes01.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture eyelashes01.webp</dd>
+    </dl>
+    <a class="file" href="../models/2285-People-eyelashes-eyelashes01.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/eyelashes02">
+  <a href="../images/2286-People-eyelashes-eyelashes02.png"><img loading="lazy" src="../images/2286-People-eyelashes-eyelashes02.png" alt="People: eyelashes/eyelashes02"></a>
+  <div class="data">
+    <h3>eyelashes02</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (368 today): painted into the head's texture: no geometry of its own.</li><li>Same triangles and vertices as eyelashes01 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>368</dd><dt>Vertices</dt><dd>250</dd>
+      <dt>Levels</dt><dd>L0 368</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map eyelashes02.webp 256x256 WebP, 20866 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/eyelashes02.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture eyelashes02.webp</dd>
+    </dl>
+    <a class="file" href="../models/2286-People-eyelashes-eyelashes02.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/eyelashes03">
+  <a href="../images/2287-People-eyelashes-eyelashes03.png"><img loading="lazy" src="../images/2287-People-eyelashes-eyelashes03.png" alt="People: eyelashes/eyelashes03"></a>
+  <div class="data">
+    <h3>eyelashes03</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (368 today): painted into the head's texture: no geometry of its own.</li><li>Same triangles and vertices as eyelashes01 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>368</dd><dt>Vertices</dt><dd>250</dd>
+      <dt>Levels</dt><dd>L0 368</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map eyelashes03.webp 256x256 WebP, 20914 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/eyelashes03.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture eyelashes03.webp</dd>
+    </dl>
+    <a class="file" href="../models/2287-People-eyelashes-eyelashes03.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: eyelashes/eyelashes04">
+  <a href="../images/2288-People-eyelashes-eyelashes04.png"><img loading="lazy" src="../images/2288-People-eyelashes-eyelashes04.png" alt="People: eyelashes/eyelashes04"></a>
+  <div class="data">
+    <h3>eyelashes04</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (368 today): painted into the head's texture: no geometry of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>368</dd><dt>Vertices</dt><dd>254</dd>
+      <dt>Levels</dt><dd>L0 368</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map eyelashes04.webp 256x256 WebP, 18484 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/eyelashes04.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture eyelashes04.webp</dd>
+    </dl>
+    <a class="file" href="../models/2288-People-eyelashes-eyelashes04.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

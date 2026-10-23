@@ -1,0 +1,100 @@
+{
+ "id": "Buildings: made to measure/industrial low/medium lot 24 x 26 m (warehouse) (3 floors)",
+ "group": "Buildings: made to measure",
+ "name": "industrial low",
+ "variation": "medium lot 24 x 26 m (warehouse) (3 floors)",
+ "origin": "kit",
+ "source": "src/world/buildings/procedural.ts (madeToMeasure)",
+ "build": "merged",
+ "triangles": 1422,
+ "vertices": 2708,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B litSlot/instance:1xFloat32=4B roomA:4xUint16=8B roomB:4xUint16=8B roomC:4xUint16=8B roomD:4xUint16=8B roomE:4xUint16=8B",
+ "bytesPerVertex": 104,
+ "geometryBytes": 40628,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 40628,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1) | MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1) | MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1) | MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in room-lights-awake-interior-v15-recess|part-pose | patched built-in thin-part-prefiltered-v3-cards|part-pose | patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1422,
+   "vertices": 2708
+  }
+ ],
+ "solids": "97 solids: 27 other, 18 open prism, 31 quad, 21 box",
+ "hiddenTriangles": 78,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 3,
+ "trianglesPerFloor": 474,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1862-Buildings-made-to-measure-industrial-low-medium-lot-24-x-26-m-warehouse-3-floors.png",
+ "model": "models/1862-Buildings-made-to-measure-industrial-low-medium-lot-24-x-26-m-warehouse-3-floors.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 744,
+   "vertices": 1128,
+   "bytes": 31536,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-glass x15",
+   "triangles": 30,
+   "vertices": 60,
+   "bytes": 1280,
+   "material": "MeshStandardMaterial \"building-part-glass\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.06, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-frame x7",
+   "triangles": 392,
+   "vertices": 1008,
+   "bytes": 5168,
+   "material": "MeshStandardMaterial \"building-part-frame\" [thin-part-prefiltered-v3-cards|part-pose] (roughness 0.55, metalness 0.05, opacity 1)"
+  },
+  {
+   "label": "building-concrete x17",
+   "triangles": 204,
+   "vertices": 408,
+   "bytes": 1384,
+   "material": "MeshStandardMaterial \"building-part-column\" [onBeforeCompile() {}|part-pose] (roughness 0.82, metalness 0, opacity 1)"
+  },
+  {
+   "label": "building-shutter x4",
+   "triangles": 48,
+   "vertices": 96,
+   "bytes": 968,
+   "material": "MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)"
+  },
+  {
+   "label": "building-glassDark x2",
+   "triangles": 4,
+   "vertices": 8,
+   "bytes": 292,
+   "material": "MeshStandardMaterial \"building-part-glassDark\" [room-lights-awake-interior-v15-recess|part-pose] (roughness 0.08, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built alone at its detail level (L0) by buildBuildingMeshes, every part with it; its far levels (facade L1, masses) are the building layer's cells"
+ ],
+ "countKey": "building:Buildings: made to measure:industrial low:medium lot 24 x 26 m (warehouse)",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Remove its 78 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "18 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "104 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1500
+}

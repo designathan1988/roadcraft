@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: gloves</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: gloves</h1><p class="muted">9 objects, 76,828 triangles one of each.</p></header>
+<main><article class="row" id="People: gloves/culturalibre_hero-heroine_gloves_4">
+  <a href="../images/2086-People-gloves-culturalibre-hero-heroine-gloves-4.png"><img loading="lazy" src="../images/2086-People-gloves-culturalibre-hero-heroine-gloves-4.png" alt="People: gloves/culturalibre_hero-heroine_gloves_4"></a>
+  <div class="data">
+    <h3>culturalibre_hero-heroine_gloves_4</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (16,544 today, 413.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>16,544</dd><dt>Vertices</dt><dd>9,710</dd>
+      <dt>Levels</dt><dd>L0 16,544</dd>
+      <dt>Memory</dt><dd>497 KB (geometry 497 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero-heroine_gloves_4.webp 256x256 WebP, 7196 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero-heroine_gloves_4.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 4282 base-body vertices under it<br>texture culturalibre_hero-heroine_gloves_4.webp</dd>
+    </dl>
+    <a class="file" href="../models/2086-People-gloves-culturalibre-hero-heroine-gloves-4.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/culturalibre_hero-heroine_gloves_3">
+  <a href="../images/2085-People-gloves-culturalibre-hero-heroine-gloves-3.png"><img loading="lazy" src="../images/2085-People-gloves-culturalibre-hero-heroine-gloves-3.png" alt="People: gloves/culturalibre_hero-heroine_gloves_3"></a>
+  <div class="data">
+    <h3>culturalibre_hero-heroine_gloves_3</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (14,536 today, 363.4 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,536</dd><dt>Vertices</dt><dd>18,913</dd>
+      <dt>Levels</dt><dd>L0 14,536</dd>
+      <dt>Memory</dt><dd>761 KB (geometry 761 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero-heroine_gloves_3.webp 256x256 WebP, 6310 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero-heroine_gloves_3.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3746 base-body vertices under it<br>texture culturalibre_hero-heroine_gloves_3.webp</dd>
+    </dl>
+    <a class="file" href="../models/2085-People-gloves-culturalibre-hero-heroine-gloves-3.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/culturalibre_hero-heroine_gloves_2">
+  <a href="../images/2084-People-gloves-culturalibre-hero-heroine-gloves-2.png"><img loading="lazy" src="../images/2084-People-gloves-culturalibre-hero-heroine-gloves-2.png" alt="People: gloves/culturalibre_hero-heroine_gloves_2"></a>
+  <div class="data">
+    <h3>culturalibre_hero-heroine_gloves_2</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (14,464 today, 361.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 546 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>14,464</dd><dt>Vertices</dt><dd>8,898</dd>
+      <dt>Levels</dt><dd>L0 14,464</dd>
+      <dt>Memory</dt><dd>448 KB (geometry 448 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>546</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero-heroine_gloves_2.webp 256x256 WebP, 8456 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero-heroine_gloves_2.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3826 base-body vertices under it<br>texture culturalibre_hero-heroine_gloves_2.webp</dd>
+    </dl>
+    <a class="file" href="../models/2084-People-gloves-culturalibre-hero-heroine-gloves-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/toigo_gloves_long">
+  <a href="../images/2572-People-gloves-toigo-gloves-long.png"><img loading="lazy" src="../images/2572-People-gloves-toigo-gloves-long.png" alt="People: gloves/toigo_gloves_long"></a>
+  <div class="data">
+    <h3>toigo_gloves_long</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (6,864 today, 171.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>6,864</dd><dt>Vertices</dt><dd>4,302</dd>
+      <dt>Levels</dt><dd>L0 6,864</dd>
+      <dt>Memory</dt><dd>215 KB (geometry 215 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_gloves_long.webp 256x256 WebP, 3466 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_gloves_long.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 4402 base-body vertices under it<br>texture toigo_gloves_long.webp</dd>
+    </dl>
+    <a class="file" href="../models/2572-People-gloves-toigo-gloves-long.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/toigo_gloves_medium">
+  <a href="../images/2573-People-gloves-toigo-gloves-medium.png"><img loading="lazy" src="../images/2573-People-gloves-toigo-gloves-medium.png" alt="People: gloves/toigo_gloves_medium"></a>
+  <div class="data">
+    <h3>toigo_gloves_medium</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (5,744 today, 143.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,744</dd><dt>Vertices</dt><dd>3,692</dd>
+      <dt>Levels</dt><dd>L0 5,744</dd>
+      <dt>Memory</dt><dd>183 KB (geometry 183 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_gloves_medium.webp 256x256 WebP, 3650 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_gloves_medium.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3866 base-body vertices under it<br>texture toigo_gloves_medium.webp</dd>
+    </dl>
+    <a class="file" href="../models/2573-People-gloves-toigo-gloves-medium.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/culturalibre_hero-heroine_gloves_5">
+  <a href="../images/2087-People-gloves-culturalibre-hero-heroine-gloves-5.png"><img loading="lazy" src="../images/2087-People-gloves-culturalibre-hero-heroine-gloves-5.png" alt="People: gloves/culturalibre_hero-heroine_gloves_5"></a>
+  <div class="data">
+    <h3>culturalibre_hero-heroine_gloves_5</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (5,212 today, 130.3 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 3 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>5,212</dd><dt>Vertices</dt><dd>3,128</dd>
+      <dt>Levels</dt><dd>L0 5,212</dd>
+      <dt>Memory</dt><dd>159 KB (geometry 159 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>3</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero-heroine_gloves_5.webp 256x256 WebP, 7846 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero-heroine_gloves_5.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3906 base-body vertices under it<br>texture culturalibre_hero-heroine_gloves_5.webp</dd>
+    </dl>
+    <a class="file" href="../models/2087-People-gloves-culturalibre-hero-heroine-gloves-5.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/toigo_gloves_short">
+  <a href="../images/2574-People-gloves-toigo-gloves-short.png"><img loading="lazy" src="../images/2574-People-gloves-toigo-gloves-short.png" alt="People: gloves/toigo_gloves_short"></a>
+  <div class="data">
+    <h3>toigo_gloves_short</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,544 today, 113.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,544</dd><dt>Vertices</dt><dd>2,954</dd>
+      <dt>Levels</dt><dd>L0 4,544</dd>
+      <dt>Memory</dt><dd>146 KB (geometry 146 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map toigo_gloves_short.webp 256x256 WebP, 4302 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/toigo_gloves_short.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3490 base-body vertices under it<br>texture toigo_gloves_short.webp</dd>
+    </dl>
+    <a class="file" href="../models/2574-People-gloves-toigo-gloves-short.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/culturalibre_hero-heroine_gloves_1">
+  <a href="../images/2083-People-gloves-culturalibre-hero-heroine-gloves-1.png"><img loading="lazy" src="../images/2083-People-gloves-culturalibre-hero-heroine-gloves-1.png" alt="People: gloves/culturalibre_hero-heroine_gloves_1"></a>
+  <div class="data">
+    <h3>culturalibre_hero-heroine_gloves_1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,528 today, 113.2 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 3 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,528</dd><dt>Vertices</dt><dd>2,762</dd>
+      <dt>Levels</dt><dd>L0 4,528</dd>
+      <dt>Memory</dt><dd>139 KB (geometry 139 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>3</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero-heroine_gloves_1.webp 256x256 WebP, 6160 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero-heroine_gloves_1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3906 base-body vertices under it<br>texture culturalibre_hero-heroine_gloves_1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2083-People-gloves-culturalibre-hero-heroine-gloves-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: gloves/learning_mma_fighting_gloves">
+  <a href="../images/2333-People-gloves-learning-mma-fighting-gloves.png"><img loading="lazy" src="../images/2333-People-gloves-learning-mma-fighting-gloves.png" alt="People: gloves/learning_mma_fighting_gloves"></a>
+  <div class="data">
+    <h3>learning_mma_fighting_gloves</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,392 today, 109.8 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 20 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,392</dd><dt>Vertices</dt><dd>3,092</dd>
+      <dt>Levels</dt><dd>L0 4,392</dd>
+      <dt>Memory</dt><dd>148 KB (geometry 148 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>16 solids: 16 other</dd><dt>Hidden triangles</dt><dd>20</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map learning_mma_fighting_gloves.webp 256x256 WebP, 8842 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/learning_mma_fighting_gloves.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture learning_mma_fighting_gloves.webp</dd>
+    </dl>
+    <a class="file" href="../models/2333-People-gloves-learning-mma-fighting-gloves.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

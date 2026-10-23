@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: base body</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: base body</h1><p class="muted">2 objects, 63,364 triangles one of each.</p></header>
+<main><article class="row" id="People: base body/MakeHuman base mesh/with helper geometry">
+  <a href="../images/2046-People-base-body-MakeHuman-base-mesh-with-helper-geometry.png"><img loading="lazy" src="../images/2046-People-base-body-MakeHuman-base-mesh-with-helper-geometry.png" alt="People: base body/MakeHuman base mesh/with helper geometry"></a>
+  <div class="data">
+    <h3>MakeHuman base mesh <small>with helper geometry</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (36,608 today): not shipped to the game: a build-time source only.</li><li>Stays a build-time source; with its helper geometry (joints and fitting cubes, 36,608 triangles) it is never drawn.</li><li>Remove its 557 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>36,608</dd><dt>Vertices</dt><dd>19,158</dd>
+      <dt>Levels</dt><dd>L0 36,608</dd>
+      <dt>Memory</dt><dd>878 KB (geometry 878 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.7, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>153 solids: 4 closed cylinder, 24 other, 125 box</dd><dt>Hidden triangles</dt><dd>557</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      
+      <dt>Source</dt><dd><code>public/models/people/base.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>the file as shipped; the helpers (joints, proxies' fitting cubes) are not drawn</dd>
+    </dl>
+    <a class="file" href="../models/2046-People-base-body-MakeHuman-base-mesh-with-helper-geometry.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: base body/MakeHuman base mesh/body only">
+  <a href="../images/2045-People-base-body-MakeHuman-base-mesh-body-only.png"><img loading="lazy" src="../images/2045-People-base-body-MakeHuman-base-mesh-body-only.png" alt="People: base body/MakeHuman base mesh/body only"></a>
+  <div class="data">
+    <h3>MakeHuman base mesh <small>body only</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (26,756 today): not shipped to the game: a build-time source only.</li><li>Stays a build-time source; with its helper geometry (joints and fitting cubes, 36,608 triangles) it is never drawn.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26,756</dd><dt>Vertices</dt><dd>19,158</dd>
+      <dt>Levels</dt><dd>L0 26,756</dd>
+      <dt>Memory</dt><dd>17,951 KB (geometry 763 KB, textures 0 KB, other 17,188 KB)</dd>
+      <dt>Per vertex</dt><dd>24 B: position:3xFloat32=12B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.7, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      
+      <dt>Source</dt><dd><code>public/models/people/base.bin (src/people/body/assets.ts)</code> (file)</dd>
+      <dt>Notes</dt><dd>shape targets (macro PCA, local, face units) 17.6 MB counted in its memory<br>53 bones (game_engine skeleton)<br>source asset: every person is built from it and its garments (the cast and crowd rows are what is drawn), so it has no copies of its own</dd>
+    </dl>
+    <a class="file" href="../models/2045-People-base-body-MakeHuman-base-mesh-body-only.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

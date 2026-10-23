@@ -1,0 +1,66 @@
+{
+ "id": "People: eyelashes/mindfront_eyelashes_02",
+ "group": "People: eyelashes",
+ "name": "mindfront_eyelashes_02",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/mindfront_eyelashes_02.bin",
+ "build": "skinned",
+ "triangles": 25488,
+ "vertices": 16992,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 849600,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 849600,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 25488,
+   "vertices": 16992
+  }
+ ],
+ "solids": "131 solids: 130 other, 1 closed cylinder",
+ "hiddenTriangles": 10,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2379-People-eyelashes-mindfront-eyelashes-02.png",
+ "model": "models/2379-People-eyelashes-mindfront-eyelashes-02.glb",
+ "pieces": [
+  {
+   "label": "eyelashes",
+   "triangles": 25488,
+   "vertices": 16992,
+   "bytes": 849600,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "hides 0 base-body vertices under it"
+ ],
+ "countKey": "proxy:mindfront_eyelashes_02",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (25,488 today): painted into the head's texture: no geometry of its own.",
+  "Picture: strand-by-strand brows or lashes (14,000-42,000 triangles) beside the 192-triangle strips of the same pieces; the strip with a texture, or painted on the head.",
+  "Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

@@ -1,0 +1,63 @@
+{
+ "id": "Buildings: part models/lounger",
+ "group": "Buildings: part models",
+ "name": "lounger",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 66,
+ "vertices": 132,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 5148,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 5148,
+ "materials": "MeshStandardMaterial \"building-part-lounger\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.75, metalness 0, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 66,
+   "vertices": 132
+  }
+ ],
+ "solids": "7 solids: 2 box, 1 other, 4 open prism",
+ "hiddenTriangles": 2,
+ "shadow": "does not cast (small part)",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1734-Buildings-part-models-lounger.png",
+ "model": "models/1734-Buildings-part-models-lounger.glb",
+ "pieces": [
+  {
+   "label": "lounger",
+   "triangles": 66,
+   "vertices": 132,
+   "bytes": 5148,
+   "material": "MeshStandardMaterial \"building-part-lounger\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.75, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:lounger",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (66 today, 2.8 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

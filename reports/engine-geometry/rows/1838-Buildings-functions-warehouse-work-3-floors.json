@@ -1,0 +1,73 @@
+{
+ "id": "Buildings: functions/warehouse/work (3 floors)",
+ "group": "Buildings: functions",
+ "name": "warehouse",
+ "variation": "work (3 floors)",
+ "origin": "kit",
+ "source": "src/world/buildings/cityBuildings.ts (CITY_BUILDINGS)",
+ "build": "merged",
+ "triangles": 1220,
+ "vertices": 2031,
+ "attributes": "position:3xFloat32=12B shellOctNormal:2xInt16=4B shellPaint:4xUint16=8B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B",
+ "bytesPerVertex": 64,
+ "geometryBytes": 34728,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 34728,
+ "materials": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)",
+ "shader": "patched built-in building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose | patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1220,
+   "vertices": 2031
+  }
+ ],
+ "solids": "77 solids: 2 other, 36 quad, 37 box, 2 open prism",
+ "hiddenTriangles": 51,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 3,
+ "trianglesPerFloor": 407,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1838-Buildings-functions-warehouse-work-3-floors.png",
+ "model": "models/1838-Buildings-functions-warehouse-work-3-floors.glb",
+ "pieces": [
+  {
+   "label": "building-shell",
+   "triangles": 788,
+   "vertices": 1167,
+   "bytes": 32736,
+   "material": "MeshStandardMaterial \"building-shell\" [building-shell-v2-weathered-laid-maps-lots-own-walls|part-pose] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "building-shutter x36",
+   "triangles": 432,
+   "vertices": 864,
+   "bytes": 1992,
+   "material": "MeshStandardMaterial \"building-part-shutter\" [onBeforeCompile() {}|part-pose] (roughness 0.5, metalness 0.45, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built alone at its detail level (L0) by buildBuildingMeshes, every part with it; its far levels (facade L1, masses) are the building layer's cells"
+ ],
+ "countKey": "building:Buildings: functions:warehouse:work",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Picture: the paved ground of the lot is a grid of quads round the building; one quad with the paving painted.",
+  "Remove its 51 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1500
+}

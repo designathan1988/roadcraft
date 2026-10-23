@@ -1,0 +1,108 @@
+{
+ "id": "Vehicles/hatch/hatch",
+ "group": "Vehicles",
+ "name": "hatch",
+ "variation": "hatch",
+ "origin": "kit",
+ "source": "src/render/carBody.ts",
+ "build": "instanced",
+ "triangles": 14838,
+ "vertices": 14940,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 620436,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 620436,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 14838,
+   "vertices": 14940
+  },
+  {
+   "level": 1,
+   "triangles": 36,
+   "vertices": 72
+  }
+ ],
+ "solids": "75 solids: 16 other, 44 box, 15 closed cylinder",
+ "hiddenTriangles": 109,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2016-Vehicles-hatch-hatch.png",
+ "model": "models/2016-Vehicles-hatch-hatch.glb",
+ "pieces": [
+  {
+   "label": "shell",
+   "triangles": 9720,
+   "vertices": 6021,
+   "bytes": 275076,
+   "material": ""
+  },
+  {
+   "label": "glass",
+   "triangles": 1008,
+   "vertices": 660,
+   "bytes": 29808,
+   "material": ""
+  },
+  {
+   "label": "trim",
+   "triangles": 460,
+   "vertices": 720,
+   "bytes": 28680,
+   "material": ""
+  },
+  {
+   "label": "interior",
+   "triangles": 1570,
+   "vertices": 2498,
+   "bytes": 99348,
+   "material": ""
+  },
+  {
+   "label": "roof",
+   "triangles": 1540,
+   "vertices": 4620,
+   "bytes": 166320,
+   "material": ""
+  },
+  {
+   "label": "steering wheel",
+   "triangles": 540,
+   "vertices": 421,
+   "bytes": 18396,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches",
+  "4 doors drawn apart only while they move"
+ ],
+ "countKey": "vehicle:hatch:hatch",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,000 triangles (14,838 today, 14.8 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).",
+  "Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.",
+  "Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.",
+  "Remove its 109 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1000
+}

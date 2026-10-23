@@ -1,0 +1,69 @@
+{
+ "id": "People: shoes/elvs_zombie_killer_sneakers",
+ "group": "People: shoes",
+ "name": "elvs_zombie_killer_sneakers",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/elvs_zombie_killer_sneakers.bin",
+ "build": "skinned",
+ "triangles": 153938,
+ "vertices": 85862,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 4594840,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 4594840,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 153938,
+   "vertices": 85862
+  }
+ ],
+ "solids": "68 solids: 56 other, 12 closed cylinder",
+ "hiddenTriangles": 1609,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2266-People-shoes-elvs-zombie-killer-sneakers.png",
+ "model": "models/2266-People-shoes-elvs-zombie-killer-sneakers.glb",
+ "pieces": [
+  {
+   "label": "shoes",
+   "triangles": 153938,
+   "vertices": 85862,
+   "bytes": 4594840,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map elvs_zombie_killer_sneakers.webp 256x256 WebP, 4976 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 2126 base-body vertices under it",
+  "texture elvs_zombie_killer_sneakers.webp"
+ ],
+ "countKey": "proxy:elvs_zombie_killer_sneakers",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (153,938 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Picture: soles, laces and straps modelled at full detail (up to 153,938 triangles a pair); a city figure's feet are a few pixels.",
+  "Remove its 1,609 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

@@ -1,0 +1,60 @@
+{
+ "id": "Vehicles/far car (far traffic)/4.3 x 1.8 m, body and cabin",
+ "group": "Vehicles",
+ "name": "far car (far traffic)",
+ "variation": "4.3 x 1.8 m, body and cabin",
+ "origin": "kit",
+ "source": "src/render/densityCars.ts (carGeometry)",
+ "build": "instanced",
+ "triangles": 24,
+ "vertices": 48,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 1296,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1296,
+ "materials": "MeshStandardMaterial (roughness 0.6, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 24,
+   "vertices": 48
+  }
+ ],
+ "solids": "2 solids: 2 box",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2669-Vehicles-far-car-far-traffic-4-3-x-1-8-m-body-and-cabin.png",
+ "model": "models/2669-Vehicles-far-car-far-traffic-4-3-x-1-8-m-body-and-cabin.glb",
+ "pieces": [
+  {
+   "label": "car",
+   "triangles": 24,
+   "vertices": 48,
+   "bytes": 1296,
+   "material": "MeshStandardMaterial (roughness 0.6, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "one instance a car of the far traffic, placed along its road and given its colour in the vertex shader"
+ ],
+ "countKey": "far-cars",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [],
+ "target": 1000
+}

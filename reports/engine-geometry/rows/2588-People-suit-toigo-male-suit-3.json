@@ -1,0 +1,68 @@
+{
+ "id": "People: suit/toigo_male_suit_3",
+ "group": "People: suit",
+ "name": "toigo_male_suit_3",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/toigo_male_suit_3.bin",
+ "build": "skinned",
+ "triangles": 16250,
+ "vertices": 9795,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 508440,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 508440,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 16250,
+   "vertices": 9795
+  }
+ ],
+ "solids": "15 solids: 15 other",
+ "hiddenTriangles": 12,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2588-People-suit-toigo-male-suit-3.png",
+ "model": "models/2588-People-suit-toigo-male-suit-3.glb",
+ "pieces": [
+  {
+   "label": "suit",
+   "triangles": 16250,
+   "vertices": 9795,
+   "bytes": 508440,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map toigo_male_suit_3.webp 512x512 WebP, 19514 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 3848 base-body vertices under it",
+  "texture toigo_male_suit_3.webp"
+ ],
+ "countKey": "proxy:toigo_male_suit_3",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (16,250 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Remove its 12 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

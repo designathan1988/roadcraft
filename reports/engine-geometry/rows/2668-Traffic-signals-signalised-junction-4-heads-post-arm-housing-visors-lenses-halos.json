@@ -1,0 +1,87 @@
+{
+ "id": "Traffic signals/signalised junction/4 heads (post, arm, housing, visors, lenses, halos)",
+ "group": "Traffic signals",
+ "name": "signalised junction",
+ "variation": "4 heads (post, arm, housing, visors, lenses, halos)",
+ "origin": "kit",
+ "source": "src/render/signals.ts (createSignalHeads, sync)",
+ "build": "instanced",
+ "triangles": 1648,
+ "vertices": 2516,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aSurface:2xFloat32=8B aSwayPart:4xFloat32=16B aCastReach:1xFloat32=4B aLensGlow/instance:4xFloat32=16B",
+ "bytesPerVertex": 72,
+ "geometryBytes": 10904,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 10904,
+ "materials": "MeshStandardMaterial [(shader, renderer) => {] (vertex colours, roughness 1, metalness 1, opacity 1) | MeshBasicMaterial [(shader, renderer) => {] (transparent, opacity 0.28) | MeshStandardMaterial [(shader, renderer) => {] (roughness 0.78, metalness 0.1, opacity 1) | MeshStandardMaterial [(shader, renderer) => {] (roughness 0.35, metalness 0, opacity 1)",
+ "shader": "patched built-in (shader, renderer) => {",
+ "motion": "wind sway (vertex)",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1648,
+   "vertices": 2516
+  }
+ ],
+ "solids": "68 solids: 36 other, 4 open prism, 28 box",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2668-Traffic-signals-signalised-junction-4-heads-post-arm-housing-visors-lenses-halos.png",
+ "model": "models/2668-Traffic-signals-signalised-junction-4-heads-post-arm-housing-visors-lenses-halos.glb",
+ "pieces": [
+  {
+   "label": "signal-frame x4",
+   "triangles": 208,
+   "vertices": 308,
+   "bytes": 5856,
+   "material": "MeshStandardMaterial [(shader, renderer) => {] (vertex colours, roughness 1, metalness 1, opacity 1)"
+  },
+  {
+   "label": "signal-halos x8",
+   "triangles": 288,
+   "vertices": 408,
+   "bytes": 1848,
+   "material": "MeshBasicMaterial [(shader, renderer) => {] (transparent, opacity 0.28)"
+  },
+  {
+   "label": "signal-visors x24",
+   "triangles": 288,
+   "vertices": 576,
+   "bytes": 840,
+   "material": "MeshStandardMaterial [(shader, renderer) => {] (roughness 0.78, metalness 0.1, opacity 1)"
+  },
+  {
+   "label": "signal-lenses x24",
+   "triangles": 864,
+   "vertices": 1224,
+   "bytes": 2360,
+   "material": "MeshStandardMaterial [(shader, renderer) => {] (roughness 0.35, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "one head on each approach of a signal group, where the world stands its post (signalPostPlace); the frame (post, arm, housing) one geometry an instance"
+ ],
+ "countKey": "signals",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 400 triangles (1,648 today, 4.1 times the budget): about 100 a head: post and arm as 6-sided prisms, housing a box, lenses and visors painted on its face (emissive).",
+  "About 100 triangles a head.",
+  "4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "72 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 400
+}

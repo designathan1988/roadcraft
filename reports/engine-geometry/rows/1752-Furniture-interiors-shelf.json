@@ -1,0 +1,67 @@
+{
+ "id": "Furniture (interiors)/shelf",
+ "group": "Furniture (interiors)",
+ "name": "shelf",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 370,
+ "vertices": 740,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 73260,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 73260,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 370,
+   "vertices": 740
+  }
+ ],
+ "solids": "38 solids: 34 other, 4 open prism",
+ "hiddenTriangles": 2,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1752-Furniture-interiors-shelf.png",
+ "model": "models/1752-Furniture-interiors-shelf.glb",
+ "pieces": [
+  {
+   "label": "shelf",
+   "triangles": 370,
+   "vertices": 740,
+   "bytes": 73260,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 40 box (40 parts)"
+ ],
+ "countKey": "furniture:shelf",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (370 today, 9.3 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.",
+  "One box whose front shows the shelves and goods by parallax or an alpha-cut texture, not a box a plank.",
+  "Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

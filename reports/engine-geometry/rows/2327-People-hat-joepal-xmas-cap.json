@@ -1,0 +1,67 @@
+{
+ "id": "People: hat/joepal_xmas_cap",
+ "group": "People: hat",
+ "name": "joepal_xmas_cap",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/joepal_xmas_cap.bin",
+ "build": "skinned",
+ "triangles": 2016,
+ "vertices": 1154,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 61120,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 61120,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2016,
+   "vertices": 1154
+  }
+ ],
+ "solids": "2 solids: 1 other, 1 closed cylinder",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2327-People-hat-joepal-xmas-cap.png",
+ "model": "models/2327-People-hat-joepal-xmas-cap.glb",
+ "pieces": [
+  {
+   "label": "hat",
+   "triangles": 2016,
+   "vertices": 1154,
+   "bytes": 61120,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map joepal_xmas_cap.webp 256x256 WebP, 3092 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 209 base-body vertices under it",
+  "texture joepal_xmas_cap.webp"
+ ],
+ "countKey": "proxy:joepal_xmas_cap",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (2,016 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

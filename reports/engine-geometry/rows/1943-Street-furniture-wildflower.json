@@ -1,0 +1,61 @@
+{
+ "id": "Street furniture/wildflower",
+ "group": "Street furniture",
+ "name": "wildflower",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/scenery.ts",
+ "build": "instanced",
+ "triangles": 40,
+ "vertices": 94,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 3624,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 3624,
+ "materials": "MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "patched built-in wind-nearfade|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 40,
+   "vertices": 94
+  }
+ ],
+ "solids": "3 solids: 1 open prism, 1 box, 1 closed cylinder",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1943-Street-furniture-wildflower.png",
+ "model": "models/1943-Street-furniture-wildflower.glb",
+ "pieces": [
+  {
+   "label": "wildflower",
+   "triangles": 40,
+   "vertices": 94,
+   "bytes": 3624,
+   "material": "MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

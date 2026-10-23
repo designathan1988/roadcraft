@@ -1,0 +1,64 @@
+{
+ "id": "Furniture (interiors)/locker",
+ "group": "Furniture (interiors)",
+ "name": "locker",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/furnitureKit.ts",
+ "build": "instanced",
+ "triangles": 40,
+ "vertices": 80,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 96,
+ "geometryBytes": 7920,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 7920,
+ "materials": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)",
+ "shader": "patched built-in building-furniture-rounded|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 40,
+   "vertices": 80
+  }
+ ],
+ "solids": "4 solids: 4 other",
+ "hiddenTriangles": 4,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1771-Furniture-interiors-locker.png",
+ "model": "models/1771-Furniture-interiors-locker.glb",
+ "pieces": [
+  {
+   "label": "locker",
+   "triangles": 40,
+   "vertices": 80,
+   "bytes": 7920,
+   "material": "MeshStandardMaterial \"building-furniture\" [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "built from 4 box (4 parts)"
+ ],
+ "countKey": "furniture:locker",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "One box: doors, handles, screens and slots painted on its faces.",
+  "Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

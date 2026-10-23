@@ -1,0 +1,65 @@
+{
+ "id": "Landscape elements (glTF)/fern/1",
+ "group": "Landscape elements (glTF)",
+ "name": "fern",
+ "variation": "1",
+ "origin": "file",
+ "source": "public/models/elements/*.gltf (src/render/elements.ts)",
+ "build": "instanced",
+ "triangles": 288,
+ "vertices": 243,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 14148,
+ "textureBytes": 22369620,
+ "extraBytes": 0,
+ "totalBytes": 22383768,
+ "materials": "MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 288,
+   "vertices": 243
+  }
+ ],
+ "solids": "9 solids: 9 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2008-Landscape-elements-glTF-fern-1.png",
+ "model": "models/2008-Landscape-elements-glTF-fern-1.glb",
+ "pieces": [
+  {
+   "label": "part 1",
+   "triangles": 288,
+   "vertices": 243,
+   "bytes": 14148,
+   "material": "MeshStandardMaterial (vertex colours, double-sided, alpha test 0.5, roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map Texture 2048x2048 RGBA 8-bit, 12 levels, 22369620 B"
+ ],
+ "notes": [],
+ "countKey": "element:fern",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 60 triangles (288 today, 4.8 times the budget): a few crossed alpha-tested cards; gone past a short distance.",
+  "Alpha-tested cards; drop past ~30 m.",
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "21 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 60
+}

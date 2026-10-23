@@ -1,0 +1,66 @@
+{
+ "id": "People: base body/MakeHuman base mesh/body only",
+ "group": "People: base body",
+ "name": "MakeHuman base mesh",
+ "variation": "body only",
+ "origin": "file",
+ "source": "public/models/people/base.bin (src/people/body/assets.ts)",
+ "build": "skinned",
+ "triangles": 26756,
+ "vertices": 19158,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 780864,
+ "textureBytes": 0,
+ "extraBytes": 17600618,
+ "totalBytes": 18381482,
+ "materials": "MeshStandardMaterial (roughness 0.7, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 26756,
+   "vertices": 19158
+  }
+ ],
+ "solids": "1 solids: 1 closed cylinder",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2045-People-base-body-MakeHuman-base-mesh-body-only.png",
+ "model": "models/2045-People-base-body-MakeHuman-base-mesh-body-only.glb",
+ "pieces": [
+  {
+   "label": "body",
+   "triangles": 26756,
+   "vertices": 19158,
+   "bytes": 780864,
+   "material": "MeshStandardMaterial (roughness 0.7, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "shape targets (macro PCA, local, face units) 17.6 MB counted in its memory",
+  "53 bones (game_engine skeleton)",
+  "source asset: every person is built from it and its garments (the cast and crowd rows are what is drawn), so it has no copies of its own"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (26,756 today): not shipped to the game: a build-time source only.",
+  "Stays a build-time source; with its helper geometry (joints and fitting cubes, 36,608 triangles) it is never drawn.",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

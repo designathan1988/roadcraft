@@ -1,0 +1,63 @@
+{
+ "id": "Street furniture/drain",
+ "group": "Street furniture",
+ "name": "drain",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/propGeometry.ts",
+ "build": "instanced",
+ "triangles": 108,
+ "vertices": 216,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 8424,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 8424,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 108,
+   "vertices": 216
+  }
+ ],
+ "solids": "11 solids: 3 box, 7 other, 1 quad",
+ "hiddenTriangles": 56,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1937-Street-furniture-drain.png",
+ "model": "models/1937-Street-furniture-drain.glb",
+ "pieces": [
+  {
+   "label": "drain",
+   "triangles": 108,
+   "vertices": 216,
+   "bytes": 8424,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:drain",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (108 today, 2.7 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "A textured decal quad on the ground (2 triangles).",
+  "Remove its 56 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

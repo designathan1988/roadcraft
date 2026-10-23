@@ -1,0 +1,108 @@
+{
+ "id": "Vehicles/sedan/sedan",
+ "group": "Vehicles",
+ "name": "sedan",
+ "variation": "sedan",
+ "origin": "kit",
+ "source": "src/render/carBody.ts",
+ "build": "instanced",
+ "triangles": 15310,
+ "vertices": 12470,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 540228,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 540228,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 15310,
+   "vertices": 12470
+  },
+  {
+   "level": 1,
+   "triangles": 36,
+   "vertices": 72
+  }
+ ],
+ "solids": "72 solids: 16 other, 41 box, 15 closed cylinder",
+ "hiddenTriangles": 110,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2017-Vehicles-sedan-sedan.png",
+ "model": "models/2017-Vehicles-sedan-sedan.glb",
+ "pieces": [
+  {
+   "label": "shell",
+   "triangles": 11352,
+   "vertices": 6690,
+   "bytes": 308952,
+   "material": ""
+  },
+  {
+   "label": "glass",
+   "triangles": 632,
+   "vertices": 405,
+   "bytes": 18372,
+   "material": ""
+  },
+  {
+   "label": "trim",
+   "triangles": 460,
+   "vertices": 720,
+   "bytes": 28680,
+   "material": ""
+  },
+  {
+   "label": "interior",
+   "triangles": 1766,
+   "vertices": 2554,
+   "bytes": 102540,
+   "material": ""
+  },
+  {
+   "label": "roof",
+   "triangles": 560,
+   "vertices": 1680,
+   "bytes": 60480,
+   "material": ""
+  },
+  {
+   "label": "steering wheel",
+   "triangles": 540,
+   "vertices": 421,
+   "bytes": 18396,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches",
+  "4 doors drawn apart only while they move"
+ ],
+ "countKey": "vehicle:sedan:sedan",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 1,000 triangles (15,310 today, 15.3 times the budget): body as a few boxes and tapered boxes, glass and lights as faces of it, wheels of 6-8 sides; LOD0 ~1,000, LOD1 ~300, LOD2 ~36 (its far model), headlights alone at the farthest (GTA V).",
+  "Rebuild near 1,000 triangles; the interior (seats, dashboard, wheel) only through the glass when near, or painted.",
+  "Picture: the body is one dense, even grid (a subdivided surface): flat doors, roof and sides carry as many triangles as the curved corners; flat panels as single quads, the curve only on the edges.",
+  "Remove its 110 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "15 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1000
+}

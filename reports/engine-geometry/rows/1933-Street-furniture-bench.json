@@ -1,0 +1,64 @@
+{
+ "id": "Street furniture/bench",
+ "group": "Street furniture",
+ "name": "bench",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/propGeometry.ts",
+ "build": "instanced",
+ "triangles": 164,
+ "vertices": 328,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 12792,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 12792,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 164,
+   "vertices": 328
+  }
+ ],
+ "solids": "15 solids: 11 box, 4 open prism",
+ "hiddenTriangles": 10,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1933-Street-furniture-bench.png",
+ "model": "models/1933-Street-furniture-bench.glb",
+ "pieces": [
+  {
+   "label": "bench",
+   "triangles": 164,
+   "vertices": 328,
+   "bytes": 12792,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:bench",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (164 today, 4.1 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "Seat, back and two legs as boxes (Cidade Otimizada: 48).",
+  "Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

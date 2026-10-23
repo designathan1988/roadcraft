@@ -1,0 +1,62 @@
+{
+ "id": "Far forest/cerrado/one plate, 3713 trees",
+ "group": "Far forest",
+ "name": "cerrado",
+ "variation": "one plate, 3713 trees",
+ "origin": "kit",
+ "source": "src/render/farForest.ts (createFarForest) + src/render/farWoods.ts (farWoods)",
+ "build": "instanced",
+ "triangles": 7426,
+ "vertices": 14852,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B aSpot/instance:4xFloat32=16B aLook/instance:4xFloat32=16B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 118924,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 118924,
+ "materials": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)",
+ "shader": "patched built-in far-forest-impostor",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 7426,
+   "vertices": 14852
+  }
+ ],
+ "solids": "3713 solids: 3713 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2675-Far-forest-cerrado-one-plate-3713-trees.png",
+ "model": "models/2675-Far-forest-cerrado-one-plate-3713-trees.glb",
+ "pieces": [
+  {
+   "label": "tree quad x3713",
+   "triangles": 7426,
+   "vertices": 14852,
+   "bytes": 118924,
+   "material": "MeshStandardMaterial [far-forest-impostor] (roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "each tree one quad (2 triangles) turned to the camera by the shader and painted with the near tree's picture (impostorShaders.ts); the plate's trees thinned by the quality tier's budget"
+ ],
+ "countKey": "far-forest:cerrado",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels."
+ ],
+ "target": null
+}

@@ -1,0 +1,64 @@
+{
+ "id": "Buildings: part models/dish",
+ "group": "Buildings: part models",
+ "name": "dish",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 146,
+ "vertices": 171,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 7032,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 7032,
+ "materials": "MeshStandardMaterial \"building-part-dish\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.5, metalness 0.2, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 146,
+   "vertices": 171
+  }
+ ],
+ "solids": "5 solids: 1 other, 4 box",
+ "hiddenTriangles": 3,
+ "shadow": "does not cast (small part)",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1739-Buildings-part-models-dish.png",
+ "model": "models/1739-Buildings-part-models-dish.glb",
+ "pieces": [
+  {
+   "label": "dish",
+   "triangles": 146,
+   "vertices": 171,
+   "bytes": 7032,
+   "material": "MeshStandardMaterial \"building-part-dish\" [onBeforeCompile() {}|part-pose] (vertex colours, roughness 0.5, metalness 0.2, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:dish",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (146 today, 6.1 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "A 6-sided cone and a stick.",
+  "Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.",
+  "Remove its 3 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

@@ -1,0 +1,64 @@
+{
+ "id": "Buildings: part models/airer",
+ "group": "Buildings: part models",
+ "name": "airer",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/buildings/kit.ts",
+ "build": "instanced",
+ "triangles": 168,
+ "vertices": 336,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 13104,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 13104,
+ "materials": "MeshStandardMaterial \"building-part-airer\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "patched built-in thin-part-prefiltered-v3-cards|part-pose",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 168,
+   "vertices": 336
+  }
+ ],
+ "solids": "14 solids: 14 box",
+ "hiddenTriangles": 20,
+ "shadow": "does not cast (small part)",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1738-Buildings-part-models-airer.png",
+ "model": "models/1738-Buildings-part-models-airer.glb",
+ "pieces": [
+  {
+   "label": "airer",
+   "triangles": 168,
+   "vertices": 336,
+   "bytes": 13104,
+   "material": "MeshStandardMaterial \"building-part-airer\" [thin-part-prefiltered-v3-cards|part-pose] (vertex colours, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "part:airer",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 24 triangles (168 today, 7.0 times the budget): boxes or one plane with an alpha-cut or painted texture; painted by the facade shader past ~240 m.",
+  "One plane with the bars cut out of a texture in the shader (alphaTest), not a cylinder or a box a bar.",
+  "Picture: round parts at 12-24 sides (pot rim, table top and base, dish bowl); 6-8 sides, or a card.",
+  "Remove its 20 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 24
+}

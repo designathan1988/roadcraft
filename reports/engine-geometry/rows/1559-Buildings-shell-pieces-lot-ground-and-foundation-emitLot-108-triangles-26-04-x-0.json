@@ -1,0 +1,66 @@
+{
+ "id": "Buildings: shell pieces/lot ground and foundation/emitLot, 108 triangles, 26.04 x 0.00 x 28.04 m, from commercial high medium lot",
+ "group": "Buildings: shell pieces",
+ "name": "lot ground and foundation",
+ "variation": "emitLot, 108 triangles, 26.04 x 0.00 x 28.04 m, from commercial high medium lot",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitLot)",
+ "build": "merged",
+ "triangles": 108,
+ "vertices": 324,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 11664,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 11664,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 108,
+   "vertices": 324
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1559-Buildings-shell-pieces-lot-ground-and-foundation-emitLot-108-triangles-26-04-x-0.png",
+ "model": "models/1559-Buildings-shell-pieces-lot-ground-and-foundation-emitLot-108-triangles-26-04-x-0.glb",
+ "pieces": [
+  {
+   "label": "emitLot",
+   "triangles": 108,
+   "vertices": 324,
+   "bytes": 11664,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: stone",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (108 today, 54.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: the foundation ring round the lot is cut into many strips (44-164 triangles); one box ring (8-16 triangles) or the lot plane alone.",
+  "Same triangles and vertices as lot ground and foundation emitLot, 108 triangles, 16.04 x 0.00 x 34.04 m, from function church: load one mesh and change its colour, not a second copy.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

@@ -1,0 +1,73 @@
+{
+ "id": "Signs/info/with text \"Main St 50\"",
+ "group": "Signs",
+ "name": "info",
+ "variation": "with text \"Main St 50\"",
+ "origin": "kit",
+ "source": "src/render/signLayer.ts (createSignLayer, sync)",
+ "build": "instanced",
+ "triangles": 26,
+ "vertices": 41,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B",
+ "bytesPerVertex": 64,
+ "geometryBytes": 15600,
+ "textureBytes": 12626548,
+ "extraBytes": 0,
+ "totalBytes": 12642148,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 26,
+   "vertices": 41
+  }
+ ],
+ "solids": "2 solids: 1 other, 1 quad",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2659-Signs-info-with-text-Main-St-50.png",
+ "model": "models/2659-Signs-info-with-text-Main-St-50.glb",
+ "pieces": [
+  {
+   "label": "sign-posts",
+   "triangles": 24,
+   "vertices": 35,
+   "bytes": 3312,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1)"
+  },
+  {
+   "label": "sign-plates",
+   "triangles": 2,
+   "vertices": 6,
+   "bytes": 12288,
+   "material": "MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B"
+ ],
+ "notes": [
+  "sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)",
+  "the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)"
+ ],
+ "countKey": "sign:info",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need."
+ ],
+ "target": 30
+}

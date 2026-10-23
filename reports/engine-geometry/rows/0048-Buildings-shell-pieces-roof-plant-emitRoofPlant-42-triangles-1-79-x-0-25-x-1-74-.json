@@ -1,0 +1,65 @@
+{
+ "id": "Buildings: shell pieces/roof plant/emitRoofPlant, 42 triangles, 1.79 x 0.25 x 1.74 m, from preset block",
+ "group": "Buildings: shell pieces",
+ "name": "roof plant",
+ "variation": "emitRoofPlant, 42 triangles, 1.79 x 0.25 x 1.74 m, from preset block",
+ "origin": "kit",
+ "source": "src/render/buildings/buildingMesh.ts (emitRoofPlant)",
+ "build": "merged",
+ "triangles": 42,
+ "vertices": 126,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 4536,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 4536,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 42,
+   "vertices": 126
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/0048-Buildings-shell-pieces-roof-plant-emitRoofPlant-42-triangles-1-79-x-0-25-x-1-74-.png",
+ "model": "models/0048-Buildings-shell-pieces-roof-plant-emitRoofPlant-42-triangles-1-79-x-0-25-x-1-74-.glb",
+ "pieces": [
+  {
+   "label": "emitRoofPlant",
+   "triangles": 42,
+   "vertices": 126,
+   "bytes": 4536,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.85, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "finishes: plaster",
+  "faces exactly as the shell lays them (Shell.face), not welded: the engine welds equal vertices, so its vertex count is lower"
+ ],
+ "countKey": "",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 2 triangles (42 today, 21.0 times the budget): one quad a face of a block: openings, frames, sills, slabs and bands drawn by the facade shader.",
+  "Picture: tanks, fans and vents as 14-sided cylinders (42 triangles a drum) and tiny boxes; boxes or 6-sided prisms without caps, the smallest vents painted on the roof.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 2
+}

@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Furniture (interiors)</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Furniture (interiors)</h1><p class="muted">40 objects, 7,172 triangles one of each.</p></header>
+<main><article class="row" id="Furniture (interiors)/bookshelf">
+  <a href="../images/1753-Furniture-interiors-bookshelf.png"><img loading="lazy" src="../images/1753-Furniture-interiors-bookshelf.png" alt="Furniture (interiors)/bookshelf"></a>
+  <div class="data">
+    <h3>bookshelf</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (1,814 today, 45.4 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One box (10 triangles) whose front face shows the books by parallax (interior mapping of a shallow box): 184 boxes today, one a book.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,814</dd><dt>Vertices</dt><dd>3,628</dd>
+      <dt>Levels</dt><dd>L0 1,814</dd>
+      <dt>Memory</dt><dd>351 KB (geometry 351 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>182 solids: 182 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 184 box (184 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1753-Furniture-interiors-bookshelf.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/officeChair">
+  <a href="../images/1751-Furniture-interiors-officeChair.png"><img loading="lazy" src="../images/1751-Furniture-interiors-officeChair.png" alt="Furniture (interiors)/officeChair"></a>
+  <div class="data">
+    <h3>officeChair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (820 today, 20.5 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Boxes for seat and back, one 3-sided prism for the column, the 5 wheels and spheres gone (painted or a disc): 820 triangles today.</li><li>Remove its 177 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>5 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>820</dd><dt>Vertices</dt><dd>714</dd>
+      <dt>Levels</dt><dd>L0 820</dd>
+      <dt>Memory</dt><dd>72 KB (geometry 72 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>13 solids: 7 box, 1 other, 5 closed cylinder</dd><dt>Hidden triangles</dt><dd>177</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 7 box, 1 cylinder, 5 sphere (13 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1751-Furniture-interiors-officeChair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/plant">
+  <a href="../images/1762-Furniture-interiors-plant.png"><img loading="lazy" src="../images/1762-Furniture-interiors-plant.png" alt="Furniture (interiors)/plant"></a>
+  <div class="data">
+    <h3>plant</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (462 today, 11.6 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Crossed alpha-tested leaf cards on a 6-sided pot: no spheres.</li><li>Picture: three geodesic spheres of leaves on a 16-sided pot (462 triangles); crossed leaf cards.</li><li>Remove its 148 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>3 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>462</dd><dt>Vertices</dt><dd>356</dd>
+      <dt>Levels</dt><dd>L0 462</dd>
+      <dt>Memory</dt><dd>36 KB (geometry 36 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 1 other, 3 closed cylinder</dd><dt>Hidden triangles</dt><dd>148</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 1 cylinder, 3 sphere (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1762-Furniture-interiors-plant.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/bars">
+  <a href="../images/1766-Furniture-interiors-bars.png"><img loading="lazy" src="../images/1766-Furniture-interiors-bars.png" alt="Furniture (interiors)/bars"></a>
+  <div class="data">
+    <h3>bars</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (438 today, 10.9 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One plane with the bars cut out of a texture in the shader (alphaTest), not a cylinder or a box a bar.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>438</dd><dt>Vertices</dt><dd>669</dd>
+      <dt>Levels</dt><dd>L0 438</dd>
+      <dt>Memory</dt><dd>65 KB (geometry 65 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>25 solids: 2 box, 23 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 2 box, 23 cylinder (25 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1766-Furniture-interiors-bars.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/shelf">
+  <a href="../images/1752-Furniture-interiors-shelf.png"><img loading="lazy" src="../images/1752-Furniture-interiors-shelf.png" alt="Furniture (interiors)/shelf"></a>
+  <div class="data">
+    <h3>shelf</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (370 today, 9.3 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One box whose front shows the shelves and goods by parallax or an alpha-cut texture, not a box a plank.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>370</dd><dt>Vertices</dt><dd>740</dd>
+      <dt>Levels</dt><dd>L0 370</dd>
+      <dt>Memory</dt><dd>72 KB (geometry 72 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>38 solids: 34 other, 4 open prism</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 40 box (40 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1752-Furniture-interiors-shelf.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/ceilingLamp">
+  <a href="../images/1779-Furniture-interiors-ceilingLamp.png"><img loading="lazy" src="../images/1779-Furniture-interiors-ceilingLamp.png" alt="Furniture (interiors)/ceilingLamp"></a>
+  <div class="data">
+    <h3>ceilingLamp</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (260 today, 6.5 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>6-sided prisms or boxes, its glow emissive.</li><li>Picture: shades and bases as 24-sided cones and discs (146-260 triangles for a lamp); 6-8 sides.</li><li>Remove its 90 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>3 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>260</dd><dt>Vertices</dt><dd>287</dd>
+      <dt>Levels</dt><dd>L0 260</dd>
+      <dt>Memory</dt><dd>28 KB (geometry 28 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 3 closed cylinder</dd><dt>Hidden triangles</dt><dd>90</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 2 cylinder, 1 sphere (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1779-Furniture-interiors-ceilingLamp.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/barCounter">
+  <a href="../images/1774-Furniture-interiors-barCounter.png"><img loading="lazy" src="../images/1774-Furniture-interiors-barCounter.png" alt="Furniture (interiors)/barCounter"></a>
+  <div class="data">
+    <h3>barCounter</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (246 today, 6.2 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>246</dd><dt>Vertices</dt><dd>366</dd>
+      <dt>Levels</dt><dd>L0 246</dd>
+      <dt>Memory</dt><dd>36 KB (geometry 36 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>8 solids: 7 other, 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box, 6 cylinder (9 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1774-Furniture-interiors-barCounter.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/rack">
+  <a href="../images/1770-Furniture-interiors-rack.png"><img loading="lazy" src="../images/1770-Furniture-interiors-rack.png" alt="Furniture (interiors)/rack"></a>
+  <div class="data">
+    <h3>rack</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (240 today, 6.0 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One box whose front shows the shelves and goods by parallax or an alpha-cut texture, not a box a plank.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>240</dd><dt>Vertices</dt><dd>480</dd>
+      <dt>Levels</dt><dd>L0 240</dd>
+      <dt>Memory</dt><dd>46 KB (geometry 46 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>21 solids: 6 other, 15 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 21 box (21 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1770-Furniture-interiors-rack.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/stove">
+  <a href="../images/1756-Furniture-interiors-stove.png"><img loading="lazy" src="../images/1756-Furniture-interiors-stove.png" alt="Furniture (interiors)/stove"></a>
+  <div class="data">
+    <h3>stove</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (208 today, 5.2 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One box: the burners, knobs and oven door painted (or a normal map), not 4 cylinders.</li><li>Remove its 5 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>208</dd><dt>Vertices</dt><dd>316</dd>
+      <dt>Levels</dt><dd>L0 208</dd>
+      <dt>Memory</dt><dd>31 KB (geometry 31 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>7 solids: 6 other, 1 box</dd><dt>Hidden triangles</dt><dd>5</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box, 4 cylinder (8 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1756-Furniture-interiors-stove.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/sofa">
+  <a href="../images/1746-Furniture-interiors-sofa.png"><img loading="lazy" src="../images/1746-Furniture-interiors-sofa.png" alt="Furniture (interiors)/sofa"></a>
+  <div class="data">
+    <h3>sofa</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (172 today, 4.3 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>Remove its 11 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>172</dd><dt>Vertices</dt><dd>288</dd>
+      <dt>Levels</dt><dd>L0 172</dd>
+      <dt>Memory</dt><dd>28 KB (geometry 28 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>12 solids: 5 other, 4 open prism, 3 box</dd><dt>Hidden triangles</dt><dd>11</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 10 box, 4 cylinder (14 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1746-Furniture-interiors-sofa.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/floorLamp">
+  <a href="../images/1780-Furniture-interiors-floorLamp.png"><img loading="lazy" src="../images/1780-Furniture-interiors-floorLamp.png" alt="Furniture (interiors)/floorLamp"></a>
+  <div class="data">
+    <h3>floorLamp</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (160 today, 4.0 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>6-sided prisms or boxes, its glow emissive.</li><li>Picture: shades and bases as 24-sided cones and discs (146-260 triangles for a lamp); 6-8 sides.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>160</dd><dt>Vertices</dt><dd>243</dd>
+      <dt>Levels</dt><dd>L0 160</dd>
+      <dt>Memory</dt><dd>24 KB (geometry 24 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 cylinder (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1780-Furniture-interiors-floorLamp.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/stairs">
+  <a href="../images/1782-Furniture-interiors-stairs.png"><img loading="lazy" src="../images/1782-Furniture-interiors-stairs.png" alt="Furniture (interiors)/stairs"></a>
+  <div class="data">
+    <h3>stairs</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (152 today, 3.8 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Remove its 24 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>14 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>152</dd><dt>Vertices</dt><dd>304</dd>
+      <dt>Levels</dt><dd>L0 152</dd>
+      <dt>Memory</dt><dd>29 KB (geometry 29 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>18 solids: 14 open prism, 4 other</dd><dt>Hidden triangles</dt><dd>24</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 18 box (18 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1782-Furniture-interiors-stairs.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/tableLamp">
+  <a href="../images/1781-Furniture-interiors-tableLamp.png"><img loading="lazy" src="../images/1781-Furniture-interiors-tableLamp.png" alt="Furniture (interiors)/tableLamp"></a>
+  <div class="data">
+    <h3>tableLamp</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (146 today, 3.6 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>6-sided prisms or boxes, its glow emissive.</li><li>Picture: shades and bases as 24-sided cones and discs (146-260 triangles for a lamp); 6-8 sides.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>146</dd><dt>Vertices</dt><dd>223</dd>
+      <dt>Levels</dt><dd>L0 146</dd>
+      <dt>Memory</dt><dd>22 KB (geometry 22 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 cylinder (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1781-Furniture-interiors-tableLamp.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/wardBed">
+  <a href="../images/1765-Furniture-interiors-wardBed.png"><img loading="lazy" src="../images/1765-Furniture-interiors-wardBed.png" alt="Furniture (interiors)/wardBed"></a>
+  <div class="data">
+    <h3>wardBed</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (132 today, 3.3 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>5 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>132</dd><dt>Vertices</dt><dd>208</dd>
+      <dt>Levels</dt><dd>L0 132</dd>
+      <dt>Memory</dt><dd>20 KB (geometry 20 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>9 solids: 1 closed cylinder, 4 open prism, 2 other, 2 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 6 box, 4 cylinder (10 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1765-Furniture-interiors-wardBed.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/armchair">
+  <a href="../images/1747-Furniture-interiors-armchair.png"><img loading="lazy" src="../images/1747-Furniture-interiors-armchair.png" alt="Furniture (interiors)/armchair"></a>
+  <div class="data">
+    <h3>armchair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (128 today, 3.2 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>Remove its 5 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>128</dd><dt>Vertices</dt><dd>200</dd>
+      <dt>Levels</dt><dd>L0 128</dd>
+      <dt>Memory</dt><dd>20 KB (geometry 20 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>8 solids: 3 other, 4 open prism, 1 box</dd><dt>Hidden triangles</dt><dd>5</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 6 box, 4 cylinder (10 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1747-Furniture-interiors-armchair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/bed">
+  <a href="../images/1744-Furniture-interiors-bed.png"><img loading="lazy" src="../images/1744-Furniture-interiors-bed.png" alt="Furniture (interiors)/bed"></a>
+  <div class="data">
+    <h3>bed</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (126 today, 3.1 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>126</dd><dt>Vertices</dt><dd>196</dd>
+      <dt>Levels</dt><dd>L0 126</dd>
+      <dt>Memory</dt><dd>19 KB (geometry 19 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>10 solids: 5 other, 4 open prism, 1 box</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 6 box, 4 cylinder (10 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1744-Furniture-interiors-bed.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/singleBed">
+  <a href="../images/1745-Furniture-interiors-singleBed.png"><img loading="lazy" src="../images/1745-Furniture-interiors-singleBed.png" alt="Furniture (interiors)/singleBed"></a>
+  <div class="data">
+    <h3>singleBed</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (118 today, 3.0 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>118</dd><dt>Vertices</dt><dd>180</dd>
+      <dt>Levels</dt><dd>L0 118</dd>
+      <dt>Memory</dt><dd>18 KB (geometry 18 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>9 solids: 3 other, 4 open prism, 2 box</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 5 box, 4 cylinder (9 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1745-Furniture-interiors-singleBed.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/chair">
+  <a href="../images/1749-Furniture-interiors-chair.png"><img loading="lazy" src="../images/1749-Furniture-interiors-chair.png" alt="Furniture (interiors)/chair"></a>
+  <div class="data">
+    <h3>chair</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (112 today, 2.8 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>6 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>112</dd><dt>Vertices</dt><dd>168</dd>
+      <dt>Levels</dt><dd>L0 112</dd>
+      <dt>Memory</dt><dd>16 KB (geometry 16 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>9 solids: 1 box, 6 open prism, 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 5 box, 4 cylinder (9 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1749-Furniture-interiors-chair.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/altar">
+  <a href="../images/1768-Furniture-interiors-altar.png"><img loading="lazy" src="../images/1768-Furniture-interiors-altar.png" alt="Furniture (interiors)/altar"></a>
+  <div class="data">
+    <h3>altar</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (104 today, 2.6 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>Remove its 8 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>104</dd><dt>Vertices</dt><dd>166</dd>
+      <dt>Levels</dt><dd>L0 104</dd>
+      <dt>Memory</dt><dd>16 KB (geometry 16 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>5 solids: 1 open prism, 2 box, 2 other</dd><dt>Hidden triangles</dt><dd>8</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box, 2 cylinder (5 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1768-Furniture-interiors-altar.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/machine">
+  <a href="../images/1769-Furniture-interiors-machine.png"><img loading="lazy" src="../images/1769-Furniture-interiors-machine.png" alt="Furniture (interiors)/machine"></a>
+  <div class="data">
+    <h3>machine</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (86 today, 2.1 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One box: doors, handles, screens and slots painted on its faces.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>86</dd><dt>Vertices</dt><dd>148</dd>
+      <dt>Levels</dt><dd>L0 86</dd>
+      <dt>Memory</dt><dd>14 KB (geometry 14 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 3 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box, 1 cylinder (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1769-Furniture-interiors-machine.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/table">
+  <a href="../images/1748-Furniture-interiors-table.png"><img loading="lazy" src="../images/1748-Furniture-interiors-table.png" alt="Furniture (interiors)/table"></a>
+  <div class="data">
+    <h3>table</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (76 today, 1.9 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Legs as open boxes or 3-sided prisms (8 or 6 triangles) with the fake rounded-corner shader, not cylinders of 8 sides with caps.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>76</dd><dt>Vertices</dt><dd>96</dd>
+      <dt>Levels</dt><dd>L0 76</dd>
+      <dt>Memory</dt><dd>9 KB (geometry 9 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>5 solids: 1 box, 4 open prism</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 1 box, 4 cylinder (5 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1748-Furniture-interiors-table.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/toilet">
+  <a href="../images/1758-Furniture-interiors-toilet.png"><img loading="lazy" src="../images/1758-Furniture-interiors-toilet.png" alt="Furniture (interiors)/toilet"></a>
+  <div class="data">
+    <h3>toilet</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (70 today, 1.8 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>70</dd><dt>Vertices</dt><dd>111</dd>
+      <dt>Levels</dt><dd>L0 70</dd>
+      <dt>Memory</dt><dd>11 KB (geometry 11 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 1 cylinder, 2 box (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1758-Furniture-interiors-toilet.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/desk">
+  <a href="../images/1750-Furniture-interiors-desk.png"><img loading="lazy" src="../images/1750-Furniture-interiors-desk.png" alt="Furniture (interiors)/desk"></a>
+  <div class="data">
+    <h3>desk</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (64 today, 1.6 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>64</dd><dt>Vertices</dt><dd>128</dd>
+      <dt>Levels</dt><dd>L0 64</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>6 solids: 3 box, 1 open prism, 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 6 box (6 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1750-Furniture-interiors-desk.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/sink">
+  <a href="../images/1757-Furniture-interiors-sink.png"><img loading="lazy" src="../images/1757-Furniture-interiors-sink.png" alt="Furniture (interiors)/sink"></a>
+  <div class="data">
+    <h3>sink</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (64 today, 1.6 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>64</dd><dt>Vertices</dt><dd>107</dd>
+      <dt>Levels</dt><dd>L0 64</dd>
+      <dt>Memory</dt><dd>10 KB (geometry 10 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box, 1 cylinder (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1757-Furniture-interiors-sink.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/bath">
+  <a href="../images/1759-Furniture-interiors-bath.png"><img loading="lazy" src="../images/1759-Furniture-interiors-bath.png" alt="Furniture (interiors)/bath"></a>
+  <div class="data">
+    <h3>bath</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (56 today, 1.4 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>56</dd><dt>Vertices</dt><dd>91</dd>
+      <dt>Levels</dt><dd>L0 56</dd>
+      <dt>Memory</dt><dd>9 KB (geometry 9 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>10</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 2 box, 1 cylinder (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1759-Furniture-interiors-bath.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/checkout">
+  <a href="../images/1776-Furniture-interiors-checkout.png"><img loading="lazy" src="../images/1776-Furniture-interiors-checkout.png" alt="Furniture (interiors)/checkout"></a>
+  <div class="data">
+    <h3>checkout</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (50 today, 1.3 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One box: doors, handles, screens and slots painted on its faces.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>50</dd><dt>Vertices</dt><dd>100</dd>
+      <dt>Levels</dt><dd>L0 50</dd>
+      <dt>Memory</dt><dd>10 KB (geometry 10 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 3 other, 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 5 box (5 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1776-Furniture-interiors-checkout.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/treadmill">
+  <a href="../images/1777-Furniture-interiors-treadmill.png"><img loading="lazy" src="../images/1777-Furniture-interiors-treadmill.png" alt="Furniture (interiors)/treadmill"></a>
+  <div class="data">
+    <h3>treadmill</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (48 today, 1.2 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>48</dd><dt>Vertices</dt><dd>96</dd>
+      <dt>Levels</dt><dd>L0 48</dd>
+      <dt>Memory</dt><dd>9 KB (geometry 9 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>5 solids: 2 other, 2 open prism, 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 5 box (5 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1777-Furniture-interiors-treadmill.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/fridge">
+  <a href="../images/1755-Furniture-interiors-fridge.png"><img loading="lazy" src="../images/1755-Furniture-interiors-fridge.png" alt="Furniture (interiors)/fridge"></a>
+  <div class="data">
+    <h3>fridge</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (44 today, 1.1 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>One box: doors, handles, screens and slots painted on its faces.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>44</dd><dt>Vertices</dt><dd>88</dd>
+      <dt>Levels</dt><dd>L0 44</dd>
+      <dt>Memory</dt><dd>9 KB (geometry 9 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 2 other, 2 box</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1755-Furniture-interiors-fridge.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/pew">
+  <a href="../images/1763-Furniture-interiors-pew.png"><img loading="lazy" src="../images/1763-Furniture-interiors-pew.png" alt="Furniture (interiors)/pew"></a>
+  <div class="data">
+    <h3>pew</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (44 today, 1.1 times the budget): boxes with the fake rounded-corner shader, detail (doors, burners, books, screens) in the texture or by parallax; only drawn in the cut-open view.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>44</dd><dt>Vertices</dt><dd>88</dd>
+      <dt>Levels</dt><dd>L0 44</dd>
+      <dt>Memory</dt><dd>9 KB (geometry 9 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 2 box, 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1763-Furniture-interiors-pew.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/wardrobe">
+  <a href="../images/1760-Furniture-interiors-wardrobe.png"><img loading="lazy" src="../images/1760-Furniture-interiors-wardrobe.png" alt="Furniture (interiors)/wardrobe"></a>
+  <div class="data">
+    <h3>wardrobe</h3>
+    <div class="advice"><b>What to change</b><ul><li>One box: doors, handles, screens and slots painted on its faces.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40</dd><dt>Vertices</dt><dd>80</dd>
+      <dt>Levels</dt><dd>L0 40</dd>
+      <dt>Memory</dt><dd>8 KB (geometry 8 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1760-Furniture-interiors-wardrobe.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/seat">
+  <a href="../images/1764-Furniture-interiors-seat.png"><img loading="lazy" src="../images/1764-Furniture-interiors-seat.png" alt="Furniture (interiors)/seat"></a>
+  <div class="data">
+    <h3>seat</h3>
+    <div class="advice"><b>What to change</b><ul><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40</dd><dt>Vertices</dt><dd>80</dd>
+      <dt>Levels</dt><dd>L0 40</dd>
+      <dt>Memory</dt><dd>8 KB (geometry 8 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 1 open prism, 1 box, 2 other</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1764-Furniture-interiors-seat.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/locker">
+  <a href="../images/1771-Furniture-interiors-locker.png"><img loading="lazy" src="../images/1771-Furniture-interiors-locker.png" alt="Furniture (interiors)/locker"></a>
+  <div class="data">
+    <h3>locker</h3>
+    <div class="advice"><b>What to change</b><ul><li>One box: doors, handles, screens and slots painted on its faces.</li><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40</dd><dt>Vertices</dt><dd>80</dd>
+      <dt>Levels</dt><dd>L0 40</dd>
+      <dt>Memory</dt><dd>8 KB (geometry 8 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1771-Furniture-interiors-locker.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/stage">
+  <a href="../images/1773-Furniture-interiors-stage.png"><img loading="lazy" src="../images/1773-Furniture-interiors-stage.png" alt="Furniture (interiors)/stage"></a>
+  <div class="data">
+    <h3>stage</h3>
+    <div class="advice"><b>What to change</b><ul><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40</dd><dt>Vertices</dt><dd>80</dd>
+      <dt>Levels</dt><dd>L0 40</dd>
+      <dt>Memory</dt><dd>8 KB (geometry 8 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1773-Furniture-interiors-stage.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/blackboard">
+  <a href="../images/1775-Furniture-interiors-blackboard.png"><img loading="lazy" src="../images/1775-Furniture-interiors-blackboard.png" alt="Furniture (interiors)/blackboard"></a>
+  <div class="data">
+    <h3>blackboard</h3>
+    <div class="advice"><b>What to change</b><ul><li>One thin box or a quad: the screen or board is the texture.</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>34</dd><dt>Vertices</dt><dd>68</dd>
+      <dt>Levels</dt><dd>L0 34</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 2 box, 1 other</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1775-Furniture-interiors-blackboard.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/stairwell">
+  <a href="../images/1783-Furniture-interiors-stairwell.png"><img loading="lazy" src="../images/1783-Furniture-interiors-stairwell.png" alt="Furniture (interiors)/stairwell"></a>
+  <div class="data">
+    <h3>stairwell</h3>
+    <div class="advice"><b>What to change</b><ul><li>Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>34</dd><dt>Vertices</dt><dd>68</dd>
+      <dt>Levels</dt><dd>L0 34</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>4 solids: 4 other</dd><dt>Hidden triangles</dt><dd>4</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 4 box (4 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1783-Furniture-interiors-stairwell.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/tv">
+  <a href="../images/1761-Furniture-interiors-tv.png"><img loading="lazy" src="../images/1761-Furniture-interiors-tv.png" alt="Furniture (interiors)/tv"></a>
+  <div class="data">
+    <h3>tv</h3>
+    <div class="advice"><b>What to change</b><ul><li>One thin box or a quad: the screen or board is the texture.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>32</dd><dt>Vertices</dt><dd>64</dd>
+      <dt>Levels</dt><dd>L0 32</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1761-Furniture-interiors-tv.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/counter">
+  <a href="../images/1754-Furniture-interiors-counter.png"><img loading="lazy" src="../images/1754-Furniture-interiors-counter.png" alt="Furniture (interiors)/counter"></a>
+  <div class="data">
+    <h3>counter</h3>
+    <div class="advice"><b>What to change</b><ul><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>30</dd><dt>Vertices</dt><dd>60</dd>
+      <dt>Levels</dt><dd>L0 30</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 box</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1754-Furniture-interiors-counter.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/atm">
+  <a href="../images/1772-Furniture-interiors-atm.png"><img loading="lazy" src="../images/1772-Furniture-interiors-atm.png" alt="Furniture (interiors)/atm"></a>
+  <div class="data">
+    <h3>atm</h3>
+    <div class="advice"><b>What to change</b><ul><li>One box: doors, handles, screens and slots painted on its faces.</li><li>Remove its 9 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>30</dd><dt>Vertices</dt><dd>60</dd>
+      <dt>Levels</dt><dd>L0 30</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>3 solids: 3 other</dd><dt>Hidden triangles</dt><dd>9</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 3 box (3 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1772-Furniture-interiors-atm.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/screen">
+  <a href="../images/1767-Furniture-interiors-screen.png"><img loading="lazy" src="../images/1767-Furniture-interiors-screen.png" alt="Furniture (interiors)/screen"></a>
+  <div class="data">
+    <h3>screen</h3>
+    <div class="advice"><b>What to change</b><ul><li>One thin box or a quad: the screen or board is the texture.</li><li>Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>22</dd><dt>Vertices</dt><dd>44</dd>
+      <dt>Levels</dt><dd>L0 22</dd>
+      <dt>Memory</dt><dd>4 KB (geometry 4 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>2 solids: 1 box, 1 other</dd><dt>Hidden triangles</dt><dd>6</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 2 box (2 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1767-Furniture-interiors-screen.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Furniture (interiors)/pallet">
+  <a href="../images/1778-Furniture-interiors-pallet.png"><img loading="lazy" src="../images/1778-Furniture-interiors-pallet.png" alt="Furniture (interiors)/pallet"></a>
+  <div class="data">
+    <h3>pallet</h3>
+    <div class="advice"><b>What to change</b><ul><li>96 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>20</dd><dt>Vertices</dt><dd>40</dd>
+      <dt>Levels</dt><dd>L0 20</dd>
+      <dt>Memory</dt><dd>4 KB (geometry 4 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>96 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B aRoundP:3xFloat32=12B aRoundB:4xFloat32=16B aRoundX:3xFloat32=12B aRoundY:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial &quot;building-furniture&quot; [building-furniture-rounded|part-pose] (vertex colours, roughness 0.68, metalness 0.04, opacity 1)</dd><dt>Shader</dt><dd>patched built-in building-furniture-rounded|part-pose</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/buildings/furnitureKit.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>built from 2 box (2 parts)</dd>
+    </dl>
+    <a class="file" href="../models/1778-Furniture-interiors-pallet.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

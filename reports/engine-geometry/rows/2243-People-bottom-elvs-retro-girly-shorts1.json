@@ -1,0 +1,68 @@
+{
+ "id": "People: bottom/elvs_retro_girly_shorts1",
+ "group": "People: bottom",
+ "name": "elvs_retro_girly_shorts1",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/elvs_retro_girly_shorts1.bin",
+ "build": "skinned",
+ "triangles": 28815,
+ "vertices": 23911,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 1110932,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1110932,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 28815,
+   "vertices": 23911
+  }
+ ],
+ "solids": "10 solids: 4 other, 6 closed cylinder",
+ "hiddenTriangles": 11,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2243-People-bottom-elvs-retro-girly-shorts1.png",
+ "model": "models/2243-People-bottom-elvs-retro-girly-shorts1.glb",
+ "pieces": [
+  {
+   "label": "bottom",
+   "triangles": 28815,
+   "vertices": 23911,
+   "bytes": 1110932,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map elvs_retro_girly_shorts1.webp 512x512 WebP, 49968 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture elvs_retro_girly_shorts1.webp"
+ ],
+ "countKey": "proxy:elvs_retro_girly_shorts1",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (28,815 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Remove its 11 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

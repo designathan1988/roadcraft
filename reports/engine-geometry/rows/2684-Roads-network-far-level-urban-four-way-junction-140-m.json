@@ -1,0 +1,111 @@
+{
+ "id": "Roads: network far level/urban four-way junction/140 m",
+ "group": "Roads: network far level",
+ "name": "urban four-way junction",
+ "variation": "140 m",
+ "origin": "kit",
+ "source": "src/render/networkFarRoads.ts (farRoadInput) + src/render/networkFarRoadsBuild.ts (buildFarRoadCells)",
+ "build": "merged",
+ "triangles": 120,
+ "vertices": 136,
+ "attributes": "position:3xFloat32=12B color:3xFloat32=12B normal:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 6336,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 6336,
+ "materials": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 120,
+   "vertices": 136
+  }
+ ],
+ "solids": "8 solids: 8 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2684-Roads-network-far-level-urban-four-way-junction-140-m.png",
+ "model": "models/2684-Roads-network-far-level-urban-four-way-junction-140-m.glb",
+ "pieces": [
+  {
+   "label": "casing (footways and kerbs), cell -1,-1",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "carriageway, cell -1,-1",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "casing (footways and kerbs), cell -1,0",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "carriageway, cell -1,0",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "casing (footways and kerbs), cell 0,-1",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "carriageway, cell 0,-1",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "casing (footways and kerbs), cell 0,0",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  },
+  {
+   "label": "carriageway, cell 0,0",
+   "triangles": 15,
+   "vertices": 17,
+   "bytes": 792,
+   "material": "MeshStandardMaterial (vertex colours, roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "the roads' top level: shown in a cell whose blocks' far levels the far budget let go; one GPU batch a layer in the game (GpuBatchedMesh), one instance a cell"
+ ],
+ "countKey": "far-network:urban",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 200
+}

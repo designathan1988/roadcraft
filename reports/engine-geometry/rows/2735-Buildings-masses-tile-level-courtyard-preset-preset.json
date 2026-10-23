@@ -1,0 +1,63 @@
+{
+ "id": "Buildings: masses (tile level)/courtyard (preset)/preset",
+ "group": "Buildings: masses (tile level)",
+ "name": "courtyard (preset)",
+ "variation": "preset",
+ "origin": "kit",
+ "source": "src/render/buildings/massing.ts (emitMassing) + massCells.ts (cellMesh)",
+ "build": "merged",
+ "triangles": 60,
+ "vertices": 120,
+ "attributes": "position:3xFloat32=12B normal:4xInt8=4B color:4xUint16=8B facade:2xFloat32=8B facadeGrid:4xUint16=8B glazingSeed:1xFloat32=4B",
+ "bytesPerVertex": 44,
+ "geometryBytes": 5640,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 5640,
+ "materials": "MeshStandardMaterial \"building-massing\" [building-massing-lamps-v6-lots-own-walls] (vertex colours, roughness 0.92, metalness 0, opacity 1)",
+ "shader": "patched built-in building-massing-lamps-v6-lots-own-walls",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 60,
+   "vertices": 120
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2735-Buildings-masses-tile-level-courtyard-preset-preset.png",
+ "model": "models/2735-Buildings-masses-tile-level-courtyard-preset-preset.glb",
+ "pieces": [
+  {
+   "label": "masses",
+   "triangles": 60,
+   "vertices": 120,
+   "bytes": 5640,
+   "material": "MeshStandardMaterial \"building-massing\" [building-massing-lamps-v6-lots-own-walls] (vertex colours, roughness 0.92, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "left out or laid flat at this level: up to 3 m; the windows drawn by the massing shader"
+ ],
+ "countKey": "building-mass-tile:courtyard (preset)",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level.",
+  "44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 120
+}

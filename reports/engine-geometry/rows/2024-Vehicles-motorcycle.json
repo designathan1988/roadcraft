@@ -1,0 +1,80 @@
+{
+ "id": "Vehicles/motorcycle",
+ "group": "Vehicles",
+ "name": "motorcycle",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/vehicleModels.ts",
+ "build": "instanced",
+ "triangles": 704,
+ "vertices": 1448,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 56352,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 56352,
+ "materials": "",
+ "shader": "",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 704,
+   "vertices": 1448
+  }
+ ],
+ "solids": "29 solids: 10 closed cylinder, 18 box, 1 other",
+ "hiddenTriangles": 52,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2024-Vehicles-motorcycle.png",
+ "model": "models/2024-Vehicles-motorcycle.glb",
+ "pieces": [
+  {
+   "label": "body",
+   "triangles": 224,
+   "vertices": 516,
+   "bytes": 19920,
+   "material": ""
+  },
+  {
+   "label": "trim",
+   "triangles": 308,
+   "vertices": 612,
+   "bytes": 23880,
+   "material": ""
+  },
+  {
+   "label": "steering",
+   "triangles": 172,
+   "vertices": 320,
+   "bytes": 12552,
+   "material": ""
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "material set by the agents layer (src/render/agents.ts): paint, glass, trim and interior programs; read from the test city where it matches"
+ ],
+ "countKey": "vehicle:motorcycle",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "A few boxes and two 6-sided wheels, near only; a card past it.",
+  "Remove its 52 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "10 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 1000
+}

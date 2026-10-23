@@ -1,0 +1,60 @@
+{
+ "id": "Effects/rain",
+ "group": "Effects",
+ "name": "rain",
+ "variation": "",
+ "origin": "effect",
+ "source": "src/render/rain.ts",
+ "build": "lines",
+ "triangles": 0,
+ "vertices": 20000,
+ "attributes": "position:3xFloat32=12B tip:1xFloat32=4B",
+ "bytesPerVertex": 16,
+ "geometryBytes": 320000,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 320000,
+ "materials": "ShaderMaterial (transparent, opacity 1)",
+ "shader": "written",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 0,
+   "vertices": 20000
+  }
+ ],
+ "solids": "",
+ "hiddenTriangles": null,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": true,
+ "sceneCopy": false,
+ "sheet": "images/2039-Effects-rain.png",
+ "model": "models/2039-Effects-rain.glb",
+ "pieces": [
+  {
+   "label": "rain",
+   "triangles": 6666,
+   "vertices": 20000,
+   "bytes": 320000,
+   "material": "ShaderMaterial (transparent, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "10000 line segments"
+ ],
+ "countKey": "one",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [],
+ "target": null
+}

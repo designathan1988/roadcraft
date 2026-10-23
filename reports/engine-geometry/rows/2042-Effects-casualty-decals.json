@@ -1,0 +1,76 @@
+{
+ "id": "Effects/casualty decals",
+ "group": "Effects",
+ "name": "casualty decals",
+ "variation": "",
+ "origin": "effect",
+ "source": "src/render/casualties.ts",
+ "build": "instanced",
+ "triangles": 60,
+ "vertices": 66,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 824,
+ "textureBytes": 349524,
+ "extraBytes": 0,
+ "totalBytes": 350348,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.18, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 60,
+   "vertices": 66
+  }
+ ],
+ "solids": "3 solids: 3 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": true,
+ "sceneCopy": false,
+ "sheet": "images/2042-Effects-casualty-decals.png",
+ "model": "models/2042-Effects-casualty-decals.glb",
+ "pieces": [
+  {
+   "label": "Mesh",
+   "triangles": 20,
+   "vertices": 22,
+   "bytes": 824,
+   "material": "MeshStandardMaterial (transparent, roughness 0.18, metalness 0, opacity 1)"
+  },
+  {
+   "label": "Mesh",
+   "triangles": 20,
+   "vertices": 22,
+   "bytes": 824,
+   "material": "MeshStandardMaterial (transparent, roughness 0.18, metalness 0, opacity 1)"
+  },
+  {
+   "label": "Mesh",
+   "triangles": 20,
+   "vertices": 22,
+   "bytes": 824,
+   "material": "MeshStandardMaterial (transparent, roughness 0.18, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 256x256 RGBA 8-bit, 9 levels, 349524 B"
+ ],
+ "notes": [],
+ "countKey": "one",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": null
+}

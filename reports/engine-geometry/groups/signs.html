@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signs</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Signs</h1><p class="muted">12 objects, 318 triangles one of each.</p></header>
+<main><article class="row" id="Signs/street name/both ends of a street at a junction">
+  <a href="../images/2660-Signs-street-name-both-ends-of-a-street-at-a-junction.png"><img loading="lazy" src="../images/2660-Signs-street-name-both-ends-of-a-street-at-a-junction.png" alt="Signs/street name/both ends of a street at a junction"></a>
+  <div class="data">
+    <h3>street name <small>both ends of a street at a junction</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 30 triangles (56 today, 1.9 times the budget): as it is: a post and a plate.</li><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>4 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>56</dd><dt>Vertices</dt><dd>94</dd>
+      <dt>Levels</dt><dd>L0 56</dd>
+      <dt>Memory</dt><dd>4,367 KB (geometry 15 KB, textures 4,352 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>6 solids: 2 other, 4 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x384 RGBA 8-bit, 12 levels, 4456440 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 8 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2660-Signs-street-name-both-ends-of-a-street-at-a-junction.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/street/with text &quot;Main St 50&quot;">
+  <a href="../images/2658-Signs-street-with-text-Main-St-50.png"><img loading="lazy" src="../images/2658-Signs-street-with-text-Main-St-50.png" alt="Signs/street/with text &quot;Main St 50&quot;"></a>
+  <div class="data">
+    <h3>street <small>with text &quot;Main St 50&quot;</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>4 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>28</dd><dt>Vertices</dt><dd>47</dd>
+      <dt>Levels</dt><dd>L0 28</dd>
+      <dt>Memory</dt><dd>4,367 KB (geometry 15 KB, textures 4,352 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>3 solids: 1 other, 2 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x384 RGBA 8-bit, 12 levels, 4456440 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 4 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2658-Signs-street-with-text-Main-St-50.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/stop/one sign">
+  <a href="../images/2650-Signs-stop-one-sign.png"><img loading="lazy" src="../images/2650-Signs-stop-one-sign.png" alt="Signs/stop/one sign"></a>
+  <div class="data">
+    <h3>stop <small>one sign</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2650-Signs-stop-one-sign.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/yield/one sign">
+  <a href="../images/2651-Signs-yield-one-sign.png"><img loading="lazy" src="../images/2651-Signs-yield-one-sign.png" alt="Signs/yield/one sign"></a>
+  <div class="data">
+    <h3>yield <small>one sign</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2651-Signs-yield-one-sign.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/speed/with text &quot;Main St 50&quot;">
+  <a href="../images/2652-Signs-speed-with-text-Main-St-50.png"><img loading="lazy" src="../images/2652-Signs-speed-with-text-Main-St-50.png" alt="Signs/speed/with text &quot;Main St 50&quot;"></a>
+  <div class="data">
+    <h3>speed <small>with text &quot;Main St 50&quot;</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2652-Signs-speed-with-text-Main-St-50.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/noParking/one sign">
+  <a href="../images/2653-Signs-noParking-one-sign.png"><img loading="lazy" src="../images/2653-Signs-noParking-one-sign.png" alt="Signs/noParking/one sign"></a>
+  <div class="data">
+    <h3>noParking <small>one sign</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2653-Signs-noParking-one-sign.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/noEntry/one sign">
+  <a href="../images/2654-Signs-noEntry-one-sign.png"><img loading="lazy" src="../images/2654-Signs-noEntry-one-sign.png" alt="Signs/noEntry/one sign"></a>
+  <div class="data">
+    <h3>noEntry <small>one sign</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2654-Signs-noEntry-one-sign.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/pedestrian/one sign">
+  <a href="../images/2655-Signs-pedestrian-one-sign.png"><img loading="lazy" src="../images/2655-Signs-pedestrian-one-sign.png" alt="Signs/pedestrian/one sign"></a>
+  <div class="data">
+    <h3>pedestrian <small>one sign</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2655-Signs-pedestrian-one-sign.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/school/one sign">
+  <a href="../images/2656-Signs-school-one-sign.png"><img loading="lazy" src="../images/2656-Signs-school-one-sign.png" alt="Signs/school/one sign"></a>
+  <div class="data">
+    <h3>school <small>one sign</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2656-Signs-school-one-sign.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/direction/with text &quot;Main St 50&quot;">
+  <a href="../images/2657-Signs-direction-with-text-Main-St-50.png"><img loading="lazy" src="../images/2657-Signs-direction-with-text-Main-St-50.png" alt="Signs/direction/with text &quot;Main St 50&quot;"></a>
+  <div class="data">
+    <h3>direction <small>with text &quot;Main St 50&quot;</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>4 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>4,367 KB (geometry 15 KB, textures 4,352 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x384 RGBA 8-bit, 12 levels, 4456440 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2657-Signs-direction-with-text-Main-St-50.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/info/with text &quot;Main St 50&quot;">
+  <a href="../images/2659-Signs-info-with-text-Main-St-50.png"><img loading="lazy" src="../images/2659-Signs-info-with-text-Main-St-50.png" alt="Signs/info/with text &quot;Main St 50&quot;"></a>
+  <div class="data">
+    <h3>info <small>with text &quot;Main St 50&quot;</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>64 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>12 MB of textures (as counted for this object, shared textures included): GPU-compressed KTX2 (ETC1S/UASTC), the size its pixels on screen need.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>26</dd><dt>Vertices</dt><dd>41</dd>
+      <dt>Levels</dt><dd>L0 26</dd>
+      <dt>Memory</dt><dd>12,346 KB (geometry 15 KB, textures 12,331 KB)</dd>
+      <dt>Per vertex</dt><dd>64 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B instancePoseA:4xFloat32=16B instancePoseB:4xFloat32=16B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (roughness 0.45, metalness 0.6, opacity 1) | MeshStandardMaterial (double-sided, alpha test 0.5, roughness 0.5, metalness 0.1, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw | three MeshStandardMaterial</dd>
+      <dt>Solids</dt><dd>2 solids: 1 other, 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map CanvasTexture 2176x1088 RGBA 8-bit, 12 levels, 12626548 B</dd>
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>sign-plates: draws 2 of the 128 triangles its buffers hold room for (its draw range)<br>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2659-Signs-info-with-text-Main-St-50.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Signs/junction signs/what a four-way junction stands of itself">
+  <div class="none">no sheet</div>
+  <div class="data">
+    <h3>junction signs <small>what a four-way junction stands of itself</small></h3>
+    
+    <dl>
+      <dt>Triangles</dt><dd>0</dd><dt>Vertices</dt><dd>0</dd>
+      <dt>Levels</dt><dd></dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>0 B: </dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd></dd><dt>Shader</dt><dd></dd>
+      <dt>Solids</dt><dd>-</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/signLayer.ts (createSignLayer, sync)</code> (kit)</dd>
+      <dt>Notes</dt><dd>the post an instance of the posts' run, the plate a quad of its sheet's mesh (its text painted on the sheet)</dd>
+    </dl>
+    <a class="file" href="../models/2661-Signs-junction-signs-what-a-four-way-junction-stands-of-itself.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

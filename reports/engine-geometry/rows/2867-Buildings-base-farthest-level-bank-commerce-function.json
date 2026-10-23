@@ -1,0 +1,62 @@
+{
+ "id": "Buildings: base (farthest level)/bank (commerce)/function",
+ "group": "Buildings: base (farthest level)",
+ "name": "bank (commerce)",
+ "variation": "function",
+ "origin": "kit",
+ "source": "src/render/buildings/massBase.ts (emitBase)",
+ "build": "merged",
+ "triangles": 10,
+ "vertices": 8,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B",
+ "bytesPerVertex": 24,
+ "geometryBytes": 252,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 252,
+ "materials": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 10,
+   "vertices": 8
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2867-Buildings-base-farthest-level-bank-commerce-function.png",
+ "model": "models/2867-Buildings-base-farthest-level-bank-commerce-function.glb",
+ "pieces": [
+  {
+   "label": "base",
+   "triangles": 10,
+   "vertices": 8,
+   "bytes": 252,
+   "material": "MeshStandardMaterial (roughness 0.9, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [
+  "each block a prism, each paved lot a slab; on the GPU a vertex is 4 shorts on its square's grid (massBase.ts)"
+ ],
+ "countKey": "building-base:bank (commerce)",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Picture: walls cut by a ground-floor line and vertical slivers; one quad a wall face (10 triangles a box) is enough at this level."
+ ],
+ "target": 40
+}

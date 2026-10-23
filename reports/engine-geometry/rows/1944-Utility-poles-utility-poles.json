@@ -1,0 +1,73 @@
+{
+ "id": "Utility poles/utility-poles",
+ "group": "Utility poles",
+ "name": "utility-poles",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/utilities.ts (polePartSpecs)",
+ "build": "instanced",
+ "triangles": 24,
+ "vertices": 26,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 1788,
+ "textureBytes": 349532,
+ "extraBytes": 0,
+ "totalBytes": 351320,
+ "materials": "MeshStandardMaterial (roughness 0.92, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 24,
+   "vertices": 26
+  },
+  {
+   "level": 1,
+   "triangles": 12,
+   "vertices": 14
+  },
+  {
+   "level": 2,
+   "triangles": 6,
+   "vertices": 8
+  }
+ ],
+ "solids": "1 solids: 1 open prism",
+ "hiddenTriangles": 0,
+ "shadow": "casts: its model",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1944-Utility-poles-utility-poles.png",
+ "model": "models/1944-Utility-poles-utility-poles.glb",
+ "pieces": [
+  {
+   "label": "utility-poles",
+   "triangles": 24,
+   "vertices": 26,
+   "bytes": 976,
+   "material": "MeshStandardMaterial (roughness 0.92, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map CanvasTexture 128x512 RGBA 8-bit, 10 levels, 349532 B"
+ ],
+ "notes": [],
+ "countKey": "poles",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 60
+}

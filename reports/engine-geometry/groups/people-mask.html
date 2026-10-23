@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People: mask</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>People: mask</h1><p class="muted">13 objects, 143,264 triangles one of each.</p></header>
+<main><article class="row" id="People: mask/culturalibre_hero_mask_2">
+  <a href="../images/2099-People-mask-culturalibre-hero-mask-2.png"><img loading="lazy" src="../images/2099-People-mask-culturalibre-hero-mask-2.png" alt="People: mask/culturalibre_hero_mask_2"></a>
+  <div class="data">
+    <h3>culturalibre_hero_mask_2</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (55,680 today, 1392.0 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 3,820 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>55,680</dd><dt>Vertices</dt><dd>29,140</dd>
+      <dt>Levels</dt><dd>L0 55,680</dd>
+      <dt>Memory</dt><dd>1,563 KB (geometry 1,563 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>2 solids: 2 other</dd><dt>Hidden triangles</dt><dd>3,820</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_mask_2.webp 256x256 WebP, 4428 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_mask_2.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hero_mask_2.webp</dd>
+    </dl>
+    <a class="file" href="../models/2099-People-mask-culturalibre-hero-mask-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/elvs_plague_doctor_mask">
+  <a href="../images/2239-People-mask-elvs-plague-doctor-mask.png"><img loading="lazy" src="../images/2239-People-mask-elvs-plague-doctor-mask.png" alt="People: mask/elvs_plague_doctor_mask"></a>
+  <div class="data">
+    <h3>elvs_plague_doctor_mask</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (31,094 today, 777.4 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 576 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>31,094</dd><dt>Vertices</dt><dd>35,647</dd>
+      <dt>Levels</dt><dd>L0 31,094</dd>
+      <dt>Memory</dt><dd>1,478 KB (geometry 1,478 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>115 solids: 92 other, 23 closed cylinder</dd><dt>Hidden triangles</dt><dd>576</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_plague_doctor_mask.webp 512x512 WebP, 59178 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_plague_doctor_mask.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture elvs_plague_doctor_mask.webp</dd>
+    </dl>
+    <a class="file" href="../models/2239-People-mask-elvs-plague-doctor-mask.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_hero_mask_5">
+  <a href="../images/2102-People-mask-culturalibre-hero-mask-5.png"><img loading="lazy" src="../images/2102-People-mask-culturalibre-hero-mask-5.png" alt="People: mask/culturalibre_hero_mask_5"></a>
+  <div class="data">
+    <h3>culturalibre_hero_mask_5</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (25,968 today, 649.2 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>25,968</dd><dt>Vertices</dt><dd>13,796</dd>
+      <dt>Levels</dt><dd>L0 25,968</dd>
+      <dt>Memory</dt><dd>735 KB (geometry 735 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_mask_5.webp 256x256 WebP, 5482 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_mask_5.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 3385 base-body vertices under it<br>texture culturalibre_hero_mask_5.webp</dd>
+    </dl>
+    <a class="file" href="../models/2102-People-mask-culturalibre-hero-mask-5.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_heroine_mask_1">
+  <a href="../images/2112-People-mask-culturalibre-heroine-mask-1.png"><img loading="lazy" src="../images/2112-People-mask-culturalibre-heroine-mask-1.png" alt="People: mask/culturalibre_heroine_mask_1"></a>
+  <div class="data">
+    <h3>culturalibre_heroine_mask_1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,932 today, 123.3 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 82 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,932</dd><dt>Vertices</dt><dd>3,024</dd>
+      <dt>Levels</dt><dd>L0 4,932</dd>
+      <dt>Memory</dt><dd>152 KB (geometry 152 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>82</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_heroine_mask_1.webp 256x256 WebP, 5438 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_heroine_mask_1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 1328 base-body vertices under it<br>texture culturalibre_heroine_mask_1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2112-People-mask-culturalibre-heroine-mask-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_hero_mask_1">
+  <a href="../images/2098-People-mask-culturalibre-hero-mask-1.png"><img loading="lazy" src="../images/2098-People-mask-culturalibre-hero-mask-1.png" alt="People: mask/culturalibre_hero_mask_1"></a>
+  <div class="data">
+    <h3>culturalibre_hero_mask_1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,916 today, 122.9 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,916</dd><dt>Vertices</dt><dd>2,951</dd>
+      <dt>Levels</dt><dd>L0 4,916</dd>
+      <dt>Memory</dt><dd>150 KB (geometry 150 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_mask_1.webp 256x256 WebP, 4746 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_mask_1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hero_mask_1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2098-People-mask-culturalibre-hero-mask-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/gredal_gas_mask">
+  <a href="../images/2301-People-mask-gredal-gas-mask.png"><img loading="lazy" src="../images/2301-People-mask-gredal-gas-mask.png" alt="People: mask/gredal_gas_mask"></a>
+  <div class="data">
+    <h3>gredal_gas_mask</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (4,714 today, 117.8 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,714</dd><dt>Vertices</dt><dd>5,975</dd>
+      <dt>Levels</dt><dd>L0 4,714</dd>
+      <dt>Memory</dt><dd>242 KB (geometry 242 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map gredal_gas_mask.webp 512x512 WebP, 29266 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/gredal_gas_mask.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture gredal_gas_mask.webp</dd>
+    </dl>
+    <a class="file" href="../models/2301-People-mask-gredal-gas-mask.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_hero-heroine_hood_2">
+  <a href="../images/2089-People-mask-culturalibre-hero-heroine-hood-2.png"><img loading="lazy" src="../images/2089-People-mask-culturalibre-hero-heroine-hood-2.png" alt="People: mask/culturalibre_hero-heroine_hood_2"></a>
+  <div class="data">
+    <h3>culturalibre_hero-heroine_hood_2</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (3,928 today, 98.2 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,928</dd><dt>Vertices</dt><dd>2,184</dd>
+      <dt>Levels</dt><dd>L0 3,928</dd>
+      <dt>Memory</dt><dd>114 KB (geometry 114 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero-heroine_hood_2.webp 256x256 WebP, 1294 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero-heroine_hood_2.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 5050 base-body vertices under it<br>texture culturalibre_hero-heroine_hood_2.webp</dd>
+    </dl>
+    <a class="file" href="../models/2089-People-mask-culturalibre-hero-heroine-hood-2.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/elvs_covid_mask">
+  <a href="../images/2159-People-mask-elvs-covid-mask.png"><img loading="lazy" src="../images/2159-People-mask-elvs-covid-mask.png" alt="People: mask/elvs_covid_mask"></a>
+  <div class="data">
+    <h3>elvs_covid_mask</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (3,688 today, 92.2 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,688</dd><dt>Vertices</dt><dd>2,286</dd>
+      <dt>Levels</dt><dd>L0 3,688</dd>
+      <dt>Memory</dt><dd>115 KB (geometry 115 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>7 solids: 6 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>1</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map elvs_covid_mask.webp 512x512 WebP, 22974 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/elvs_covid_mask.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 959 base-body vertices under it<br>texture elvs_covid_mask.webp</dd>
+    </dl>
+    <a class="file" href="../models/2159-People-mask-elvs-covid-mask.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_hero-heroine_hood_1">
+  <a href="../images/2088-People-mask-culturalibre-hero-heroine-hood-1.png"><img loading="lazy" src="../images/2088-People-mask-culturalibre-hero-heroine-hood-1.png" alt="People: mask/culturalibre_hero-heroine_hood_1"></a>
+  <div class="data">
+    <h3>culturalibre_hero-heroine_hood_1</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (3,004 today, 75.1 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>3,004</dd><dt>Vertices</dt><dd>1,827</dd>
+      <dt>Levels</dt><dd>L0 3,004</dd>
+      <dt>Memory</dt><dd>92 KB (geometry 92 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero-heroine_hood_1.webp 256x256 WebP, 4114 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero-heroine_hood_1.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 1195 base-body vertices under it<br>texture culturalibre_hero-heroine_hood_1.webp</dd>
+    </dl>
+    <a class="file" href="../models/2088-People-mask-culturalibre-hero-heroine-hood-1.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_hero_mask_3">
+  <a href="../images/2100-People-mask-culturalibre-hero-mask-3.png"><img loading="lazy" src="../images/2100-People-mask-culturalibre-hero-mask-3.png" alt="People: mask/culturalibre_hero_mask_3"></a>
+  <div class="data">
+    <h3>culturalibre_hero_mask_3</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (2,072 today, 51.8 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2,072</dd><dt>Vertices</dt><dd>1,216</dd>
+      <dt>Levels</dt><dd>L0 2,072</dd>
+      <dt>Memory</dt><dd>62 KB (geometry 62 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_mask_3.webp 256x256 WebP, 4480 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_mask_3.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hero_mask_3.webp</dd>
+    </dl>
+    <a class="file" href="../models/2100-People-mask-culturalibre-hero-mask-3.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_hero_mask_4">
+  <a href="../images/2101-People-mask-culturalibre-hero-mask-4.png"><img loading="lazy" src="../images/2101-People-mask-culturalibre-hero-mask-4.png" alt="People: mask/culturalibre_hero_mask_4"></a>
+  <div class="data">
+    <h3>culturalibre_hero_mask_4</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (1,636 today, 40.9 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,636</dd><dt>Vertices</dt><dd>990</dd>
+      <dt>Levels</dt><dd>L0 1,636</dd>
+      <dt>Memory</dt><dd>50 KB (geometry 50 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_hero_mask_4.webp 256x256 WebP, 3036 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_hero_mask_4.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_hero_mask_4.webp</dd>
+    </dl>
+    <a class="file" href="../models/2101-People-mask-culturalibre-hero-mask-4.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/culturalibre_bandana_mask">
+  <a href="../images/2063-People-mask-culturalibre-bandana-mask.png"><img loading="lazy" src="../images/2063-People-mask-culturalibre-bandana-mask.png" alt="People: mask/culturalibre_bandana_mask"></a>
+  <div class="data">
+    <h3>culturalibre_bandana_mask</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (1,428 today, 35.7 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>Remove its 40 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>1,428</dd><dt>Vertices</dt><dd>1,008</dd>
+      <dt>Levels</dt><dd>L0 1,428</dd>
+      <dt>Memory</dt><dd>48 KB (geometry 48 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>40</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map culturalibre_bandana_mask.webp 512x512 WebP, 22318 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/culturalibre_bandana_mask.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 0 base-body vertices under it<br>texture culturalibre_bandana_mask.webp</dd>
+    </dl>
+    <a class="file" href="../models/2063-People-mask-culturalibre-bandana-mask.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="People: mask/joepal_medical_mouth_protection">
+  <a href="../images/2325-People-mask-joepal-medical-mouth-protection.png"><img loading="lazy" src="../images/2325-People-mask-joepal-medical-mouth-protection.png" alt="People: mask/joepal_medical_mouth_protection"></a>
+  <div class="data">
+    <h3>joepal_medical_mouth_protection</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (204 today, 5.1 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>204</dd><dt>Vertices</dt><dd>147</dd>
+      <dt>Levels</dt><dd>L0 204</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>skinned</dd><dt>Material</dt><dd>MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>three MeshStandardMaterial · skeleton</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd><dt>Bones</dt><dd>53</dd>
+      
+      <dt>Textures</dt><dd>map joepal_medical_mouth_protection.webp 256x256 WebP, 2760 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)</dd>
+      <dt>Source</dt><dd><code>public/models/people/proxies/joepal_medical_mouth_protection.bin</code> (file)</dd>
+      <dt>Notes</dt><dd>hides 406 base-body vertices under it<br>texture joepal_medical_mouth_protection.webp</dd>
+    </dl>
+    <a class="file" href="../models/2325-People-mask-joepal-medical-mouth-protection.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

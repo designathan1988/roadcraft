@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Street furniture</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Street furniture</h1><p class="muted">13 objects, 1,741 triangles one of each.</p></header>
+<main><article class="row" id="Street furniture/phone">
+  <a href="../images/1936-Street-furniture-phone.png"><img loading="lazy" src="../images/1936-Street-furniture-phone.png" alt="Street furniture/phone"></a>
+  <div class="data">
+    <h3>phone</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (560 today, 14.0 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>One box with the booth painted: 560 triangles today, 240 of them hidden.</li><li>Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.</li><li>Remove its 240 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>No level of detail: add ~50% levels (meshoptimizer simplify, weld first) and an impostor or nothing past a few pixels.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>560</dd><dt>Vertices</dt><dd>401</dd>
+      <dt>Levels</dt><dd>L0 560</dd>
+      <dt>Memory</dt><dd>17 KB (geometry 17 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>5 solids: 4 other, 1 box</dd><dt>Hidden triangles</dt><dd>240</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/propGeometry.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1936-Street-furniture-phone.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/bin">
+  <a href="../images/1932-Street-furniture-bin.png"><img loading="lazy" src="../images/1932-Street-furniture-bin.png" alt="Street furniture/bin"></a>
+  <div class="data">
+    <h3>bin</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (182 today, 4.5 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>A 6-sided prism or a box, the details painted.</li><li>Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.</li><li>Remove its 14 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>1 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>182</dd><dt>Vertices</dt><dd>237</dd>
+      <dt>Levels</dt><dd>L0 182</dd>
+      <dt>Memory</dt><dd>9 KB (geometry 9 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>3 solids: 2 other, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>14</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/propGeometry.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1932-Street-furniture-bin.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/bench">
+  <a href="../images/1933-Street-furniture-bench.png"><img loading="lazy" src="../images/1933-Street-furniture-bench.png" alt="Street furniture/bench"></a>
+  <div class="data">
+    <h3>bench</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (164 today, 4.1 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>Seat, back and two legs as boxes (Cidade Otimizada: 48).</li><li>Remove its 10 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>164</dd><dt>Vertices</dt><dd>328</dd>
+      <dt>Levels</dt><dd>L0 164</dd>
+      <dt>Memory</dt><dd>12 KB (geometry 12 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>15 solids: 11 box, 4 open prism</dd><dt>Hidden triangles</dt><dd>10</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/propGeometry.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1933-Street-furniture-bench.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/hydrant">
+  <a href="../images/1934-Street-furniture-hydrant.png"><img loading="lazy" src="../images/1934-Street-furniture-hydrant.png" alt="Street furniture/hydrant"></a>
+  <div class="data">
+    <h3>hydrant</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (164 today, 4.1 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>A 6-sided prism or a box, the details painted.</li><li>Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.</li><li>Remove its 23 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>3 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>164</dd><dt>Vertices</dt><dd>243</dd>
+      <dt>Levels</dt><dd>L0 164</dd>
+      <dt>Memory</dt><dd>10 KB (geometry 10 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>6 solids: 3 other, 1 open prism, 2 closed cylinder</dd><dt>Hidden triangles</dt><dd>23</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/propGeometry.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1934-Street-furniture-hydrant.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/lamp light beam (night)">
+  <a href="../images/1940-Street-furniture-lamp-light-beam-night.png"><img loading="lazy" src="../images/1940-Street-furniture-lamp-light-beam-night.png" alt="Street furniture/lamp light beam (night)"></a>
+  <div class="data">
+    <h3>lamp light beam (night)</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (144 today, 3.6 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>A cone of 8-12 sides, or a screen-facing card.</li><li>Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>144</dd><dt>Vertices</dt><dd>95</dd>
+      <dt>Levels</dt><dd>L0 144</dd>
+      <dt>Memory</dt><dd>4 KB (geometry 4 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>ShaderMaterial &quot;street-light-beam&quot; (transparent, opacity 1)</dd><dt>Shader</dt><dd>written</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/scenery.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1940-Street-furniture-lamp-light-beam-night.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/lamp">
+  <a href="../images/1931-Street-furniture-lamp.png"><img loading="lazy" src="../images/1931-Street-furniture-lamp.png" alt="Street furniture/lamp"></a>
+  <div class="data">
+    <h3>lamp</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (132 today, 3.3 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>A 6-sided column and a box head, glow emissive (Cidade Otimizada: 34).</li><li>Remove its 19 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>5 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>132</dd><dt>Vertices</dt><dd>200</dd>
+      <dt>Levels</dt><dd>L0 132 / L1 32</dd>
+      <dt>Memory</dt><dd>10 KB (geometry 10 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>6 solids: 3 open prism, 2 closed cylinder, 1 box</dd><dt>Hidden triangles</dt><dd>19</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/propGeometry.ts</code> (kit)</dd>
+      <dt>Notes</dt><dd>far level: the column alone (lampFarGeometry); the lens, pool and beam are separate items</dd>
+    </dl>
+    <a class="file" href="../models/1931-Street-furniture-lamp.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/drain">
+  <a href="../images/1937-Street-furniture-drain.png"><img loading="lazy" src="../images/1937-Street-furniture-drain.png" alt="Street furniture/drain"></a>
+  <div class="data">
+    <h3>drain</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (108 today, 2.7 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>A textured decal quad on the ground (2 triangles).</li><li>Remove its 56 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>108</dd><dt>Vertices</dt><dd>216</dd>
+      <dt>Levels</dt><dd>L0 108</dd>
+      <dt>Memory</dt><dd>8 KB (geometry 8 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>11 solids: 3 box, 7 other, 1 quad</dd><dt>Hidden triangles</dt><dd>56</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/propGeometry.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1937-Street-furniture-drain.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/postbox">
+  <a href="../images/1935-Street-furniture-postbox.png"><img loading="lazy" src="../images/1935-Street-furniture-postbox.png" alt="Street furniture/postbox"></a>
+  <div class="data">
+    <h3>postbox</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (92 today, 2.3 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>A 6-sided prism or a box, the details painted.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>92</dd><dt>Vertices</dt><dd>164</dd>
+      <dt>Levels</dt><dd>L0 92</dd>
+      <dt>Memory</dt><dd>6 KB (geometry 6 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>4 solids: 2 other, 2 box</dd><dt>Hidden triangles</dt><dd>2</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/propGeometry.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1935-Street-furniture-postbox.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/tree pit">
+  <a href="../images/1941-Street-furniture-tree-pit.png"><img loading="lazy" src="../images/1941-Street-furniture-tree-pit.png" alt="Street furniture/tree pit"></a>
+  <div class="data">
+    <h3>tree pit</h3>
+    <div class="advice"><b>What to change</b><ul><li>Budget: about 40 triangles (90 today, 2.3 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.</li><li>A textured decal quad on the ground (2 triangles).</li><li>Remove its 32 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>4 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>90</dd><dt>Vertices</dt><dd>190</dd>
+      <dt>Levels</dt><dd>L0 90</dd>
+      <dt>Memory</dt><dd>7 KB (geometry 7 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)</dd><dt>Shader</dt><dd>patched built-in onBeforeCompile() {}|pose-yaw</dd>
+      <dt>Solids</dt><dd>6 solids: 2 other, 4 open prism</dd><dt>Hidden triangles</dt><dd>32</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/scenery.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1941-Street-furniture-tree-pit.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/wildflower">
+  <a href="../images/1943-Street-furniture-wildflower.png"><img loading="lazy" src="../images/1943-Street-furniture-wildflower.png" alt="Street furniture/wildflower"></a>
+  <div class="data">
+    <h3>wildflower</h3>
+    <div class="advice"><b>What to change</b><ul><li>2 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>40</dd><dt>Vertices</dt><dd>94</dd>
+      <dt>Levels</dt><dd>L0 40</dd>
+      <dt>Memory</dt><dd>4 KB (geometry 4 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, double-sided, roughness 0.8, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in wind-nearfade|pose-yaw</dd>
+      <dt>Solids</dt><dd>3 solids: 1 open prism, 1 box, 1 closed cylinder</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/scenery.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1943-Street-furniture-wildflower.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/grass tuft">
+  <a href="../images/1942-Street-furniture-grass-tuft.png"><img loading="lazy" src="../images/1942-Street-furniture-grass-tuft.png" alt="Street furniture/grass tuft"></a>
+  <div class="data">
+    <h3>grass tuft</h3>
+    <div class="advice"><b>What to change</b><ul><li>Alpha-tested cards; drop past ~30 m.</li><li>Remove its 19 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>35</dd><dt>Vertices</dt><dd>49</dd>
+      <dt>Levels</dt><dd>L0 35</dd>
+      <dt>Memory</dt><dd>2 KB (geometry 2 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshStandardMaterial [wind-nearfade|pose-yaw] (vertex colours, double-sided, roughness 0.95, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in wind-nearfade|pose-yaw</dd>
+      <dt>Solids</dt><dd>7 solids: 7 other</dd><dt>Hidden triangles</dt><dd>19</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/scenery.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1942-Street-furniture-grass-tuft.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/lamp light pool (night)">
+  <a href="../images/1939-Street-furniture-lamp-light-pool-night.png"><img loading="lazy" src="../images/1939-Street-furniture-lamp-light-pool-night.png" alt="Street furniture/lamp light pool (night)"></a>
+  <div class="data">
+    <h3>lamp light pool (night)</h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>28</dd><dt>Vertices</dt><dd>30</dd>
+      <dt>Levels</dt><dd>L0 28</dd>
+      <dt>Memory</dt><dd>17 KB (geometry 1 KB, textures 16 KB)</dd>
+      <dt>Per vertex</dt><dd>32 B: position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshBasicMaterial (transparent, opacity 0)</dd><dt>Shader</dt><dd>three MeshBasicMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>map DataTexture 64x64 RGBA 8-bit, 1 levels, 16384 B</dd>
+      <dt>Source</dt><dd><code>src/render/scenery.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1939-Street-furniture-lamp-light-pool-night.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Street furniture/lamp lens">
+  <a href="../images/1938-Street-furniture-lamp-lens.png"><img loading="lazy" src="../images/1938-Street-furniture-lamp-lens.png" alt="Street furniture/lamp lens"></a>
+  <div class="data">
+    <h3>lamp lens</h3>
+    <div class="advice"><b>What to change</b><ul><li>36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>2</dd><dt>Vertices</dt><dd>4</dd>
+      <dt>Levels</dt><dd>L0 2</dd>
+      <dt>Memory</dt><dd>0 KB (geometry 0 KB, textures 0 KB)</dd>
+      <dt>Per vertex</dt><dd>36 B: position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>instanced</dd><dt>Material</dt><dd>MeshBasicMaterial (opacity 1)</dd><dt>Shader</dt><dd>three MeshBasicMaterial</dd>
+      <dt>Solids</dt><dd>1 solids: 1 quad</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      
+      <dt>Source</dt><dd><code>src/render/scenery.ts</code> (kit)</dd>
+      
+    </dl>
+    <a class="file" href="../models/1938-Street-furniture-lamp-lens.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

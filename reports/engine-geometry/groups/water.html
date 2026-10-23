@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water</title><style>
+:root { --bg: #f5f6f8; --card: #fff; --ink: #18202a; --muted: #5d6875; --line: #dde1e6; --accent: #2457c5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14181d; --card: #1c2228; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2c343c; --accent: #7ea6ff; } }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 16px; } h1 { margin: 8px 0; font-size: 24px; } h2 { margin: 32px 0 8px; font-size: 19px; }
+.muted { color: var(--muted); } nav { columns: 3 260px; font-size: 13px; } nav a { display: block; color: var(--accent); text-decoration: none; }
+table.sum { border-collapse: collapse; width: 100%; font-size: 13px; } table.sum td, table.sum th { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; } table.sum td:first-child, table.sum th:first-child { text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.row img { width: 100%; height: auto; border-radius: 4px; display: block; } .none { display: grid; place-items: center; min-height: 120px; color: var(--muted); border: 1px dashed var(--line); }
+.row h3 { margin: 0 0 6px; font-size: 16px; } .row small { color: var(--muted); font-weight: 400; }
+dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 10px; margin: 0; font-size: 13px; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.file { display: inline-block; margin-top: 8px; color: var(--accent); } code { font-size: 12px; }
+@media (max-width: 800px) { .row { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
+a { color: var(--accent); }
+.advice { border-left: 3px solid #d0702a; padding: 4px 10px; margin: 0 0 8px; font-size: 13px; } .advice ul { margin: 4px 0 0; padding-left: 18px; }
+</style></head><body>
+<header><p><a href="../index.html">Engine Geometry Catalogue</a></p><h1>Water</h1><p class="muted">2 objects, 5,488 triangles one of each.</p></header>
+<main><article class="row" id="Water/lake/one stamp, 40 m round">
+  <a href="../images/2673-Water-lake-one-stamp-40-m-round.png"><img loading="lazy" src="../images/2673-Water-lake-one-stamp-40-m-round.png" alt="Water/lake/one stamp, 40 m round"></a>
+  <div class="data">
+    <h3>lake <small>one stamp, 40 m round</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>Picture: a flat disc of 4,624 triangles; a 32-64 sided fan, the waves in the shader.</li><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>4,624</dd><dt>Vertices</dt><dd>13,872</dd>
+      <dt>Levels</dt><dd>L0 4,624</dd>
+      <dt>Memory</dt><dd>937 KB (geometry 596 KB, textures 341 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B aDepth:1xFloat32=4B aFlow:2xFloat32=8B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [water-flow-waves-v6] (transparent, roughness 0.15, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in water-flow-waves-v6</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>normalMap water-normal 256x256 RGBA 8-bit, 9 levels, 349524 B</dd>
+      <dt>Source</dt><dd><code>src/render/terrain.ts (unifiedWaterGeometry)</code> (kit)</dd>
+      <dt>Notes</dt><dd>its waves, foam and current drawn by the water shader over the time (water.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2673-Water-lake-one-stamp-40-m-round.glb" download>3D file (GLB)</a>
+  </div>
+</article>
+<article class="row" id="Water/river/160 m course, 16 m wide">
+  <a href="../images/2674-Water-river-160-m-course-16-m-wide.png"><img loading="lazy" src="../images/2674-Water-river-160-m-course-16-m-wide.png" alt="Water/river/160 m course, 16 m wide"></a>
+  <div class="data">
+    <h3>river <small>160 m course, 16 m wide</small></h3>
+    <div class="advice"><b>What to change</b><ul><li>44 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li></ul></div>
+    <dl>
+      <dt>Triangles</dt><dd>864</dd><dt>Vertices</dt><dd>2,592</dd>
+      <dt>Levels</dt><dd>L0 864</dd>
+      <dt>Memory</dt><dd>453 KB (geometry 111 KB, textures 341 KB)</dd>
+      <dt>Per vertex</dt><dd>44 B: position:3xFloat32=12B aDepth:1xFloat32=4B aFlow:2xFloat32=8B uv:2xFloat32=8B normal:3xFloat32=12B</dd>
+      <dt>Drawn as</dt><dd>merged</dd><dt>Material</dt><dd>MeshStandardMaterial [water-flow-waves-v6] (transparent, roughness 0.15, metalness 0, opacity 1)</dd><dt>Shader</dt><dd>patched built-in water-flow-waves-v6</dd>
+      <dt>Solids</dt><dd>1 solids: 1 other</dd><dt>Hidden triangles</dt><dd>0</dd>
+      <dt>Shadow</dt><dd>-</dd>
+      
+      <dt>Textures</dt><dd>normalMap water-normal 256x256 RGBA 8-bit, 9 levels, 349524 B</dd>
+      <dt>Source</dt><dd><code>src/render/terrain.ts (unifiedWaterGeometry)</code> (kit)</dd>
+      <dt>Notes</dt><dd>its waves, foam and current drawn by the water shader over the time (water.ts)</dd>
+    </dl>
+    <a class="file" href="../models/2674-Water-river-160-m-course-16-m-wide.glb" download>3D file (GLB)</a>
+  </div>
+</article></main></body></html>

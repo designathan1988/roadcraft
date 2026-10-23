@@ -1,0 +1,68 @@
+{
+ "id": "People: dress/punkduck_evening_gown",
+ "group": "People: dress",
+ "name": "punkduck_evening_gown",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/punkduck_evening_gown.bin",
+ "build": "skinned",
+ "triangles": 5150,
+ "vertices": 3645,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 178440,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 178440,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 5150,
+   "vertices": 3645
+  }
+ ],
+ "solids": "90 solids: 90 other",
+ "hiddenTriangles": 6,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2451-People-dress-punkduck-evening-gown.png",
+ "model": "models/2451-People-dress-punkduck-evening-gown.glb",
+ "pieces": [
+  {
+   "label": "dress",
+   "triangles": 5150,
+   "vertices": 3645,
+   "bytes": 178440,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map punkduck_evening_gown.webp 512x512 WebP, 19380 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 845 base-body vertices under it",
+  "texture punkduck_evening_gown.webp"
+ ],
+ "countKey": "proxy:punkduck_evening_gown",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (5,150 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Remove its 6 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

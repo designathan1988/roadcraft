@@ -1,0 +1,63 @@
+{
+ "id": "Street furniture/lamp light beam (night)",
+ "group": "Street furniture",
+ "name": "lamp light beam (night)",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/scenery.ts",
+ "build": "instanced",
+ "triangles": 144,
+ "vertices": 95,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 3904,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 3904,
+ "materials": "ShaderMaterial \"street-light-beam\" (transparent, opacity 1)",
+ "shader": "written",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 144,
+   "vertices": 95
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1940-Street-furniture-lamp-light-beam-night.png",
+ "model": "models/1940-Street-furniture-lamp-light-beam-night.glb",
+ "pieces": [
+  {
+   "label": "lamp light beam (night)",
+   "triangles": 144,
+   "vertices": 95,
+   "bytes": 3904,
+   "material": "ShaderMaterial \"street-light-beam\" (transparent, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:lamp",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (144 today, 3.6 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "A cone of 8-12 sides, or a screen-facing card.",
+  "Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

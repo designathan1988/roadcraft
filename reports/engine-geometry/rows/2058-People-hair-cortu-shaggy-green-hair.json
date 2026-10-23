@@ -1,0 +1,68 @@
+{
+ "id": "People: hair/cortu_shaggy_green_hair",
+ "group": "People: hair",
+ "name": "cortu_shaggy_green_hair",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/cortu_shaggy_green_hair.bin",
+ "build": "skinned",
+ "triangles": 1284,
+ "vertices": 968,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 46384,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 46384,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 1284,
+   "vertices": 968
+  }
+ ],
+ "solids": "28 solids: 28 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2058-People-hair-cortu-shaggy-green-hair.png",
+ "model": "models/2058-People-hair-cortu-shaggy-green-hair.glb",
+ "pieces": [
+  {
+   "label": "hair",
+   "triangles": 1284,
+   "vertices": 968,
+   "bytes": 46384,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map cortu_shaggy_green_hair.webp 512x512 WebP, 25940 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture cortu_shaggy_green_hair.webp"
+ ],
+ "countKey": "proxy:cortu_shaggy_green_hair",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 400 triangles (1,284 today, 3.2 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.",
+  "Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 400
+}

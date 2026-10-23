@@ -1,0 +1,64 @@
+{
+ "id": "Terrain/edge slab/round one plate",
+ "group": "Terrain",
+ "name": "edge slab",
+ "variation": "round one plate",
+ "origin": "kit",
+ "source": "src/render/terrain.ts (slabGeometry)",
+ "build": "individual",
+ "triangles": 512,
+ "vertices": 1536,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B uv:2xFloat32=8B color:3xFloat32=12B aBelow:1xFloat32=4B",
+ "bytesPerVertex": 48,
+ "geometryBytes": 73728,
+ "textureBytes": 349524,
+ "extraBytes": 0,
+ "totalBytes": 423252,
+ "materials": "MeshStandardMaterial [terrain-walls-v7] (vertex colours, roughness 1, metalness 0, opacity 1)",
+ "shader": "patched built-in terrain-walls-v7",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 512,
+   "vertices": 1536
+  }
+ ],
+ "solids": "1 solids: 1 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2649-Terrain-edge-slab-round-one-plate.png",
+ "model": "models/2649-Terrain-edge-slab-round-one-plate.glb",
+ "pieces": [
+  {
+   "label": "slab",
+   "triangles": 512,
+   "vertices": 1536,
+   "bytes": 73728,
+   "material": "MeshStandardMaterial [terrain-walls-v7] (vertex colours, roughness 1, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map DataTexture 256x256 RGBA 8-bit, 9 levels, 349524 B"
+ ],
+ "notes": [
+  "the cut sides round the map's far ring, from the land down to the bedrock; in the game it runs round the whole map"
+ ],
+ "countKey": "one",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "48 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": null
+}

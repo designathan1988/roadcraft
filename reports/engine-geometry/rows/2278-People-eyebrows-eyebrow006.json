@@ -1,0 +1,68 @@
+{
+ "id": "People: eyebrows/eyebrow006",
+ "group": "People: eyebrows",
+ "name": "eyebrow006",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/eyebrow006.bin",
+ "build": "skinned",
+ "triangles": 192,
+ "vertices": 126,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 6336,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 6336,
+ "materials": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 192,
+   "vertices": 126
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 0,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2278-People-eyebrows-eyebrow006.png",
+ "model": "models/2278-People-eyebrows-eyebrow006.glb",
+ "pieces": [
+  {
+   "label": "eyebrows",
+   "triangles": 192,
+   "vertices": 126,
+   "bytes": 6336,
+   "material": "MeshStandardMaterial (transparent, roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map eyebrow006.webp 256x256 WebP, 3832 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture eyebrow006.webp"
+ ],
+ "countKey": "proxy:eyebrow006",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (192 today): painted into the head's texture: no geometry of its own.",
+  "Same triangles and vertices as eyebrow001 : load one mesh and change its colour, not a second copy.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

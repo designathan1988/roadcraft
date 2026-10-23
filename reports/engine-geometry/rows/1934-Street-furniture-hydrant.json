@@ -1,0 +1,65 @@
+{
+ "id": "Street furniture/hydrant",
+ "group": "Street furniture",
+ "name": "hydrant",
+ "variation": "",
+ "origin": "kit",
+ "source": "src/render/propGeometry.ts",
+ "build": "instanced",
+ "triangles": 164,
+ "vertices": 243,
+ "attributes": "position:3xFloat32=12B normal:3xFloat32=12B color:3xFloat32=12B",
+ "bytesPerVertex": 36,
+ "geometryBytes": 9732,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 9732,
+ "materials": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)",
+ "shader": "patched built-in onBeforeCompile() {}|pose-yaw",
+ "motion": "",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 164,
+   "vertices": 243
+  }
+ ],
+ "solids": "6 solids: 3 other, 1 open prism, 2 closed cylinder",
+ "hiddenTriangles": 23,
+ "shadow": "",
+ "bones": 0,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/1934-Street-furniture-hydrant.png",
+ "model": "models/1934-Street-furniture-hydrant.glb",
+ "pieces": [
+  {
+   "label": "hydrant",
+   "triangles": 164,
+   "vertices": 243,
+   "bytes": 9732,
+   "material": "MeshStandardMaterial [onBeforeCompile() {}|pose-yaw] (vertex colours, roughness 0.62, metalness 0.28, opacity 1)"
+  }
+ ],
+ "textures": [],
+ "notes": [],
+ "countKey": "landscape:hydrant",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (164 today, 4.1 times the budget): boxes and 6-sided prisms, detail in the texture; decals (drains, tree pits) as one textured quad on the footway.",
+  "A 6-sided prism or a box, the details painted.",
+  "Picture: 16-24 sided cylinders, cones and a sphere where a 6-8 sided prism or a flat card reads the same at street distance.",
+  "Remove its 23 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "3 round part(s) (cylinders, prisms): thin ones as boxes without caps or 3-sided prisms and the fake rounded-corner shader; caps that touch another part left out.",
+  "36 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization)."
+ ],
+ "target": 40
+}

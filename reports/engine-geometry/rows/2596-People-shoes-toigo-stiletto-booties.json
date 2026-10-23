@@ -1,0 +1,69 @@
+{
+ "id": "People: shoes/toigo_stiletto_booties",
+ "group": "People: shoes",
+ "name": "toigo_stiletto_booties",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/toigo_stiletto_booties.bin",
+ "build": "skinned",
+ "triangles": 44664,
+ "vertices": 27870,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 1427808,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 1427808,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 44664,
+   "vertices": 27870
+  }
+ ],
+ "solids": "2 solids: 2 other",
+ "hiddenTriangles": 80,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2596-People-shoes-toigo-stiletto-booties.png",
+ "model": "models/2596-People-shoes-toigo-stiletto-booties.glb",
+ "pieces": [
+  {
+   "label": "shoes",
+   "triangles": 44664,
+   "vertices": 27870,
+   "bytes": 1427808,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map toigo_stiletto_booties.webp 256x256 WebP, 9188 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 2206 base-body vertices under it",
+  "texture toigo_stiletto_booties.webp"
+ ],
+ "countKey": "proxy:toigo_stiletto_booties",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: no geometry of its own (44,664 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
+  "Picture: soles, laces and straps modelled at full detail (up to 153,938 triangles a pair); a city figure's feet are a few pixels.",
+  "Remove its 80 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 0
+}

@@ -1,0 +1,69 @@
+{
+ "id": "People: jewelry/culturalibre_heroine_lightning_earrings",
+ "group": "People: jewelry",
+ "name": "culturalibre_heroine_lightning_earrings",
+ "variation": "",
+ "origin": "file",
+ "source": "public/models/people/proxies/culturalibre_heroine_lightning_earrings.bin",
+ "build": "skinned",
+ "triangles": 2016,
+ "vertices": 2599,
+ "attributes": "position:3xFloat32=12B uv:2xFloat32=8B normal:3xFloat32=12B",
+ "bytesPerVertex": 32,
+ "geometryBytes": 107360,
+ "textureBytes": 0,
+ "extraBytes": 0,
+ "totalBytes": 107360,
+ "materials": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)",
+ "shader": "three MeshStandardMaterial",
+ "motion": "skeleton",
+ "levels": [
+  {
+   "level": 0,
+   "triangles": 2016,
+   "vertices": 2599
+  }
+ ],
+ "solids": "4 solids: 2 other, 2 closed cylinder",
+ "hiddenTriangles": 9,
+ "shadow": "",
+ "bones": 53,
+ "morphTargets": 0,
+ "morphBytes": 0,
+ "released": false,
+ "floors": 0,
+ "trianglesPerFloor": 0,
+ "preview": false,
+ "effect": false,
+ "sceneCopy": false,
+ "sheet": "images/2111-People-jewelry-culturalibre-heroine-lightning-earrings.png",
+ "model": "models/2111-People-jewelry-culturalibre-heroine-lightning-earrings.glb",
+ "pieces": [
+  {
+   "label": "jewelry",
+   "triangles": 2016,
+   "vertices": 2599,
+   "bytes": 107360,
+   "material": "MeshStandardMaterial (roughness 0.8, metalness 0, opacity 1)"
+  }
+ ],
+ "textures": [
+  "map culturalibre_heroine_lightning_earrings.webp 256x256 WebP, 4982 B on disk (GPU memory not in texture_kb: decoded when a person wearing it is loaded)"
+ ],
+ "notes": [
+  "hides 0 base-body vertices under it",
+  "texture culturalibre_heroine_lightning_earrings.webp"
+ ],
+ "countKey": "proxy:culturalibre_heroine_lightning_earrings",
+ "instances": 0,
+ "instancesFrom": "",
+ "totalTriangles": 0,
+ "advice": [
+  "Budget: about 40 triangles (2,016 today, 50.4 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
+  "Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.",
+  "Remove its 9 hidden triangles: faces inside another part or pressed face to face, never seen.",
+  "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
+ ],
+ "target": 40
+}
