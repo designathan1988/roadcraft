@@ -8,7 +8,7 @@ import { pointInPolygon } from '@core/polygon';
 import type { Occupant, RagdollProbe } from './ragdoll';
 import type { PlayEffects } from './playEffects';
 import { createLotOverlay, type LotOverlayInput } from './lotOverlay';
-import { onCarriageway } from '@world/carriageway';
+import { onCarriageway, onRoadGround } from '@world/carriageway';
 import { type ChangeBox, addChangeBox, clearChangeBoxes } from './changeBoxes';
 import {
   BufferGeometry,
@@ -1309,6 +1309,8 @@ export function createSceneRenderer(
     (building, x, y) => buildings.lotHeightAt(building as BuildingId, x, y),
     // The land alone: whether a walker off the streets is on screen at all, before the yards are asked.
     (x, y) => terrain.renderedHeightAt(x, y));
+  // The people in the vehicles: their bodies built while the town opens, ready the first frame a car is near.
+  agents.keepPeople();
 
   const crowdFrustum: KeptFrustum = new Frustum();
   /** The box the sun's cascades cover (`crowdFrustum.keep`), and the margin past it, world units. */
@@ -2875,7 +2877,7 @@ export function createSceneRenderer(
     const g = m(2);
     const grade = Math.hypot(terrain.renderedHeightAt(x + g, y) - terrain.renderedHeightAt(x - g, y), terrain.renderedHeightAt(x, y + g) - terrain.renderedHeightAt(x, y - g)) / (2 * g);
     if (grade > 0.75) return false;
-    return !onCarriageway(net, { x, y }) && !buildings.covers(x, y);
+    return !onRoadGround(net, { x, y }) && !buildings.covers(x, y);
   };
   /** How far round a place its test reads (the slope's samples, a margin): a change within it tests the place again. */
   const KEEP_REACH = m(4);
@@ -2916,7 +2918,7 @@ export function createSceneRenderer(
     }
   };
   /** A cover's place: never on a road or under a building. */
-  const coverFree = (x: number, y: number): boolean => !onCarriageway(keepNet!, { x, y }) && !buildings.covers(x, y);
+  const coverFree = (x: number, y: number): boolean => !onRoadGround(keepNet!, { x, y }) && !buildings.covers(x, y);
   const coverPlain = (c: Candidate): number | null => (coverFree(c.x, c.y) ? terrain.renderedHeightAt(c.x, c.y) : null);
   /** Which of the painted covers' and the rivers' places stand, kind by kind and cell by cell (`cellKeeps.ts`). */
   const coverKeeps = {

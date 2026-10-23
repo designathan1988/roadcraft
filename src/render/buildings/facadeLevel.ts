@@ -1,6 +1,6 @@
 import type { MeshStandardMaterial } from 'three';
 import { m } from '@world/units';
-import { ROOM_SEEN_GLSL, type MassingUniforms } from './massingMaterial';
+import { PULSE_GLSL, ROOM_SEEN_GLSL, type MassingUniforms } from './massingMaterial';
 import { ROOM_LAMP_GLSL } from './roomLamps';
 
 /** THE BUILDINGS' FAR LEVEL (L1): the same building emitted again with its walls as runs of bays (`emitChunk` `far`) */
@@ -51,21 +51,7 @@ float facadeLit = 0.0;
 float facadeStreak = 1.0;
 vec3 facadeLamp = vec3(1.0);
 ${ROOM_LAMP_GLSL}
-// The integral of a pulse [a0, a1) repeated every 1, from 0 to x.
-float facadePulseIntegral(float x, float a0, float a1) { return floor(x) * (a1 - a0) + clamp(fract(x), a0, a1) - a0; }
-// The pulse averaged over a pixel's footprint w (a box filter, its kernel 1.5 pixels: a box of one still rings), faded to its mean as a
-// cell goes from 4 pixels to 2 (Inigo Quilez, "filterable procedurals"). DO NOT switch to the mean at once at w = 0.5: the box over half a
-// period is not the mean, and the jump drew a band; the district's facades sparkled against a supersampled frame (diagnosis 2026-10-22).
-float facadePulse(float x, float w, float a0, float a1) {
-  if (a1 <= a0) return 0.0;
-  float mean = clamp(a1 - a0, 0.0, 1.0);
-  float fade = smoothstep(0.25, 0.5, w);
-  // A pixel covering half a period or more: the mean is the answer, none of the floor/fract work.
-  if (fade >= 1.0) return mean;
-  float k = 1.5 * w;
-  float box = (facadePulseIntegral(x + 0.5 * k, a0, a1) - facadePulseIntegral(x - 0.5 * k, a0, a1)) / k;
-  return mix(box, mean, fade);
-}
+${PULSE_GLSL('facade')}
 // buildingMesh.ts bayHash, to the bit: Math.imul is a uint product, >>> a uint shift.
 uint facadeBayHash(int volume, int level, int side, int index, int x7, int y7) {
   uint h = (uint(volume + 1) * 0x27d4eb2du) ^ (uint(level + 7) * 0x165667b1u) ^ (uint(side + 3) * 0x3c6ef372u) ^ (uint(index + 11) * 0x85ebca6bu);
@@ -84,7 +70,7 @@ const vec3 FACADE_SHUTTER = ${vec3Of(p.shutter.color)};
 function facadeColour(): string {
   const K = FACADE_KIND;
   return `
-vec2 facadeFoot = max(fwidth(vFacadeGrid.xy), vec2(1e-4));
+vec2 facadeFoot = facadeFootprint(vFacadeGrid.xy);
 // What a bay picks for itself (a dark pane, a shutter, a streak) faded to the share of bays that pick it as a bay drops under a few pixels:
 // DO NOT let each pixel take one random bay's pick at full contrast (the sparkle of the district's facades).
 float facadeSub = smoothstep(0.25, 0.5, max(facadeFoot.x, facadeFoot.y));

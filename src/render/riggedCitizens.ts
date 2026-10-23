@@ -346,6 +346,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   const queuedLoads = new Map<number, { priority: boolean; wantedAt: number; resolve: () => void; reject: (error: unknown) => void }>();
   // An active load remains useful only while a body requests it in drawn frames.
   const wantedFrame = new Map<number, number>();
+  /** Bodies kept loaded whatever is drawn (`keepAll`): loaded before anybody asks, never abandoned nor evicted. */
+  const resident = new Set<number>();
   /** When each body's load last failed: asked again only `RETRY_MS` later (a network or a cook hiccup passes). */
   const failed = new Map<number, number>();
   const RETRY_MS = 5000;
@@ -423,7 +425,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   const evictInactive = (): void => {
     const now = performance.now();
     for (const [index, batch] of batches) {
-      if (batch.count > 0 || now - batch.lastUsed < IDLE_MS) continue;
+      if (resident.has(index) || batch.count > 0 || now - batch.lastUsed < IDLE_MS) continue;
       batch.disposed = true;
       for (const mesh of batch.meshes) group.remove(mesh);
       group.userData.paletteBytes -= paletteBytes(batch);
@@ -522,7 +524,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     };
     const abandonIfUnwanted = (): boolean => {
       // One missed frame can be a camera edge; two mean the visual demand left.
-      if (!disposed && visualFrame - (wantedFrame.get(index) ?? -Infinity) < 2) return false;
+      if (!disposed && (resident.has(index) || visualFrame - (wantedFrame.get(index) ?? -Infinity) < 2)) return false;
       releasePending();
       loading.delete(index);
       wantedFrame.delete(index);
@@ -751,7 +753,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       if (!priority && activeLoads >= 5) break; // Keep one slot for a newly visible rider or occupant.
       const [index, entry] = priority ?? queuedLoads.entries().next().value!;
       queuedLoads.delete(index);
-      if (performance.now() - entry.wantedAt > 1000) {
+      if (!resident.has(index) && performance.now() - entry.wantedAt > 1000) {
         loading.delete(index);
         wantedFrame.delete(index);
         entry.resolve();
@@ -1171,7 +1173,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
             morph.clearUpdateRanges();
             const row = morph.image.width;
             // A row a call for a few faces; past them the whole texture in one (three sends each range alone, a row high: AGT-06).
-            if (count <= MOST_ROW_RANGES) for (let i = 0; i < count; i++) morph.addUpdateRange(i * row, row);
+            // DO NOT give the range in texels: three r186 `updateTexture` reads it in RGBA components whatever the format (componentStride 4), and this texture is Red,
+            // one float a texel - the rows past the first were never sent, their base influence 0 drew the body as a point (a rider's helmet alone in the air, 2026-10-23).
+            if (count <= MOST_ROW_RANGES) for (let i = 0; i < count; i++) morph.addUpdateRange(i * row * 4, row * 4);
             morph.needsUpdate = true;
           }
         }
@@ -1237,6 +1241,14 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     /** The body somebody of this identity is drawn with (a rider thrown off is the same person, `ragdoll.fling`). */
     indexFor(identity: ClipIdentity, helmet: boolean, x: number, y: number): number | null {
       return bodyFor(contextOf(identity, helmet, x, y))?.index ?? null;
+    },
+    /** Every body loaded now and kept: the people in the vehicles are drawn the first frame they are near, not seconds later (a body was asked for only once a car came near, and let go a minute after the view left). */
+    keepAll(): void {
+      for (let index = 0; index < models.length; index++) {
+        resident.add(index);
+        // A failed load is said and asked again by `request` itself.
+        if (!batches.has(index)) void request(index);
+      }
     },
     /** The people cast in a company forgotten: its vehicle is gone from the world (`CastingRegistry.forgetCompany`). */
     forgetCompany(company: Company, companyId: number): void {
