@@ -1,0 +1,55 @@
+19:42:20 surfaces read: false
+19:42:32 saved: 2690 objects
+19:42:34 saved: 2700 objects
+19:42:35 saved: 2710 objects
+19:42:36 saved: 2720 objects
+19:42:38 saved: 2730 objects
+19:42:39 saved: 2740 objects
+19:42:40 saved: 2750 objects
+19:42:42 saved: 2760 objects
+19:42:45 saved: 2770 objects
+19:42:49 saved: 2780 objects
+19:42:52 saved: 2790 objects
+19:42:55 saved: 2800 objects
+19:42:58 saved: 2810 objects
+19:43:01 saved: 2820 objects
+19:43:04 saved: 2830 objects
+19:43:07 saved: 2840 objects
+19:43:10 saved: 2850 objects
+19:43:13 saved: 2860 objects
+19:43:16 saved: 2870 objects
+19:43:19 saved: 2880 objects
+19:43:22 saved: 2890 objects
+19:43:25 saved: 2900 objects
+19:43:28 saved: 2910 objects
+19:43:31 saved: 2920 objects
+19:43:34 saved: 2930 objects
+19:43:37 saved: 2940 objects
+19:43:40 saved: 2950 objects
+19:43:43 saved: 2960 objects
+19:43:46 saved: 2970 objects
+19:43:49 saved: 2980 objects
+19:43:52 saved: 2990 objects
+19:43:56 saved: 3000 objects
+19:43:59 saved: 3010 objects
+19:44:02 saved: 3020 objects
+19:44:05 saved: 3030 objects
+19:44:08 saved: 3040 objects
+19:44:11 saved: 3050 objects
+19:44:15 saved: 3060 objects
+19:44:18 saved: 3070 objects
+19:44:21 saved: 3080 objects
+19:44:22 kits: 396 items
+396 rows (0 editor previews, 0 effects), 5 gaps, 0 sheets, 0 3D files, 0 buildings measured
+running game: 0 triangles over the test city's copies; draw calls ?
+             0  Buildings: far facade (L1)/residential high (large lot 40 x 36 m (residentialTower))/made to measure
+             0  Buildings: far facade (L1)/residentialTower (homes)/function
+             0  Buildings: far facade (L1)/residential high (medium lot 24 x 26 m (residentialTower))/made to measure
+             0  Buildings: far facade (L1)/hotel (commerce)/function
+             0  Buildings: far facade (L1)/tower (preset)/preset
+             0  Buildings: far facade (L1)/apartments (homes)/function
+             0  Buildings: far facade (L1)/residential medium (large lot 40 x 36 m (apartments))/made to measure
+             0  Buildings: far facade (L1)/residential high (small lot 12 x 16 m (residentialTower))/made to measure
+             0  Buildings: far facade (L1)/residential medium (medium lot 24 x 26 m (apartments))/made to measure
+             0  Buildings: far facade (L1)/apartments (preset)/preset
+-> C:\Users\Jonathan\Documents\Projects\roadcraft-4.0-main\reports\engine-geometry

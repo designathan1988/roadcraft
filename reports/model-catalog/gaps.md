@@ -5,31 +5,126 @@
 - Vehicles' intermediate levels: made at run time by the simplifier (vehicleLevels.ts partLevels, meshoptimizer); the catalogue gives the full model (L0) and the far model.
 - Signals, signs, barriers, flags and the far traffic: their layers build their models only from placed items (the builders are private to the layer); measured from the test city's meshes where it has them.
 - Garments and hair: how many people wear each one is decided per person at run time; their copies are not counted.
+- Cast bodies: who wears which body is the casting's choice at run time (CastingRegistry); each body's copies are the people the game drew as it over the sweep's views (its census), not the people never drawn.
+- Test city layers: every mesh the scene drew in any view of the sweep (a grid over the whole map); a cell only drawn at another zoom than the sweep's and the fixed views' is not in it.
 - Editor feedback on the ground (src/render/renderer.ts blink) and the tools' 2D gizmos (drawn on a canvas over the view): no catalogued mesh.
+- Test city layers/road-far-blocks/world: no sheet (TypeError: indices.getX is not a function)
+- Test city layers/signal-lenses/traffic-signals: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/gardens-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/road-far-network/world: no sheet (TypeError: indices.getX is not a function)
+- Test city layers/utility-wires/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/sign-posts/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/densityCars--2,/densityCars: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/densityCars--1,/densityCars: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/densityCars-0,/densityCars: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/densityCars--2,0/densityCars: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/densityCars--1,0/densityCars: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/densityCars-0,0/densityCars: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-shell-batch/buildings-layer: no sheet (TypeError: indices.getX is not a function)
+- Test city scene (copies of kit objects)/building-shell-batch-detail/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-shell-batch-runs/buildings-layer: no sheet (TypeError: indices.getX is not a function)
+- Test city scene (copies of kit objects)/street-bins-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/benches-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-light-beams-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-lights-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-brise/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-pot/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/hydrants-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-foliage/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-bush/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-dish/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-concrete/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-chair/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-awning/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-light-pools-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-glassRail/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-acUnit/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-fin/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-table/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-louvre/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-roofRailing/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-oak/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-lamp/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-airer/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-lounger/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-railing/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-palm/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-cypress-3-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-oak-0-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-bike/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-cypress-2-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-frame/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-light-lamps-far-cells/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-palm-5-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-palm-4-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-oak-1-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-cypress/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-wash/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-lights/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/hydrants-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-palm-4-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-palm-5-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-cypress-2-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-cypress-3-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-oak-0-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/nature-tree-oak-1-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- People: not loaded/community: no sheet (nothing drawable: no geometry with readable arrays)
+- People: not loaded/index: no sheet (nothing drawable: no geometry with readable arrays)
+- Test city layers/terrain-water/flat-world-ground: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-light-lamps/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-light-pools/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-light-beams/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-bins-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/benches/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/benches-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-broadleaf/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-broadleaf-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-broadleafTall/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-broadleafTall-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-conifer/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-conifer-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-ipeYellow/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-ipeYellow-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-ipePink/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-ipePink-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-glass/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-door/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-shutter/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-glassDark/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-water/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/densityCars-0,1/densityCars: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/street-bins/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-broadleaf-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-broadleafTall-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-conifer-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-ipeYellow-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-trees-ipePink-cards/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotBox/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotRail/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotSides/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-frame-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-concrete-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-door-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-shutter-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-fin-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-brise-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-acUnit-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-pot-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-foliage-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-bush-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotBox-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotRail-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotSides-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotSlab/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-roofRailing-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-awning-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/building-lotSlab-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-railing-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-bushes-bush-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-bushes-bushFlowering-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city scene (copies of kit objects)/building-louvre-caster/buildings-layer: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
+- Test city layers/garden-bushes-hedge-far/world: no sheet (TypeError: Cannot read properties of undefined (reading 'count'))
 
-## Rows without vertex-level measures (arrays sent to the GPU only)
+## How hidden triangles are counted
 
-- Test city layers/building-lotBox-caster/buildings-layer
-- Test city layers/footway+curb-ramp+median-paved/world
-- Test city layers/building-lotBox/buildings-layer
-- Test city layers/road-far-blocks/world
-- Test city layers/building-lotSides-caster/buildings-layer
-- Test city layers/kerb+median-kerb/world
-- Test city layers/building-lotSides/buildings-layer
-- Test city layers/footway+curb-ramp+median-paved-far/world
-- Test city layers/building-massing-plate/buildings-layer
-- Test city layers/building-lotRail-caster/buildings-layer
-- Test city layers/kerb+median-kerb-far/world
-- Test city layers/gardens-far-cells/world
-- Test city layers/building-lotRail/buildings-layer
-- Test city layers/road-far-network/world
-- Test city layers/markings/world
-- Test city layers/building-lotSlab-caster/buildings-layer
-- Test city layers/building-lotSlab/buildings-layer
-- Test city layers/markings-f4f1e3-far/world
-- Test city layers/markings-ece9d9-far/world
-- Test city layers/markings-e1c45a-far/world
-- Test city layers/markings-eee8d7-far/world
-- Test city layers/building-water/buildings-layer
-- Test city layers/utility-wires/world
-- Test city layers/far-forest/flat-world-ground
+hidden_triangles: triangles whose centre lies strictly inside another closed convex solid of the same object (its face planes, the solids welded by position), or pressed face to face on another triangle (the same centre, opposite normals); n/a for lines, points and geometry whose arrays could not be read.
