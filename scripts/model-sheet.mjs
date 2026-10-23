@@ -98,7 +98,7 @@ const sheet = async (name) => {
     '',
     'Material: MeshStandardMaterial "building-furniture", vertex colours, roughness 0.68, metalness 0.04, no maps.',
     'Edge rounding is a shading effect (the normal bent in the fragment shader); the geometry stays a plain box.',
-    'Sheet light (not the game's): hemisphere 1.4 and sun 2.6 with a 2048 shadow map, ACES Filmic tone mapping, sRGB output.',
+    'Sheet light (not the game light): hemisphere 1.4 and sun 2.6 with a 2048 shadow map, ACES Filmic tone mapping, sRGB output.',
   ];
 
   // The sheet: title, the two pictures side by side, then the list.
