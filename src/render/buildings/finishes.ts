@@ -76,10 +76,15 @@ float dNoise(vec3 p) {
 
 /** GLSL after the map: buildings that are not maintained run down (the player's order of 2026-10-05), each finish as its row says (roof, glassy) */
 const WEATHERING = `
+// The pixel's footprint on the wall, metres: each term below filtered by it (Inigo Quilez, "filterable procedurals"). DO NOT sample a pattern finer than
+// the pixel at its centre: a wall seen along the street took one random streak a pixel at full contrast, stripes and speckle (the player, 2026-10-23).
+// Taken here, in uniform control flow: derivatives in the branches below are undefined.
+float shellFoot = max(length(dFdx(vDecayWorld)), length(dFdy(vDecayWorld)));
 {
   vec3 w = vDecayWorld;
-  // MACRO VARIATION, on every building
-  float macro = dNoise(w * 0.045) * 0.55 + dNoise(w * 0.17) * 0.3 + dNoise(w * 0.6) * 0.15;
+  // MACRO VARIATION, on every building; its finest octave its mean (0.497) once under 2 pixels.
+  float fine = mix(dNoise(w * 0.6), 0.497, smoothstep(0.25, 0.5, shellFoot * 0.6));
+  float macro = dNoise(w * 0.045) * 0.55 + dNoise(w * 0.17) * 0.3 + fine * 0.15;
   diffuseColor.rgb *= 0.9 + 0.2 * macro;
 }
 {
@@ -91,8 +96,9 @@ const WEATHERING = `
     bool wall = abs(vDecayNormal.y) < 0.5;
     // Grime: darker towards the foot of the wall and in soft patches.
     float grime = 0.5 + 0.5 * dNoise(w * 0.22);
-    // Rain streaks: thin, long, running down from sills and copings.
-    float darken = d * (0.18 + 0.12 * grime + (wall ? 0.28 * smoothstep(0.55, 0.85, dNoise(vec3(w.x * 2.2, w.y * 0.08, w.z * 2.2))) : 0.1));
+    // Rain streaks: thin, long, running down from sills and copings; their edges widened by the footprint, their mean (0.160) once a streak is under 2 pixels.
+    float sa = shellFoot * 2.2;
+    float darken = d * (0.18 + 0.12 * grime + (wall ? 0.28 * mix(smoothstep(0.55 - sa, 0.85 + sa, dNoise(vec3(w.x * 2.2, w.y * 0.08, w.z * 2.2))), 0.160, smoothstep(0.25, 0.5, sa)) : 0.1));
     diffuseColor.rgb *= 1.0 - darken;
   }
 }
@@ -101,12 +107,15 @@ if (vDecay > 0.001 && shellKind.z < 0.5) {
   vec3 w = vDecayWorld;
   bool wall = abs(vDecayNormal.y) < 0.5;
   if (shellKind.y > 0.5) {
-    // Dark moss in the low corners of the roof.
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.55, 0.62, 0.45), d * 0.6 * smoothstep(0.6, 0.85, dNoise(w * 0.3)));
+    // Dark moss in the low corners of the roof; its mean (0.127) once a patch is under 2 pixels.
+    float ma = shellFoot * 0.3;
+    float moss = mix(smoothstep(0.6 - ma, 0.85 + ma, dNoise(w * 0.3)), 0.127, smoothstep(0.25, 0.5, ma));
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.55, 0.62, 0.45), d * 0.6 * moss);
   } else {
-    // Paint gone in a few small patches, the darker render showing (worked out on a wall only, where it shows).
+    // Paint gone in a few small patches, the darker render showing (worked out on a wall only, where it shows); the edge widened by the footprint,
+    // its mean over the wear (measured: 0.0412 + 0.0757 d + 0.037 d^2) once a patch is under 2 pixels.
     if (wall) {
-      float peel = smoothstep(0.8 - d * 0.12, 0.83 - d * 0.12, dNoise(w * 1.3 + 7.0));
+      float peel = mix(smoothstep(0.8 - d * 0.12 - shellFoot * 1.3, 0.83 - d * 0.12 + shellFoot * 1.3, dNoise(w * 1.3 + 7.0)), 0.0412 + d * (0.0757 + 0.037 * d), smoothstep(0.25, 0.5, shellFoot * 1.3));
       diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.68, 0.62), peel * d);
     }
   }

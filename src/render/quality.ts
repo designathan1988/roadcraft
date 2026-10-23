@@ -196,7 +196,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     // SMAA smooths every edge on its own: the scene's MSAA samples cost 2.2 ms of the 2560-wide frame for edges SMAA draws as well.
     msaa: 0,
     aoFull: false,
-    sharpen: 0.35,
+    // No sharpening at the display's own size: see ultra.
+    sharpen: 0,
     anisotropy: 8,
     detailProps: true,
     vegetation: 1_400,
@@ -235,7 +236,9 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     // frame differ from a supersampled one in 34 % of its pixels, 27 % without it (`npm run diagnose`, 2026-10-22, per-pass ablation).
     // Its GPU paid back by the parts' coarser levels (`partCells.ts` PART_ERROR_PX).
     aoFull: true,
-    sharpen: 0.45,
+    // DO NOT sharpen the picture drawn at the display's own size after SMAA: CAS is for what a temporal filter or an upscale softened; here it lifted the
+    // textures' grain into a 1-pixel checker and put back the steps SMAA smoothed, 42 % of a street view's pixel-level energy (the player, 2026-10-23: "pixelizado").
+    sharpen: 0,
     anisotropy: 16,
     detailProps: true,
     vegetation: 2_600,

@@ -8,7 +8,8 @@ describe("the wear's noise in the shell's pixels", () => {
     expect(src).toMatch(/float d = max\(vDecay, shellKind\.z > 0\.5 \? 0\.0 : 0\.3\);[\s\S]{0,200}if \(d > 0\.0\) \{/);
   });
   it('works the rain streaks out on a wall only', () => {
-    expect(src).toMatch(/wall \? 0\.28 \* smoothstep\(0\.55, 0\.85, dNoise\(/);
+    // Filtered by the pixel's footprint (2026-10-23), still in the wall's branch of the choice.
+    expect(src).toMatch(/wall \? 0\.28 \* mix\(smoothstep\(0\.55 - sa, 0\.85 \+ sa, dNoise\(/);
     expect(src).not.toMatch(/float streak = /);
   });
   it('works the peeled paint out on a wall only', () => {

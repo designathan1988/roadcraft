@@ -1085,7 +1085,37 @@ const CASCADE_PARS = /* glsl */ `
 		}
 		#define SUN_CASCADE_COORD( i ) sunCascadeCoordOf( directionalShadowMatrix[ i ], directionalLightShadows[ i ].shadowNormalBias )
 		#define SUN_CASCADE_RIM( i, c ) sunCascadeRim( c, directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowRadius )
+		#if defined( SHADOWMAP_TYPE_PCF )
+		// A cascade read by Ignacio Castano's optimized PCF (The Witness; MJP's Shadows sample, FilterSize 5): nine hardware bilinear-compare taps weighted
+		// as a 5x5 tent round the texel, the reach of the cascades' radius of 2 texels. DO NOT read them with three's getShadow: its five taps turn by
+		// interleaved gradient noise at every pixel, a grain meant for a temporal filter this chain has not; it stayed in every penumbra (the player, 2026-10-23: "pixelizado").
+		float sunCascadeFiltered( sampler2DShadow shadowMap, vec2 shadowMapSize, float shadowIntensity, float shadowBias, vec4 shadowCoord ) {
+			float shadow = 1.0;
+			shadowCoord.xyz /= shadowCoord.w;
+			shadowCoord.z += shadowBias;
+			bool frustumTest = shadowCoord.x >= 0.0 && shadowCoord.x <= 1.0 && shadowCoord.y >= 0.0 && shadowCoord.y <= 1.0 && shadowCoord.z <= 1.0;
+			if ( frustumTest ) {
+				vec2 texel = vec2( 1.0 ) / shadowMapSize;
+				vec2 uv = shadowCoord.xy * shadowMapSize;
+				vec2 base = floor( uv + 0.5 );
+				vec2 st = uv + 0.5 - base;
+				base = ( base - 0.5 ) * texel;
+				vec2 w0 = 4.0 - 3.0 * st, w2 = 1.0 + 3.0 * st;
+				vec2 o0 = ( 3.0 - 2.0 * st ) / w0 - 2.0, o1 = ( 3.0 + st ) / 7.0, o2 = st / w2 + 2.0;
+				#define SUN_TAP( u, v ) texture( shadowMap, vec3( base + vec2( u, v ) * texel, shadowCoord.z ) )
+				shadow = (
+					w0.x * w0.y * SUN_TAP( o0.x, o0.y ) + 7.0 * w0.y * SUN_TAP( o1.x, o0.y ) + w2.x * w0.y * SUN_TAP( o2.x, o0.y ) +
+					w0.x * 7.0 * SUN_TAP( o0.x, o1.y ) + 49.0 * SUN_TAP( o1.x, o1.y ) + w2.x * 7.0 * SUN_TAP( o2.x, o1.y ) +
+					w0.x * w2.y * SUN_TAP( o0.x, o2.y ) + 7.0 * w2.y * SUN_TAP( o1.x, o2.y ) + w2.x * w2.y * SUN_TAP( o2.x, o2.y )
+				) / 144.0;
+				#undef SUN_TAP
+			}
+			return mix( 1.0, shadow, shadowIntensity );
+		}
+		#define SUN_CASCADE_SHADOW( i, c ) sunCascadeFiltered( directionalShadowMap[ i ], directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowIntensity, directionalLightShadows[ i ].shadowBias, c )
+		#else
 		#define SUN_CASCADE_SHADOW( i, c ) getShadow( directionalShadowMap[ i ], directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowIntensity, directionalLightShadows[ i ].shadowBias, directionalLightShadows[ i ].shadowRadius, c )
+		#endif
 		// The last cascade's shadow where it holds the point, else the fallback.
 		float sunCascadeLast( float fallback ) { vec4 c2 = SUN_CASCADE_COORD( 2 ); return SUN_CASCADE_RIM( 2, c2 ) > 0.0 ? SUN_CASCADE_SHADOW( 2, c2 ) : fallback; }
 		float sunCascadeShadow() {
