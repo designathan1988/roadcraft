@@ -1,5 +1,5 @@
 /* global fetch, performance, document, createImageBitmap */
-// A model's sheet: the game's own furniture model rendered and, beside it, its triangles as a hidden-line wireframe, with the triangle count.
+// A model's sheet: the game's own furniture model rendered and, beside it, its triangles as a hidden-line wireframe, with the triangle count, the primitives it is built from (shape, size, colour, rounding, triangles, place) and its material.
 // `node scripts/model-sheet.mjs [kind] [out.png] [--url=http://127.0.0.1:5300]`  (kind: any `FURNITURE_KINDS` entry, default `chair`; out: `<kind>-sheet.png`)
 // Uses the dev server on the url, or starts one of its own when none answers.
 import { writeFileSync } from 'node:fs';
@@ -82,10 +82,29 @@ const sheet = async (name) => {
   const right = await createImageBitmap(canvas);
   renderer.dispose();
 
-  // The sheet: title, the two pictures side by side.
-  const pad = 24, top = 90;
+  // What it is built from, part by part, and how it is shaded.
+  const parts = kit.furnitureParts(name);
+  const shapes = [...new Set(parts.map((p) => p.shape))].map((s) => `${parts.filter((p) => p.shape === s).length} ${s.toLowerCase()}`);
+  const lines = [
+    `Built from: ${shapes.join(', ')} (${parts.length} parts, ${triangles} triangles after the hidden faces are dropped)`,
+    ...parts.map((p, i) => [
+      `${String(i + 1).padStart(2)}. ${p.shape.padEnd(9)}`,
+      Object.entries(p.parameters).filter(([k, v]) => typeof v === 'number' && !/^(width|height|depth)Segments$|^theta/.test(k)).map(([k, v]) => `${k}=${Number(v.toFixed(3))}`).join(' '),
+      `colour ${p.colour}`,
+      p.rounding > 0 ? `rounded edges ${p.rounding.toFixed(3)} m` : 'sharp edges',
+      `${p.triangles} tri`,
+      `at (${p.at.map((v) => v.toFixed(2)).join(', ')})`,
+    ].join('   ')),
+    '',
+    'Material: MeshStandardMaterial "building-furniture", vertex colours, roughness 0.68, metalness 0.04, no maps.',
+    'Edge rounding is a shading effect (the normal bent in the fragment shader); the geometry stays a plain box.',
+    'Sheet light (not the game's): hemisphere 1.4 and sun 2.6 with a 2048 shadow map, ACES Filmic tone mapping, sRGB output.',
+  ];
+
+  // The sheet: title, the two pictures side by side, then the list.
+  const pad = 24, top = 90, lineH = 30, listTop = top + H + 40;
   const page = document.createElement('canvas');
-  page.width = W * 2 + pad * 3; page.height = H + top + pad;
+  page.width = W * 2 + pad * 3; page.height = listTop + lines.length * lineH + pad;
   const g = page.getContext('2d');
   g.fillStyle = '#fff'; g.fillRect(0, 0, page.width, page.height);
   g.drawImage(left, pad, top); g.drawImage(right, W + pad * 2, top);
@@ -94,6 +113,8 @@ const sheet = async (name) => {
   g.fillStyle = '#28323c'; g.font = '32px Segoe UI, sans-serif';
   g.fillText('Rendered', pad + 10, top + 44);
   g.fillText('Wireframe (hidden edges removed)', W + pad * 2 + 10, top + 44);
+  g.fillStyle = '#1e2a36'; g.font = '19px Consolas, monospace';
+  lines.forEach((line, i) => g.fillText(line, pad, listTop + i * lineH));
   return { triangles, vertices, png: page.toDataURL('image/png').split(',')[1] };
 };
 

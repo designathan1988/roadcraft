@@ -5,6 +5,7 @@ import {
   CylinderGeometry,
   MeshStandardMaterial,
   SphereGeometry,
+  Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { weldGeometry } from '../mesh/weld';
@@ -336,6 +337,25 @@ function build(kind: FurnitureKind): BufferGeometry[] {
 
 const SHADE = hex(0xfff0d0);
 const BULB = hex(0xfffbe8);
+
+/** What one furniture kind is built from, part by part, before its hidden faces are dropped (`scripts/model-sheet.mjs`): the primitive, its parameters, its colour, its edge rounding, its triangles and where it stands. */
+export function furnitureParts(kind: FurnitureKind): { shape: string; parameters: Record<string, number>; colour: string; rounding: number; triangles: number; at: [number, number, number] }[] {
+  const built = build(kind);
+  // The same hidden faces dropped as the rendered geometry's (`createFurnitureGeometries`), so the counts are the drawn ones.
+  dropHiddenFaces(built);
+  return built.map((g) => {
+    g.computeBoundingBox();
+    const centre = g.boundingBox!.getCenter(new Vector3());
+    const round = g.getAttribute(ROUND_B);
+    const rgb = g.getAttribute('color');
+    const channel = (k: number): string => Math.round(rgb.getComponent(0, k) * 255).toString(16).padStart(2, '0');
+    const { parameters } = g as BufferGeometry & { parameters?: Record<string, number> };
+    const triangles = (g.index ? g.index.count : g.getAttribute('position').count) / 3;
+    const out = { shape: g.type.replace('Geometry', ''), parameters: { ...parameters }, colour: `#${channel(0)}${channel(1)}${channel(2)}`, rounding: round ? round.getW(0) : 0, triangles, at: [centre.x, centre.y, centre.z] as [number, number, number] };
+    g.dispose();
+    return out;
+  });
+}
 
 /** One geometry per furniture kind, merged, vertex-coloured. */
 export function createFurnitureGeometries(): Record<FurnitureKind, BufferGeometry> {
