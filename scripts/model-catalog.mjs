@@ -31,12 +31,16 @@ const noGame = flags.includes('--no-game');
 const only = flag('only', '');
 /** No 3D files (they take the most room). */
 const noModels = flags.includes('--no-models');
+/** Added to what the folder holds (`--append`): nothing let go, the new objects numbered after the last one there. */
+const append = flags.includes('--append');
 mkdirSync(out, { recursive: true });
 // The last run's sheets and models let go, the folders kept (a shell or a viewer may hold one open).
 for (const [dir, ext] of [['images', '.png'], ['models', '.glb'], ['rows', '.json']]) {
   mkdirSync(join(out, dir), { recursive: true });
-  for (const file of readdirSync(join(out, dir))) if (file.endsWith(ext)) rmSync(join(out, dir, file), { force: true });
+  if (!append) for (const file of readdirSync(join(out, dir))) if (file.endsWith(ext)) rmSync(join(out, dir, file), { force: true });
 }
+/** The last number in the folder: the next object saved takes the one after. */
+const savedBefore = readdirSync(join(out, 'rows')).reduce((most, f) => Math.max(most, Number.parseInt(f, 10) || 0), 0);
 
 /** Run in the page before any of the game's scripts: the arrays of a geometry are kept when the engine lets them go once on the GPU
  *  (`mesh/gpuOnly.ts`, `roadLod.ts`, `farBlockBatches.ts`, the pole and prop cells set `array` to null), so the catalogue can measure, draw and export
@@ -120,7 +124,7 @@ try {
     await page.goto(url);
     await page.waitForFunction(() => performance.getEntriesByName('opening:shown').length > 0, null, { timeout: 180000, polling: 250 });
   }
-  step(`kits: ${await call(page, 'catalogueKits', proxies, targetBytes, only)} items`);
+  step(`kits: ${await call(page, 'catalogueKits', proxies, targetBytes, only, savedBefore)} items`);
   if (!noGame) {
     await page.evaluate((s) => { performance.clearMarks(); return window.__roadcraft.generateCity({ seed: s, size: 'large' }); }, seed);
     await page.waitForFunction(() => performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0, null, { timeout: 600000, polling: 250 });
@@ -153,7 +157,7 @@ try {
     step(`finish: ${await call(page, 'catalogueFinish')} items`);
   }
   result = await call(page, 'catalogueResult');
-  if (noGame) result.gaps.push('Run without the game (--no-game): the buildings (built from a city\'s records), the test city\'s layers, copies, costs, draw calls and the destruction\'s peak are left out.');
+  if (noGame) result.gaps.push('Run without the game (--no-game): no copies, costs (triangles x copies), draw calls or destruction peak: those are counted in a generated city.');
   // The garments' and hair's textures: the file's own size and its pixels (from its header). Their memory on the GPU is not added: the person's loader decodes them at run time.
   for (const row of result.rows) {
     const texture = row.notes.find((n) => n.startsWith('texture '))?.slice(8);
@@ -219,12 +223,8 @@ writeFileSync(join(out, 'catalog.csv'), [COLUMNS.map(([h]) => h).join(','), ...r
 
 const known = [
   'Clouds: no mesh; drawn by ray marching in the post chain (src/render/postprocess.ts CLOUD_SHADOWS).',
-  'Buildings\' far levels (facade level L1, masses, base): built per cell of the building layer from many buildings at once (massCells.ts, farParts.ts), not per building; measured as the test city\'s layers.',
   'Vehicles\' intermediate levels: made at run time by the simplifier (vehicleLevels.ts partLevels, meshoptimizer); the catalogue gives the full model (L0) and the far model.',
-  'Signals, signs, barriers, flags and the far traffic: their layers build their models only from placed items (the builders are private to the layer); measured from the test city\'s meshes where it has them.',
-  'Garments and hair: how many people wear each one is decided per person at run time; their copies are not counted.',
-  'Cast bodies: who wears which body is the casting\'s choice at run time (CastingRegistry); each body\'s copies are the people the game drew as it over the sweep\'s views (its census), not the people never drawn.',
-  'Test city layers: every mesh the scene drew in any view of the sweep (a grid over the whole map); a cell only drawn at another zoom than the sweep\'s and the fixed views\' is not in it.',
+  'Pictures: the colours are each material\'s base colour where its look needs the running game (baked surfaces, the engine\'s uniforms); the geometry and every number are the engine\'s.',
   'Editor feedback on the ground (src/render/renderer.ts blink) and the tools\' 2D gizmos (drawn on a canvas over the view): no catalogued mesh.',
 ];
 /** What "hidden triangles" counts: an exact count of this criterion, not an estimate. */

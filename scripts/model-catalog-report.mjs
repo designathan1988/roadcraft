@@ -15,12 +15,14 @@ const kb = (b) => `${n(Math.round((b ?? 0) / 1024))} KB`;
 
 /** What is not catalogued yet, and why: the engine's layout layers still to be built alone. */
 const PENDING = [
-  'Traffic signals (src/render/signals.ts createSignalHeads)', 'Signs (src/render/signLayer.ts)', 'Barriers (src/render/barriers.ts)', 'Flags (src/render/buildings/flagLayer.ts)',
-  'Gardens (src/render/gardens.ts)', 'Long grass clumps (src/render/grass.ts)', 'Water (src/render/terrain.ts unifiedWaterGeometry)', 'Far forest (src/render/farForest.ts)',
-  'Far traffic (src/render/densityCars.ts)', 'Rail tracks and stations (src/render/transit.ts)', 'Network far roads (src/render/networkFarRoads.ts)',
-  'The building shell piece by piece, each emit function of src/render/buildings/buildingMesh.ts on its own (bays, plinths, every roof kind, cornices, bands, terraces, roof plant, lanterns, clocks, lot parts, stairs, fences, parking)',
+  'Water (src/render/terrain.ts unifiedWaterGeometry)', 'Far forest (src/render/farForest.ts)', 'Network far roads (src/render/networkFarRoads.ts)',
   'The buildings\' far levels (massCells.ts, farParts.ts, shellBatch.ts, partCells.ts)',
   'Copies of each object in a generated city, and triangles x copies',
+];
+/** Layers that draw no geometry of their own: what they place is catalogued under the kit it comes from. */
+const NO_OWN_GEOMETRY = [
+  'Gardens (src/render/gardens.ts gardenKinds): the landscape kit\'s tree and bush models (Street trees and bushes), placed by the buildings\' garden elements.',
+  'Long grass (src/render/grass.ts grassClump): the landscape kit\'s grass tuft and wildflower (Street furniture), placed in clumps.',
 ];
 
 const groups = new Map();
@@ -83,6 +85,8 @@ const html = `${head('Engine Geometry Catalogue')}
 <table class="sum"><tr><th>Group</th><th>Objects</th><th>Triangles (one of each)</th></tr>
 ${order.map((o) => `<tr><td><a href="groups/${slug(o.g)}.html">${esc(o.g)}</a></td><td>${o.list.length}</td><td>${n(o.triangles)}</td></tr>`).join('\n')}
 </table>
+<h2>Layers with no geometry of their own</h2>
+<ul>${NO_OWN_GEOMETRY.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
 <h2>Not catalogued yet</h2>
 <ul>${PENDING.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
 <h2>Could not be measured</h2>

@@ -56,7 +56,7 @@ const TIME_WRAP = 4096;
 const FAR_LANE = m(3.5);
 
 /** The car: a body and a cabin, 4.3 m by 1.8 m, its length along x, its width along z, standing on y = 0. */
-function carGeometry(): BufferGeometry {
+export function carGeometry(): BufferGeometry {
   const body = new BoxGeometry(m(4.3), m(0.75), m(1.8)).translate(0, m(0.2) + m(0.375), 0);
   const cabin = new BoxGeometry(m(2.2), m(0.55), m(1.6)).translate(-m(0.2), m(0.95) + m(0.275), 0);
   for (const g of [body, cabin]) g.deleteAttribute('uv');

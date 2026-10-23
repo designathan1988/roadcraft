@@ -54,9 +54,10 @@ export function drawnTriangles(g: BufferGeometry): { readonly first: number; rea
 /** Triangles, vertices, attributes and bytes of a geometry. */
 export function measureGeometry(g: BufferGeometry): GeometryMeasure {
   const position = g.getAttribute('position') as AnyAttribute | undefined;
-  const vertices = position ? position.count : 0;
   const indexed = g.index !== null;
   const { triangles, room } = drawnTriangles(g);
+  // Without an index three draws the vertices of its draw range alone: those are its vertices (the rest is room held for later).
+  const vertices = position ? (indexed ? position.count : triangles * 3) : 0;
   const attributes: AttributeMeasure[] = [];
   let bytes = 0;
   let released = false;

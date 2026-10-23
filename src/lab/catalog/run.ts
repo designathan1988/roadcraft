@@ -10,7 +10,8 @@ import { surfaceMaps } from '../../render/surfaceTextures';
 import { measureItem, type CatalogRow, type ItemSpec } from './items';
 import { buildingKitItems, effectItems, elementItems, groundCoverItems, miscItems, sceneryItems, treeItems, vehicleItems } from './kits';
 import { peopleAssetItems, peopleItems } from './people';
-import { layoutItems } from './layout';
+import { layoutItems, terrainItems } from './layout';
+import { barrierItems, farCarItems, flagItems, signalItems, signItems, transitItems, waterItems } from './layers';
 import { engineBuildingItems } from './engineBuildings';
 import { shellPieceItems } from './shellPieces';
 import { buildingItems, cityCounts, destructionPeak, drawCallsByGroup, previewItems, probe, sceneSnapshot, signatureOf, type BuildingMeasure, type CountEntry, type SceneLayer, type SceneSeen } from './city';
@@ -84,13 +85,23 @@ async function group(name: string, run: () => void | Promise<void>): Promise<voi
 
 /** Every kit, each object and variation built on its own; `proxies` the garment and hair files, `targetBytes` the shape targets' files;
  *  `only` (a pattern) the groups to build, every group when empty. */
-export async function catalogueKits(proxies: readonly string[], targetBytes: number, only = ''): Promise<number> {
+export async function catalogueKits(proxies: readonly string[], targetBytes: number, only = '', savedBefore = 0): Promise<number> {
   (window as unknown as { __catalogueOnly?: RegExp | null }).__catalogueOnly = only ? new RegExp(only, 'i') : null;
+  // Numbered after what the folder already holds (`--append`).
+  state().saved = savedBefore;
   // In the order asked: the buildings' parts and furniture, the buildings, the roads and ground, then the rest.
   await group('building shell pieces', () => shellPieceItems(add));
   await group('building kit and furniture', () => buildingKitItems(add));
   await group('buildings (engine generators)', () => engineBuildingItems(add));
-  await group('roads, structures, poles, ground (engine layouts)', () => layoutItems(add));
+  await group('roads, structures, poles (engine layouts)', () => layoutItems(add));
+  await group('terrain (engine ground)', () => terrainItems(add));
+  await group('signs', () => signItems(add, new Map()));
+  await group('barriers', () => barrierItems(add, new Map()));
+  await group('flags', () => flagItems(add, new Map()));
+  await group('traffic signals', () => signalItems(add, new Map()));
+  await group('far traffic', () => farCarItems(add));
+  await group('transit tracks and stations', () => transitItems(add, new Map()));
+  await group('water', () => waterItems(add));
   await group('landscape kit, street furniture, poles', () => sceneryItems(add));
   await group('ground cover', () => groundCoverItems(add));
   await group('trees', () => treeItems(add));
@@ -388,7 +399,8 @@ export async function catalogueSheet(id: string, panel = 800): Promise<string | 
   const floor = new Mesh(new PlaneGeometry(1, 1), new MeshStandardMaterial({ color: 0xd8d4cc }));
   floor.scale.setScalar(size.length() * 6 + 1);
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = box.min.y - size.y * 0.002;
+  // Under the object, never in its plane: a flat object (a patch of ground) would be hidden by a floor at its own height.
+  floor.position.y = box.min.y - Math.max(size.y * 0.002, size.length() * 0.002);
   shaded.add(floor);
   renderer.render(shaded, camera);
   const left = await createImageBitmap(canvas);

@@ -167,7 +167,6 @@ export async function layoutItems(add: Add): Promise<void> {
   const poles = buildUtilities(net, poleGroundAt(buildRoadElevation(net, flat), flat), createSceneryKit());
   add({ group: 'Utility poles', name: 'pole span', variation: 'two poles (one with a lamp), their wires', origin: 'kit', source: 'src/render/poleLayer.ts (buildUtilities)', build: 'instanced',
     pieces: piecesOf(poles.group), object: shown(poles.group, cache), countKey: 'poles' });
-  terrainItems(add, terrain.meshMaterial);
 }
 
 /** A near patch of the ground or its rim as the GPU places it on flat land (`terrainLod.ts` landVertex): a corner's cell and role made its point, a cell `cell` wide. */
@@ -191,7 +190,8 @@ function placedPatch(source: BufferGeometry, cell: number): BufferGeometry {
 }
 
 /** The ground as the engine draws it, each part built alone by its own code: a near patch and its rim (`terrainLod.ts`), a far patch (`flatAtlas.ts`), the slab round the map's edge. */
-function terrainItems(add: Add, material: Material): void {
+export function terrainItems(add: Add): void {
+  const material = createFlatAtlas(16).meshMaterial;
   const lod = new LandLod(new LandLevels(TERRAIN_SEGMENTS), { seg: TERRAIN_SEGMENTS, cell: TERRAIN_CELL, half: TERRAIN_HALF }, { x: 0, y: 0 }, { west: true, east: true, north: true, south: true });
   const level = (geometry: BufferGeometry, name: string): Object3D => { const g = new Group(); g.add(new Mesh(placedPatch(geometry, TERRAIN_CELL), sheetMaterial(null, geometry))); g.name = name; return g; };
   add({ group: 'Terrain', name: 'near patch', variation: `${LOD_PATCH} x ${LOD_PATCH} cells (level 0: ${TERRAIN_CELL} m a cell, each level twice as wide)`, origin: 'kit',
@@ -204,13 +204,14 @@ function terrainItems(add: Add, material: Material): void {
   const far = createFlatFar(1);
   writeFarPatch(far, 0, 0, 0, () => 0);
   farIndexInto(far, [{ slot: 0, rim: [false, false, false, false] }]);
-  const farMesh = new Mesh(far.geometry, material);
+  const farMesh = new Mesh(far.geometry, sheetMaterial(material, far.geometry));
   farMesh.name = 'flat-world-far';
   add({ group: 'Terrain', name: 'far patch', variation: 'one plate, its four skirts', origin: 'kit', source: 'src/render/flatAtlas.ts (createFlatFar, writeFarPatch, farIndexInto)', build: 'merged',
     pieces: [{ label: 'far patch', geometry: far.geometry, material }], object: farMesh, countKey: 'terrain:far-patches' });
-  const slab = new Mesh(slabGeometry(-TERRAIN_HALF, TERRAIN_HALF, -TERRAIN_HALF, TERRAIN_HALF, PLATE_SIZE / 32, () => TERRAIN_BASE), wallMaterial(16));
+  const wall = wallMaterial(16);
+  const slab = new Mesh(slabGeometry(-TERRAIN_HALF, TERRAIN_HALF, -TERRAIN_HALF, TERRAIN_HALF, PLATE_SIZE / 32, () => TERRAIN_BASE), sheetMaterial(wall, new BufferGeometryClass()));
   slab.name = 'flat-world-slab';
   add({ group: 'Terrain', name: 'edge slab', variation: 'round one plate', origin: 'kit', source: 'src/render/terrain.ts (slabGeometry)', build: 'individual',
-    pieces: [{ label: 'slab', geometry: slab.geometry, material: slab.material }], object: slab, countKey: 'one',
+    pieces: [{ label: 'slab', geometry: slab.geometry, material: wall }], object: slab, countKey: 'one',
     notes: ['the cut sides round the map\'s far ring, from the land down to the bedrock; in the game it runs round the whole map'] });
 }
