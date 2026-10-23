@@ -91,7 +91,8 @@ export function sceneryItems(add: Add): void {
   const extras: [string, BufferGeometry, Material, string][] = [
     ['lamp lens', kit.lampLens, kit.glow, 'landscape:lamp'], ['lamp light pool (night)', kit.pool, kit.poolGlow, 'landscape:lamp'],
     ['lamp light beam (night)', kit.beam, kit.beamGlow, 'landscape:lamp'], ['tree pit', kit.treePit, kit.props, 'landscape:tree'],
-    ['grass tuft', kit.tuft, kit.grass, 'landscape:meadow'], ['wildflower', kit.flower, kit.flowers, 'landscape:meadow'],
+    // A meadow is many tufts and flowers: their copies are the grass layer's, read from the test city's scene.
+    ['grass tuft', kit.tuft, kit.grass, ''], ['wildflower', kit.flower, kit.flowers, ''],
   ];
   for (const [name, geometry, material, countKey] of extras) {
     add({ group: 'Street furniture', name, origin: 'kit', source: 'src/render/scenery.ts', build: 'instanced', pieces: [{ label: name, geometry, material }], countKey });

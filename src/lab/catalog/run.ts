@@ -1,13 +1,19 @@
 import {
   ACESFilmicToneMapping, Box3, Color, DirectionalLight, HemisphereLight, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial,
-  NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WireframeGeometry, type BufferGeometry, type Object3D,
+  NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type BufferGeometry, type Object3D,
 } from 'three';
+import { BufferGeometry as BufferGeometryClass, Group, InstancedMesh, Plane, Points, PointsMaterial, Raycaster, type Material } from 'three';
+import { buildingBounds } from '@world/buildings/geometry';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { primeSurfaceBake, startSurfaceBake } from '../../render/surfaceBakeClient';
 import { surfaceMaps } from '../../render/surfaceTextures';
 import { measureItem, type CatalogRow, type ItemSpec } from './items';
 import { buildingKitItems, effectItems, elementItems, groundCoverItems, miscItems, sceneryItems, treeItems, vehicleItems } from './kits';
 import { peopleAssetItems, peopleItems } from './people';
-import { buildingItems, cityCounts, cityLayerItems, destructionPeak, drawCallsByGroup, previewItems, probe, sceneSnapshot, signatureOf, type SceneSeen } from './city';
+import { layoutItems } from './layout';
+import { engineBuildingItems } from './engineBuildings';
+import { shellPieceItems } from './shellPieces';
+import { buildingItems, cityCounts, destructionPeak, drawCallsByGroup, previewItems, probe, sceneSnapshot, signatureOf, type BuildingMeasure, type CountEntry, type SceneLayer, type SceneSeen } from './city';
 
 /** THE CATALOGUE'S RUN IN THE GAME'S PAGE: the kits, then the test city, then the counts and shadows put together (`scripts/model-catalog.mjs` drives it). */
 
@@ -16,15 +22,19 @@ interface State {
   objects: Map<string, Object3D>;
   signatures: Map<string, string[]>;
   gaps: string[];
-  counts: Map<string, { n: number; from: string }>;
+  counts: Map<string, CountEntry>;
   seen: SceneSeen;
   drawCalls: Awaited<ReturnType<typeof drawCallsByGroup>> | null;
   destruction: Record<string, number> | null;
+  buildings: BuildingMeasure[];
+  /** The objects being written out, one after another, and how many were. */
+  saving: Promise<void>;
+  saved: number;
 }
 
 const state = (): State => {
   const w = window as unknown as { __catalogue?: State };
-  w.__catalogue ??= { rows: [], objects: new Map(), signatures: new Map(), gaps: [], counts: new Map(), seen: { bySignature: new Map(), layers: new Map() }, drawCalls: null, destruction: null };
+  w.__catalogue ??= { rows: [], objects: new Map(), signatures: new Map(), gaps: [], counts: new Map(), seen: { bySignature: new Map(), layers: new Map(), cast: new Map(), views: 0, batches: new Map() }, drawCalls: null, destruction: null, buildings: [], saving: Promise.resolve(), saved: 0 };
   return w.__catalogue;
 };
 
@@ -42,9 +52,25 @@ function add(spec: ItemSpec): void {
     s.rows.push(row);
     s.objects.set(id, object);
     s.signatures.set(id, spec.pieces.map((p) => signatureOf(p.geometry)));
+    // Saved as soon as it is measured: its sheet, its 3D file and its numbers in the catalogue's folder, one object after another.
+    s.saving = s.saving.then(() => saveRow(row));
   } catch (error) {
     recordGap(`${base}: measuring failed: ${String(error)}`);
   }
+}
+
+/** One object written out: `sheets/NNNN-<id>.png` (render + wireframe), `models/NNNN-<id>.glb`, `rows/NNNN-<id>.json`, NNNN the order it was made in. */
+async function saveRow(row: CatalogRow): Promise<void> {
+  const s = state();
+  const name = `${String(++s.saved).padStart(4, '0')}-${row.id.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 80)}`;
+  try {
+    const png = await catalogueSheet(row.id, 480);
+    if (png) { await writeFile(`images/${name}.png`, Uint8Array.from(atob(png), (c) => c.charCodeAt(0)).buffer); row.sheet = `images/${name}.png`; }
+    else recordGap(`${row.id}: no sheet (nothing drawable: no geometry with readable arrays)`);
+  } catch (error) { recordGap(`${row.id}: its sheet could not be drawn (${String(error)})`); }
+  const [model] = await catalogueModels([{ id: row.id, file: `models/${name}.glb` }]);
+  if (model && !model.error && model.bytes) row.model = `models/${name}.glb`;
+  await writeFile(`rows/${name}.json`, new TextEncoder().encode(JSON.stringify(row, null, 1)).buffer);
 }
 
 /** Runs one group's builder unless `only` leaves it out; a group that fails is listed, the others go on. */
@@ -52,13 +78,19 @@ async function group(name: string, run: () => void | Promise<void>): Promise<voi
   const only = (window as unknown as { __catalogueOnly?: RegExp | null }).__catalogueOnly;
   if (only && !only.test(name)) return;
   try { await run(); } catch (error) { recordGap(`${name}: could not be built: ${String(error)}`); }
+  // Its objects written out before the next group is built.
+  await state().saving;
 }
 
 /** Every kit, each object and variation built on its own; `proxies` the garment and hair files, `targetBytes` the shape targets' files;
  *  `only` (a pattern) the groups to build, every group when empty. */
 export async function catalogueKits(proxies: readonly string[], targetBytes: number, only = ''): Promise<number> {
   (window as unknown as { __catalogueOnly?: RegExp | null }).__catalogueOnly = only ? new RegExp(only, 'i') : null;
+  // In the order asked: the buildings' parts and furniture, the buildings, the roads and ground, then the rest.
+  await group('building shell pieces', () => shellPieceItems(add));
   await group('building kit and furniture', () => buildingKitItems(add));
+  await group('buildings (engine generators)', () => engineBuildingItems(add));
+  await group('roads, structures, poles, ground (engine layouts)', () => layoutItems(add));
   await group('landscape kit, street furniture, poles', () => sceneryItems(add));
   await group('ground cover', () => groundCoverItems(add));
   await group('trees', () => treeItems(add));
@@ -66,6 +98,7 @@ export async function catalogueKits(proxies: readonly string[], targetBytes: num
   await group('vehicles', () => vehicleItems(add));
   await group('held props, trains, sky', () => miscItems(add));
   await group('effects', () => effectItems(add));
+  await group('editor previews', () => previewItems(add));
   await group('people: base body and garments', () => peopleAssetItems(add, proxies, targetBytes));
   await group('people: cast and crowd', () => peopleItems(add));
   return state().rows.length;
@@ -73,8 +106,8 @@ export async function catalogueKits(proxies: readonly string[], targetBytes: num
 
 /** The test city is open: its buildings' records built alone, the editor's previews. */
 export async function catalogueCityObjects(): Promise<number> {
-  await group('buildings', () => buildingItems(add, state().counts));
-  await group('editor previews', () => previewItems(add));
+  // The city's buildings only counted (no row of them: the rows are the engine's generators'): each built alone, its parts' copies and triangles summed.
+  await group('test city buildings counted', () => buildingItems(() => {}, state().counts, state().buildings));
   return state().rows.length;
 }
 
@@ -84,11 +117,37 @@ export function catalogueLook(): number {
   return state().seen.layers.size;
 }
 
+/** The test city's extent on the plan (its roads' nodes and its buildings), and the ground a view at `zoom`, `elevation` degrees takes in there:
+ *  the four corners of the screen cast on the ground plane from the game's own camera, after it looked from the city's centre. */
+export async function catalogueExtent(zoom: number, elevation: number): Promise<{ minX: number; minY: number; maxX: number; maxY: number; spanX: number; spanY: number }> {
+  const { doc } = probe();
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const take = (x: number, y: number): void => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); };
+  for (const node of doc.nodes.values()) take(node.x, node.y);
+  for (const id of doc.buildings.idList()) { const b = doc.buildings.get(id); if (b) { const r = buildingBounds(b); take(r.minX, r.minY); take(r.maxX, r.maxY); } }
+  catalogueView((minX + maxX) / 2, (minY + maxY) / 2, zoom, 0, elevation);
+  probe().redraw();
+  await new Promise((r) => setTimeout(r, 300));
+  const camera = probe().scene().viewCamera();
+  camera.updateMatrixWorld(true);
+  const ray = new Raycaster();
+  const ground = new Plane(new Vector3(0, 1, 0), 0);
+  const hits: Vector3[] = [];
+  for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+    ray.setFromCamera(new Vector2(u, v), camera);
+    const at = ray.ray.intersectPlane(ground, new Vector3());
+    if (at) hits.push(at);
+  }
+  if (hits.length < 4) throw new Error('the view does not take in the ground at all four corners: look down more steeply');
+  // The scene's x is the plan's x, its z the plan's -y.
+  const xs = hits.map((h) => h.x), ys = hits.map((h) => -h.z);
+  return { minX, minY, maxX, maxY, spanX: Math.max(...xs) - Math.min(...xs), spanY: Math.max(...ys) - Math.min(...ys) };
+}
+
 /** The test city's layers, its counts, every group's draw calls, the destruction's peak; then each row's copies, cost and shadow. */
 export async function catalogueFinish(): Promise<number> {
   const s = state();
-  await group('test city layers', () => cityLayerItems(add, s.seen, s.counts));
-  await group('test city counts', () => cityCounts(s.counts));
+  await group('test city counts', () => cityCounts(s.counts, s.seen));
   await group('draw calls by group', async () => { s.drawCalls = await drawCallsByGroup(); });
   await group('destruction peak', async () => { s.destruction = await destructionPeak(); });
   const layers = [...s.seen.layers.values()];
@@ -109,15 +168,13 @@ export async function catalogueFinish(): Promise<number> {
     if (row.preview) { row.instances = 0; row.instancesFrom = 'editor preview: not in the running game'; }
     else if (row.countKey === 'source') { row.instances = 0; row.instancesFrom = 'source model: its copies are counted in the rows that draw it'; }
     else if (counted) { row.instances = counted.n; row.instancesFrom = counted.from; }
-    else if (named.length) { row.instances = Math.max(...named.map((l) => l.instances)); row.instancesFrom = `most copies the test city drew in one view (${named.map((l) => l.kind).slice(0, 3).join(', ')})`; }
-    else if (shaped.length) { row.instances = Math.max(...shaped.map((m) => m.count)); row.instancesFrom = `most copies the test city drew in one view (same geometry: ${[...shaped[0]!.names].slice(0, 2).join(', ')})`; }
+    else if (named.length) { row.instances = Math.max(...named.map((l) => l.instances)); row.instancesFrom = `copies its scene meshes drew over the ${s.seen.views} views, the largest of: ${named.map((l) => `${l.kind} ${l.instances}`).slice(0, 4).join(', ')} (near and far meshes of one object are not added up)`; }
+    else if (shaped.length) { row.instances = Math.max(...shaped.map((m) => m.count)); row.instancesFrom = `most copies one scene mesh of the same geometry drew in one view (${[...shaped[0]!.names].slice(0, 2).join(', ')})`; }
     else { row.instances = 0; row.instancesFrom = 'not found in the test city'; }
-    if (row.countKey.startsWith('cast:')) {
-      const seated = s.counts.get('cast:seated')?.n ?? 0;
-      const cast = s.rows.filter((r) => r.countKey.startsWith('cast:')).length || 1;
-      row.instances = Math.round(seated / cast); row.instancesFrom = 'people seated in vehicles, shared evenly over the cast';
-    }
-    row.totalTriangles = row.preview ? 0 : row.triangles * row.instances;
+    if (row.countKey.startsWith('cast:') && !counted) { row.instances = 0; row.instancesFrom = `nobody drawn as this body over the ${s.seen.views} views (casting census)`; }
+    if (row.sceneCopy) row.instancesFrom = 'the test city\'s copy of a kit object: counted in the kit\'s row, kept out of the cost';
+    // Summed copy by copy where the copies differ (buildings of one kind and size band), else triangles times copies.
+    row.totalTriangles = row.preview || row.sceneCopy ? 0 : counted?.triangles ?? row.triangles * row.instances;
   }
   return s.rows.length;
 }
@@ -139,8 +196,6 @@ const SCENE_NAMES: Readonly<Record<string, readonly string[]>> = {
   'blob shadow': ['vehicle-shadows', 'procedural-people-shadows'], sky: ['sky'], 'exhaust smoke': ['exhaust'], rain: ['rain'],
 };
 
-type SceneLayer = SceneSeen['layers'] extends Map<string, infer L> ? L : never;
-
 /** The scene's meshes named after a row's object (its name or the scene's word for it, as a whole word), among its group's own only. */
 function namedLayers(row: CatalogRow, layers: readonly SceneLayer[]): SceneLayer[] {
   const kebab = row.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -152,12 +207,12 @@ function namedLayers(row: CatalogRow, layers: readonly SceneLayer[]): SceneLayer
 }
 
 /** Everything found, as data: the rows, what could not be measured, the draw calls, the destruction's peak, and every mesh kind the test city drew. */
-export function catalogueResult(): { rows: CatalogRow[]; gaps: string[]; drawCalls: State['drawCalls']; destruction: State['destruction']; scene: unknown[] } {
+export function catalogueResult(): { rows: CatalogRow[]; gaps: string[]; drawCalls: State['drawCalls']; destruction: State['destruction']; scene: unknown[]; buildings: BuildingMeasure[] } {
   const s = state();
   const scene = [...s.seen.layers.values()].sort((a, b) => b.triangles - a.triangles).map((l) => ({
     layer: l.layer, kind: l.kind, meshes: l.meshes, copies: l.instances, triangles: l.triangles, bytes: l.bytes, casts: [...l.casts], materials: [...l.materials], released: l.released,
   }));
-  return { rows: s.rows, gaps: s.gaps, drawCalls: s.drawCalls, destruction: s.destruction, scene };
+  return { rows: s.rows, gaps: s.gaps, drawCalls: s.drawCalls, destruction: s.destruction, scene, buildings: s.buildings };
 }
 
 /** The baked surfaces (the buildings' finishes and the roads' maps) read when the game has not read them: the catalogue's page runs without the game. */
@@ -191,6 +246,94 @@ export async function catalogueSheets(ids: readonly string[], panel = 480): Prom
   return out;
 }
 
+/** A geometry with only what a 3D file carries: position, normal, uv and colour, and its triangles' index; null without positions. */
+function exportGeometry(g: BufferGeometry, colours: boolean): BufferGeometry | null {
+  const position = g.getAttribute('position');
+  if (!position || !(position as { array?: unknown }).array) return null;
+  const out = new BufferGeometryClass();
+  for (const name of ['position', 'normal', 'uv', ...(colours ? ['color'] : [])]) {
+    const a = g.getAttribute(name);
+    if (a && (a as { array?: unknown }).array && !(a as { isInstancedBufferAttribute?: boolean }).isInstancedBufferAttribute) out.setAttribute(name, a);
+  }
+  if (g.index && g.index.array) out.setIndex(g.index);
+  return out;
+}
+
+/** A plain material a 3D file can carry: the source's colour, roughness and metal, its vertex colours; the engine's own shader left out. */
+function exportMaterial(m: Material | Material[] | undefined, colours: boolean, type: 'mesh' | 'lines' | 'points'): Material {
+  const source = (Array.isArray(m) ? m[0] : m) as (Material & { color?: { getHex(): number }; roughness?: number; metalness?: number; transparent?: boolean; opacity?: number }) | undefined;
+  const color = source?.color?.getHex() ?? 0xbfbab2;
+  if (type === 'lines') return new LineBasicMaterial({ color, vertexColors: colours });
+  if (type === 'points') return new PointsMaterial({ color, vertexColors: colours, size: 0.2 });
+  return new MeshStandardMaterial({ color, vertexColors: colours, roughness: source?.roughness ?? 0.8, metalness: source?.metalness ?? 0, transparent: source?.transparent ?? false, opacity: source?.opacity ?? 1 });
+}
+
+/** An object as a 3D file can hold it: every mesh where it stands in the object, its copies kept (EXT_mesh_gpu_instancing). */
+function exportObject(root: Object3D, colours: boolean): Group {
+  const out = new Group();
+  out.name = root.name;
+  root.updateMatrixWorld(true);
+  const inverse = root.matrixWorld.clone().invert();
+  root.traverse((o) => {
+    const holder = o as Object3D & { geometry?: BufferGeometry; material?: Material | Material[]; isInstancedMesh?: boolean; isPoints?: boolean; isLine?: boolean; isMesh?: boolean; count?: number };
+    if (!holder.geometry || !(holder.isMesh || holder.isLine || holder.isPoints)) return;
+    const hasColour = colours && holder.geometry.getAttribute('color') !== undefined;
+    const g = exportGeometry(holder.geometry, hasColour);
+    if (!g) return;
+    const type = holder.isPoints ? 'points' : holder.isLine ? 'lines' : 'mesh';
+    const material = exportMaterial(holder.material, hasColour, type);
+    let node: Object3D;
+    if (holder.isInstancedMesh) {
+      const source = o as InstancedMesh;
+      const mesh = new InstancedMesh(g, material, Math.max(1, source.count));
+      if (source.instanceMatrix.array) mesh.instanceMatrix.array.set((source.instanceMatrix.array as Float32Array).subarray(0, source.count * 16));
+      node = mesh;
+    } else node = type === 'points' ? new Points(g, material) : type === 'lines' ? new LineSegments(g, material) : new Mesh(g, material);
+    node.name = o.name;
+    // Where it stands in the object, as a translation, rotation and scale.
+    const local = inverse.clone().multiply(o.matrixWorld);
+    local.decompose(node.position, node.quaternion, node.scale);
+    out.add(node);
+  });
+  return out;
+}
+
+/** Writes a 3D file through the script (`__catalogueWrite`, a function the script gives the page), in pieces small enough to send. */
+async function writeFile(file: string, data: ArrayBuffer): Promise<void> {
+  const write = (window as unknown as { __catalogueWrite: (file: string, base64: string, append: boolean) => Promise<void> }).__catalogueWrite;
+  const bytes = new Uint8Array(data);
+  const CHUNK = 6 * 1024 * 1024;
+  for (let at = 0; at < Math.max(1, bytes.length); at += CHUNK) {
+    let text = '';
+    const part = bytes.subarray(at, Math.min(bytes.length, at + CHUNK));
+    for (let i = 0; i < part.length; i += 0x8000) text += String.fromCharCode(...part.subarray(i, i + 0x8000));
+    await write(file, btoa(text), at > 0);
+  }
+}
+
+/** Several objects' 3D files (GLB), each under the file name the script gave it; a model the exporter refuses is tried again without its colours. */
+export async function catalogueModels(entries: readonly { id: string; file: string }[]): Promise<{ id: string; bytes: number; error?: string }[]> {
+  const s = state();
+  const exporter = new GLTFExporter();
+  const out: { id: string; bytes: number; error?: string }[] = [];
+  for (const { id, file } of entries) {
+    const object = s.objects.get(id);
+    if (!object) { out.push({ id, bytes: 0, error: 'no object' }); continue; }
+    let data: ArrayBuffer | null = null, error = '';
+    for (const colours of [true, false]) {
+      try {
+        const result = await exporter.parseAsync(exportObject(object, colours), { binary: true, onlyVisible: false });
+        data = result as ArrayBuffer;
+        break;
+      } catch (e) { error = String(e); console.error(`[catalogue] export of ${id}${colours ? ' with colours' : ''} failed`, e); }
+    }
+    if (!data) { recordGap(`${id}: its 3D file could not be written (${error})`); out.push({ id, bytes: 0, error }); continue; }
+    await writeFile(file, data);
+    out.push({ id, bytes: data.byteLength });
+  }
+  return out;
+}
+
 /** Every row's id, costliest first (the order the sheets are numbered in). */
 export function catalogueIds(): string[] {
   return [...state().rows].sort((a, b) => b.totalTriangles - a.totalTriangles || b.triangles - a.triangles).map((r) => r.id);
@@ -201,25 +344,38 @@ export async function catalogueSheet(id: string, panel = 800): Promise<string | 
   const s = state();
   const object = s.objects.get(id);
   const row = s.rows.find((r) => r.id === id);
-  if (!object || !row || object.children.length === 0) return null;
+  // Something to draw: a mesh of its own or meshes under it.
+  if (!object || !row || (object.children.length === 0 && !(object as { geometry?: unknown }).geometry)) return null;
   const W = panel, H = panel;
   const renderer = sheetRenderer(panel);
   const canvas = renderer.domElement;
   renderer.toneMapping = ACESFilmicToneMapping;
   const box = new Box3().setFromObject(object);
   const centre = box.getCenter(new Vector3()), size = box.getSize(new Vector3());
-  // The wireframe made before anything is drawn: an upload lets some geometries' arrays go (`mesh/gpuOnly.ts`), and the edges are read from them.
+  // The hidden-line wireframe: every copy's surface in white pushed back a little and every triangle's edges over it (three's `wireframe`
+  // draws the edges WireframeGeometry gives), so an edge behind a surface is hidden; an instanced mesh with all its copies.
   const wire = new Scene();
   wire.background = new Color(0xffffff);
   object.updateMatrixWorld(true);
+  const fillMaterial = new MeshBasicMaterial({ color: 0xf7f8fa, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  const edgeMaterial = new MeshBasicMaterial({ color: 0x1b2a3a, wireframe: true });
+  const lineMaterial = new LineBasicMaterial({ color: 0x1b2a3a });
   object.traverse((o) => {
-    const g = (o as { geometry?: BufferGeometry }).geometry;
+    const holder = o as Object3D & { geometry?: BufferGeometry; isMesh?: boolean; isInstancedMesh?: boolean };
+    const g = holder.geometry;
     if (!g) return;
-    const fill = new Mesh(g, new MeshBasicMaterial({ color: 0xf7f8fa, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
-    const lines = new LineSegments(new WireframeGeometry(g), new LineBasicMaterial({ color: 0x1b2a3a }));
-    fill.matrix.copy(o.matrixWorld); fill.matrixAutoUpdate = false;
-    lines.matrix.copy(o.matrixWorld); lines.matrixAutoUpdate = false;
-    wire.add(fill, lines);
+    const copies: Object3D[] = [];
+    if (holder.isInstancedMesh) {
+      const source = o as InstancedMesh;
+      for (const material of [fillMaterial, edgeMaterial]) {
+        const copy = new InstancedMesh(g, material, source.count);
+        copy.instanceMatrix = source.instanceMatrix;
+        copy.frustumCulled = false;
+        copies.push(copy);
+      }
+    } else if (holder.isMesh) copies.push(new Mesh(g, fillMaterial), new Mesh(g, edgeMaterial));
+    else copies.push(new LineSegments(g, lineMaterial));
+    for (const copy of copies) { copy.matrix.copy(o.matrixWorld); copy.matrixAutoUpdate = false; wire.add(copy); }
   });
   const camera = new PerspectiveCamera(30, W / H, Math.max(0.01, size.length() / 100), size.length() * 20 + 10);
   camera.position.copy(centre).addScaledVector(new Vector3(-1, 0.75, 1.25).normalize(), size.length() * 2);
@@ -242,7 +398,7 @@ export async function catalogueSheet(id: string, panel = 800): Promise<string | 
   // The object back where it was (the shaded scene took it), the sheet's own geometries let go.
   shaded.remove(object);
   floor.geometry.dispose(); (floor.material as MeshStandardMaterial).dispose();
-  wire.traverse((o) => { if ((o as LineSegments).isLineSegments) (o as LineSegments).geometry.dispose(); });
+  fillMaterial.dispose(); edgeMaterial.dispose(); lineMaterial.dispose();
   const pad = 20, top = 120;
   const page = document.createElement('canvas');
   page.width = W * 2 + pad * 3; page.height = H + top + pad;

@@ -655,8 +655,17 @@ interface FacadeStamp {
 /** A share 0..1 as a byte. */
 const toByte = (x: number): number => Math.round(Math.max(0, Math.min(1, x)) * 255);
 
+/** What the engine's catalogue is told of each face laid (`src/lab/catalog/shellPieces.ts`): its corners (world axes, z up), its normal and its paint. Null in the game. */
+type ShellTap = (points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint) => void;
+/** The catalogue's tap on every face of a shell, or none. */
+export function setShellTap(tap: ShellTap | null): void {
+  Shell.tap = tap;
+}
+
 /** Triangles in THREE's axes, one buffer set per finish; winding fixed per face. */
 class Shell {
+  /** The catalogue's tap (`setShellTap`): null in the game. */
+  static tap: ShellTap | null = null;
   readonly parts = new Map<Finish, ShellPart>();
   /** A vertex's place in and its tone noise out of `macroNoiseInto`. */
   private readonly noise = new Float64Array(4);
@@ -693,6 +702,7 @@ class Shell {
 
   /** DO NOT lay only the first two triangles: a lantern's octagonal and 24-sided caps */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint, shades?: readonly number[]): void {
+    if (Shell.tap) Shell.tap(points, n, c);
     // A run of bays with no opening (kind 0) draws as a wall: it needs no window grid.
     const st = this.stamp && this.stamp.kind !== FACADE_KIND.none ? this.stamp : null;
     const parts = st ? this.runs : this.parts;

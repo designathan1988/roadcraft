@@ -43,6 +43,10 @@ export interface ItemSpec {
   readonly effect?: boolean;
   /** Numbers measured elsewhere, for an object with no pieces of its own here (a test city layer read from the scene). */
   readonly given?: { readonly triangles: number; readonly vertices: number; readonly bytes: number; readonly released: boolean };
+  /** The object as the engine put it together (a building with its instanced parts, a layer of the test city): drawn and exported as it is. */
+  readonly object?: Object3D;
+  /** The test city's own copy of an object a kit row already counts: listed with its picture and model, kept out of the cost. */
+  readonly sceneCopy?: boolean;
 }
 
 export interface LevelRow { readonly level: number; readonly triangles: number; readonly vertices: number }
@@ -79,6 +83,12 @@ export interface CatalogRow {
   readonly trianglesPerFloor: number;
   readonly preview: boolean;
   readonly effect: boolean;
+  readonly sceneCopy: boolean;
+  /** Its picture and its 3D file, relative to the catalogue's folder (filled by `scripts/model-catalog.mjs`). */
+  sheet: string;
+  model: string;
+  /** Each texture: its slot, size, format, levels and exact bytes. */
+  readonly textures: readonly string[];
   readonly pieces: readonly { label: string; triangles: number; vertices: number; bytes: number; material: string }[];
   readonly notes: string[];
   readonly countKey: string;
@@ -93,7 +103,7 @@ const materialsOf = (m: Material | readonly Material[] | null): Material[] => (m
 const describe = (m: MaterialMeasure): string => `${m.type}${m.name ? ` "${m.name}"` : ''}${m.key ? ` [${m.key}]` : ''}${m.flags.length ? ` (${m.flags.join(', ')})` : ''}`;
 
 /** A stand-in for drawing a piece on its own when its material needs the engine's uniforms to draw (a patched or written shader). */
-function sheetMaterial(m: Material | null, geometry: BufferGeometry): Material {
+export function sheetMaterial(m: Material | null, geometry: BufferGeometry): Material {
   if (m && !Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile') && !(m as { isShaderMaterial?: boolean }).isShaderMaterial) return m;
   const source = m as (Material & { color?: { getHex(): number } }) | null;
   return new MeshStandardMaterial({ color: source?.color?.getHex() ?? 0xb8b4ad, vertexColors: geometry.getAttribute('color') !== undefined, roughness: 0.8, metalness: 0 });
@@ -105,7 +115,7 @@ export function measureItem(spec: ItemSpec, id: string): { row: CatalogRow; obje
   const attributes = new Map<string, string>();
   let bytesPerVertex = 0;
   const materials = new Map<string, MaterialMeasure>();
-  const textures = new Map<string, number>();
+  const textures = new Map<string, { label: string; bytes: number | null }>();
   const shapes: Record<string, number> = {};
   let solidCount = 0;
   const levels: { triangles: number; vertices: number }[] = [];
@@ -113,20 +123,31 @@ export function measureItem(spec: ItemSpec, id: string): { row: CatalogRow; obje
   const object = new Group();
   object.name = id;
   let bones = 0;
+  const roomNotes: string[] = [];
+  // A geometry several pieces share (a layer's cells drawing one model) measured once and its memory counted once.
+  const measured = new Map<BufferGeometry, { g: ReturnType<typeof measureGeometry>; solids: ReturnType<typeof measureSolids> }>();
   for (const piece of spec.pieces) {
-    const g = measureGeometry(piece.geometry);
+    const first = !measured.has(piece.geometry);
+    if (first) measured.set(piece.geometry, { g: measureGeometry(piece.geometry), solids: measureSolids(piece.geometry) });
+    const { g, solids } = measured.get(piece.geometry)!;
     const copies = piece.copies ?? 1;
-    triangles += g.triangles * copies; vertices += g.vertices * copies; geometryBytes += g.bytes;
-    morphTargets = Math.max(morphTargets, g.morphTargets); morphBytes += g.morphBytes;
+    triangles += g.triangles * copies; vertices += g.vertices * copies;
+    if (first) geometryBytes += g.bytes;
+    morphTargets = Math.max(morphTargets, g.morphTargets);
+    if (first) morphBytes += g.morphBytes;
     if (g.released) released = true;
     bytesPerVertex = Math.max(bytesPerVertex, g.bytesPerVertex);
     for (const a of g.attributes) attributes.set(`${a.name}${a.perInstance ? '/instance' : ''}`, `${a.name}${a.perInstance ? '/instance' : ''}:${a.itemSize}x${a.type.replace('Array', '')}=${a.bytesPerVertex}B`);
     const ms = materialsOf(piece.material).map(measureMaterial);
     for (const m of ms) {
       materials.set(describe(m), m);
-      for (const t of m.textures) textures.set(`${t.name}|${t.width}x${t.height}x${t.layers}|${t.type}`, t.bytes);
+      for (const t of m.textures) {
+        textures.set(`${t.name}|${t.width}x${t.height}x${t.layers}|${t.type}`, {
+          label: `${t.slot} ${t.name || t.type} ${t.width}x${t.height}${t.layers > 1 ? `x${t.layers} layers` : ''} ${t.format}, ${t.mips} levels, ${t.bytes === null ? 'bytes unknown (format not known)' : `${t.bytes} B`}`,
+          bytes: t.bytes,
+        });
+      }
     }
-    const solids = measureSolids(piece.geometry);
     if (solids) {
       solidCount += solids.count * copies;
       for (const [shape, n] of Object.entries(solids.byShape)) shapes[shape] = (shapes[shape] ?? 0) + n * copies;
@@ -135,17 +156,15 @@ export function measureItem(spec: ItemSpec, id: string): { row: CatalogRow; obje
     const all = [piece.geometry, ...(piece.levels ?? [])];
     all.forEach((geometry, level) => {
       const m = level === 0 ? g : measureGeometry(geometry);
-      if (level > 0) geometryBytes += m.bytes;
+      if (level > 0 && first) geometryBytes += m.bytes;
       levels[level] ??= { triangles: 0, vertices: 0 };
       levels[level]!.triangles += m.triangles * copies;
       levels[level]!.vertices += m.vertices * copies;
     });
     bones = Math.max(bones, piece.bones ?? 0);
     pieces.push({ label: `${piece.label}${copies > 1 ? ` x${copies}` : ''}`, triangles: g.triangles * copies, vertices: g.vertices * copies, bytes: g.bytes, material: ms.map(describe).join(' + ') });
-    if (!g.released) {
-      const first = materialsOf(piece.material)[0] ?? null;
-      object.add(new Mesh(piece.geometry, sheetMaterial(first, piece.geometry)));
-    }
+    if (first && g.roomTriangles > g.triangles) roomNotes.push(`${piece.label}: draws ${g.triangles} of the ${g.roomTriangles} triangles its buffers hold room for (its draw range)`);
+    if (!g.released && !spec.object) object.add(new Mesh(piece.geometry, sheetMaterial(materialsOf(piece.material)[0] ?? null, piece.geometry)));
   }
   if (spec.given) {
     triangles = spec.given.triangles; vertices = spec.given.vertices; geometryBytes = spec.given.bytes; released = spec.given.released;
@@ -157,7 +176,8 @@ export function measureItem(spec: ItemSpec, id: string): { row: CatalogRow; obje
     triangles = 0; hidden = null; solidCount = 0;
     for (const l of levels) l.triangles = 0;
   }
-  const textureBytes = [...textures.values()].reduce((a, b) => a + b, 0);
+  const textureBytes = [...textures.values()].reduce((a, t) => a + (t.bytes ?? 0), 0);
+  const unknownTextures = [...textures.values()].filter((t) => t.bytes === null).length;
   const extraBytes = spec.extraBytes ?? 0;
   const all = [...materials.values()];
   const shaders = [...new Set(all.map((m) => (m.shader === 'built-in' ? `three ${m.type}` : `${m.shader}${m.key ? ` ${m.key}` : ''}`)))];
@@ -169,8 +189,10 @@ export function measureItem(spec: ItemSpec, id: string): { row: CatalogRow; obje
     motion: shaderMotion(all, bones > 0, morphTargets), levels: levels.map((l, level) => ({ level, ...l })),
     solids: solidCount ? `${solidCount} solids: ${Object.entries(shapes).map(([s, n]) => `${n} ${s}`).join(', ')}` : '',
     hiddenTriangles: released ? null : hidden, shadow: spec.shadow ?? '', bones, morphTargets, morphBytes, released, floors,
-    trianglesPerFloor: floors > 0 ? Math.round(triangles / floors) : 0, preview: spec.preview ?? false, effect: spec.effect ?? false, pieces,
-    notes: [...(primitives ? [primitives] : []), ...(spec.notes ?? [])], countKey: spec.countKey ?? '', instances: 0, instancesFrom: '', totalTriangles: 0,
+    trianglesPerFloor: floors > 0 ? Math.round(triangles / floors) : 0, preview: spec.preview ?? false, effect: spec.effect ?? false, sceneCopy: spec.sceneCopy ?? false,
+    sheet: '', model: '', pieces, textures: [...textures.values()].map((t) => t.label),
+    notes: [...(primitives ? [primitives] : []), ...roomNotes,...(unknownTextures ? [`${unknownTextures} texture(s) of a format whose size is not known: not in texture_kb`] : []), ...(spec.notes ?? [])],
+    countKey: spec.countKey ?? '', instances: 0, instancesFrom: '', totalTriangles: 0,
   };
-  return { row, object };
+  return { row, object: spec.object ?? object };
 }

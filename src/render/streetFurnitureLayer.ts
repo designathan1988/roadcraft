@@ -154,7 +154,7 @@ function radiusOf(geometry: RunStore['geometry']): number {
 }
 
 /** Picks a species for a street tree: mostly planes, some flowering ipês. */
-function streetSpecies(roll: number): TreeSpecies {
+export function streetSpecies(roll: number): TreeSpecies {
   if (roll < 0.55) return 'broadleafTall';
   if (roll < 0.78) return 'broadleaf';
   return roll < 0.89 ? 'ipeYellow' : 'ipePink';
