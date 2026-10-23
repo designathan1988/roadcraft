@@ -62,6 +62,7 @@
   "Budget: about 40 triangles (3,184 today, 79.6 times the budget): painted into the body's texture, or a few triangles merged into the body; never a mesh of its own.",
   "Picture: a ring, chain or necklace modelled link by link or pearl by pearl; painted on the body.",
   "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.",
   "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
  ],
  "target": 40

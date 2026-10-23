@@ -21,7 +21,7 @@ a { color: var(--accent); }
   <a href="../images/2345-People-clothes-male-casualsuit01.png"><img loading="lazy" src="../images/2345-People-clothes-male-casualsuit01.png" alt="People: clothes/male_casualsuit01"></a>
   <div class="data">
     <h3>male_casualsuit01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (16,672 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (16,672 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>16,672</dd><dt>Vertices</dt><dd>8,984</dd>
       <dt>Levels</dt><dd>L0 16,672</dd>
@@ -42,7 +42,7 @@ a { color: var(--accent); }
   <a href="../images/2351-People-clothes-male-elegantsuit01.png"><img loading="lazy" src="../images/2351-People-clothes-male-elegantsuit01.png" alt="People: clothes/male_elegantsuit01"></a>
   <div class="data">
     <h3>male_elegantsuit01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (14,956 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (14,956 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Remove its 2 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>14,956</dd><dt>Vertices</dt><dd>8,522</dd>
       <dt>Levels</dt><dd>L0 14,956</dd>
@@ -63,7 +63,7 @@ a { color: var(--accent); }
   <a href="../images/2350-People-clothes-male-casualsuit06.png"><img loading="lazy" src="../images/2350-People-clothes-male-casualsuit06.png" alt="People: clothes/male_casualsuit06"></a>
   <div class="data">
     <h3>male_casualsuit06</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (7,168 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (7,168 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>7,168</dd><dt>Vertices</dt><dd>4,035</dd>
       <dt>Levels</dt><dd>L0 7,168</dd>
@@ -84,7 +84,7 @@ a { color: var(--accent); }
   <a href="../images/2352-People-clothes-male-worksuit01.png"><img loading="lazy" src="../images/2352-People-clothes-male-worksuit01.png" alt="People: clothes/male_worksuit01"></a>
   <div class="data">
     <h3>male_worksuit01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (6,986 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (6,986 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>6,986</dd><dt>Vertices</dt><dd>4,166</dd>
       <dt>Levels</dt><dd>L0 6,986</dd>
@@ -105,7 +105,7 @@ a { color: var(--accent); }
   <a href="../images/2349-People-clothes-male-casualsuit05.png"><img loading="lazy" src="../images/2349-People-clothes-male-casualsuit05.png" alt="People: clothes/male_casualsuit05"></a>
   <div class="data">
     <h3>male_casualsuit05</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (5,996 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (5,996 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>5,996</dd><dt>Vertices</dt><dd>3,871</dd>
       <dt>Levels</dt><dd>L0 5,996</dd>
@@ -126,7 +126,7 @@ a { color: var(--accent); }
   <a href="../images/2294-People-clothes-female-casualsuit02.png"><img loading="lazy" src="../images/2294-People-clothes-female-casualsuit02.png" alt="People: clothes/female_casualsuit02"></a>
   <div class="data">
     <h3>female_casualsuit02</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (5,488 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (5,488 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>5,488</dd><dt>Vertices</dt><dd>3,204</dd>
       <dt>Levels</dt><dd>L0 5,488</dd>
@@ -147,7 +147,7 @@ a { color: var(--accent); }
   <a href="../images/2347-People-clothes-male-casualsuit03.png"><img loading="lazy" src="../images/2347-People-clothes-male-casualsuit03.png" alt="People: clothes/male_casualsuit03"></a>
   <div class="data">
     <h3>male_casualsuit03</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,800 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,800 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>4,800</dd><dt>Vertices</dt><dd>2,796</dd>
       <dt>Levels</dt><dd>L0 4,800</dd>
@@ -168,7 +168,7 @@ a { color: var(--accent); }
   <a href="../images/2293-People-clothes-female-casualsuit01.png"><img loading="lazy" src="../images/2293-People-clothes-female-casualsuit01.png" alt="People: clothes/female_casualsuit01"></a>
   <div class="data">
     <h3>female_casualsuit01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,236 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,236 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>4,236</dd><dt>Vertices</dt><dd>2,406</dd>
       <dt>Levels</dt><dd>L0 4,236</dd>
@@ -189,7 +189,7 @@ a { color: var(--accent); }
   <a href="../images/2295-People-clothes-female-elegantsuit01.png"><img loading="lazy" src="../images/2295-People-clothes-female-elegantsuit01.png" alt="People: clothes/female_elegantsuit01"></a>
   <div class="data">
     <h3>female_elegantsuit01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,192 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,192 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>4,192</dd><dt>Vertices</dt><dd>2,446</dd>
       <dt>Levels</dt><dd>L0 4,192</dd>
@@ -210,7 +210,7 @@ a { color: var(--accent); }
   <a href="../images/2530-People-clothes-shoes03.png"><img loading="lazy" src="../images/2530-People-clothes-shoes03.png" alt="People: clothes/shoes03"></a>
   <div class="data">
     <h3>shoes03</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,128 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,128 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>4,128</dd><dt>Vertices</dt><dd>2,542</dd>
       <dt>Levels</dt><dd>L0 4,128</dd>
@@ -231,7 +231,7 @@ a { color: var(--accent); }
   <a href="../images/2346-People-clothes-male-casualsuit02.png"><img loading="lazy" src="../images/2346-People-clothes-male-casualsuit02.png" alt="People: clothes/male_casualsuit02"></a>
   <div class="data">
     <h3>male_casualsuit02</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,120 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (4,120 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>4,120</dd><dt>Vertices</dt><dd>2,349</dd>
       <dt>Levels</dt><dd>L0 4,120</dd>
@@ -252,7 +252,7 @@ a { color: var(--accent); }
   <a href="../images/2296-People-clothes-female-sportsuit01.png"><img loading="lazy" src="../images/2296-People-clothes-female-sportsuit01.png" alt="People: clothes/female_sportsuit01"></a>
   <div class="data">
     <h3>female_sportsuit01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,436 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,436 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>3,436</dd><dt>Vertices</dt><dd>1,986</dd>
       <dt>Levels</dt><dd>L0 3,436</dd>
@@ -273,7 +273,7 @@ a { color: var(--accent); }
   <a href="../images/2528-People-clothes-shoes01.png"><img loading="lazy" src="../images/2528-People-clothes-shoes01.png" alt="People: clothes/shoes01"></a>
   <div class="data">
     <h3>shoes01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>3,320</dd><dt>Vertices</dt><dd>1,904</dd>
       <dt>Levels</dt><dd>L0 3,320</dd>
@@ -294,7 +294,7 @@ a { color: var(--accent); }
   <a href="../images/2531-People-clothes-shoes04.png"><img loading="lazy" src="../images/2531-People-clothes-shoes04.png" alt="People: clothes/shoes04"></a>
   <div class="data">
     <h3>shoes04</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes01 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,320 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes01 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>3,320</dd><dt>Vertices</dt><dd>1,904</dd>
       <dt>Levels</dt><dd>L0 3,320</dd>
@@ -315,7 +315,7 @@ a { color: var(--accent); }
   <a href="../images/2348-People-clothes-male-casualsuit04.png"><img loading="lazy" src="../images/2348-People-clothes-male-casualsuit04.png" alt="People: clothes/male_casualsuit04"></a>
   <div class="data">
     <h3>male_casualsuit04</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,240 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,240 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>3,240</dd><dt>Vertices</dt><dd>1,887</dd>
       <dt>Levels</dt><dd>L0 3,240</dd>
@@ -336,7 +336,7 @@ a { color: var(--accent); }
   <a href="../images/2529-People-clothes-shoes02.png"><img loading="lazy" src="../images/2529-People-clothes-shoes02.png" alt="People: clothes/shoes02"></a>
   <div class="data">
     <h3>shoes02</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>3,064</dd><dt>Vertices</dt><dd>1,744</dd>
       <dt>Levels</dt><dd>L0 3,064</dd>
@@ -357,7 +357,7 @@ a { color: var(--accent); }
   <a href="../images/2532-People-clothes-shoes05.png"><img loading="lazy" src="../images/2532-People-clothes-shoes05.png" alt="People: clothes/shoes05"></a>
   <div class="data">
     <h3>shoes05</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes02 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes02 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>3,064</dd><dt>Vertices</dt><dd>1,744</dd>
       <dt>Levels</dt><dd>L0 3,064</dd>
@@ -378,7 +378,7 @@ a { color: var(--accent); }
   <a href="../images/2533-People-clothes-shoes06.png"><img loading="lazy" src="../images/2533-People-clothes-shoes06.png" alt="People: clothes/shoes06"></a>
   <div class="data">
     <h3>shoes06</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes02 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (3,064 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as shoes02 : load one mesh and change its colour, not a second copy.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>3,064</dd><dt>Vertices</dt><dd>1,744</dd>
       <dt>Levels</dt><dd>L0 3,064</dd>
@@ -399,7 +399,7 @@ a { color: var(--accent); }
   <a href="../images/2291-People-clothes-fedora01.png"><img loading="lazy" src="../images/2291-People-clothes-fedora01.png" alt="People: clothes/fedora01"></a>
   <div class="data">
     <h3>fedora01</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,244 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,244 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>1,244</dd><dt>Vertices</dt><dd>702</dd>
       <dt>Levels</dt><dd>L0 1,244</dd>
@@ -420,7 +420,7 @@ a { color: var(--accent); }
   <a href="../images/2292-People-clothes-fedora-cocked.png"><img loading="lazy" src="../images/2292-People-clothes-fedora-cocked.png" alt="People: clothes/fedora_cocked"></a>
   <div class="data">
     <h3>fedora_cocked</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,244 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as fedora01 : load one mesh and change its colour, not a second copy.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (1,244 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.</li><li>Same triangles and vertices as fedora01 : load one mesh and change its colour, not a second copy.</li><li>Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>1,244</dd><dt>Vertices</dt><dd>702</dd>
       <dt>Levels</dt><dd>L0 1,244</dd>

@@ -62,6 +62,7 @@
   "Budget: no geometry of its own (700 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
   "Remove its 1 hidden triangles: faces inside another part or pressed face to face, never seen.",
   "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Never worn by the game: no code path puts it on anybody (spec.ts randomPerson picks only system items and street-selected dresses, suits, glasses, jewelry, beards, shoes and hair), yet every proxy file is packed into the build (scripts/vite/model-urls-plugin.ts emits the whole folder). Remove it from the game; it belongs to the Person Creator (people-lab.html) only.",
   "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
  ],
  "target": 0

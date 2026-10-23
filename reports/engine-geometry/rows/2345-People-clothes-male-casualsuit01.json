@@ -61,6 +61,7 @@
  "advice": [
   "Budget: no geometry of its own (16,672 today): no garment mesh at run time: the outfit baked onto the body's one skinned mesh (the body under it removed), its look in the body's texture atlas.",
   "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.",
   "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
  ],
  "target": 0

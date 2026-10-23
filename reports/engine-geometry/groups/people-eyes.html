@@ -21,7 +21,7 @@ a { color: var(--accent); }
   <a href="../images/2289-People-eyes-eyes.png"><img loading="lazy" src="../images/2289-People-eyes-eyes.png" alt="People: eyes/eyes"></a>
   <div class="data">
     <h3>eyes</h3>
-    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,040 today): painted into the head's texture: no geometry of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
+    <div class="advice"><b>What to change</b><ul><li>Budget: no geometry of its own (2,040 today): painted into the head's texture: no geometry of its own.</li><li>32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).</li><li>Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.</li><li>Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces.</li></ul></div>
     <dl>
       <dt>Triangles</dt><dd>2,040</dd><dt>Vertices</dt><dd>1,076</dd>
       <dt>Levels</dt><dd>L0 2,040</dd>

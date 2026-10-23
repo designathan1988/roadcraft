@@ -62,6 +62,7 @@
   "Budget: about 400 triangles (2,192 today, 5.5 times the budget): hair as a few alpha-tested cards (or painted on the head at the crowd's distance), merged into the body's one skinned mesh.",
   "Picture: hair as dense sheets or locks of geometry; a few alpha cards, or a cap painted on the head.",
   "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.",
   "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
  ],
  "target": 400

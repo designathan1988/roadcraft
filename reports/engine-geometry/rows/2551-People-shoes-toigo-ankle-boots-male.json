@@ -64,6 +64,7 @@
   "Same triangles and vertices as toigo_ankle_boots_female : load one mesh and change its colour, not a second copy.",
   "Remove its 4 hidden triangles: faces inside another part or pressed face to face, never seen.",
   "32 bytes a vertex: quantize (position 3 x int16, normal as 2 x int8 octahedral, colour 4 x uint8): about 12-16 bytes (KHR_mesh_quantization).",
+  "Worn by the game (spec.ts randomPerson / roster.ts): bake it onto the bodies that wear it, then drop the file from the game.",
   "Loaded at run time from public/models/people (loadProxyItem in personBuild.ts, proceduralCrowd.ts, skinAppearance.ts): ship baked bodies only, not the MakeHuman pieces."
  ],
  "target": 0
